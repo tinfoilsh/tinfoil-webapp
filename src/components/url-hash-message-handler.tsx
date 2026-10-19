@@ -1,4 +1,3 @@
-import type { QueueSubmitInput } from '@/components/chat/hooks/use-message-queue'
 import { base64ToUint8Array } from '@/utils/binary-codec'
 import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import {
@@ -10,7 +9,7 @@ import { useRouter, type NextRouter } from 'next/router'
 import { useEffect, useRef } from 'react'
 
 interface UrlHashMessageHandlerProps {
-  onSubmit: (input: QueueSubmitInput) => void
+  onSubmit: (input: { text: string }) => void
   isReady: boolean
 }
 

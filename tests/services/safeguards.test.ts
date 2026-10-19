@@ -1,7 +1,6 @@
 import {
   getSafeguardsSnapshot,
   refreshSafeguards,
-  refreshSafeguardsAfterMutation,
   resetSafeguards,
   subscribeSafeguards,
 } from '@/services/safeguards'
@@ -118,27 +117,6 @@ describe('safeguards store', () => {
     await Promise.all([refreshSafeguards(), refreshSafeguards()])
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
-  })
-
-  it('forces a post-mutation request after an in-flight refresh', async () => {
-    const deferred = deferredFetch()
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockImplementationOnce(deferred.impl)
-      .mockResolvedValueOnce(new Response(JSON.stringify(RESPONSE)))
-
-    const first = refreshSafeguards()
-    await deferred.called
-    const forced = refreshSafeguardsAfterMutation()
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
-
-    deferred.resolve(
-      new Response(JSON.stringify({ ...RESPONSE, in_window: 9 })),
-    )
-    await Promise.all([first, forced])
-
-    expect(fetchSpy).toHaveBeenCalledTimes(2)
-    expect(getSafeguardsSnapshot().policy?.inWindow).toBe(1)
   })
 
   it('rejects a response missing policy fields instead of publishing it', async () => {

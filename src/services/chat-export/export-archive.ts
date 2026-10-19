@@ -2,10 +2,6 @@ import { strToU8, zipSync } from 'fflate'
 
 import { getDocumentTextContent } from '@/components/chat/document-content'
 import type { Attachment, Chat } from '@/components/chat/types'
-import {
-  decodeDocumentPayload,
-  isOffloadedDocument,
-} from '@/services/cloud/document-payload'
 
 /**
  * Off-device-import-compatible chat export. When any exported chat has
@@ -30,9 +26,13 @@ const CONVERSATIONS_FILE = 'conversations.json'
 const MANIFEST_FILE = 'manifest.json'
 const FIRST_COLLISION_SUFFIX = 2
 
-/** Fetches the raw bytes for one binary attachment, or null when unavailable. */
+/**
+ * Fetches the raw bytes for one binary attachment, or the UTF-8 text of a
+ * document whose content the chat does not carry, or null when unavailable.
+ */
 export type AttachmentBytesFetcher = (
   attachment: Attachment,
+  chat: Chat,
 ) => Promise<Uint8Array | null>
 
 export interface ExportArchive {
@@ -65,6 +65,14 @@ interface ManifestEntry {
 function isBinaryImage(att: Attachment): boolean {
   return att.type === 'image'
 }
+
+// A synced document read without its content, whose text the chat service
+// returns on request.
+function isDocumentWithoutContent(att: Attachment): boolean {
+  return att.textContent === undefined && att.pages === undefined
+}
+
+const textDecoder = new TextDecoder('utf-8', { fatal: true })
 
 function chatsHaveBinaryAttachments(chats: Chat[]): boolean {
   return chats.some((chat) =>
@@ -173,7 +181,7 @@ export async function buildChatExport(
           }
 
           if (needsZip) {
-            const bytes = await fetchAttachmentBytes(att)
+            const bytes = await fetchAttachmentBytes(att, chat)
             if (bytes) {
               zipFiles[exportPath] = bytes
               exported.exportPath = exportPath
@@ -191,11 +199,11 @@ export async function buildChatExport(
         } else {
           attachmentCount++
           let documentContent: Pick<Attachment, 'textContent' | 'pages'> = att
-          if (isOffloadedDocument(att)) {
-            const bytes = await fetchAttachmentBytes(att)
+          if (isDocumentWithoutContent(att)) {
+            const bytes = await fetchAttachmentBytes(att, chat)
             if (bytes) {
               try {
-                documentContent = decodeDocumentPayload(att.id, bytes)
+                documentContent = { textContent: textDecoder.decode(bytes) }
               } catch {
                 warnings.push(`Could not read document ${att.id}`)
               }

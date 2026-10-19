@@ -64,7 +64,6 @@ describe('ChatInput streaming action', () => {
         inputMinHeight="40px"
         isDarkMode
         isPremium
-        audioModel="audio-model"
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Start recording' }))

@@ -1,7 +1,9 @@
 import { ReadAloudButton } from '@/components/chat/renderers/components/ReadAloudButton'
+import { publish } from '@/services/harness/runtime'
 import { speechPlayer } from '@/services/speech/player'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { testSession } from '../../harness-fixture'
 import {
   controlledSpeech,
   FakeAudioContext,
@@ -23,10 +25,23 @@ describe('read aloud button', () => {
   beforeEach(() => {
     generation = controlledSpeech()
     audio = new FakeAudioContext()
-    fakes.stream.mockImplementation(generation.stream)
-    fakes.context.mockReturnValue(audio)
+    fakes.stream.mockReset().mockImplementation(generation.stream)
+    fakes.context.mockReset().mockReturnValue(audio)
+    publish({
+      session: {
+        ...testSession,
+        features: { ...testSession.features, speech: true },
+      },
+    })
   })
   afterEach(() => act(() => speechPlayer.stop()))
+
+  it('is not offered by a harness without speech', () => {
+    publish({ session: testSession })
+    const { container } = render(<ReadAloudButton content="Hello." />)
+    expect(container).toBeEmptyDOMElement()
+    expect(fakes.stream).not.toHaveBeenCalled()
+  })
 
   it('provides a styled tooltip on hover and keyboard focus', () => {
     render(<ReadAloudButton content="Hello." />)

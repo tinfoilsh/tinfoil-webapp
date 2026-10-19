@@ -4,9 +4,9 @@ import { Progress } from '@/components/ui/progress'
 import { cn } from '@/components/ui/utils'
 import { useRateLimit } from '@/hooks/use-rate-limit'
 import type {
-  RateLimitInfo,
+  RateLimit as RateLimitInfo,
   TokenBudget,
-} from '@/services/inference/tinfoil-client'
+} from '@/services/harness/types'
 import { useEffect, useState } from 'react'
 
 const COUNTDOWN_TICK_MS = 60 * 1000

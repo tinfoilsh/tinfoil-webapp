@@ -43,6 +43,14 @@ export function getNewChatPath({
   return '/newchat'
 }
 
+// The sections the catch-all route renders; it shows its not-found page for
+// any other path.
+const CATCH_ALL_SECTIONS = ['chat', 'project', 'share']
+export function isCatchAllSection(slug: string | string[] | undefined) {
+  const section = Array.isArray(slug) ? slug[0] : slug
+  return !!section && CATCH_ALL_SECTIONS.includes(section)
+}
+
 export function isLocalNewChatStorage(
   storage: string | string[] | undefined,
 ): boolean {

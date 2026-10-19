@@ -3,15 +3,17 @@
 import type { AnimationItem } from 'lottie-web'
 import { useEffect, useRef } from 'react'
 
-// Eagerly fetch the animation JSON so it's ready by the time the component
-// mounts. Resolve to null on failure: the loader then shows no animation, and
-// a rejection here would otherwise be unhandled until a component mounts.
-const animationDataPromise: Promise<unknown> =
-  typeof window !== 'undefined'
-    ? fetch('/logo-loading-loop.json')
-        .then((res) => res.json())
-        .catch(() => null)
-    : Promise.resolve(null)
+// Fetch the animation JSON once, when the first loader mounts. The session
+// provider renders the loader on first paint, so importing this module must
+// not start network work. Resolve to null on failure: the loader then shows
+// no animation.
+let animationDataPromise: Promise<unknown> | undefined
+function loadAnimationData(): Promise<unknown> {
+  animationDataPromise ??= fetch('/logo-loading-loop.json')
+    .then((res) => res.json())
+    .catch(() => null)
+  return animationDataPromise
+}
 
 function LogoAnimation({
   isLoading = true,
@@ -34,7 +36,7 @@ function LogoAnimation({
 
     let unmounted = false
 
-    Promise.all([import('lottie-web'), animationDataPromise])
+    Promise.all([import('lottie-web'), loadAnimationData()])
       .then(([{ default: lottie }, animationData]) => {
         if (!animationData || unmounted) return
         const anim = lottie.loadAnimation({

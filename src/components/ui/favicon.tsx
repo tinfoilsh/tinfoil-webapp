@@ -1,5 +1,35 @@
-import { fetchFavicon } from '@/services/inference/metadata-client'
+import { harnessAPI } from '@/services/harness/runtime'
 import { useEffect, useState } from 'react'
+
+// Lookups in flight by hostname, so the citations of one site share a
+// request until it settles.
+const FAVICON_REQUESTS = new Map<string, Promise<string | null>>()
+
+function fetchFavicon(url: string, cacheKey: string): Promise<string | null> {
+  const pending = FAVICON_REQUESTS.get(cacheKey)
+  if (pending) return pending
+  const request = lookupFavicon(url).finally(() => {
+    FAVICON_REQUESTS.delete(cacheKey)
+  })
+  FAVICON_REQUESTS.set(cacheKey, request)
+  return request
+}
+
+async function lookupFavicon(url: string): Promise<string | null> {
+  const data = await harnessAPI().post<{
+    status: string
+    favicon_bytes: string
+    favicon_content_type: string
+  }>('/v1/metadata/favicon', { url }, undefined, false)
+  if (
+    data.status !== 'found' ||
+    !/^image\/(?:png|jpeg|webp|gif|x-icon|vnd.microsoft.icon)$/.test(
+      data.favicon_content_type,
+    )
+  )
+    return null
+  return `data:${data.favicon_content_type};base64,${data.favicon_bytes}`
+}
 
 // Module-level cache of resolved favicon data URLs keyed by hostname.
 // Keeps remounts — for example, when react-markdown re-parses a
@@ -123,7 +153,7 @@ function FaviconForHost({
     } else if (isFailureCached(cacheKey)) {
       setResolved({ src: '', state: 'error' })
     } else {
-      fetchFavicon(url)
+      fetchFavicon(url, cacheKey)
         .then((faviconDataUrl) => {
           if (!faviconDataUrl) {
             cacheFailure(cacheKey)

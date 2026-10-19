@@ -23,7 +23,6 @@ import React, { memo, useState, type JSX } from 'react'
 import { hasMessageAttachments } from '../../attachment-helpers'
 import { ConfirmDialog } from '../../components/confirm-dialog'
 import { CONSTANTS } from '../../constants'
-import { hasVisibleAssistantMessage } from '../../hooks/streaming/interrupted-message'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
 import { isImeComposition } from '../../keyboard-utils'
 import { CodeExecProcess } from '../components/CodeExecProcess'
@@ -43,7 +42,11 @@ import { URLFetchProcess } from '../components/URLFetchProcess'
 import { WebSearchProcess } from '../components/WebSearchProcess'
 import { WorkProcess } from '../components/WorkProcess'
 import type { MessageRenderer, MessageRenderProps } from '../types'
+import { toDisplayTimeline } from './server-tool-blocks'
 import { isInvisibleBlock, segmentTimeline } from './timeline-segments'
+
+const hasVisibleAssistantMessage = (message: MessageRenderProps['message']) =>
+  !!message.content || !!message.timeline?.length
 
 const MessageMetadata = ({
   modelDisplayName,
@@ -117,9 +120,17 @@ const DefaultMessageComponent = ({
     }
     return map.size > 0 ? map : undefined
   }, [message.annotations])
+  const isStreamingLastMessage = !!isStreaming && !!isLastMessage
+  const displayTimeline = React.useMemo(
+    () =>
+      isUser
+        ? []
+        : toDisplayTimeline(message.timeline ?? [], isStreamingLastMessage),
+    [isUser, message.timeline, isStreamingLastMessage],
+  )
   const timelineSegments = React.useMemo(
-    () => (isUser ? [] : segmentTimeline(message.timeline ?? [])),
-    [isUser, message.timeline],
+    () => segmentTimeline(displayTimeline),
+    [displayTimeline],
   )
   const [showActions, setShowActions] = React.useState(false)
   const lastContentRef = React.useRef(message.content)
@@ -492,6 +503,7 @@ const DefaultMessageComponent = ({
                         id: block.toolCallId,
                         name: block.name,
                         arguments: block.arguments,
+                        result: block.result,
                       },
                     ]}
                     isStreaming={!!isStreaming && !!isLastMessage}
@@ -520,7 +532,7 @@ const DefaultMessageComponent = ({
               )
             case 'content': {
               const isLastContent =
-                message.timeline!.findLastIndex(
+                displayTimeline.findLastIndex(
                   (b) => b.type === 'content' && !isInvisibleBlock(b),
                 ) === blockIndex
               const isActivelyStreaming =

@@ -1,5 +1,5 @@
 import * as auth from '@/services/auth'
-import { SyncEnclaveError } from '@/services/sync-enclave'
+import { HarnessError } from '@/services/harness/sse'
 import { collectNativeBackupV2, NativeBackupCollectionError } from './collect'
 import { formatNativeBackupV2, type NativeBackupWarning } from './format'
 import {
@@ -40,7 +40,7 @@ const download = (result: NativeBackupArchiveResult) => {
 
 const defaults: NativeBackupExportDependencies = {
   prepare: prepareNativeBackupArchiveDestination,
-  collect: (signal) => collectNativeBackupV2(undefined, signal),
+  collect: (signal) => collectNativeBackupV2(signal),
   format: formatNativeBackupV2,
   write: writeNativeBackupArchive,
   download,
@@ -87,19 +87,17 @@ export function nativeBackupExportError(error: unknown): string {
     (error.code === 'compressed_limit' || error.code === 'uncompressed_limit')
   )
     return 'This backup is too large to save in your browser. Remove some large images or documents, then try again.'
-  if (error instanceof NativeBackupCollectionError) {
-    if (error.kind === 'limits')
-      return 'This backup is too large to create. Remove some large images or documents, then try again.'
-    if (error.kind === 'account')
-      return error.recordId === 'active'
-        ? 'Your account session is unavailable. Sign in again, then retry the backup.'
-        : 'Unlock your cloud encryption key on this device, then try again.'
-    return 'Some cloud data changed or went missing during export. Wait for Cloud Sync to finish, then try again.'
-  }
+  if (
+    (error instanceof NativeBackupCollectionError && error.kind === 'limits') ||
+    (error instanceof HarnessError && error.status === 413)
+  )
+    return 'This backup is too large to create. Remove some large images or documents, then try again.'
+  if (error instanceof HarnessError && error.code === 'KEY_REQUIRED')
+    return 'Unlock your cloud encryption key on this device, then try again.'
   if (
     error instanceof auth.AuthTokenUnavailableError ||
     error instanceof auth.AuthTokenRefreshError ||
-    (error instanceof SyncEnclaveError && error.status === 401)
+    (error instanceof HarnessError && error.status === 401)
   )
     return 'Your account session is unavailable. Sign in again, then retry the backup.'
   if (
@@ -107,5 +105,7 @@ export function nativeBackupExportError(error: unknown): string {
     (error.name === 'NotAllowedError' || error.name === 'SecurityError')
   )
     return 'Tinfoil could not save the backup. Allow file downloads for this site, then try again.'
+  // The chat service describes its own refusals, such as a busy archive slot.
+  if (error instanceof HarnessError) return error.message
   return 'The backup could not be created. Check your connection and try again.'
 }
