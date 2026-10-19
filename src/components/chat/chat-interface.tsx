@@ -274,7 +274,7 @@ export function ChatInterface({
   const submitAfterSafeguards = useRef(false)
   const rateLimit = useRateLimit()
   const retryInfo = null
-  const failure = thread.state.error
+  const failure = thread.errorDetail
   const streamError = thread.error
     ? {
         message: thread.error,

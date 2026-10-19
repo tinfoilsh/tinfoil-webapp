@@ -43,6 +43,7 @@ import {
 } from './transfer'
 import type {
   Frame,
+  HarnessErrorBody,
   RateLimit,
   Thread,
   ThreadSummary,
@@ -183,7 +184,12 @@ export function useThread(
   // A new local chat until its first save lands. Its route waits, since
   // opening the route before then would find nothing on the device.
   const [unsaved, setUnsaved] = useState<string | null>(null)
-  const [error, setError] = useState('')
+  // An action that failed. The open chat's run reports how it ended through
+  // its own stream, in the chat state.
+  const [failure, setFailure] = useState<{
+    message: string
+    detail?: HarnessErrorBody
+  } | null>(null)
   // When the current error happened, so a wait the harness asks for counts
   // from then.
   const errorAt = useRef(0)
@@ -225,25 +231,32 @@ export function useThread(
       )
         return
       errorAt.current = Date.now()
-      if (cause instanceof HarnessError) {
-        const next = {
-          ...current.current,
-          error: cause.detail,
-          status: 'error' as const,
-        }
-        current.current = next
-        setState(next)
-        if (cause.code === 'QUOTA_EXHAUSTED')
-          api.reportRateLimit(exhaustedQuota(cause.detail))
-      }
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'The connection failed. Reconnect to continue.',
-      )
+      if (cause instanceof HarnessError && cause.code === 'QUOTA_EXHAUSTED')
+        api.reportRateLimit(exhaustedQuota(cause.detail))
+      setFailure({
+        message:
+          cause instanceof Error
+            ? cause.message
+            : 'The connection failed. Reconnect to continue.',
+        ...(cause instanceof HarnessError ? { detail: cause.detail } : {}),
+      })
     },
     [api],
   )
+  // The open chat's run ended with its stream, refused or cut off.
+  function failRun(cause: unknown) {
+    if (!(cause instanceof HarnessError)) return report(cause)
+    errorAt.current = Date.now()
+    const next = {
+      ...current.current,
+      error: cause.detail,
+      status: 'error' as const,
+    }
+    current.current = next
+    setState(next)
+    if (cause.code === 'QUOTA_EXHAUSTED')
+      api.reportRateLimit(exhaustedQuota(cause.detail))
+  }
   // Counts listings of the stored chats apart from the open chat, so that
   // opening a chat keeps the list and only the latest listing applies.
   const listing = useRef(0)
@@ -287,7 +300,7 @@ export function useThread(
     setState(current.current)
     idRef.current = null
     setId(null)
-    setError('')
+    setFailure(null)
     setNotFound(false)
     setUnsaved(null)
     starting.current = false
@@ -452,7 +465,9 @@ export function useThread(
               action: 'persist',
             })
             if (attached)
-              setError('This chat could not be saved on this device.')
+              setFailure({
+                message: 'This chat could not be saved on this device.',
+              })
           })
         if (terminal) {
           if (run && localRuns.current.get(run.threadId) === run) {
@@ -470,7 +485,7 @@ export function useThread(
         if (run && !run.runId) starting.current = false
         // A run the harness refused to follow is gone. One that could not be
         // reached keeps its receipt, so it can still be rejoined.
-        if (!quiet) report(cause)
+        if (!quiet) failRun(cause)
         else if (cause instanceof HarnessError && cause.status !== undefined)
           forgetReceipt(runId)
       }
@@ -727,7 +742,7 @@ export function useThread(
   function send(fields: Partial<Turn> = {}) {
     if ((!idRef.current || runsLocally()) && starting.current) return
     if (idRef.current && moving.current.has(idRef.current)) return
-    setError('')
+    setFailure(null)
     lastTurn.current = {
       kind: fields.kind ?? 'send',
       messageId: fields.messageId,
@@ -1284,7 +1299,7 @@ export function useThread(
     return { key: contentKey(), threadId }
   }
   async function reconnect() {
-    setError('')
+    setFailure(null)
     // A request whose acceptance never arrived is sent again with its nonce,
     // which the harness answers with the run it may already have started.
     if (pending.current) {
@@ -1439,7 +1454,8 @@ export function useThread(
     runsLocally: local,
     loading,
     notFound,
-    error: error || state.error?.message || '',
+    error: failure?.message || state.error?.message || '',
+    errorDetail: failure ? failure.detail : state.error,
     report,
     open,
     send,
@@ -1493,7 +1509,7 @@ export function useThread(
         false,
       ),
     dismissError: () => {
-      setError('')
+      setFailure(null)
       setState((previous) => ({ ...previous, error: undefined }))
     },
   }

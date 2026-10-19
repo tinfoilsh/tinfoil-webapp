@@ -1319,6 +1319,61 @@ describe('cloud chats', () => {
     expect(listed()?.activeRun).toBeNull()
   })
 
+  it('keep streaming a reply when another action fails', async () => {
+    signIn('alice', true)
+    const stored = summary('cloud-thread', 'Stored')
+    const refusal = new HarnessError(
+      { code: 'UPSTREAM_REFUSED', message: 'The chat could not be renamed' },
+      502,
+    )
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list')
+        return { threads: [stored], nextCursor: null }
+      if (path === '/v1/threads/get')
+        return { ...stored, messages: [], hasOlder: false }
+      if (path === '/v1/threads/update') throw refusal
+      throw new Error(`Unexpected ${path}`)
+    })
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    client.events.mockImplementation(async function* () {
+      yield {
+        id: 0,
+        event: { type: 'RUN_STARTED', threadId: stored.id, runId: 'run-1' },
+      }
+      await held
+      yield {
+        id: 1,
+        event: { type: 'RUN_FINISHED', threadId: stored.id, runId: 'run-1' },
+      }
+    })
+    const { result } = renderHook(() => useThread(stored.id))
+    await waitFor(() => expect(result.current.chat.id).toBe(stored.id))
+    let sending: Promise<unknown> | undefined
+    act(() => {
+      sending = result.current.send({ content: 'More' })
+    })
+    await waitFor(() => expect(result.current.running).toBe(true))
+
+    await act(() =>
+      result.current
+        .update(stored.id, { title: 'Renamed' })
+        .catch(result.current.report),
+    )
+
+    expect(result.current.error).toBe('The chat could not be renamed')
+    expect(result.current.errorDetail).toEqual(refusal.detail)
+    expect(result.current.running).toBe(true)
+    expect(result.current.state.status).toBe('streaming')
+    await act(async () => {
+      release()
+      await sending
+    })
+    expect(result.current.state.status).toBe('idle')
+  })
+
   it('rejoin a temporary run after a reload only until it ends', async () => {
     signIn('alice', true)
     client.post.mockImplementation(async (path: string) =>
