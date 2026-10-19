@@ -580,7 +580,7 @@ function createStore(
     if (!durable) return
     for (const id of ids)
       if (deleted) deletedChatsTracker.markAsDeleted(id)
-      else deletedChatsTracker.removeLocalDeletion(id)
+      else deletedChatsTracker.removeDeletion(id)
   }
   // Rows the previous client wrote are rewritten as threads once, before
   // anything reads them. A row the harness cannot upgrade stays as it was

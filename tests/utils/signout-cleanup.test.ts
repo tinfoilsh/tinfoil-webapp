@@ -149,7 +149,7 @@ describe('performSignoutCleanup', () => {
     expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBeNull()
     expect(() => encryptionService.getKeyBytesOrThrow()).toThrow()
     expect(resetRendererRegistry).toHaveBeenCalledOnce()
-    expect(deletedChatsTracker.getDeletedIds()).toEqual([])
+    expect(deletedChatsTracker.isDeleted('deleted-1')).toBe(false)
     expect(await storedChatIds()).toEqual([])
   })
 

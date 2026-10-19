@@ -2,13 +2,12 @@ import { SYNC_DELETED_CHATS } from '@/constants/storage-keys'
 import { logInfo } from '@/utils/error-handling'
 
 /**
- * Tracks deleted chats to prevent resurrection during sync.
- * IDs persist for the browser session (via sessionStorage) and are only
- * removed explicitly by source or via clear().
+ * Tracks deleted chats so a run that finishes after its chat was deleted
+ * cannot write it back. IDs persist for the browser session (via
+ * sessionStorage) and are only removed explicitly or via clear().
  */
 export class DeletedChatsTracker {
-  private localDeletedChats = new Set<string>()
-  private remoteDeletedChats = new Set<string>()
+  private deletedChats = new Set<string>()
 
   constructor() {
     this.loadFromStorage()
@@ -18,35 +17,11 @@ export class DeletedChatsTracker {
     if (typeof window === 'undefined') return
     try {
       const stored = sessionStorage.getItem(SYNC_DELETED_CHATS)
-      if (stored) {
-        const parsed: unknown[] = JSON.parse(stored)
-        parsed.forEach((entry) => {
-          if (typeof entry === 'string') {
-            // The previous client's string format combined local and remote
-            // tombstones. Treat them as remote, so a local rollback cannot
-            // bring back a chat that was deleted elsewhere.
-            this.remoteDeletedChats.add(entry)
-          } else if (entry && typeof entry === 'object' && 'chatId' in entry) {
-            const persisted = entry as {
-              chatId: unknown
-              local?: unknown
-              remote?: unknown
-            }
-            if (typeof persisted.chatId !== 'string') return
-            if (persisted.local === true) {
-              this.localDeletedChats.add(persisted.chatId)
-            }
-            if (persisted.remote === true) {
-              this.remoteDeletedChats.add(persisted.chatId)
-            }
-            if (persisted.local !== true && persisted.remote !== true) {
-              // Backward compat with old {chatId, deletedAt} format
-              this.remoteDeletedChats.add(persisted.chatId)
-            }
-          }
-        })
-        this.saveToStorage()
-      }
+      if (!stored) return
+      const parsed: unknown = JSON.parse(stored)
+      if (!Array.isArray(parsed)) return
+      for (const entry of parsed)
+        if (typeof entry === 'string') this.deletedChats.add(entry)
     } catch (error) {
       // Ignore errors loading from storage
     }
@@ -55,20 +30,10 @@ export class DeletedChatsTracker {
   private saveToStorage(): void {
     if (typeof window === 'undefined') return
     try {
-      const ids = new Set([
-        ...this.localDeletedChats,
-        ...this.remoteDeletedChats,
-      ])
-      if (ids.size > 0) {
+      if (this.deletedChats.size > 0) {
         sessionStorage.setItem(
           SYNC_DELETED_CHATS,
-          JSON.stringify(
-            Array.from(ids, (chatId) => ({
-              chatId,
-              local: this.localDeletedChats.has(chatId),
-              remote: this.remoteDeletedChats.has(chatId),
-            })),
-          ),
+          JSON.stringify([...this.deletedChats]),
         )
       } else {
         sessionStorage.removeItem(SYNC_DELETED_CHATS)
@@ -79,7 +44,7 @@ export class DeletedChatsTracker {
   }
 
   markAsDeleted(chatId: string): void {
-    this.localDeletedChats.add(chatId)
+    this.deletedChats.add(chatId)
     this.saveToStorage()
 
     logInfo('Marked chat as deleted', {
@@ -90,37 +55,25 @@ export class DeletedChatsTracker {
   }
 
   isDeleted(chatId: string): boolean {
-    return (
-      this.localDeletedChats.has(chatId) || this.remoteDeletedChats.has(chatId)
-    )
+    return this.deletedChats.has(chatId)
   }
 
-  removeLocalDeletion(chatId: string): boolean {
-    if (this.localDeletedChats.delete(chatId)) {
-      this.saveToStorage()
+  removeDeletion(chatId: string): void {
+    if (!this.deletedChats.delete(chatId)) return
+    this.saveToStorage()
 
-      logInfo('Removed local chat deletion from tracker', {
-        component: 'DeletedChatsTracker',
-        action: 'removeLocalDeletion',
-        metadata: { chatId },
-      })
-      return true
-    }
-    return false
+    logInfo('Removed chat deletion from tracker', {
+      component: 'DeletedChatsTracker',
+      action: 'removeDeletion',
+      metadata: { chatId },
+    })
   }
 
   clear(): void {
-    this.localDeletedChats.clear()
-    this.remoteDeletedChats.clear()
+    this.deletedChats.clear()
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem(SYNC_DELETED_CHATS)
     }
-  }
-
-  getDeletedIds(): string[] {
-    return Array.from(
-      new Set([...this.localDeletedChats, ...this.remoteDeletedChats]),
-    )
   }
 }
 
