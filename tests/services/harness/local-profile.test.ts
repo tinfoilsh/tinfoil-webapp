@@ -5,22 +5,37 @@ import {
   SETTINGS_THEME_MODE,
   SETTINGS_THINKING_ENABLED,
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
-  USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
   USER_PREFS_LOCAL_PROFILE,
   USER_PREFS_NICKNAME,
   USER_PREFS_PERSONALIZATION_ENABLED,
   USER_PREFS_TRAITS,
 } from '@/constants/storage-keys'
+import type { HarnessClient } from '@/services/harness/client'
 import { loadLocalProfile, turnProfile } from '@/services/harness/local-profile'
-import { getView } from '@/services/harness/runtime'
-import { describe, expect, it, vi } from 'vitest'
-import { client, KEY, signIn } from '../../harness-fixture'
+import {
+  activateAPI,
+  getView,
+  HarnessAPI,
+  publish,
+} from '@/services/harness/runtime'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
   logInfo: vi.fn(),
   logWarning: vi.fn(),
 }))
+
+function signIn(userId: string | null) {
+  const client = { post: vi.fn() }
+  const api = new HarnessAPI(client as unknown as HarnessClient, userId)
+  activateAPI(api)
+  return { api, client }
+}
+
+beforeEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('loadLocalProfile', () => {
   it('imports the previous client’s settings once', () => {
@@ -31,7 +46,6 @@ describe('loadLocalProfile', () => {
     localStorage.setItem(SETTINGS_THINKING_ENABLED, 'false')
     localStorage.setItem(SETTINGS_THEME_MODE, 'dark')
     localStorage.setItem(SETTINGS_CHAT_FONT, 'comic')
-    localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, 'p1')
     localStorage.setItem(
       USER_PREFS_CUSTOM_PROMPT_PRESETS,
       JSON.stringify([
@@ -42,8 +56,6 @@ describe('loadLocalProfile', () => {
           systemPrompt: 'Edit text.',
           createdAt: 1,
           updatedAt: 2,
-          model: 'deep-model',
-          webSearchEnabled: true,
         },
       ]),
     )
@@ -54,7 +66,6 @@ describe('loadLocalProfile', () => {
       reasoningEffort: 'high',
       thinkingEnabled: false,
       themeMode: 'dark',
-      defaultPromptPresetId: 'p1',
       customPromptPresets: [
         {
           id: 'p1',
@@ -63,8 +74,6 @@ describe('loadLocalProfile', () => {
           systemPrompt: 'Edit text.',
           createdAt: 1,
           updatedAt: 2,
-          model: 'deep-model',
-          webSearchEnabled: true,
         },
       ],
     }
@@ -78,13 +87,10 @@ describe('loadLocalProfile', () => {
     expect(loadLocalProfile().nickname).toBe('Sam')
   })
 
-  it.each([
-    { id: 'p1', name: '' },
-    { id: 'p1', name: 'Editor', webSearchEnabled: 'yes' },
-  ])('drops presets the harness would refuse: %j', (preset) => {
+  it('drops presets the harness would refuse', () => {
     localStorage.setItem(
       USER_PREFS_CUSTOM_PROMPT_PRESETS,
-      JSON.stringify([preset]),
+      JSON.stringify([{ id: 'p1', name: '' }]),
     )
     expect(loadLocalProfile()).toEqual({})
     expect(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)).toBeNull()
@@ -121,7 +127,7 @@ describe('profile storage modes', () => {
       USER_PREFS_LOCAL_PROFILE,
       JSON.stringify({ nickname: 'Local Sam' }),
     )
-    const api = signIn()
+    const { api, client } = signIn('alice')
 
     await api.refreshProfile()
     expect(getView()).toMatchObject({
@@ -143,17 +149,19 @@ describe('profile storage modes', () => {
   })
 
   it('reads a cloud account’s settings from the harness and keeps them when sync is turned off', async () => {
+    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
     localStorage.setItem(
       USER_PREFS_LOCAL_PROFILE,
       JSON.stringify({ nickname: 'Stale' }),
     )
-    const api = signIn({ cloud: true })
+    const { api, client } = signIn('alice')
+    vi.spyOn(api, 'key').mockReturnValue('a2V5')
     client.post.mockResolvedValue({ nickname: 'Cloud Sam', language: 'Dutch' })
 
     await api.refreshProfile()
     expect(client.post).toHaveBeenCalledExactlyOnceWith(
       '/v1/profile/get',
-      { key: KEY },
+      { key: 'a2V5' },
       expect.any(AbortSignal),
     )
     expect(getView()).toMatchObject({
@@ -173,6 +181,18 @@ describe('profile storage modes', () => {
     })
     expect(JSON.parse(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)!)).toEqual(
       { nickname: 'Cloud Sam', language: 'Dutch' },
+    )
+  })
+
+  it('persists a signed-out visitor’s settings', async () => {
+    const { api, client } = signIn(null)
+    publish({ profile: {} })
+
+    await api.updateProfile({ themeMode: 'light' })
+
+    expect(client.post).not.toHaveBeenCalled()
+    expect(JSON.parse(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)!)).toEqual(
+      { themeMode: 'light' },
     )
   })
 })

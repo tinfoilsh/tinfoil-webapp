@@ -6,10 +6,14 @@
  * schema, and delegates to the widget's `render` function. Returns `null`
  * for unknown widgets or invalid input so callers can decide how to fall
  * back.
+ *
+ * `renderGenUIInputArea` mirrors the same pattern for `surface: 'input'`
+ * widgets that mount inside the chat input area.
  */
 import type { JSX } from 'react'
 import { GENUI_WIDGETS_BY_NAME } from './registry'
 import type {
+  GenUIInputContext,
   GenUIRenderContext,
   GenUIToolResolution,
   GenUIWidget,
@@ -29,6 +33,18 @@ export function renderGenUIInline(
   const parsed = widget.schema.safeParse(rawArgs)
   if (!parsed.success) return null
   return widget.render(parsed.data, ctx)
+}
+
+export function renderGenUIInputArea(
+  name: string,
+  rawArgs: unknown,
+  ctx: GenUIInputContext,
+): JSX.Element | null {
+  const widget = GENUI_WIDGETS_BY_NAME[name]
+  if (!widget || !widget.renderInputArea) return null
+  const parsed = widget.schema.safeParse(rawArgs)
+  if (!parsed.success) return null
+  return widget.renderInputArea(parsed.data, ctx)
 }
 
 export function renderGenUIResolved(

@@ -7,9 +7,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 // which worker-src 'self' forbids, and extracts the worker source verbatim.
 describe('Clerk timer worker', () => {
   afterEach(() => vi.useRealTimers())
+  it('is loaded from this origin, not a blob URL', () => {
+    const bundle = readFileSync(
+      'node_modules/@clerk/clerk-js/dist/clerk.no-rhc.mjs',
+      'utf8',
+    )
+    expect(bundle).toContain('new Worker("/workers/clerk-timers.js"')
+    expect(bundle).not.toMatch(/createObjectURL\(\w+\);return new Worker/)
+  })
+
   it('has its source extracted next to the other static assets', () => {
     vi.useFakeTimers()
     const worker = readFileSync('public/workers/clerk-timers.js', 'utf8')
+    expect(worker).toContain('workerToTabIds')
+    expect(worker).toContain('self.addEventListener("message"')
     const postMessage = vi.fn()
     let handle!: (event: {
       data: { type: string; id: string; ms?: number }

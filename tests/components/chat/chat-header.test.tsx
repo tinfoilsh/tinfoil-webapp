@@ -1,6 +1,6 @@
 import { ChatHeader } from '@/components/chat/chat-header'
 import type { Chat } from '@/components/chat/types'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const baseChat: Chat = {
@@ -30,12 +30,14 @@ describe('ChatHeader', () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     vi.useRealTimers()
   })
 
   it('uses one clock reference for identical created and updated timestamps', () => {
     const timestamp = new Date('2026-08-11T13:00:00.000Z')
-    vi.spyOn(Date, 'now')
+    const now = vi
+      .spyOn(Date, 'now')
       .mockReturnValueOnce(timestamp.getTime() + 59_999)
       .mockReturnValue(timestamp.getTime() + 60_000)
     renderHeader({
@@ -44,6 +46,7 @@ describe('ChatHeader', () => {
       messageCount: 4,
     })
     expect(screen.queryByText(/Updated/)).not.toBeInTheDocument()
+    expect(now).toHaveBeenCalledTimes(1)
   })
 
   it('shows the title, creation time, and updated time for later turns', () => {
@@ -56,6 +59,29 @@ describe('ChatHeader', () => {
     expect(screen.getByText('Updated 5m ago')).toBeInTheDocument()
     expect(screen.queryByText('Only saved locally')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Share' })).toBeInTheDocument()
+  })
+
+  it('includes the sidebar toggle within the same header as the title and actions', () => {
+    const onOpenSidebar = vi.fn()
+    render(
+      <ChatHeader
+        chat={baseChat}
+        isStreaming={false}
+        leadingAction={<button onClick={onOpenSidebar}>Open sidebar</button>}
+        actions={<button>Share</button>}
+      />,
+    )
+
+    const header = screen.getByRole('banner')
+    const toggle = within(header).getByRole('button', { name: 'Open sidebar' })
+    expect(within(header).getByRole('heading')).toHaveTextContent(
+      'Trip planning',
+    )
+    expect(
+      within(header).getByRole('button', { name: 'Share' }),
+    ).toBeInTheDocument()
+    fireEvent.click(toggle)
+    expect(onOpenSidebar).toHaveBeenCalledTimes(1)
   })
 
   it('hides the updated time for the initial turn and while streaming', () => {

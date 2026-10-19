@@ -388,8 +388,68 @@ describe('native backup restore validation and cloud packaging', () => {
     expect(result.backup).toMatchObject({ omissions: { length: 4 } })
   })
 
-  it('rejects mislabeled and malformed archive entries', async () => {
+  it('accepts a partial V2 archive while preserving its source warnings', async () => {
+    const formatted = formatNativeBackupV2({
+      ...backupInput(),
+      omissions: [
+        {
+          kind: 'attachment',
+          source_id: 'missing-source-image',
+          parent_source_id: 'cloud-1',
+          category: 'unavailable',
+          reason: 'attachment_not_found',
+        },
+      ],
+      warnings: [
+        {
+          code: 'source_items_omitted',
+          category: 'source_coverage',
+          count: 1,
+        },
+      ],
+    })
+
+    const result = await validateAndPackageNativeBackup(
+      await zip(formatted.manifestBytes, formatted.files),
+    )
+
+    expect(result.backup).toMatchObject({
+      version: 2,
+      complete: false,
+      omissions: [
+        {
+          kind: 'attachment',
+          source_id: 'missing-source-image',
+          parent_source_id: 'cloud-1',
+          category: 'unavailable',
+          reason: 'attachment_not_found',
+        },
+      ],
+      warnings: [
+        {
+          code: 'source_items_omitted',
+          category: 'source_coverage',
+          count: 1,
+        },
+      ],
+    })
+  })
+
+  it('rejects incomplete, tampered, unknown, and malformed archives', async () => {
     const formatted = formatNativeBackupV1(backupInput())
+    const manifest = JSON.parse(
+      new TextDecoder().decode(formatted.manifestBytes),
+    )
+    manifest.complete = false
+    await expect(
+      validateAndPackageNativeBackup(
+        await zip(
+          new TextEncoder().encode(JSON.stringify(manifest)),
+          formatted.files,
+        ),
+      ),
+    ).rejects.toThrow()
+
     const wrongKind = JSON.parse(
       new TextDecoder().decode(formatted.manifestBytes),
     )
@@ -404,6 +464,23 @@ describe('native backup restore validation and cloud packaging', () => {
         ),
       ),
     ).rejects.toThrow('invalid kind')
+
+    const tampered = formatted.files.map((file, index) =>
+      index ? file : { ...file, bytes: new Uint8Array([1]) },
+    )
+    await expect(
+      validateAndPackageNativeBackup(
+        await zip(formatted.manifestBytes, tampered),
+      ),
+    ).rejects.toThrow('size mismatch')
+
+    await expect(
+      validateAndPackageNativeBackup(
+        await zip(formatted.manifestBytes, formatted.files, [
+          ['tmp/partial', new Uint8Array()],
+        ]),
+      ),
+    ).rejects.toThrow('invalid, unknown, or duplicate')
 
     const malformedInput = backupInput()
     malformedInput.images[0].bytes = new Uint8Array([255, 0, 0, 0])

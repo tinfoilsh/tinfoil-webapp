@@ -18,7 +18,7 @@ import {
   type KeyBundle,
   type TinfoilWrappedKeyBundle,
 } from '@/services/passkey/passkey-key-storage'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -66,7 +66,14 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
       kekIvHex: '01'.repeat(12),
       wrappedKeyHex: '02'.repeat(48),
     },
-    alternatives: [],
+    alternatives: [
+      {
+        profile: TINFOIL_PASSKEY_PROFILE,
+        credentialId,
+        kekIvHex: '03'.repeat(12),
+        wrappedKeyHex: '04'.repeat(48),
+      },
+    ],
   })
 
   beforeEach(async () => {
@@ -79,6 +86,35 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     mockKeyCurrent.mockReset()
 
     expectedKeyId = await deriveTinfoilKeyIdHex(PRIMARY_BYTES)
+  })
+
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('registers the key + initial bundle when the enclave has no key yet', async () => {
+    mockKeyCurrent
+      .mockResolvedValueOnce({ key_id: null, bundles: {} })
+      .mockResolvedValueOnce({
+        key_id: expectedKeyId,
+        bundles: { AQID: { bundle_version: 1 } },
+      })
+    mockRegisterKey.mockResolvedValue({ ok: true, key_id: expectedKeyId })
+
+    const bundle = wrappedKeys('AQID')
+    const result = await storeEncryptedKeys(bundle, KEY_BUNDLE)
+
+    expect(result).toEqual({ syncVersion: 1, bundleVersion: 1 })
+    expect(mockRegisterKey).toHaveBeenCalledOnce()
+    expect(mockAddBundle).not.toHaveBeenCalled()
+    const arg = mockRegisterKey.mock.calls[0][0]
+    expect(arg).toEqual({
+      keyB64: PRIMARY_KEY_B64,
+      ifMatch: '*',
+      createdVia: 'passkey',
+      idempotencyKey: expect.stringMatching(/^[0-9a-f]{32}$/),
+      initialBundle: expectedBundle(bundle),
+    })
   })
 
   it('uses created_via=start_fresh when the bundle is marked explicit_start_fresh', async () => {
@@ -172,4 +208,22 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     expect(mockRegisterKey).not.toHaveBeenCalled()
     expect(mockAddBundle).not.toHaveBeenCalled()
   })
+
+  it.each(['register', 'refresh'] as const)(
+    'returns null when the enclave fails during %s',
+    async (stage) => {
+      mockKeyCurrent.mockResolvedValueOnce({ key_id: null, bundles: {} })
+      if (stage === 'register')
+        mockRegisterKey.mockRejectedValue(new Error('boom'))
+      else {
+        mockRegisterKey.mockResolvedValue({ ok: true, key_id: expectedKeyId })
+        mockKeyCurrent.mockRejectedValueOnce(new Error('refresh failed'))
+      }
+      const result = await storeEncryptedKeys(wrappedKeys('AQID'), KEY_BUNDLE)
+      expect(result).toBeNull()
+      expect(mockRegisterKey).toHaveBeenCalledOnce()
+      expect(mockAddBundle).not.toHaveBeenCalled()
+      expect(mockKeyCurrent).toHaveBeenCalledTimes(stage === 'register' ? 1 : 2)
+    },
+  )
 })

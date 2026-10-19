@@ -18,6 +18,11 @@ describe('latex-processing', () => {
         '\n\n$$\na = b\n$$\n\n and \n\n$$\nc = d\n$$\n\n',
       ],
       [
+        '126: inline parentheses',
+        'The value \\(x\\) is positive',
+        'The value $$x$$ is positive',
+      ],
+      [
         '132: multiple inline expressions',
         'Given \\(a\\) and \\(b\\), find \\(c\\)',
         'Given $$a$$ and $$b$$, find $$c$$',
@@ -37,12 +42,58 @@ describe('latex-processing', () => {
         'invested $\\$10,000$ in stocks',
         'invested $$\\$10,000$$ in stocks',
       ],
+      [
+        '175: multiple escaped amounts',
+        '$\\$10,000$ invested would have grown to approximately $\\$35,000$ today.',
+        '$$\\$10,000$$ invested would have grown to approximately $$\\$35,000$$ today.',
+      ],
+      [
+        '184: decimal amount',
+        'The price is $\\$19.99$ per unit',
+        'The price is $$\\$19.99$$ per unit',
+      ],
+      [
+        '190: comma and decimal amount',
+        'Revenue reached $\\$1,234,567.89$',
+        'Revenue reached $$\\$1,234,567.89$$',
+      ],
 
       // --- Standard LaTeX math in single-dollar delimiters ---
       [
         '207: fraction',
         'The ratio is $\\frac{a}{b}$ exactly',
         'The ratio is $$\\frac{a}{b}$$ exactly',
+      ],
+      ['213: square root', 'Compute $\\sqrt{x}$', 'Compute $$\\sqrt{x}$$'],
+      [
+        '219: Greek commands',
+        'where $\\alpha + \\beta$ equals 1',
+        'where $$\\alpha + \\beta$$ equals 1',
+      ],
+      [
+        '225: text macro',
+        'the value $\\text{max}$ is used',
+        'the value $$\\text{max}$$ is used',
+      ],
+      [
+        '231: sum',
+        'The sum $\\sum_{i=1}^{n} x_i$ converges',
+        'The sum $$\\sum_{i=1}^{n} x_i$$ converges',
+      ],
+      [
+        '237: integral',
+        'Evaluate $\\int_0^1 f(x) dx$',
+        'Evaluate $$\\int_0^1 f(x) dx$$',
+      ],
+      [
+        '243: math font',
+        'over the reals $\\mathbb{R}$',
+        'over the reals $$\\mathbb{R}$$',
+      ],
+      [
+        '249: limit',
+        'as $\\lim_{n \\to \\infty} a_n$ approaches 0',
+        'as $$\\lim_{n \\to \\infty} a_n$$ approaches 0',
       ],
 
       // --- Currency dollar signs that should NOT be converted ---
@@ -52,9 +103,25 @@ describe('latex-processing', () => {
         'The cost is $10,000 for the project',
       ],
       [
+        '263: unclosed amount',
+        'It costs $100 per month',
+        'It costs $100 per month',
+      ],
+      [
         '269: multiple currency openings',
         'Prices range from $10 to $50, with premium at $100 each',
         'Prices range from $10 to $50, with premium at $100 each',
+      ],
+      ['275: currency range', 'between $10 and $15', 'between $10 and $15'],
+      [
+        '281: per-share currency',
+        'the stock went from $10 to $20 per share',
+        'the stock went from $10 to $20 per share',
+      ],
+      [
+        '287: deposits',
+        'We accept $500 and $1,000 deposits',
+        'We accept $500 and $1,000 deposits',
       ],
       [
         '293: paired numeric math',
@@ -62,9 +129,24 @@ describe('latex-processing', () => {
         'The value $$10$$ is small',
       ],
       [
+        '299: paired comma number',
+        'approximately $5,000$ people attended',
+        'approximately $$5,000$$ people attended',
+      ],
+      [
         '305: single-character math',
         'the variable $x$ is used',
         'the variable $$x$$ is used',
+      ],
+      [
+        '311: alphabetic math',
+        'the string $abc$ is interesting',
+        'the string $$abc$$ is interesting',
+      ],
+      [
+        '317: operators without commands',
+        'the equation $x^2 + y^2$ is familiar',
+        'the equation $$x^2 + y^2$$ is familiar',
       ],
 
       // --- Dollar signs at sentence boundaries ---
@@ -139,6 +221,11 @@ describe('latex-processing', () => {
 
       // --- Real-world model outputs ---
       [
+        '428: three amounts with punctuation',
+        'The stock dropped from $\\$150$ to $\\$120$, a loss of $\\$30$ per share.',
+        'The stock dropped from $$\\$150$$ to $$\\$120$$, a loss of $$\\$30$$ per share.',
+      ],
+      [
         '437: currency followed by math',
         'Revenue was $500M last year. The formula is $\\frac{revenue}{shares}$.',
         'Revenue was $500M last year. The formula is $$\\frac{revenue}{shares}$$.',
@@ -149,6 +236,16 @@ describe('latex-processing', () => {
         'Given $$P = \\$10,000$$ and a rate of $$r = 0.05$$, the future value is $$\\$12,500$$.',
       ],
       [
+        '456: multiplication',
+        'the result is $3 \\times 4$',
+        'the result is $$3 \\times 4$$',
+      ],
+      [
+        '462: approximation',
+        'roughly $\\approx 42$',
+        'roughly $$\\approx 42$$',
+      ],
+      [
         '468: plus minus',
         'the value is $10 \\pm 2$',
         'the value is $$10 \\pm 2$$',
@@ -157,6 +254,21 @@ describe('latex-processing', () => {
         '474: comparisons',
         'when $x \\le 10$ and $y \\ge 5$',
         'when $$x \\le 10$$ and $$y \\ge 5$$',
+      ],
+      [
+        '480: zero amount',
+        'starting from $\\$0$ to $\\$1M$',
+        'starting from $$\\$0$$ to $$\\$1M$$',
+      ],
+      [
+        '486: suffixed amount',
+        'raised $\\$50M$ in funding',
+        'raised $$\\$50M$$ in funding',
+      ],
+      [
+        '492: negative amount',
+        'lost $\\$-500$ on the trade',
+        'lost $$\\$-500$$ on the trade',
       ],
 
       // --- Dollar signs inside markdown link URLs ---
@@ -213,6 +325,11 @@ describe('latex-processing', () => {
         'between $5 and $15 dollars',
       ],
       [
+        '573: tilde-prefixed currency closer',
+        'that $2M might be tax-free, you need to gross ~$3M+ to net $2M.',
+        'that $2M might be tax-free, you need to gross ~$3M+ to net $2M.',
+      ],
+      [
         '580: tight currency range',
         'costs $10-$20 per item',
         'costs $10-$20 per item',
@@ -233,6 +350,7 @@ describe('latex-processing', () => {
         'See $$x$$[1](#cite~https://example.com/path_(section)/$tail$) for info',
       ],
       ['610: empty string', '', ''],
+      ['614: plain text', 'Just plain text', 'Just plain text'],
       [
         '619: unclosed display math',
         'Start \\[x but no close',

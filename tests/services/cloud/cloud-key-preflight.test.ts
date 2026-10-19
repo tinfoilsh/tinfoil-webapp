@@ -1,8 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// The mocked service stores the current key (staged or loaded) as a
-// base64 string behind getKeyBytesOrThrow.
+// The mocked service stores keys directly as base64 strings: the
+// "current" key backs getKeyBytesOrThrow (staged or loaded), while
+// the "persisted" key + alternatives back getKey/getStoredAlternatives
+// (localStorage history used by migrationKeys()).
 const mockCurrentKey = vi.fn<() => string | null>()
+const mockPersistedKey = vi.fn<() => string | null>()
+const mockStoredAlternatives = vi.fn<() => string[]>()
 const mockKeyCurrent = vi.fn()
 
 function b64ToBytes(key: string): Uint8Array {
@@ -14,11 +18,14 @@ function b64ToBytes(key: string): Uint8Array {
 
 vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
+    getKey: () => mockPersistedKey(),
     getKeyBytesOrThrow: () => {
       const key = mockCurrentKey()
       if (!key) throw new Error('no key')
       return b64ToBytes(key)
     },
+    getStoredAlternatives: () => mockStoredAlternatives(),
+    getAlternativeKeyBytes: (key: string) => b64ToBytes(key),
   },
 }))
 
@@ -49,7 +56,14 @@ function makeDeterministicCek(offset = 1): { cek: Uint8Array; b64: string } {
 describe('cloud-key-preflight', () => {
   beforeEach(() => {
     mockCurrentKey.mockReset()
+    mockPersistedKey.mockReset()
+    mockStoredAlternatives.mockReset()
+    mockStoredAlternatives.mockReturnValue([])
     mockKeyCurrent.mockReset()
+  })
+
+  afterEach(() => {
+    vi.clearAllMocks()
   })
 
   describe('inspectRemoteEncryptedState', () => {
@@ -88,6 +102,7 @@ describe('cloud-key-preflight', () => {
   describe('validateCurrentPrimaryKey', () => {
     it('returns unknown/none with message when no local key is loaded', async () => {
       mockCurrentKey.mockReturnValue(null)
+      mockPersistedKey.mockReturnValue(null)
       const result = await validateCurrentPrimaryKey()
       expect(result.remoteState).toBe('unknown')
       expect(result.canWrite).toBe(false)
@@ -98,6 +113,7 @@ describe('cloud-key-preflight', () => {
     it('returns empty/writable when the enclave has no key', async () => {
       const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
       const result = await validateCurrentPrimaryKey()
       expect(result.remoteState).toBe('empty')
@@ -107,6 +123,7 @@ describe('cloud-key-preflight', () => {
     it('accepts the local key over legacy data when no key is registered', async () => {
       const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({
         key_id: null,
         bundles: {},
@@ -120,10 +137,26 @@ describe('cloud-key-preflight', () => {
       expect(result.needsAdoption).toBe(true)
     })
 
+    it('accepts a staged key on a fresh device with no persisted keys', async () => {
+      const { b64 } = makeDeterministicCek()
+      mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(null)
+      mockKeyCurrent.mockResolvedValue({
+        key_id: null,
+        bundles: {},
+        has_data: true,
+      })
+
+      const result = await validateCurrentPrimaryKey()
+
+      expect(result.canWrite).toBe(true)
+    })
+
     it('allows writes when local KeyID matches enclave KeyID', async () => {
       const { cek, b64 } = makeDeterministicCek()
       const expectedKid = await deriveTinfoilKeyIdHex(cek)
       mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({
         key_id: expectedKid,
         bundles: {},
@@ -137,6 +170,7 @@ describe('cloud-key-preflight', () => {
     it('blocks writes when local KeyID does not match the enclave KeyID', async () => {
       const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({
         key_id: 'ff'.repeat(16),
         bundles: {},
@@ -150,6 +184,7 @@ describe('cloud-key-preflight', () => {
     it('returns unknown when the enclave probe fails', async () => {
       const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockRejectedValue(new Error('network'))
       const result = await validateCurrentPrimaryKey()
       expect(result.remoteState).toBe('unknown')

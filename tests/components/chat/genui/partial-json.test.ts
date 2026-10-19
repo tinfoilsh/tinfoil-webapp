@@ -2,6 +2,10 @@ import { tryParsePartialJson } from '@/components/chat/genui/partial-json'
 import { describe, expect, it } from 'vitest'
 
 describe('tryParsePartialJson', () => {
+  it('parses well-formed JSON without modification', () => {
+    expect(tryParsePartialJson('{"a":1}')).toEqual({ a: 1 })
+  })
+
   it('returns null for empty input', () => {
     expect(tryParsePartialJson('')).toBeNull()
     expect(tryParsePartialJson('   ')).toBeNull()

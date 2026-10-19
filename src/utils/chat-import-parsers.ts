@@ -49,6 +49,7 @@ export type ClaudeConversation = {
 
 export type ParseOptions = {
   generateChatId: (createdAt?: Date) => string
+  isCloudSyncEnabled: boolean
 }
 
 export function parseChatGPTConversations(
@@ -168,6 +169,7 @@ export function parseChatGPTConversations(
         title: conversation.title || 'Imported Chat',
         messages,
         createdAt,
+        isLocalOnly: !options.isCloudSyncEnabled,
       })
     }
   }
@@ -228,6 +230,7 @@ export function parseClaudeConversations(
         title: conversation.name || 'Imported Chat',
         messages,
         createdAt,
+        isLocalOnly: !options.isCloudSyncEnabled,
       })
     }
   }

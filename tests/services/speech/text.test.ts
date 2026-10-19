@@ -1,6 +1,8 @@
 import { SPEECH } from '@/services/speech/constants'
 import { prepareSpeechText, splitSpeechText } from '@/services/speech/text'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('speech text', () => {
   it.each(['<br>', '<br/>', '<br />', '<BR>'])(
@@ -21,6 +23,9 @@ describe('speech text', () => {
     expect(
       prepareSpeechText('  **literal** [1](source) `code`  ', 'plain'),
     ).toBe('**literal** [1](source) `code`')
+    expect(() =>
+      prepareSpeechText('x'.repeat(SPEECH.MAX_TEXT_CHARACTERS + 1), 'plain'),
+    ).toThrow('too-long')
   })
   it.each([
     '',

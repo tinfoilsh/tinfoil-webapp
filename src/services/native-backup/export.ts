@@ -96,6 +96,7 @@ export function nativeBackupExportError(error: unknown): string {
     return 'Unlock your cloud encryption key on this device, then try again.'
   if (
     error instanceof auth.AuthTokenUnavailableError ||
+    error instanceof auth.AuthTokenRefreshError ||
     (error instanceof HarnessError && error.status === 401)
   )
     return 'Your account session is unavailable. Sign in again, then retry the backup.'

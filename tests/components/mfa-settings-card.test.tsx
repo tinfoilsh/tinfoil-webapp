@@ -1,6 +1,6 @@
 import { MfaSettingsCard } from '@/components/chat/mfa-settings-card'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
   const user = {
@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => {
 
   return {
     user,
+    logError: vi.fn(),
+    logWarning: vi.fn(),
     createObjectURL: vi.fn(),
     revokeObjectURL: vi.fn(),
   }
@@ -32,8 +34,8 @@ vi.mock('@clerk/react/errors', () => ({
 }))
 
 vi.mock('@/utils/error-handling', () => ({
-  logError: vi.fn(),
-  logWarning: vi.fn(),
+  logError: mocks.logError,
+  logWarning: mocks.logWarning,
 }))
 
 beforeEach(() => {
@@ -49,6 +51,10 @@ beforeEach(() => {
     configurable: true,
     value: mocks.revokeObjectURL,
   })
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 describe('MfaSettingsCard', () => {
@@ -186,6 +192,7 @@ describe('MfaSettingsCard', () => {
 
     expect(screen.getByText('On')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Turn off' })).toBeInTheDocument()
+    expect(mocks.logWarning).toHaveBeenCalledTimes(1)
   })
 
   it('shows Clerk verification errors without completing setup', async () => {
@@ -210,5 +217,6 @@ describe('MfaSettingsCard', () => {
       'The code is incorrect.',
     )
     expect(screen.getByTestId('totp-qr-code')).toBeInTheDocument()
+    expect(mocks.logError).toHaveBeenCalledTimes(1)
   })
 })

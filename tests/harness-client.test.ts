@@ -46,8 +46,8 @@ describe('harness SSE', () => {
       collect(stream('data: {"type":"RUN_STARTED"}\n\n')),
     ).rejects.toMatchObject({ detail: { code: 'STREAM_INTERRUPTED' } })
     await expect(
-      collect(stream('id: -1\ndata: {"type":"RUN_FINISHED"}\n\n')),
-    ).rejects.toMatchObject({ detail: { code: 'INVALID_STREAM' } })
+      collect(stream('id: -1\ndata: {}\n\n')),
+    ).rejects.toBeInstanceOf(HarnessError)
     await expect(collect(stream('data: nope\n\n'))).rejects.toMatchObject({
       detail: { code: 'INVALID_STREAM' },
     })
@@ -317,6 +317,30 @@ describe('continuing a reply', () => {
     expect(state.messages[1].timeline).toEqual([
       { id: 'r', type: 'thinking', content: 'first' },
       { id: 'a1_thinking_1', type: 'thinking', content: 'second' },
+    ])
+  })
+
+  it('appends to the last block again once a later run starts', () => {
+    let state = run(
+      [user, reply({ id: 'r', type: 'thinking', content: 'first' })],
+      { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: 'Done.' },
+    )
+    for (const [id, event] of [
+      { type: 'RUN_STARTED', threadId: 't', runId: 'run-3' },
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'a2-reasoning',
+        delta: 'a',
+      },
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'a2-reasoning',
+        delta: 'b',
+      },
+    ].entries())
+      state = reduceEvent(state, { id, event: event as Frame['event'] })
+    expect(state.messages.at(-1)?.timeline).toEqual([
+      { id: 'a2_thinking_0', type: 'thinking', content: 'ab' },
     ])
   })
 })

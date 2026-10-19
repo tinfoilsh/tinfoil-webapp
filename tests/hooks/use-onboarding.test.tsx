@@ -4,7 +4,7 @@ import {
 } from '@/constants/storage-keys'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { act, renderHook } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -19,6 +19,10 @@ const signedInOptions = {
 }
 
 describe('useOnboarding', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('waits for auth and user data, then shows onboarding after sign-in', () => {
     const { result, rerender } = renderHook(useOnboarding, {
       initialProps: {
@@ -54,6 +58,14 @@ describe('useOnboarding', () => {
 
     rerender({ ...signedInOptions, isSignedIn: false })
     expect(result.current.showOnboarding).toBe(false)
+  })
+
+  it('skips onboarding already completed on the account', () => {
+    const { result } = renderHook(() =>
+      useOnboarding({ ...signedInOptions, hasCompletedOnboarding: true }),
+    )
+    expect(result.current.showOnboarding).toBe(false)
+    expect(result.current.isOnboardingReady).toBe(true)
   })
 
   it('skips onboarding already seen on this device', () => {
@@ -117,6 +129,13 @@ describe('useOnboarding', () => {
       expect(result.current.showOnboarding).toBe(false)
     },
   )
+
+  it('does not treat the web search intro as onboarding completion', () => {
+    localStorage.setItem(SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO, 'true')
+    const { result } = renderHook(() => useOnboarding(signedInOptions))
+    expect(result.current.showOnboarding).toBe(true)
+    expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBeNull()
+  })
 
   it('respects routes that suppress intro modals without marking completion', () => {
     const { result, rerender } = renderHook(useOnboarding, {

@@ -24,8 +24,6 @@ describe('settings project policy', () => {
     expect(filterExportableChats(chats, false)).toEqual([regularChat])
     expect(chats).toEqual([regularChat, projectChat])
     expect(filterExportableChats(chats, true)).toEqual(chats)
-    expect(countExcludedProjectChats(chats, false)).toBe(1)
-    expect(countExcludedProjectChats(chats, true)).toBe(0)
   })
 
   it('uses loaded messages instead of stale message counts for exports', () => {
@@ -44,5 +42,10 @@ describe('settings project policy', () => {
     expect(
       filterExportableChats([staleEmptyChat, stalePopulatedChat], true),
     ).toEqual([stalePopulatedChat])
+  })
+
+  it('counts project chats omitted from a free-user export', () => {
+    expect(countExcludedProjectChats([regularChat, projectChat], false)).toBe(1)
+    expect(countExcludedProjectChats([regularChat, projectChat], true)).toBe(0)
   })
 })

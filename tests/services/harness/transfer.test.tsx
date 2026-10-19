@@ -1,16 +1,28 @@
+import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import type { HarnessClient } from '@/services/harness/client'
 import {
   localThreadStore,
   type LocalThread,
 } from '@/services/harness/local-threads'
+import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { ThreadSummary } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
+import { chatEvents } from '@/services/storage/chat-events'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
-import { client, KEY, signIn } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from './thread-fixture'
+import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
+import { testSession } from '../../harness-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/utils/error-handling', () => ({
@@ -19,8 +31,37 @@ vi.mock('@/utils/error-handling', () => ({
   logWarning: vi.fn(),
 }))
 
+const KEY = 'Y29udGVudC1rZXk='
 const CHAT_ID = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
 const OTHER_ID = '8233746418000_2d5f8b63-0b3c-4a8f-9e2b-6c7d8e9fa011'
+
+let client: {
+  events: ReturnType<typeof vi.fn>
+  post: ReturnType<typeof vi.fn>
+  upload: ReturnType<typeof vi.fn>
+  download: ReturnType<typeof vi.fn>
+}
+
+function signInWithCloudSync() {
+  localStorage.setItem('tinfoil-settings-cloud-sync-enabled', 'true')
+  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+  client = {
+    events: vi.fn(),
+    post: vi.fn(),
+    upload: vi.fn(),
+    download: vi.fn(),
+  }
+  const api = new HarnessAPI(client as unknown as HarnessClient, 'alice')
+  vi.spyOn(api, 'key').mockReturnValue(KEY)
+  activateAPI(api)
+  publish({
+    session: testSession,
+    profile: {},
+    keyReady: true,
+    profileReady: true,
+  })
+  return api
+}
 
 function summary(id: string, title: string): ThreadSummary {
   return {
@@ -172,11 +213,34 @@ async function renderThreads(cloud: ThreadSummary[]) {
   return hook
 }
 
-resetChatStoresAroundEachTest()
+beforeAll(() => {
+  Object.defineProperty(globalThis, 'indexedDB', {
+    configurable: true,
+    value: new IDBFactory(),
+  })
+  Object.defineProperty(globalThis, 'IDBKeyRange', {
+    configurable: true,
+    value: FakeIDBKeyRange,
+  })
+})
+
+beforeEach(async () => {
+  sessionStorage.clear()
+  deletedChatsTracker.clear()
+  await indexedDBStorage.deleteAllChats()
+  deletedChatsTracker.clear()
+})
+
+afterEach(() => {
+  chatEvents.clear()
+  deletedChatsTracker.clear()
+  sessionStorage.clear()
+  vi.restoreAllMocks()
+})
 
 describe('moving a stored chat to this device', () => {
   it('stores the transcript under the same id and then deletes the cloud copy', async () => {
-    signIn({ cloud: true })
+    signInWithCloudSync()
     const cloud = [summary(CHAT_ID, 'Garden plans'), summary(OTHER_ID, 'Other')]
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
@@ -208,7 +272,7 @@ describe('moving a stored chat to this device', () => {
   })
 
   it('removes the device copy again when the cloud copy cannot be deleted', async () => {
-    signIn({ cloud: true })
+    signInWithCloudSync()
     const cloud = [summary(CHAT_ID, 'Garden plans')]
     const refusal = new HarnessError(
       { code: 'UPSTREAM_REFUSED', message: 'Sync is unavailable' },
@@ -239,7 +303,7 @@ describe('moving a stored chat to this device', () => {
   })
 
   it('keeps the device copy when the deletion of the cloud copy may have committed', async () => {
-    signIn({ cloud: true })
+    signInWithCloudSync()
     const cloud = [summary(CHAT_ID, 'Garden plans')]
     // The connection drops after the request was sent, so the harness may
     // have deleted the cloud copy.
@@ -265,7 +329,7 @@ describe('moving a stored chat to this device', () => {
   })
 
   it('leaves a chat in the cloud when the harness cannot read its attachments', async () => {
-    signIn({ cloud: true })
+    signInWithCloudSync()
     const cloud = [summary(CHAT_ID, 'Garden plans')]
     const unavailable = new HarnessError(
       {
@@ -294,7 +358,7 @@ describe('moving a stored chat to this device', () => {
   })
 
   it('reopens the open chat from this device', async () => {
-    signIn({ cloud: true })
+    signInWithCloudSync()
     const cloud = [summary(CHAT_ID, 'Garden plans')]
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
@@ -335,7 +399,7 @@ describe('moving a stored chat to this device', () => {
   })
 
   it('changes nothing in the open chat until its move ends', async () => {
-    signIn({ cloud: true })
+    signInWithCloudSync()
     const cloud = [summary(CHAT_ID, 'Garden plans')]
     let finishReading!: () => void
     const reading = new Promise<void>((resolve) => {
@@ -410,7 +474,7 @@ describe('moving a chat from this device to the cloud', () => {
   const imported = summary(CHAT_ID, 'Garden plans')
 
   it('imports the whole transcript under the same id and then deletes the device copy', async () => {
-    signIn({ cloud: true })
+    signInWithCloudSync()
     await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
@@ -459,7 +523,7 @@ describe('moving a chat from this device to the cloud', () => {
   })
 
   it('keeps the device copy unchanged when the cloud refuses the chat', async () => {
-    signIn({ cloud: true })
+    signInWithCloudSync()
     await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
     const refusal = new HarnessError(
       { code: 'THREAD_EXISTS', message: 'This chat is already in the cloud' },
@@ -482,7 +546,7 @@ describe('moving a chat from this device to the cloud', () => {
   })
 
   it('deletes the cloud copy again when the device copy cannot be deleted', async () => {
-    signIn({ cloud: true })
+    signInWithCloudSync()
     await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
@@ -507,7 +571,7 @@ describe('moving a chat from this device to the cloud', () => {
   })
 
   it('refuses while a reply to the chat streams on this device', async () => {
-    signIn({ cloud: true })
+    signInWithCloudSync()
     await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
@@ -551,7 +615,7 @@ describe('moving a chat from this device to the cloud', () => {
   })
 
   it('changes nothing in the open chat until its move ends', async () => {
-    signIn({ cloud: true })
+    signInWithCloudSync()
     await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
     let finishImport!: () => void
     const importing = new Promise<void>((resolve) => {
@@ -616,7 +680,7 @@ describe('moving a chat from this device to the cloud', () => {
     // deletions it received.
     let served: string[]
     async function startMove() {
-      signIn({ cloud: true })
+      signInWithCloudSync()
       await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
       const importing = new Promise<void>((resolve) => {
         finishImport = resolve
@@ -699,7 +763,7 @@ describe('moving a chat from this device to the cloud', () => {
   })
 
   it('puts the device copy back under the same id after a move is undone', async () => {
-    signIn({ cloud: true })
+    signInWithCloudSync()
     await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list') return { threads: [], nextCursor: null }

@@ -1,8 +1,10 @@
+import type { HarnessClient } from '@/services/harness/client'
+import { HarnessAPI, activateAPI, publish } from '@/services/harness/runtime'
 import type { Frame, Thread, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { client, signIn, testSession } from './harness-fixture'
+import { testSession } from './harness-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({
   GENUI_WIDGETS: [{ name: 'render_chart' }],
@@ -50,14 +52,26 @@ const finished: Frame = {
   id: 2,
   event: { type: 'RUN_FINISHED', threadId: thread.id, runId: 'run-1' },
 }
+let events: ReturnType<typeof vi.fn>
 beforeEach(() => {
-  signIn({
-    userId: null,
+  sessionStorage.clear()
+  events = vi.fn()
+  activateAPI(
+    new HarnessAPI(
+      {
+        events,
+        post: vi.fn().mockResolvedValue(testSession),
+      } as unknown as HarnessClient,
+      null,
+    ),
+  )
+  publish({
     session: { ...testSession, widgets: ['render_chart'] },
+    keyReady: true,
   })
 })
 it('runs a signed-out first turn as a local thread with its preset and keeps it in the tab', async () => {
-  client.events.mockImplementation(async function* () {
+  events.mockImplementation(async function* () {
     yield started
     yield messages
     yield finished
@@ -65,7 +79,7 @@ it('runs a signed-out first turn as a local thread with its preset and keeps it 
   const { result } = renderHook(() => useThread(null, 'project-1'))
   act(() => result.current.setPresetId('builtin:tutor'))
   await act(() => result.current.send({ content: 'private question' }))
-  const input = client.events.mock.calls[0][1] as Turn
+  const input = events.mock.calls[0][1] as Turn
   expect(input).toMatchObject({
     content: 'private question',
     local: true,
@@ -94,7 +108,7 @@ it('runs a signed-out first turn as a local thread with its preset and keeps it 
   expect(localStorage.length).toBe(0)
 })
 it('retries an ambiguous initial request with its original nonce and input', async () => {
-  client.events
+  events
     .mockImplementationOnce(async function* () {
       throw new TypeError('connection closed')
     })
@@ -107,11 +121,11 @@ it('retries an ambiguous initial request with its original nonce and input', asy
   await act(() => result.current.send({ content: 'private question' }))
   expect(result.current.error).toBe('connection closed')
   await act(() => result.current.reconnect())
-  expect(client.events.mock.calls[1][1]).toEqual(client.events.mock.calls[0][1])
+  expect(events.mock.calls[1][1]).toEqual(events.mock.calls[0][1])
   expect(result.current.chat.messages).toHaveLength(2)
 })
 it('reattaches an accepted turn by run id and last event cursor', async () => {
-  client.events
+  events
     .mockImplementationOnce(async function* () {
       yield started
       yield messages
@@ -123,11 +137,36 @@ it('reattaches an accepted turn by run id and last event cursor', async () => {
   const { result } = renderHook(() => useThread())
   await act(() => result.current.send({ content: 'private question' }))
   await act(() => result.current.reconnect())
-  expect(client.events.mock.calls[1][0]).toBe('/v1/threads/follow')
-  expect(client.events.mock.calls[1][1]).toMatchObject({
+  expect(events.mock.calls[1][0]).toBe('/v1/threads/follow')
+  expect(events.mock.calls[1][1]).toMatchObject({
     threadId: 'thread-1',
     runId: 'run-1',
   })
-  expect(client.events.mock.calls[1][3]).toBe(1)
+  expect(events.mock.calls[1][3]).toBe(1)
   expect(result.current.chat.messages).toHaveLength(2)
+})
+it('ignores a late stream after navigating to a new chat', async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  events.mockImplementation(async function* () {
+    yield started
+    await gate
+    yield messages
+    yield finished
+  })
+  const { result } = renderHook(() => useThread())
+  let sending!: Promise<boolean> | undefined
+  act(() => {
+    sending = result.current.send({ content: 'private question' })
+  })
+  await waitFor(() => expect(result.current.chat.id).toBe('thread-1'))
+  act(() => result.current.newChat())
+  await act(async () => {
+    release()
+    await sending
+  })
+  expect(result.current.chat.messages).toEqual([])
+  expect(result.current.chat.id).toBe('')
 })

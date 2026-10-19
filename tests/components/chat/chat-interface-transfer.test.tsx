@@ -8,17 +8,31 @@ import {
 import { HarnessError } from '@/services/harness/sse'
 import type { ThreadSummary } from '@/services/harness/types'
 import { resetSafeguards } from '@/services/safeguards'
+import { chatEvents } from '@/services/storage/chat-events'
+import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, render, waitFor } from '@testing-library/react'
+import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import type { ComponentProps } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { client, KEY, signIn } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
-import { stubSafeguardFlags } from './chat-interface-fixture'
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
+import { connectHarness, KEY, type FakeHarness } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
 type SidebarProps = ComponentProps<typeof ChatSidebar>
+type ProjectSidebarProps = { onExitProjectWhileDragging?: () => void }
 const page = vi.hoisted(() => ({
   sidebar: null as SidebarProps | null,
+  projectSidebar: null as ProjectSidebarProps | null,
+  activeProject: null as { id: string; name: string } | null,
+  exitProjectMode: vi.fn(),
   toast: vi.fn(),
 }))
 
@@ -42,10 +56,22 @@ vi.mock(
   '@/hooks/use-passkey-backup',
   async () => (await import('./chat-page-mocks')).passkeyBackup,
 )
-vi.mock(
-  '@/components/project',
-  async () => (await import('./chat-page-mocks')).project,
-)
+vi.mock('@/components/project', () => ({
+  useProject: () => ({
+    activeProject: page.activeProject,
+    loadingProject: null,
+    isProjectMode: !!page.activeProject,
+    enterProjectMode: vi.fn(),
+    exitProjectMode: page.exitProjectMode,
+    createProject: vi.fn(),
+    uploadDocument: vi.fn(),
+  }),
+  ProjectSidebar: (props: ProjectSidebarProps) => {
+    page.projectSidebar = props
+    return null
+  },
+  ProjectModeIndicator: () => null,
+}))
 vi.mock('@/components/chat/chat-sidebar', () => ({
   ChatSidebar: (props: SidebarProps) => {
     page.sidebar = props
@@ -103,11 +129,12 @@ const imported: ThreadSummary = {
   contextUsage: null,
 }
 
+let harness: FakeHarness
 let cloud: ThreadSummary[]
 
 function connect() {
   cloud = []
-  signIn({ cloud: true })
+  harness = connectHarness()
 }
 
 const sidebar = () => {
@@ -115,7 +142,7 @@ const sidebar = () => {
   return page.sidebar
 }
 const calls = () =>
-  client.post.mock.calls
+  harness.client.post.mock.calls
     .map(([path, input]) => [path, input])
     .filter(([path]) => path !== '/v1/threads/list')
 const stored = () => localThreadStore('device').get(CHAT_ID)
@@ -127,26 +154,61 @@ async function renderPage() {
   )
 }
 
-resetChatStoresAroundEachTest()
+beforeAll(() => {
+  Object.defineProperty(globalThis, 'indexedDB', {
+    configurable: true,
+    value: new IDBFactory(),
+  })
+  Object.defineProperty(globalThis, 'IDBKeyRange', {
+    configurable: true,
+    value: FakeIDBKeyRange,
+  })
+})
 
 beforeEach(async () => {
   page.sidebar = null
+  page.projectSidebar = null
+  page.activeProject = null
+  page.exitProjectMode.mockReset()
   page.toast.mockReset()
   chatPage.premium = false
+  chatPage.router.push.mockClear()
+  chatPage.router.replace.mockClear()
   authTokenManager.initialize(async () => 'clerk-jwt')
-  stubSafeguardFlags()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      if (String(url).endsWith('/api/users/me/safeguard-flags'))
+        return Response.json({
+          flags: [],
+          in_window: 0,
+          window_hours: 168,
+          warn_threshold: 2,
+          ban_threshold: 3,
+        })
+      throw new Error(`Unexpected request: ${url}`)
+    }),
+  )
+  sessionStorage.clear()
+  deletedChatsTracker.clear()
+  await indexedDBStorage.deleteAllChats()
+  deletedChatsTracker.clear()
   await localThreadStore('device').update(CHAT_ID, () => deviceChat)
 })
 
 afterEach(() => {
   resetSafeguards()
   authTokenManager.reset()
+  chatEvents.clear()
+  deletedChatsTracker.clear()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('moving chats from the chat page', () => {
   it('pins a device chat by moving it to the cloud first', async () => {
     connect()
-    client.post.mockImplementation(async (path: string, input) => {
+    harness.client.post.mockImplementation(async (path: string, input) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/import') {
@@ -184,7 +246,7 @@ describe('moving chats from the chat page', () => {
 
   it('leaves a device chat unpinned on the device when its move fails', async () => {
     connect()
-    client.post.mockImplementation(async (path: string) => {
+    harness.client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/import')
@@ -213,7 +275,7 @@ describe('moving chats from the chat page', () => {
   it('files a device chat into a project through the cloud', async () => {
     chatPage.premium = true
     connect()
-    client.post.mockImplementation(async (path: string) => {
+    harness.client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/import') {
@@ -249,7 +311,7 @@ describe('moving chats from the chat page', () => {
   it('returns a device chat to the device as it was when its project move fails', async () => {
     chatPage.premium = true
     connect()
-    client.post.mockImplementation(async (path: string) => {
+    harness.client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/import') {
@@ -298,7 +360,7 @@ describe('moving chats from the chat page', () => {
     await localThreadStore('device').delete(CHAT_ID)
     connect()
     cloud = [imported]
-    client.post.mockImplementation(async (path: string) => {
+    harness.client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/transcript')
@@ -329,7 +391,7 @@ describe('moving chats from the chat page', () => {
     await localThreadStore('device').delete(CHAT_ID)
     connect()
     cloud = [imported]
-    client.post.mockImplementation(async (path: string) => {
+    harness.client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/transcript')
@@ -366,5 +428,22 @@ describe('moving chats from the chat page', () => {
       title: 'Chat moved to local',
       description: 'The chat is now only stored on this device.',
     })
+  })
+
+  it('leaves a project without leaving the open chat while one of its chats is dragged out', async () => {
+    connect()
+    page.activeProject = { id: 'project-1', name: 'Garden' }
+    harness.client.post.mockImplementation(async () => ({
+      threads: [],
+      nextCursor: null,
+    }))
+    render(<ChatInterface />)
+    await waitFor(() => expect(page.projectSidebar).not.toBeNull())
+    chatPage.router.push.mockClear()
+
+    act(() => page.projectSidebar!.onExitProjectWhileDragging!())
+
+    expect(page.exitProjectMode).toHaveBeenCalledOnce()
+    expect(chatPage.router.push).not.toHaveBeenCalled()
   })
 })

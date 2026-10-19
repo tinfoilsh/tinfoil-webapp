@@ -115,6 +115,15 @@ export function resetPasskeyCapabilityCache(): void {
   capabilityPromise = null
 }
 
+export function clearCachedPrfResult(): void {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.removeItem(SECRET_PASSKEY_PRF_OUTPUT)
+  } catch {
+    // best-effort
+  }
+}
+
 export function getCachedCredentialId(): string | null {
   return readCachedPrfResult()?.credentialId ?? null
 }
@@ -141,6 +150,18 @@ export function tinfoilWrappedKeyFromEnclaveBundle(input: {
     credentialId: input.credentialId,
     kekIvHex: input.kekIvHex,
     wrappedKeyHex: input.wrappedKeyHex,
+  }
+}
+
+export function enclaveBundleFromTinfoilWrappedKey(wrappedKey: WrappedKey): {
+  credentialId: string
+  kekIvHex: string
+  encryptedKeysHex: string
+} {
+  return {
+    credentialId: wrappedKey.credentialId,
+    kekIvHex: wrappedKey.kekIvHex,
+    encryptedKeysHex: wrappedKey.wrappedKeyHex,
   }
 }
 

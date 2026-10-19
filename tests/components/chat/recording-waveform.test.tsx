@@ -4,12 +4,18 @@ import {
   formatRecordingDuration,
   RecordingWaveform,
 } from '@/components/chat/recording-waveform'
-import { harnessAPI, publish } from '@/services/harness/runtime'
+import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import {
+  activateAPI,
+  HarnessAPI,
+  harnessAPI,
+  publish,
+} from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { createRef, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { signIn, testSession } from '../../harness-fixture'
+import { testSession } from '../../harness-fixture'
 
 vi.mock('@/components/project', () => ({
   ProjectModeBanner: () => null,
@@ -87,6 +93,9 @@ describe('formatRecordingDuration', () => {
     expect(formatRecordingDuration(59.9)).toBe('0:59')
     expect(formatRecordingDuration(60)).toBe('1:00')
     expect(formatRecordingDuration(605)).toBe('10:05')
+  })
+
+  it('clamps negative input to zero', () => {
     expect(formatRecordingDuration(-3)).toBe('0:00')
   })
 })
@@ -137,10 +146,15 @@ function stubCanvasContext(width = 120, height = 28) {
 }
 
 beforeEach(() => {
+  vi.mocked(harnessAPI().client.upload)
+    .mockReset()
+    .mockRejectedValue(new Error('Unexpected transcription request'))
   stubCanvasContext()
 })
 
 afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   vi.useRealTimers()
 })
 
@@ -421,7 +435,10 @@ describe('ChatInput recording UI', () => {
   )
 
   it('transcribes for a signed-in account whose content key is locked', async () => {
-    const api = signIn({ locked: true })
+    const api = new HarnessAPI(harnessAPI().client, 'alice')
+    activateAPI(api)
+    publish({ session: testSession, keyReady: false, profileReady: true })
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
     expect(() => api.key()).toThrow(HarnessError)
     const { transcribe } = stubRecording()
     const setInput = vi.fn()

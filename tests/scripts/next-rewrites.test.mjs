@@ -63,4 +63,21 @@ describe('next.config.mjs', () => {
       expect(cfg.rewrites).toBeUndefined()
     },
   )
+
+  it('sends CORS for the preview runner modules only in development', async () => {
+    setConfigEnv()
+    const dev = await loadConfig()
+    expect(await dev.headers()).toEqual([
+      {
+        source: '/(preview|vendor)/:path*',
+        headers: [{ key: 'Access-Control-Allow-Origin', value: '*' }],
+      },
+    ])
+
+    // With output: 'export' Next warns if the hook merely exists.
+    setConfigEnv({ dev: false, nodeEnv: 'production' })
+    const prod = await loadConfig()
+    expect(prod.headers).toBeUndefined()
+    expect(prod.output).toBe('export')
+  })
 })

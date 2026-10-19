@@ -4,6 +4,7 @@ import {
   SETTINGS_CHAT_FONT,
   SETTINGS_THEME_MODE,
 } from '@/constants/storage-keys'
+import { loadLocalProfile } from '@/services/harness/local-profile'
 import { publish } from '@/services/harness/runtime'
 import { act, renderHook } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
@@ -15,10 +16,11 @@ beforeEach(() => {
   document.documentElement.removeAttribute('data-chat-font')
   document.documentElement.removeAttribute('data-theme')
   document.documentElement.classList.remove('dark')
+  sessionStorage.clear()
 })
 
 describe('the theme', () => {
-  it('stays the one this device saved until the settings load', () => {
+  it('stays the one this device saved until the settings load and import it', () => {
     localStorage.setItem(SETTINGS_THEME_MODE, 'dark')
     publish({ profile: {}, profileReady: false })
 
@@ -27,6 +29,8 @@ describe('the theme', () => {
     expect(result.current.themeMode).toBe('dark')
     expect(result.current.isDarkMode).toBe(true)
     expect(document.documentElement).toHaveClass('dark')
+    expect(localStorage.getItem(SETTINGS_THEME_MODE)).toBe('dark')
+    expect(loadLocalProfile()).toEqual({ themeMode: 'dark' })
 
     act(() => publish({ profile: { themeMode: 'light' }, profileReady: true }))
 

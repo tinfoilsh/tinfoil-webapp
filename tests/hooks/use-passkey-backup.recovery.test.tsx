@@ -3,7 +3,6 @@ import { encryptionService } from '@/services/encryption/encryption-service'
 import { harnessAPI } from '@/services/harness/runtime'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { MIGRATION_STARTED } from '../harness-fixture'
 
 // Recovery runs the real key authorization against the harness's reported
 // key state. Only the harness's key routes and the passkey ceremony are fakes.
@@ -99,11 +98,6 @@ it('moves legacy data to a recovered Start Fresh key instead of dropping it', as
     etag: '',
     has_data: true,
     bundles: {},
-  })
-  vi.mocked(harnessAPI().client.post).mockImplementation(async (path) => {
-    if (path !== '/v1/keys/migrate-all')
-      throw new Error(`Unexpected request: ${path}`)
-    return MIGRATION_STARTED
   })
 
   const { result, recovered } = await recoverStartFreshBackup()

@@ -105,6 +105,7 @@ function SidebarHarness({
 
 describe('chat sidebar during streaming', () => {
   beforeEach(() => {
+    sessionStorage.clear()
     localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
   })
 

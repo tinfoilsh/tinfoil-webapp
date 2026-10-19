@@ -1,4 +1,7 @@
+import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import type { HarnessClient } from '@/services/harness/client'
 import { localThreadStore } from '@/services/harness/local-threads'
+import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import {
   formatNativeBackupV2,
@@ -7,19 +10,56 @@ import {
 } from '@/services/native-backup/format'
 import { restoreNativeBackup } from '@/services/native-backup/orchestrate'
 import { validateAndPackageNativeBackup } from '@/services/native-backup/restore'
+import { chatEvents } from '@/services/storage/chat-events'
+import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
+import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import { unzipSync, zipSync } from 'fflate'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { client, KEY, signIn } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from '../harness/thread-fixture'
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
+import { testSession } from '../../harness-fixture'
 
+const KEY = 'Y29udGVudC1rZXk='
 const backupId = '123e4567-e89b-42d3-a456-426614174000'
 const timestamp = '2026-08-20T12:00:00.000Z'
 const later = '2026-08-20T12:05:00.000Z'
 const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13])
 const pageImage = new Uint8Array([255, 216, 255, 224, 0, 16])
+
+let client: {
+  events: ReturnType<typeof vi.fn>
+  post: ReturnType<typeof vi.fn>
+  upload: ReturnType<typeof vi.fn>
+  download: ReturnType<typeof vi.fn>
+}
+
+function signIn() {
+  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+  client = {
+    events: vi.fn(),
+    post: vi.fn(async (path: string) => {
+      throw new Error(`Unexpected ${path}`)
+    }),
+    upload: vi.fn(async (path: string) => {
+      throw new Error(`Unexpected ${path}`)
+    }),
+    download: vi.fn(),
+  }
+  const api = new HarnessAPI(client as unknown as HarnessClient, 'alice')
+  vi.spyOn(api, 'key').mockReturnValue(KEY)
+  activateAPI(api)
+  publish({ session: testSession, keyReady: true, profileReady: true })
+}
 
 const localChat: NativeBackupV2Input['localChats'][number] = {
   id: 'local-1',
@@ -217,10 +257,29 @@ const restore = (
     { wait: async () => {}, ...overrides },
   )
 
-resetChatStoresAroundEachTest()
+beforeAll(() => {
+  Object.defineProperty(globalThis, 'indexedDB', {
+    configurable: true,
+    value: new IDBFactory(),
+  })
+  Object.defineProperty(globalThis, 'IDBKeyRange', {
+    configurable: true,
+    value: FakeIDBKeyRange,
+  })
+})
 
-beforeEach(() => {
+beforeEach(async () => {
+  sessionStorage.clear()
+  deletedChatsTracker.clear()
+  await indexedDBStorage.deleteAllChats()
+  deletedChatsTracker.clear()
   signIn()
+})
+
+afterEach(() => {
+  chatEvents.clear()
+  deletedChatsTracker.clear()
+  vi.restoreAllMocks()
 })
 
 describe('restoring a native backup', () => {
@@ -373,8 +432,7 @@ describe('restoring a native backup', () => {
   it('reports an interrupted restore when the chat service forgets the job', async () => {
     client.upload.mockResolvedValue({ jobId: 'job-1' })
     let polls = 0
-    client.post.mockImplementation(async (path: string) => {
-      if (path !== '/v1/import/status') throw new Error(`Unexpected ${path}`)
+    client.post.mockImplementation(async () => {
       if (polls++ === 0)
         return {
           jobId: 'job-1',
@@ -399,8 +457,7 @@ describe('restoring a native backup', () => {
       503,
     )
     let polls = 0
-    client.post.mockImplementation(async (path: string) => {
-      if (path !== '/v1/import/status') throw new Error(`Unexpected ${path}`)
+    client.post.mockImplementation(async () => {
       if (polls++ === 0)
         return {
           jobId: 'job-1',

@@ -18,6 +18,13 @@ vi.mock('@/utils/error-handling', () => ({
   logInfo: vi.fn(),
 }))
 
+vi.mock('@/services/encryption/encryption-service', () => ({
+  encryptionService: {
+    getKey: vi.fn().mockReturnValue('key_test'),
+    getKeyBytesOrThrow: () => new Uint8Array(32),
+  },
+}))
+
 vi.mock('@/services/passkey/legacy-passkey-credentials', () => ({
   fetchLegacyPasskeyCredentials: vi.fn().mockResolvedValue([]),
 }))
@@ -75,6 +82,17 @@ describe('getPasskeyDeviceState', () => {
     })
 
     const state = await getPasskeyDeviceState(LOCAL_CRED)
+    expect(state).toBe('other-device-only')
+  })
+
+  it('returns "other-device-only" when the local credential id is unknown but bundles exist', async () => {
+    mockKeyCurrent.mockResolvedValue({
+      key_id: KEY_ID,
+      etag: '1',
+      bundles: { [OTHER_CRED]: bundle(OTHER_CRED) },
+    })
+
+    const state = await getPasskeyDeviceState(null)
     expect(state).toBe('other-device-only')
   })
 

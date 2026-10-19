@@ -1,7 +1,7 @@
 import { ChatInput } from '@/components/chat/chat-input'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { createRef } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/components/project', () => ({
   ProjectModeBanner: () => null,
@@ -34,6 +34,11 @@ function renderChatInput(handleSubmit = vi.fn()) {
 }
 
 describe('ChatInput Enter key handling', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
   it('submits on plain Enter', () => {
     const { handleSubmit, textarea } = renderChatInput()
 

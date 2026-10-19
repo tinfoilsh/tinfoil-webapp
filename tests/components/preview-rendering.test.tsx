@@ -14,9 +14,17 @@ import {
   render,
   waitFor,
 } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 
-beforeEach(() =>
+beforeAll(() =>
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -25,8 +33,10 @@ beforeEach(() =>
     },
   ),
 )
+afterAll(() => vi.unstubAllGlobals())
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
 })
 
 const MAX_OUTPUT_LINES = 1000

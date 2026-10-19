@@ -10,7 +10,6 @@ import {
 } from '@/services/keys/cloud-key-authorization'
 import { CloudKeySetupError } from '@/services/keys/cloud-key-preflight'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { MIGRATION_STARTED } from '../../harness-fixture'
 const mocks = vi.hoisted(() => ({
   validate: vi.fn(),
   current: vi.fn(),
@@ -67,11 +66,6 @@ it('moves existing encrypted data to the active key through the harness', async 
   )
   mocks.validate.mockResolvedValue({ canWrite: true, remoteState: 'exists' })
   mocks.current.mockResolvedValue({ key_id: null, has_data: true })
-  vi.mocked(harnessAPI().client.post).mockImplementation(async (path) => {
-    if (path !== '/v1/keys/migrate-all')
-      throw new Error(`Unexpected request: ${path}`)
-    return MIGRATION_STARTED
-  })
 
   await authorizeCurrentPrimaryKeyOrThrow()
 

@@ -2,8 +2,17 @@ import { isPlainTextFile } from '@/utils/file-types'
 import { describe, expect, it } from 'vitest'
 
 describe('isPlainTextFile', () => {
-  it('previews a text file whose extension is upper case', () => {
-    expect(isPlainTextFile('README.MD')).toBe(true)
+  it.each([
+    'notes.txt',
+    'README.MD',
+    'main.py',
+    'component.tsx',
+    'config.yaml',
+    'statement.qfx',
+    'contacts.vcf',
+    'archive.tar.patch',
+  ])('previews %s as text', (filename) => {
+    expect(isPlainTextFile(filename)).toBe(true)
   })
 
   it.each([

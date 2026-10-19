@@ -7,10 +7,14 @@ import {
 } from '@/utils/chat-import-parsers'
 import { describe, expect, it } from 'vitest'
 
-const createParseOptions = (): ParseOptions => {
+const createParseOptions = (
+  overrides?: Partial<ParseOptions>,
+): ParseOptions => {
   let counter = 0
   return {
-    generateChatId: () => `test_chat_${++counter}`,
+    generateChatId:
+      overrides?.generateChatId ?? (() => `test_chat_${++counter}`),
+    isCloudSyncEnabled: overrides?.isCloudSyncEnabled ?? false,
   }
 }
 
@@ -64,6 +68,38 @@ describe('parseChatGPTConversations', () => {
     expect(result[0].messages[0].content).toBe('Hello, how are you?')
     expect(result[0].messages[1].role).toBe('assistant')
     expect(result[0].messages[1].content).toBe("I'm doing well, thank you!")
+    expect(result[0].isLocalOnly).toBe(true)
+  })
+
+  it('respects isCloudSyncEnabled option', () => {
+    const data: ChatGPTConversation[] = [
+      {
+        title: 'Synced Chat',
+        create_time: 1700000000,
+        update_time: 1700001000,
+        mapping: {
+          root: {
+            id: 'root',
+            children: ['msg1'],
+          },
+          msg1: {
+            id: 'msg1',
+            parent: 'root',
+            message: {
+              author: { role: 'user' },
+              content: { content_type: 'text', parts: ['Test'] },
+            },
+          },
+        },
+      },
+    ]
+
+    const result = parseChatGPTConversations(
+      data,
+      createParseOptions({ isCloudSyncEnabled: true }),
+    )
+
+    expect(result[0].isLocalOnly).toBe(false)
   })
 
   it('handles multimodal_text content type and filters non-string parts', () => {
@@ -244,6 +280,34 @@ describe('parseChatGPTConversations', () => {
     expect(result).toHaveLength(0)
   })
 
+  it('uses default title when title is missing', () => {
+    const data: ChatGPTConversation[] = [
+      {
+        title: '',
+        create_time: 1700000000,
+        update_time: 1700001000,
+        mapping: {
+          root: {
+            id: 'root',
+            children: ['msg1'],
+          },
+          msg1: {
+            id: 'msg1',
+            parent: 'root',
+            message: {
+              author: { role: 'user' },
+              content: { content_type: 'text', parts: ['Hello'] },
+            },
+          },
+        },
+      },
+    ]
+
+    const result = parseChatGPTConversations(data, createParseOptions())
+
+    expect(result[0].title).toBe('Imported Chat')
+  })
+
   it('handles client-created-root as a root node', () => {
     const data: ChatGPTConversation[] = [
       {
@@ -323,6 +387,49 @@ describe('parseChatGPTConversations', () => {
       expect(result[0].messages[0].timestamp).toEqual(new Date(expected))
     },
   )
+
+  it('parses multiple conversations', () => {
+    const data: ChatGPTConversation[] = [
+      {
+        title: 'First Chat',
+        create_time: 1700000000,
+        update_time: 1700001000,
+        mapping: {
+          root: { id: 'root', children: ['msg1'] },
+          msg1: {
+            id: 'msg1',
+            parent: 'root',
+            message: {
+              author: { role: 'user' },
+              content: { content_type: 'text', parts: ['First'] },
+            },
+          },
+        },
+      },
+      {
+        title: 'Second Chat',
+        create_time: 1700002000,
+        update_time: 1700003000,
+        mapping: {
+          root: { id: 'root', children: ['msg1'] },
+          msg1: {
+            id: 'msg1',
+            parent: 'root',
+            message: {
+              author: { role: 'user' },
+              content: { content_type: 'text', parts: ['Second'] },
+            },
+          },
+        },
+      },
+    ]
+
+    const result = parseChatGPTConversations(data, createParseOptions())
+
+    expect(result).toHaveLength(2)
+    expect(result[0].title).toBe('First Chat')
+    expect(result[1].title).toBe('Second Chat')
+  })
 
   it('ignores empty or whitespace-only content', () => {
     const data: ChatGPTConversation[] = [
@@ -445,7 +552,44 @@ describe('parseClaudeConversations', () => {
     expect(assistantMsg.thoughts).toBe(
       'First, I need to analyze the problem...\n\nNow let me consider the edge cases...',
     )
-    expect(assistantMsg.thinkingDuration).toBe(25) // 25 seconds total
+    expect(assistantMsg.thinkingDuration).toBe(25) // 30 seconds total
+  })
+
+  it('calculates thinking duration correctly from timestamps', () => {
+    const data: ClaudeConversation[] = [
+      {
+        uuid: 'conv-duration',
+        name: 'Duration Test',
+        created_at: '2024-01-15T10:00:00Z',
+        updated_at: '2024-01-15T10:30:00Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            text: 'Question',
+            sender: 'human',
+            created_at: '2024-01-15T10:00:00Z',
+          },
+          {
+            uuid: 'msg-2',
+            text: 'Answer',
+            sender: 'assistant',
+            created_at: '2024-01-15T10:02:00Z',
+            content: [
+              {
+                type: 'thinking',
+                thinking: 'Thinking...',
+                start_timestamp: '2024-01-15T10:00:00Z',
+                stop_timestamp: '2024-01-15T10:01:00Z',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+
+    const result = parseClaudeConversations(data, createParseOptions())
+
+    expect(result[0].messages[1].thinkingDuration).toBe(60)
   })
 
   it('handles conversations with empty chat_messages', () => {
@@ -498,6 +642,100 @@ describe('parseClaudeConversations', () => {
 
     expect(result[0].messages).toHaveLength(1)
     expect(result[0].messages[0].content).toBe('Valid message')
+  })
+
+  it('uses default title when name is missing', () => {
+    const data: ClaudeConversation[] = [
+      {
+        uuid: 'conv-no-name',
+        name: '',
+        created_at: '2024-01-15T10:00:00Z',
+        updated_at: '2024-01-15T10:00:00Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            text: 'Hello',
+            sender: 'human',
+            created_at: '2024-01-15T10:00:00Z',
+          },
+        ],
+      },
+    ]
+
+    const result = parseClaudeConversations(data, createParseOptions())
+
+    expect(result[0].title).toBe('Imported Chat')
+  })
+
+  it.each([
+    [false, true],
+    [true, false],
+  ] as const)(
+    'respects Claude cloud sync preference %s',
+    (enabled, localOnly) => {
+      const data: ClaudeConversation[] = [
+        {
+          uuid: 'conv-sync',
+          name: 'Synced',
+          created_at: '2024-01-15T10:00:00Z',
+          updated_at: '2024-01-15T10:00:00Z',
+          chat_messages: [
+            {
+              uuid: 'msg-1',
+              text: 'Test',
+              sender: 'human',
+              created_at: '2024-01-15T10:00:00Z',
+            },
+          ],
+        },
+      ]
+
+      const result = parseClaudeConversations(
+        data,
+        createParseOptions({ isCloudSyncEnabled: enabled }),
+      )
+
+      expect(result[0].isLocalOnly).toBe(localOnly)
+    },
+  )
+
+  it('parses multiple conversations', () => {
+    const data: ClaudeConversation[] = [
+      {
+        uuid: 'conv-1',
+        name: 'First',
+        created_at: '2024-01-15T10:00:00Z',
+        updated_at: '2024-01-15T10:00:00Z',
+        chat_messages: [
+          {
+            uuid: 'm1',
+            text: 'Hi',
+            sender: 'human',
+            created_at: '2024-01-15T10:00:00Z',
+          },
+        ],
+      },
+      {
+        uuid: 'conv-2',
+        name: 'Second',
+        created_at: '2024-01-16T10:00:00Z',
+        updated_at: '2024-01-16T10:00:00Z',
+        chat_messages: [
+          {
+            uuid: 'm2',
+            text: 'Hello',
+            sender: 'human',
+            created_at: '2024-01-16T10:00:00Z',
+          },
+        ],
+      },
+    ]
+
+    const result = parseClaudeConversations(data, createParseOptions())
+
+    expect(result).toHaveLength(2)
+    expect(result[0].title).toBe('First')
+    expect(result[1].title).toBe('Second')
   })
 
   it('does not add thinking data to human messages', () => {

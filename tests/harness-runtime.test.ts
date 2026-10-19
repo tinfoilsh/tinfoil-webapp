@@ -5,7 +5,7 @@ import {
   HarnessAPI,
   publish,
 } from '@/services/harness/runtime'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 
 it('rejects a response from an account that has been replaced', async () => {
   let resolve!: (value: unknown) => void
@@ -43,4 +43,15 @@ it('rejects content responses and clears the profile when the key changes', asyn
   resolve({ nickname: 'old key' })
   await expect(request).rejects.toMatchObject({ name: 'AbortError' })
   expect(getView()).toMatchObject({ profile: {}, keyReady: false })
+})
+it('merges rapid anonymous preference changes in order', async () => {
+  const client = { post: vi.fn() }
+  const api = new HarnessAPI(client as unknown as HarnessClient, null)
+  activateAPI(api)
+  await Promise.all([
+    api.updateProfile({ language: 'French' }),
+    api.updateProfile({ themeMode: 'dark' }),
+  ])
+  expect(getView().profile).toEqual({ language: 'French', themeMode: 'dark' })
+  expect(client.post).not.toHaveBeenCalled()
 })

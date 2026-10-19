@@ -1,11 +1,13 @@
 import { ChatMessages } from '@/components/chat/chat-messages'
 import { initializeRenderers } from '@/components/chat/renderers/client'
 import type { BaseModel } from '@/config/models'
+import type { HarnessClient } from '@/services/harness/client'
+import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import type { Frame } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { client } from '../../harness-fixture'
+import { testSession } from '../../harness-fixture'
 
 const summarize = vi.hoisted(() => vi.fn())
 vi.mock('@/services/inference/summary-client', () => ({ summarize }))
@@ -30,6 +32,7 @@ const models: BaseModel[] = [
 ]
 const THOUGHTS = Array.from({ length: 25 }, (_, i) => `step${i}`).join(' ')
 
+let events: ReturnType<typeof vi.fn>
 let send: (() => Promise<unknown>) | undefined
 
 function Conversation() {
@@ -61,14 +64,26 @@ function gate() {
 beforeAll(() => initializeRenderers())
 
 beforeEach(() => {
+  sessionStorage.clear()
   summarize.mockReset().mockResolvedValue('Weighing the options')
+  events = vi.fn()
+  activateAPI(
+    new HarnessAPI(
+      {
+        events,
+        post: vi.fn().mockResolvedValue({}),
+      } as unknown as HarnessClient,
+      null,
+    ),
+  )
+  publish({ session: testSession, keyReady: true, profileReady: true })
 })
 
 describe('the live thinking summary', () => {
   it('summarizes reasoning while it streams and stops once the reply moves on', async () => {
     const thinking = gate()
     const answering = gate()
-    client.events.mockImplementation(async function* (_path, input) {
+    events.mockImplementation(async function* (_path, input) {
       const threadId = input.threadId as string
       const frames: Frame['event'][] = [
         { type: 'RUN_STARTED', threadId, runId: 'run-1' },

@@ -9,7 +9,7 @@ import {
   useSubscriptionStatus,
 } from '@/hooks/use-subscription-status'
 import { act, renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const clerkState = vi.hoisted(() => ({
   isLoaded: false,
@@ -65,6 +65,8 @@ describe('hasActiveSubscription', () => {
 describe('readCachedSubscriptionStatus', () => {
   const now = new Date('2026-07-23T12:00:00Z').getTime()
 
+  beforeEach(() => localStorage.clear())
+
   it.each([now, new Date('2026-07-22T12:00:00Z').getTime()])(
     'restores a recent cache for the same user at %s',
     (cachedAt) => {
@@ -94,9 +96,12 @@ describe('readCachedSubscriptionStatus', () => {
 
 describe('useSubscriptionStatus cache synchronization', () => {
   beforeEach(() => {
+    localStorage.clear()
     clerkState.isLoaded = false
     clerkState.user = null
   })
+
+  afterEach(() => vi.restoreAllMocks())
 
   it('re-reads cached status when the active user changes', () => {
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')

@@ -1,17 +1,22 @@
+import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import {
   ImportSequenceError,
   runImports,
   type ImportStatusResponse,
 } from '@/services/harness/archives'
+import type { HarnessClient } from '@/services/harness/client'
+import { activateAPI, HarnessAPI } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { client, KEY, signIn } from '../../harness-fixture'
+
+const KEY = 'Y29udGVudC1rZXk='
 
 // The sync service runs one import per account, so the order of uploads and
 // status polls is the contract under test.
 let events: string[]
 let jobs: number
 let statuses: Record<string, (ImportStatusResponse | Error)[]>
+let upload: ReturnType<typeof vi.fn>
 const noWait = async () => {}
 
 function namedFile(name: string): File {
@@ -32,14 +37,15 @@ beforeEach(() => {
   events = []
   jobs = 0
   statuses = {}
-  signIn()
-  client.upload.mockImplementation(async (_path: string, file: File) => {
+  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+  upload = vi.fn(async (_path: string, file: File) => {
     jobs++
     events.push(`upload ${file.name} as job-${jobs}`)
     return { jobId: `job-${jobs}` }
   })
-  client.post.mockImplementation(
-    async (path: string, input: { jobId: string }) => {
+  const client = {
+    upload,
+    post: vi.fn(async (path: string, input: { jobId: string }) => {
       if (path !== '/v1/import/status') throw new Error(`Unexpected ${path}`)
       const { jobId } = input
       // The first status after an upload is the kickoff snapshot.
@@ -50,8 +56,11 @@ beforeEach(() => {
       }
       events.push(`status ${jobId} ${next.status}`)
       return next
-    },
-  )
+    }),
+  }
+  const api = new HarnessAPI(client as unknown as HarnessClient, 'alice')
+  vi.spyOn(api, 'key').mockReturnValue(KEY)
+  activateAPI(api)
 })
 
 describe('runImports', () => {
@@ -84,13 +93,13 @@ describe('runImports', () => {
       'upload conversations-002.json as job-3',
       'status job-3 running',
     ])
-    expect(
-      client.upload.mock.calls.map(([path, , fields]) => [path, fields]),
-    ).toEqual([
-      ['/v1/import', { key: KEY, source: 'chatgpt' }],
-      ['/v1/import', { key: KEY, source: 'chatgpt' }],
-      ['/v1/import', { key: KEY, source: 'chatgpt' }],
-    ])
+    expect(upload.mock.calls.map(([path, , fields]) => [path, fields])).toEqual(
+      [
+        ['/v1/import', { key: KEY, source: 'chatgpt' }],
+        ['/v1/import', { key: KEY, source: 'chatgpt' }],
+        ['/v1/import', { key: KEY, source: 'chatgpt' }],
+      ],
+    )
     expect(result).toEqual({
       status: { ...job('running'), jobId: 'job-3' },
       fileIndex: 2,
@@ -212,7 +221,7 @@ describe('runImports', () => {
     expect(error).toBeInstanceOf(ImportSequenceError)
     expect(error).toMatchObject({ fileIndex: 0, importedBefore: 0 })
     expect((error as Error).cause).toBe(unreachable)
-    expect(client.upload).toHaveBeenCalledOnce()
+    expect(upload).toHaveBeenCalledOnce()
   })
 
   it('keeps the chats earlier files imported when a later file cannot start', async () => {
@@ -221,7 +230,7 @@ describe('runImports', () => {
       { code: 'UPSTREAM_REFUSED', message: 'an import is already in progress' },
       409,
     )
-    client.upload
+    upload
       .mockImplementationOnce(async () => {
         jobs++
         return { jobId: 'job-1' }

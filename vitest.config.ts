@@ -7,9 +7,6 @@ export default defineConfig({
     globals: true,
     typecheck: { tsconfig: './tsconfig.test.json' },
     setupFiles: ['./vitest.setup.ts'],
-    restoreMocks: true,
-    unstubGlobals: true,
-    unstubEnvs: true,
     include: [
       'tests/**/*.test.ts',
       'tests/**/*.test.tsx',

@@ -1,21 +1,32 @@
+import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import type { HarnessClient } from '@/services/harness/client'
 import {
   localThreadStore,
   type LocalThread,
 } from '@/services/harness/local-threads'
+import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Message, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
-import { indexedDBStorage } from '@/services/storage/indexed-db'
-import { act, renderHook, waitFor } from '@testing-library/react'
-import { IDBFactory } from 'fake-indexeddb'
-import { describe, expect, it, vi } from 'vitest'
+import { chatEvents } from '@/services/storage/chat-events'
+import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import {
-  client,
-  KEY,
-  signIn as signInTo,
-  testSession,
-} from '../../harness-fixture'
-import { rawRows, resetChatStoresAroundEachTest } from './thread-fixture'
+  DB_NAME,
+  DB_VERSION,
+  indexedDBStorage,
+} from '@/services/storage/indexed-db'
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
+import { testSession } from '../../harness-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({
   GENUI_WIDGETS: [{ name: 'render_chart' }],
@@ -36,15 +47,30 @@ const PROFILE = {
 }
 const USAGE = { promptTokens: 12, completionTokens: 4 }
 
-// Without cloud sync, the account's content key stays locked.
-const signIn = (userId: string | null, cloud = false) =>
-  signInTo({
-    userId,
-    cloud,
-    locked: !cloud,
+let client: {
+  events: ReturnType<typeof vi.fn>
+  post: ReturnType<typeof vi.fn>
+  upload: ReturnType<typeof vi.fn>
+  download: ReturnType<typeof vi.fn>
+}
+
+function signIn(userId: string | null) {
+  client = {
+    events: vi.fn(),
+    post: vi.fn().mockResolvedValue({}),
+    upload: vi.fn(),
+    download: vi.fn(),
+  }
+  const api = new HarnessAPI(client as unknown as HarnessClient, userId)
+  activateAPI(api)
+  publish({
     session: { ...testSession, widgets: ['render_chart'] },
     profile: PROFILE,
+    keyReady: !userId,
+    profileReady: true,
   })
+  return api
+}
 
 function frames(...events: Frame['event'][]) {
   return async function* () {
@@ -112,6 +138,26 @@ function reply(
 const turn = (call = 0) => client.events.mock.calls[call][1] as Turn
 const stored = (id: string) => localThreadStore('device').get(id)
 
+async function rawPayloads() {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+  })
+  try {
+    return await new Promise<Record<string, unknown>[]>((resolve, reject) => {
+      const request = db
+        .transaction('attachmentPayloads')
+        .objectStore('attachmentPayloads')
+        .getAll()
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+    })
+  } finally {
+    db.close()
+  }
+}
+
 const SEEDED_ID = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
 function seededThread(): LocalThread {
   return {
@@ -160,7 +206,30 @@ const wire = (message: LocalThread['messages'][number]): Message =>
         content: message.content,
       }
 
-resetChatStoresAroundEachTest()
+beforeAll(() => {
+  Object.defineProperty(globalThis, 'indexedDB', {
+    configurable: true,
+    value: new IDBFactory(),
+  })
+  Object.defineProperty(globalThis, 'IDBKeyRange', {
+    configurable: true,
+    value: FakeIDBKeyRange,
+  })
+})
+
+beforeEach(async () => {
+  sessionStorage.clear()
+  deletedChatsTracker.clear()
+  await indexedDBStorage.deleteAllChats()
+  deletedChatsTracker.clear()
+})
+
+afterEach(() => {
+  chatEvents.clear()
+  deletedChatsTracker.clear()
+  sessionStorage.clear()
+  vi.restoreAllMocks()
+})
 
 describe('local chats of a signed-in account without cloud sync', () => {
   it('sends a turn without a key and stores the merged transcript', async () => {
@@ -694,6 +763,37 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(saved?.title).toBe('Doors')
   })
 
+  it('replaces the regenerated reply', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seededThread())
+    const [u1, a1, u2] = seededThread().messages
+    client.events.mockImplementation(
+      reply(
+        SEEDED_ID,
+        [wire(u1), wire(a1), wire(u2)],
+        'msg_regen',
+        'again',
+        'Doors',
+      ),
+    )
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+    await act(() =>
+      result.current.send({ kind: 'regenerate', messageId: 'a2', content: '' }),
+    )
+
+    expect(turn()).toMatchObject({ kind: 'regenerate', messageId: 'a2' })
+    expect((await stored(SEEDED_ID))?.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'msg_regen',
+    ])
+  })
+
   it('keeps image bytes across a reload and sends them with the next turn', async () => {
     signIn('alice')
     const bytes = new Uint8Array([137, 80, 78, 71])
@@ -772,7 +872,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect((await stored(threadId))?.messages[0].attachments).toEqual([
       descriptor,
     ])
-    expect(await rawRows('attachmentPayloads')).toEqual([
+    expect(await rawPayloads()).toEqual([
       {
         id: `${threadId}:att_door`,
         chatId: threadId,
@@ -899,11 +999,6 @@ describe('local chats of a signed-in account without cloud sync', () => {
           metadata: { cancelled: true },
         },
       }
-    })
-    client.post.mockImplementation(async (path: string) => {
-      if (['/v1/threads/cancel', '/v1/threads/queue/remove'].includes(path))
-        return {}
-      throw new Error(`Unexpected ${path}`)
     })
     const { result } = renderHook(() => useThread())
     let sending!: Promise<boolean | undefined> | undefined
@@ -1119,9 +1214,7 @@ describe('stored local chat changes', () => {
       useThread(SEEDED_ID, null, { local: true }),
     )
     await waitFor(() => expect(result.current.chat.messages).toHaveLength(1))
-    client.post.mockResolvedValueOnce({
-      url: 'https://chat.tinfoil.sh/share/x',
-    })
+    client.post.mockResolvedValue({ url: 'https://chat.tinfoil.sh/share/x' })
 
     await act(async () => {
       await result.current.share(SEEDED_ID)
@@ -1214,7 +1307,11 @@ describe('signed-out chats', () => {
 
 describe('cloud chats', () => {
   it('still send the content key and no transcript when cloud sync is on', async () => {
-    signIn('alice', true)
+    localStorage.setItem('tinfoil-settings-cloud-sync-enabled', 'true')
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+    const api = signIn('alice')
+    publish({ keyReady: true })
+    vi.spyOn(api, 'key').mockReturnValue('Y29udGVudC1rZXk=')
     client.post.mockImplementation(async (path: string) =>
       path === '/v1/threads/list' ? { threads: [], nextCursor: null } : {},
     )
@@ -1230,7 +1327,7 @@ describe('cloud chats', () => {
     await act(() => result.current.send({ content: 'Stored question' }))
 
     expect(turn()).toMatchObject({
-      key: KEY,
+      key: 'Y29udGVudC1rZXk=',
       projectId: 'project-1',
       ephemeral: false,
       content: 'Stored question',
@@ -1242,7 +1339,11 @@ describe('cloud chats', () => {
   })
 
   it('list the open chat as active while its run streams', async () => {
-    signIn('alice', true)
+    localStorage.setItem('tinfoil-settings-cloud-sync-enabled', 'true')
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+    const api = signIn('alice')
+    publish({ keyReady: true })
+    vi.spyOn(api, 'key').mockReturnValue('Y29udGVudC1rZXk=')
     const stored = summary('cloud-thread', 'Stored')
     client.post.mockImplementation(async (path: string) =>
       path === '/v1/threads/list'
@@ -1288,7 +1389,11 @@ describe('cloud chats', () => {
   })
 
   it('rejoin a temporary run after a reload only until it ends', async () => {
-    signIn('alice', true)
+    localStorage.setItem('tinfoil-settings-cloud-sync-enabled', 'true')
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+    const api = signIn('alice')
+    publish({ keyReady: true })
+    vi.spyOn(api, 'key').mockReturnValue('Y29udGVudC1rZXk=')
     client.post.mockImplementation(async (path: string) =>
       path === '/v1/threads/list' ? { threads: [], nextCursor: null } : {},
     )
@@ -1339,7 +1444,11 @@ describe('cloud chats', () => {
   })
 
   it('are shared by id with the content key', async () => {
-    signIn('alice', true)
+    localStorage.setItem('tinfoil-settings-cloud-sync-enabled', 'true')
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+    const api = signIn('alice')
+    publish({ keyReady: true })
+    vi.spyOn(api, 'key').mockReturnValue('Y29udGVudC1rZXk=')
     client.post.mockImplementation(async (path: string) =>
       path === '/v1/threads/list'
         ? { threads: [], nextCursor: null }
@@ -1353,7 +1462,7 @@ describe('cloud chats', () => {
     expect(url).toBe('https://chat.tinfoil.sh/share/cloud-thread#v2:k')
     expect(client.post).toHaveBeenLastCalledWith(
       '/v1/threads/share',
-      { key: KEY, threadId: 'cloud-thread' },
+      { key: 'Y29udGVudC1rZXk=', threadId: 'cloud-thread' },
       expect.any(AbortSignal),
     )
   })

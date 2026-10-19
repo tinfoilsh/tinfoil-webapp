@@ -111,12 +111,16 @@ beforeEach(() => {
   deletedChatsTracker.clear()
   authTokenManager.reset()
   encryptionService.clearKey()
+  sessionStorage.clear()
 })
 
 afterEach(() => {
   speechPlayer.stop()
   authTokenManager.reset()
   encryptionService.clearKey()
+  sessionStorage.clear()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('performSignoutCleanup', () => {
@@ -127,6 +131,7 @@ describe('performSignoutCleanup', () => {
 
       await performSignoutCleanup({ preserveEncryptionKey })
 
+      expect(authTokenManager.isInitialized()).toBe(true)
       expect(authTokenManager.isSignedOut()).toBe(true)
       await expect(authTokenManager.getValidToken()).rejects.toMatchObject({
         reason: 'unavailable',
@@ -185,6 +190,15 @@ describe('performSignoutCleanup', () => {
 
     expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBe('true')
     expect(localStorage.getItem('user-specific-data')).toBeNull()
+  })
+
+  it('clears sessionStorage', async () => {
+    sessionStorage.setItem('harness-run:alice', 'routing')
+
+    await performSignoutCleanup()
+
+    expect(sessionStorage.getItem('harness-run:alice')).toBeNull()
+    expect(sessionStorage.length).toBe(0)
   })
 
   it('clears pinned chats from storage and active UI state', async () => {
@@ -296,11 +310,19 @@ describe('performUserSwitchCleanup', () => {
 
     await performUserSwitchCleanup('user_new')
 
+    expect(authTokenManager.isInitialized()).toBe(false)
     expect(authTokenManager.isSignedOut()).toBe(false)
     await expect(authTokenManager.getValidToken()).rejects.toMatchObject({
       reason: 'not-initialized',
     })
     expect(getToken).not.toHaveBeenCalled()
+  })
+
+  it('does not dispatch pinned-chat changes', async () => {
+    await withPinnedChatChanges(
+      () => performUserSwitchCleanup('user_new'),
+      (handle) => expect(handle).not.toHaveBeenCalled(),
+    )
   })
 
   it('surfaces cleanup failures without replacing the marker', async () => {

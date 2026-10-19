@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 afterEach(() => {
   cleanup()
+  localStorage.clear()
 })
 
 const locations = [

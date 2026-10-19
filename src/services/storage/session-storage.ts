@@ -79,6 +79,26 @@ export const sessionChatStorage = {
     return this.getAllChats().find((chat) => chat.id === chatId) ?? null
   },
 
+  saveStreamingDraft(chat: Chat): void {
+    try {
+      if (!chat?.id || chat.isBlankChat || chat.isTemporary) {
+        if (chat?.id) this.clearStreamingDraft(chat.id)
+        return
+      }
+      if (deletedChatsTracker.isDeleted(chat.id)) {
+        this.clearStreamingDraft(chat.id)
+        return
+      }
+      sessionStorage.setItem(getDraftKey(chat.id), JSON.stringify(chat))
+    } catch (error) {
+      logError('Failed to save chat streaming draft', error, {
+        component: 'sessionChatStorage',
+        action: 'saveStreamingDraft',
+        metadata: { chatId: chat?.id || 'undefined' },
+      })
+    }
+  },
+
   clearStreamingDraft(chatId: string): void {
     try {
       sessionStorage.removeItem(getDraftKey(chatId))

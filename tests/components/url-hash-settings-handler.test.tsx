@@ -1,4 +1,5 @@
 import { UrlHashSettingsHandler } from '@/components/url-hash-settings-handler'
+import { logWarning } from '@/utils/error-handling'
 import { render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -24,10 +25,24 @@ describe('settings deep links', () => {
     )
     expect(onSettingsTabReady).not.toHaveBeenCalled()
     expect(window.location.hash).toBe('#settings/unknown')
+    expect(logWarning).toHaveBeenCalledWith(
+      'Invalid settings tab in URL fragment',
+      {
+        component: 'UrlHashSettingsHandler',
+        metadata: { tabName: 'unknown' },
+      },
+    )
   })
 
   it.each([
+    ['general', 'general'],
+    ['chat', 'chat'],
+    ['personalization', 'personalization'],
+    ['prompts', 'prompts'],
+    ['cloud-sync', 'cloud-sync'],
     ['safeguards', 'safeguards'],
+    ['data', 'data'],
+    ['account', 'account'],
     ['import', 'data'],
     ['export', 'data'],
   ])(

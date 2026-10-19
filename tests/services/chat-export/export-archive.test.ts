@@ -20,6 +20,30 @@ function chat(overrides: Partial<Chat>): Chat {
 }
 
 describe('buildChatExport', () => {
+  it('returns plain conversations.json when there are no binary attachments', async () => {
+    const chats = [
+      chat({
+        updatedAt: '2023-11-15T22:13:20.000Z',
+        messages: [
+          {
+            role: 'user',
+            content: 'hello',
+            timestamp: new Date('2023-11-14T22:13:21.000Z'),
+          },
+        ],
+      }),
+    ]
+
+    const result = await buildChatExport(chats, async () => null)
+
+    expect(result.isZip).toBe(false)
+    expect(result.filename).toBe('conversations.json')
+    const parsed = JSON.parse(result.data as string)
+    expect(parsed[0].uuid).toBe('chat-1')
+    expect(parsed[0].updated_at).toBe('2023-11-15T22:13:20.000Z')
+    expect(parsed[0].chat_messages[0].sender).toBe('human')
+  })
+
   it('keeps document text inline without forcing a zip', async () => {
     const chats = [
       chat({
@@ -48,6 +72,47 @@ describe('buildChatExport', () => {
     const att = parsed[0].chat_messages[0].attachments[0]
     expect(att.type).toBe('document')
     expect(att.textContent).toBe('the contents')
+  })
+
+  it('exports page-backed documents with inline text', async () => {
+    const chats = [
+      chat({
+        messages: [
+          {
+            role: 'user',
+            content: 'read this',
+            timestamp: new Date('2023-11-14T22:13:21.000Z'),
+            attachments: [
+              {
+                id: 'doc-1',
+                type: 'document',
+                fileName: 'scan.pdf',
+                pages: [
+                  {
+                    page: 1,
+                    text: 'first page',
+                    image: 'page-one',
+                    is_scanned: true,
+                  },
+                  {
+                    page: 2,
+                    text: 'second page',
+                    image: 'page-two',
+                    is_scanned: true,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    ]
+
+    const result = await buildChatExport(chats, async () => null)
+    const parsed = JSON.parse(result.data as string)
+    const att = parsed[0].chat_messages[0].attachments[0]
+
+    expect(att.textContent).toBe('first page\n\n---\n\nsecond page')
   })
 
   it('produces a zip with attachments, manifest, and no key leakage', async () => {
@@ -99,6 +164,31 @@ describe('buildChatExport', () => {
     expect(manifest.attachment_count).toBe(1)
     expect(manifest.attachments[0].exportPath).toBe('attachments/img-1/pic.png')
     expect(manifest.attachments[0].fileSize).toBe(5)
+  })
+
+  it('records a warning and continues when an attachment cannot be fetched', async () => {
+    const chats = [
+      chat({
+        messages: [
+          {
+            role: 'user',
+            content: 'see pic',
+            timestamp: new Date('2023-11-14T22:13:21.000Z'),
+            attachments: [{ id: 'img-1', type: 'image', fileName: 'pic.png' }],
+          },
+        ],
+      }),
+    ]
+
+    const result = await buildChatExport(chats, async () => null)
+
+    expect(result.isZip).toBe(true)
+    expect(result.warnings.length).toBe(1)
+    const entries = unzipSync(result.data as Uint8Array)
+    expect(Object.keys(entries)).not.toContain('attachments/img-1/pic.png')
+    const conversations = JSON.parse(strFromU8(entries['conversations.json']))
+    const att = conversations[0].chat_messages[0].attachments[0]
+    expect(att.exportPath).toBeUndefined()
   })
 
   it('sanitizes attachment IDs before using them in zip paths', async () => {
@@ -228,7 +318,10 @@ describe('buildChatExport', () => {
             type: 'application/zip',
           },
         ),
-        { generateChatId: () => 'imported-chat' },
+        {
+          generateChatId: () => 'imported-chat',
+          isCloudSyncEnabled: false,
+        },
         true,
       )
 

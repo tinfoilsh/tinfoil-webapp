@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const plausibleScript = readFileSync(
   resolve(process.cwd(), 'public/js/plausible.js'),
@@ -90,6 +90,10 @@ function navigateTo(analytics: ReturnType<typeof loadPlausible>, path: string) {
 }
 
 describe('Plausible analytics', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it.each([
     ['home with prefilled prompt', 'https://chat.tinfoil.sh/?q=private+prompt'],
     ['home with hash prompt', 'https://chat.tinfoil.sh/#send=cHJpdmF0ZQ=='],

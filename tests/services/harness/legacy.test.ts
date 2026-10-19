@@ -27,7 +27,15 @@ describe('legacy transcript upgrade', () => {
   })
 
   it('leaves messages already in the harness format unchanged', () => {
-    expect(upgradeMessages('chat', undefined, expected[0])).toEqual(expected[0])
+    const [stored] = upgradeMessages('chat', undefined, expected[0])
+    const upgradedAgain = upgradeMessages('chat', undefined, [stored])
+    expect(upgradedAgain).toEqual([stored])
+  })
+
+  it('does not modify the stored rows it reads', () => {
+    const source = structuredClone(cases[0].messages)
+    upgradeMessages(cases[0].id, cases[0].createdAt, source)
+    expect(source).toEqual(cases[0].messages)
   })
 
   it.each([

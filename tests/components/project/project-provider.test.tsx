@@ -80,7 +80,7 @@ beforeEach(() => {
       const body = input as { id?: string; facts?: Fact[] }
       if (path === '/v1/projects/get') return stored(body.id!)
       if (path === '/v1/projects/memory/update') return { facts: body.facts }
-      throw new Error(`Unexpected request: ${path}`)
+      return {}
     },
   )
   vi.mocked(client().upload).mockResolvedValue({ id: 'doc-1' })

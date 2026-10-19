@@ -12,6 +12,17 @@ describe('describeImportFailure', () => {
     ] as const
     const copy = reasons.map((reason) => describeImportFailure(reason))
     expect(new Set(copy).size).toBe(reasons.length)
+    expect(describeImportFailure('timeout')).toMatch(/run the import again/i)
+    expect(describeImportFailure('key_mismatch')).toMatch(
+      /nothing was written/i,
+    )
+    expect(describeImportFailure('invalid_archive')).toMatch(
+      /without unzipping or changing it/i,
+    )
+    expect(describeImportFailure('limit_exceeded')).toMatch(
+      /splitting it into smaller exports/i,
+    )
+    expect(describeImportFailure('internal')).toMatch(/on our side/i)
   })
 
   it('uses restore wording for the backup restore surface', () => {

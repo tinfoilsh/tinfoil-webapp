@@ -40,15 +40,17 @@ describe('Content-Security-Policy configuration lint (not browser enforcement)',
     expect(csp).not.toMatch(/\b(script|style)-src-(elem|attr)\b/)
   })
 
+  it('frames the sandbox origin the app is configured to use', () => {
+    expect(directive('frame-src')?.split(/\s+/)).toContain(SANDBOX_ORIGIN)
+  })
+
   it('frames only the enrolled verification center and the sandbox', () => {
-    const frameSources = directive('frame-src')?.split(/\s+/)
-    expect(frameSources).toEqual([
+    expect(directive('frame-src')?.split(/\s+/)).toEqual([
       "'self'",
       'https://verification-center.tinfoil.sh',
       'https://webapp-sandbox.tinfoil.sh',
       'https://tinfoil-webapp-sandbox-tinfoil.vercel.app',
     ])
-    expect(frameSources).toContain(SANDBOX_ORIGIN)
   })
 
   it('has no commas, which WEBCAT rejects as multiple policies', () => {

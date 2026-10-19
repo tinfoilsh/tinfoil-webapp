@@ -125,6 +125,7 @@ const listItem = (title: string) =>
 describe('chat sidebar storage modes', () => {
   beforeEach(() => {
     auth.isSignedIn = true
+    sessionStorage.clear()
     sidebarProjects.list = []
   })
 
