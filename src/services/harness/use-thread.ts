@@ -71,6 +71,15 @@ interface LocalRun {
 
 type FollowInput = { key?: string; threadId: string; runId: string }
 
+// A stream that broke without a reason from the harness, as when the
+// connection dropped. Its run may go on.
+const CONNECTION_LOST: HarnessErrorBody = {
+  code: 'STREAM_INTERRUPTED',
+  message: 'The connection closed. Reconnect to continue.',
+}
+const interrupted = (cause: unknown) =>
+  !(cause instanceof HarnessError) || cause.code === CONNECTION_LOST.code
+
 // The quota a refusal for an exhausted quota describes.
 function exhaustedQuota({
   kind,
@@ -246,17 +255,18 @@ export function useThread(
   )
   // The open chat's run ended with its stream, refused or cut off.
   function failRun(cause: unknown) {
-    if (!(cause instanceof HarnessError)) return report(cause)
+    const detail =
+      cause instanceof HarnessError ? cause.detail : CONNECTION_LOST
     errorAt.current = Date.now()
     const next = {
       ...current.current,
-      error: cause.detail,
+      error: detail,
       status: 'error' as const,
     }
     current.current = next
     setState(next)
-    if (cause.code === 'QUOTA_EXHAUSTED')
-      api.reportRateLimit(exhaustedQuota(cause.detail))
+    if (detail.code === 'QUOTA_EXHAUSTED')
+      api.reportRateLimit(exhaustedQuota(detail))
   }
   // Counts listings of the stored chats apart from the open chat, so that
   // opening a chat keeps the list and only the latest listing applies.
@@ -384,7 +394,8 @@ export function useThread(
     input: Turn | FollowInput,
     run?: LocalRun,
     quiet = false,
-  ) {
+    rejoined = false,
+  ): Promise<boolean> {
     const controller = new AbortController()
     // A run the browser stores keeps reading when the view moves to another
     // chat, or the page to another route, so its reply is still saved. An
@@ -476,7 +487,25 @@ export function useThread(
         }
       }
     } catch (cause) {
-      if (!controller.signal.aborted && version === generation.current) {
+      if (controller.signal.aborted) return false
+      // A stream cut off after its run started rejoins the run once, which
+      // replays it; a run on this device does so after the view moved on.
+      if (
+        runId &&
+        !rejoined &&
+        interrupted(cause) &&
+        (run || version === generation.current)
+      ) {
+        let follow: FollowInput
+        try {
+          follow = { ...runKey(!!run), threadId: input.threadId!, runId }
+        } catch (refusal) {
+          if (version === generation.current) failRun(refusal)
+          return false
+        }
+        return stream('/v1/threads/follow', follow, run, quiet, true)
+      }
+      if (version === generation.current) {
         // A local thread has its id before it starts, so another message may
         // follow a turn the harness did not accept.
         if (run && !run.runId) starting.current = false
@@ -1442,7 +1471,7 @@ export function useThread(
         hasOlder: thread.hasOlder,
       }))
   }
-  const runKey = () => (runsLocally() ? {} : { key: contentKey() })
+  const runKey = (local = runsLocally()) => (local ? {} : { key: contentKey() })
   const running = state.status === 'streaming' || state.status === 'queued'
   const isLocalChat = local && !temporary
   const messages = state.messages.map((m, index) => {

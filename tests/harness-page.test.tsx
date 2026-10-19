@@ -105,12 +105,15 @@ it('retries an ambiguous initial request with its original nonce and input', asy
     })
   const { result } = renderHook(() => useThread())
   await act(() => result.current.send({ content: 'private question' }))
-  expect(result.current.error).toBe('connection closed')
+  expect(result.current.state.status).toBe('error')
+  expect(result.current.error).toBe(
+    'The connection closed. Reconnect to continue.',
+  )
   await act(() => result.current.reconnect())
   expect(client.events.mock.calls[1][1]).toEqual(client.events.mock.calls[0][1])
   expect(result.current.chat.messages).toHaveLength(2)
 })
-it('reattaches an accepted turn by its run, which replays from its start', async () => {
+it('rejoins an accepted turn by its run when its stream drops', async () => {
   const chunk = (id: number, delta: string): Frame => ({
     id,
     event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a', delta },
@@ -131,7 +134,6 @@ it('reattaches an accepted turn by its run, which replays from its start', async
     })
   const { result } = renderHook(() => useThread())
   await act(() => result.current.send({ content: 'private question' }))
-  await act(() => result.current.reconnect())
   expect(client.events.mock.calls[1]).toEqual([
     '/v1/threads/follow',
     {

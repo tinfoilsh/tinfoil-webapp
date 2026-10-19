@@ -515,10 +515,12 @@ describe('local chats of a signed-in account without cloud sync', () => {
   it('keeps a run it could not reach, so reopening the chat rejoins it', async () => {
     signIn('alice')
     await reloadDuringRun()
+    const unreachable = async function* () {
+      throw new TypeError('Failed to fetch')
+    }
     client.events
-      .mockImplementationOnce(async function* () {
-        throw new TypeError('Failed to fetch')
-      })
+      .mockImplementationOnce(unreachable)
+      .mockImplementationOnce(unreachable)
       .mockImplementationOnce(
         frames(
           {
@@ -542,14 +544,14 @@ describe('local chats of a signed-in account without cloud sync', () => {
     const { result } = renderHook(() =>
       useThread(SEEDED_ID, null, { local: true }),
     )
-    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+    await waitFor(() => expect(client.events).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
     expect(result.current.error).toBe('')
     expect(sessionStorage.getItem('harness-run:alice')).not.toBeNull()
 
     await act(() => result.current.open(SEEDED_ID, { local: true }))
 
-    expect(client.events.mock.calls[1].slice(0, 2)).toEqual([
+    expect(client.events.mock.calls[2].slice(0, 2)).toEqual([
       '/v1/threads/follow',
       { threadId: SEEDED_ID, runId: 'run-a3' },
     ])
@@ -1292,6 +1294,115 @@ describe('cloud chats', () => {
     expect(result.current.chat).toMatchObject({
       id: threadId,
       pendingSave: false,
+    })
+  })
+
+  describe('whose stream drops mid-reply', () => {
+    const stored = summary('cloud-thread', 'Stored')
+    const question = {
+      id: 'u1',
+      role: 'user' as const,
+      createdAt: 't1',
+      content: 'Question',
+    }
+    const started: Frame['event'][] = [
+      { type: 'RUN_STARTED', threadId: stored.id, runId: 'run-1' },
+      { type: 'MESSAGES_SNAPSHOT', messages: [question], hasOlder: false },
+      { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: 'Hel' },
+    ]
+    function dropsAfter(events: Frame['event'][]) {
+      return async function* () {
+        for (const [id, event] of events.entries()) yield { id, event }
+        throw new TypeError('network error')
+      }
+    }
+    async function openStored(answer = 'Hello') {
+      signIn('alice', true)
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/list')
+          return { threads: [], nextCursor: null }
+        if (path === '/v1/threads/get')
+          return {
+            ...stored,
+            messages: [
+              question,
+              {
+                id: 'a1',
+                role: 'assistant',
+                createdAt: 't2',
+                timeline: [{ id: 'b1', type: 'content', content: answer }],
+              },
+            ],
+            hasOlder: false,
+          }
+        throw new Error(`Unexpected ${path}`)
+      })
+      const hook = renderHook(() => useThread(stored.id))
+      await waitFor(() => expect(hook.result.current.chat.id).toBe(stored.id))
+      return hook
+    }
+
+    it('rejoin their run, which replays it', async () => {
+      const { result } = await openStored()
+      client.events
+        .mockImplementationOnce(dropsAfter(started))
+        .mockImplementationOnce(
+          frames(
+            ...started,
+            { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: 'lo' },
+            { type: 'RUN_FINISHED', threadId: stored.id, runId: 'run-1' },
+          ),
+        )
+
+      await act(() => result.current.send({ content: 'Question' }))
+
+      expect(client.events.mock.calls[1]).toEqual([
+        '/v1/threads/follow',
+        { key: KEY, threadId: stored.id, runId: 'run-1' },
+        expect.any(AbortSignal),
+      ])
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+        'Question',
+        'Hello',
+      ])
+      expect(result.current.state.status).toBe('idle')
+      expect(result.current.error).toBe('')
+    })
+
+    it('stop streaming when they cannot rejoin, and show the chat once the run is gone', async () => {
+      const { result } = await openStored('Hello, from storage')
+      client.events
+        .mockImplementationOnce(dropsAfter(started))
+        .mockImplementationOnce(dropsAfter([]))
+
+      await act(() => result.current.send({ content: 'Question' }))
+
+      expect(client.events).toHaveBeenCalledTimes(2)
+      expect(result.current.running).toBe(false)
+      expect(result.current.state.status).toBe('error')
+      expect(result.current.errorDetail).toEqual({
+        code: 'STREAM_INTERRUPTED',
+        message: 'The connection closed. Reconnect to continue.',
+      })
+      client.events.mockImplementationOnce(async function* () {
+        throw new HarnessError(
+          { code: 'RUN_NOT_FOUND', message: 'The run is not running here' },
+          404,
+        )
+      })
+
+      await act(() => result.current.retry())
+
+      expect(client.events.mock.calls[2].slice(0, 2)).toEqual([
+        '/v1/threads/follow',
+        { key: KEY, threadId: stored.id, runId: 'run-1' },
+      ])
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+        'Question',
+        'Hello, from storage',
+      ])
+      expect(result.current.state.status).toBe('idle')
+      expect(result.current.error).toBe('')
     })
   })
 
