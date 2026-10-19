@@ -187,10 +187,14 @@ export type Chat = {
   isMetadataOnly?: boolean
   pendingRecoveries?: PendingRecoveryEnvelope[]
   createdAt: Date
-  // Latest server-bumped write time, used as the canonical sort
-  // key for the sidebar. Absent for chats that have never been
-  // stored (blank chats kept purely in component state).
+  // Last local write time, used to detect concurrent edits. The chat
+  // list is ordered by `chatActivityTime`, not by this. Absent for
+  // chats that have never been stored (blank chats kept purely in
+  // component state).
   updatedAt?: string
+  // Last conversation activity, recorded on summary rows only so the
+  // list can be ordered without loading messages. See chatActivityTime.
+  activityAt?: string
   // Sync metadata - optional for backward compatibility
   syncedAt?: number
   locallyModified?: boolean

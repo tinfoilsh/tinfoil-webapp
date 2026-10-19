@@ -20,12 +20,17 @@ vi.mock('@/hooks/use-chat-search', () => ({
 }))
 
 const chats = [
-  { id: 'c1', title: 'Grilling lamb', updatedAt: '2026-08-01T00:00:00Z' },
-  { id: 'c2', title: 'Brand guide fonts', updatedAt: '2026-08-03T00:00:00Z' },
+  { id: 'c1', title: 'Grilling lamb', createdAt: '2026-08-01T00:00:00Z' },
+  {
+    id: 'c2',
+    title: 'Brand guide fonts',
+    createdAt: '2026-07-15T00:00:00Z',
+    messages: [{ timestamp: '2026-08-03T00:00:00Z' }],
+  },
   {
     id: 'p1c',
     title: 'Roadmap draft',
-    updatedAt: '2026-08-02T00:00:00Z',
+    createdAt: '2026-08-02T00:00:00Z',
     projectId: 'proj-1',
   },
 ]
@@ -67,7 +72,7 @@ describe('ChatSearchModal', () => {
     searchState.isIndexing = false
   })
 
-  it('lists recent non-project chats newest first before a term is typed', () => {
+  it('lists recent non-project chats by latest activity before a term is typed', () => {
     renderModal()
 
     const options = screen.getAllByRole('option')

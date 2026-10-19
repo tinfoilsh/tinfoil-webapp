@@ -14,7 +14,10 @@ const baseChat: Chat = {
   messageCount: 4,
   isMetadataOnly: true,
   createdAt: new Date('2026-08-11T10:00:00.000Z'),
-  updatedAt: '2026-08-11T13:25:00.000Z',
+  // A rename after the last message moves the write time but not the
+  // activity time the header reports.
+  updatedAt: '2026-08-11T13:29:00.000Z',
+  activityAt: '2026-08-11T13:25:00.000Z',
 }
 
 function renderHeader(chat: Partial<Chat> = {}, isStreaming = false) {
@@ -47,14 +50,14 @@ describe('ChatHeader', () => {
       .mockReturnValue(timestamp.getTime() + 60_000)
     renderHeader({
       createdAt: timestamp,
-      updatedAt: timestamp.toISOString(),
+      activityAt: timestamp.toISOString(),
       messageCount: 4,
     })
     expect(screen.queryByText(/Updated/)).not.toBeInTheDocument()
     expect(now).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the title, creation time, and updated time for later turns', () => {
+  it('shows the title, creation time, and last activity time for later turns', () => {
     renderHeader({ syncedAt: Date.now() })
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(

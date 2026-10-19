@@ -4,6 +4,7 @@ import { cn } from '@/components/ui/utils'
 import { useChatSearch } from '@/hooks/use-chat-search'
 import type { Project } from '@/types/project'
 import { isSearchableChat } from '@/utils/chat-search-visibility'
+import { chatActivityTime } from '@/utils/chat-timestamps'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import {
   TfBoxX,
@@ -32,7 +33,10 @@ const SEARCH_TAB_INACTIVE_CLASS_NAME =
 export interface SearchableChat {
   id: string
   title: string
-  updatedAt?: Date | string
+  createdAt?: Date | string
+  messages?: ReadonlyArray<{ timestamp?: Date | string }>
+  isMetadataOnly?: boolean
+  activityAt?: string
   projectId?: string
   isBlankChat?: boolean
   isTemporary?: boolean
@@ -58,13 +62,6 @@ interface ChatSearchModalProps {
 type ResultRow =
   | { kind: 'chat'; id: string; title: string; projectId?: string }
   | { kind: 'project'; id: string; name: string }
-
-const toTime = (value?: Date | string): number => {
-  if (!value) return 0
-  const time =
-    value instanceof Date ? value.getTime() : new Date(value).getTime()
-  return Number.isNaN(time) ? 0 : time
-}
 
 export function ChatSearchModal({
   isOpen,
@@ -104,7 +101,7 @@ export function ChatSearchModal({
     () =>
       [...savedChats]
         .filter((chat) => !chat.projectId)
-        .sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt))
+        .sort((a, b) => chatActivityTime(b) - chatActivityTime(a))
         .slice(0, CONSTANTS.SEARCH_RECENT_CHAT_COUNT),
     [savedChats],
   )

@@ -58,6 +58,7 @@ import { formatRelativeTime } from './chat-list-utils'
 import { CONSTANTS } from './constants'
 import { useDrag } from './drag-context'
 import { consumeFavoriteDrop } from './favorite-drag'
+import { sortChats } from './hooks/chat-operations'
 import type { SettingsTab } from './settings-modal'
 import { SidebarAccountMenu } from './sidebar-account-menu'
 import { getSidebarUpsellVariant } from './sidebar-upsell-state'
@@ -675,23 +676,28 @@ export function ChatSidebar({
   }, [hideScrollbarWhileSectionsAnimate])
 
   const filteredChats = useMemo(() => {
-    // The incoming `chats` array is already sorted by `sortChats`
-    // (blank-first, then most-recently-updated). We only filter
-    // here; the display order matches the server's pagination so
-    // newly-loaded pages slot in at the bottom without reshuffling.
+    // Sorting here, rather than trusting the incoming order, moves a chat
+    // to the top as soon as a message lands in it. The order matches the
+    // server's pagination, so newly loaded pages slot in at the bottom.
     if (isSignedIn && cloudSyncEnabled) {
       if (localOnlyModeEnabled && activeTab === 'local') {
-        return chats.filter(
-          (chat) => chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
+        return sortChats(
+          chats.filter(
+            (chat) => chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
+          ),
         )
       }
-      return chats.filter(
-        (chat) => !chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
+      return sortChats(
+        chats.filter(
+          (chat) => !chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
+        ),
       )
     }
-    return chats.filter(
-      (chat) =>
-        (chat as any).isLocalOnly && !chat.projectId && !chat.isBlankChat,
+    return sortChats(
+      chats.filter(
+        (chat) =>
+          (chat as any).isLocalOnly && !chat.projectId && !chat.isBlankChat,
+      ),
     )
   }, [chats, activeTab, isSignedIn, cloudSyncEnabled, localOnlyModeEnabled])
 

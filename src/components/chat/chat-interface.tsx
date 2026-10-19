@@ -98,6 +98,7 @@ import {
   isIndexedDBUpgradeBlocked,
 } from '@/services/storage/indexed-db'
 import { sessionChatStorage } from '@/services/storage/session-storage'
+import { chatActivityTime } from '@/utils/chat-timestamps'
 import {
   CLOUD_SYNC_SETTING_CHANGED_EVENT,
   isCloudSyncEnabled,
@@ -4174,8 +4175,7 @@ export function ChatInterface({
                       messageCount: c.isMetadataOnly
                         ? (c.messageCount ?? 0)
                         : c.messages.length,
-                      createdAt: c.createdAt,
-                      updatedAt: c.updatedAt,
+                      lastActivityAt: chatActivityTime(c),
                       projectId: c.projectId,
                       isBlankChat: c.isBlankChat,
                       decryptionFailed: c.decryptionFailed,
@@ -4235,8 +4235,7 @@ export function ChatInterface({
                       messageCount: c.isMetadataOnly
                         ? (c.messageCount ?? 0)
                         : c.messages.length,
-                      createdAt: c.createdAt,
-                      updatedAt: c.updatedAt,
+                      lastActivityAt: chatActivityTime(c),
                       projectId: c.projectId,
                       isBlankChat: c.isBlankChat,
                       decryptionFailed: c.decryptionFailed,

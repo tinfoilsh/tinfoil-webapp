@@ -1,6 +1,7 @@
 'use client'
 
 import { useSyncFailedChats } from '@/hooks/use-sync-health'
+import { chatActivityTime } from '@/utils/chat-timestamps'
 import { CloudArrowUpIcon } from '@heroicons/react/24/outline'
 import {
   TfCloud,
@@ -68,7 +69,9 @@ export function ChatHeader({
   )
 
   const createdAt = toDate(chat.createdAt)
-  const updatedAt = toDate(chat.updatedAt) ?? createdAt
+  // "Updated" is the last conversation activity, the same time the chat
+  // list is ordered by.
+  const updatedAt = createdAt ? new Date(chatActivityTime(chat)) : null
   const referenceTime = Date.now()
   const createdRelativeTime = createdAt
     ? formatRelativeTime(createdAt, referenceTime)

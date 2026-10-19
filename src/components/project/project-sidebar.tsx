@@ -78,8 +78,8 @@ interface ProjectChat {
   id: string
   title: string
   messageCount: number
-  createdAt: Date
-  updatedAt?: string
+  // Last conversation activity in epoch milliseconds (chatActivityTime).
+  lastActivityAt: number
   projectId?: string
   isBlankChat?: boolean
   decryptionFailed?: boolean
@@ -645,14 +645,10 @@ export function ProjectSidebar({
       (editedColor ?? '') !== (project.color ?? '')
     : false
 
-  // Convert chatsProp to ChatItemData format and sort by updatedAt descending
+  // Convert chatsProp to ChatItemData format, most recent activity first
   const projectChats: ChatItemData[] = (chatsProp || [])
     .filter((c) => !c.isBlankChat)
-    .sort(
-      (a, b) =>
-        new Date(b.updatedAt ?? b.createdAt).getTime() -
-        new Date(a.updatedAt ?? a.createdAt).getTime(),
-    )
+    .sort((a, b) => b.lastActivityAt - a.lastActivityAt)
     .map((c) => ({
       id: c.id,
       title: c.title,

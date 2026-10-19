@@ -107,13 +107,13 @@ describe('project sidebar layout', () => {
           id: 'first',
           title: 'First project chat',
           messageCount: 2,
-          createdAt: new Date('2026-09-02T12:00:00Z'),
+          lastActivityAt: Date.parse('2026-09-02T12:00:00Z'),
         },
         {
           id: 'second',
           title: 'Second project chat',
           messageCount: 1,
-          createdAt: new Date('2026-09-01T12:00:00Z'),
+          lastActivityAt: Date.parse('2026-09-01T12:00:00Z'),
         },
       ],
     })
@@ -134,33 +134,32 @@ describe('project sidebar layout', () => {
     expect(description.nextElementSibling).toContainElement(list)
   })
 
-  it('orders project chats by update time with creation time as the fallback', () => {
+  it('orders project chats by last activity', () => {
     const chats = [
       {
         id: 'old',
         title: 'Older chat',
         messageCount: 2,
-        createdAt: new Date('2026-09-01T12:00:00Z'),
+        lastActivityAt: Date.parse('2026-09-01T12:00:00Z'),
       },
       {
-        id: 'updated',
-        title: 'Recently updated',
+        id: 'recent',
+        title: 'Recent activity',
         messageCount: 2,
-        createdAt: new Date('2026-09-01T12:00:00Z'),
-        updatedAt: '2026-09-03T12:00:00Z',
+        lastActivityAt: Date.parse('2026-09-03T12:00:00Z'),
       },
       {
-        id: 'created',
-        title: 'Recently created',
+        id: 'middle',
+        title: 'Middle activity',
         messageCount: 2,
-        createdAt: new Date('2026-09-02T12:00:00Z'),
+        lastActivityAt: Date.parse('2026-09-02T12:00:00Z'),
       },
     ]
     renderSidebar({ chats, pixelateSidebarChatTitles: false })
     expect(
       screen.getAllByRole('listitem').map((row) => row.textContent),
-    ).toEqual(['Recently updated', 'Recently created', 'Older chat'])
-    expect(chats.map((chat) => chat.id)).toEqual(['old', 'updated', 'created'])
+    ).toEqual(['Recent activity', 'Middle activity', 'Older chat'])
+    expect(chats.map((chat) => chat.id)).toEqual(['old', 'recent', 'middle'])
   })
 
   it('uses a compact content-width blue exit button and preserves its action', () => {
