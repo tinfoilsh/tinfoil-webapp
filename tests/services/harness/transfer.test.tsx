@@ -5,7 +5,7 @@ import { useThread } from '@/services/harness/use-thread'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
 import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
@@ -485,6 +485,139 @@ describe('moving a chat from this device to the cloud', () => {
       await sending
     })
     expect((await stored(CHAT_ID))?.id).toBe(CHAT_ID)
+  })
+
+  describe('after a turn of the chat ended without its reply', () => {
+    beforeEach(async () => {
+      signIn({ cloud: true })
+      await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/list')
+          return { threads: [], nextCursor: null }
+        if (path === '/v1/threads/import') return imported
+        if (path === '/v1/threads/get')
+          return { ...imported, hasOlder: false, messages: [] }
+        throw new Error(`Unexpected ${path}`)
+      })
+    })
+    async function openDeviceChat() {
+      const hook = renderHook(() => useThread(CHAT_ID, null, { local: true }))
+      await waitFor(() =>
+        expect(hook.result.current.chat.messages).toHaveLength(2),
+      )
+      return hook
+    }
+    async function movesToCloud(result: {
+      current: ReturnType<typeof useThread>
+    }) {
+      await act(() => result.current.moveToCloud(CHAT_ID))
+      expect(transfers().map(([path]) => path)).toEqual([
+        '/v1/threads/import',
+        '/v1/threads/get',
+      ])
+      expect(await stored(CHAT_ID)).toBeNull()
+    }
+
+    it('moves the chat once a turn queued behind its reply is removed', async () => {
+      let finishReply!: () => void
+      const replying = new Promise<void>((resolve) => {
+        finishReply = resolve
+      })
+      let removeQueued!: () => void
+      const queued = new Promise<void>((resolve) => {
+        removeQueued = resolve
+      })
+      client.events
+        .mockImplementationOnce(async function* () {
+          yield {
+            id: 0,
+            event: { type: 'RUN_STARTED', threadId: CHAT_ID, runId: 'run-1' },
+          }
+          await replying
+          yield {
+            id: 1,
+            event: { type: 'RUN_FINISHED', threadId: CHAT_ID, runId: 'run-1' },
+          }
+        })
+        .mockImplementationOnce(async function* () {
+          yield {
+            id: 0,
+            event: {
+              type: 'STATE_DELTA',
+              runId: 'queued-1',
+              delta: [
+                {
+                  op: 'add',
+                  path: '/queue/-',
+                  value: { queueId: 'queued-1', content: 'And then?' },
+                },
+              ],
+            },
+          }
+          await queued
+          yield {
+            id: 1,
+            event: {
+              type: 'RUN_FINISHED',
+              threadId: CHAT_ID,
+              runId: 'queued-1',
+              metadata: { cancelled: true },
+            },
+          }
+        })
+      const { result } = await openDeviceChat()
+      let replied: Promise<unknown> | undefined
+      act(() => {
+        replied = result.current.send({ content: 'More?' })
+      })
+      await waitFor(() => expect(result.current.running).toBe(true))
+      let queuedTurn: Promise<unknown> | undefined
+      act(() => {
+        queuedTurn = result.current.send({ content: 'And then?' })
+      })
+      await waitFor(() =>
+        expect(result.current.state.snapshot.queue).toEqual([
+          { queueId: 'queued-1', content: 'And then?' },
+        ]),
+      )
+
+      await act(async () => {
+        removeQueued()
+        await queuedTurn
+        finishReply()
+        await replied
+      })
+
+      expect(result.current.running).toBe(false)
+      await movesToCloud(result)
+    })
+
+    it('moves the chat once its reply could not be rejoined', async () => {
+      const dropped = async function* (): AsyncGenerator<{
+        id: number
+        event: { type: string; threadId: string; runId: string }
+      }> {
+        throw new TypeError('network error')
+      }
+      client.events
+        .mockImplementationOnce(async function* () {
+          yield {
+            id: 0,
+            event: { type: 'RUN_STARTED', threadId: CHAT_ID, runId: 'run-1' },
+          }
+          throw new TypeError('network error')
+        })
+        .mockImplementationOnce(dropped)
+      const { result } = await openDeviceChat()
+
+      await act(() => result.current.send({ content: 'More?' }))
+
+      expect(client.events).toHaveBeenCalledTimes(2)
+      expect(
+        result.current.chats.find((chat) => chat.id === CHAT_ID)?.activeRun,
+      ).toBeFalsy()
+      await movesToCloud(result)
+    })
   })
 
   it('changes nothing in the open chat until its move ends', async () => {

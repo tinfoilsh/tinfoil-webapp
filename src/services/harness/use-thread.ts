@@ -202,7 +202,13 @@ export function useThread(
   // whose chat is no longer open.
   const [, setLocalRunsChanged] = useState(0)
   const generation = useRef(0)
-  const starting = useRef(false)
+  // The local turn sent and not started yet. Its chat takes no other local
+  // turn until the turn starts or its stream ends, as when it was queued and
+  // then removed.
+  const starting = useRef<LocalRun | null>(null)
+  const settle = (run: LocalRun) => {
+    if (starting.current === run) starting.current = null
+  }
   // Chats moving between the cloud and this device, and their moves. A change
   // made to a chat during its move would stay with the copy the move deletes,
   // so the chat takes no turns or edits until the move ends, and is deleted
@@ -309,7 +315,7 @@ export function useThread(
     setNotFound(false)
     unsavedRef.current = null
     setUnsaved(null)
-    starting.current = false
+    starting.current = null
     pending.current = null
     uploads.current = new Map()
     images.current = new Map()
@@ -395,13 +401,13 @@ export function useThread(
           succeeded = event.metadata?.cancelled !== true
         if (event.type === 'RUN_STARTED') {
           if (run) {
+            settle(run)
             run.runId = event.runId
             localRuns.current.set(run.threadId, run)
             setLocalRunsChanged((count) => count + 1)
           }
           if (attached) {
             pending.current = null
-            starting.current = false
             // The harness stored a new chat's first turn.
             if (!run) markSaved(input.threadId!)
             // A stored chat names its run itself; a temporary chat or one on
@@ -434,10 +440,6 @@ export function useThread(
               })
           })
         if (terminal) {
-          if (run && localRuns.current.get(run.threadId) === run) {
-            localRuns.current.delete(run.threadId)
-            setLocalRunsChanged((count) => count + 1)
-          }
           forgetReceipt(runId)
           void (api.userId ? refresh() : api.refresh()).catch(report)
         }
@@ -459,12 +461,9 @@ export function useThread(
           if (version === generation.current) failRun(refusal)
           return false
         }
-        return stream('/v1/threads/follow', follow, run, quiet, true)
+        return await stream('/v1/threads/follow', follow, run, quiet, true)
       }
       if (version === generation.current) {
-        // A local thread has its id before it starts, so another message may
-        // follow a turn the harness did not accept.
-        if (run && !run.runId) starting.current = false
         // A turn sent again after the harness applied it changed the chat
         // already, and a run the harness no longer has ended, finished or
         // not: either way the chat shows as stored.
@@ -484,6 +483,15 @@ export function useThread(
       }
     } finally {
       followers.current.delete(controller)
+      // A local run this page no longer reads is not shown as running, and
+      // another turn may follow one that never started.
+      if (run) {
+        settle(run)
+        if (localRuns.current.get(run.threadId) === run) {
+          localRuns.current.delete(run.threadId)
+          setLocalRunsChanged((count) => count + 1)
+        }
+      }
     }
     return succeeded && version === generation.current
   }
@@ -718,15 +726,16 @@ export function useThread(
   // A local turn carries the thread and the settings a prompt reads instead
   // of the content key, which it never uses.
   async function sendLocal(fields: Partial<Turn>) {
-    starting.current = true
     const version = generation.current
     const target = storeFor(temporaryRef.current)
     const threadId = startChat()
+    const run: LocalRun = { threadId, store: target, images: new Map() }
+    starting.current = run
     let base: StoredThread
     try {
       base = await localTranscript(threadId, target)
     } catch (cause) {
-      starting.current = false
+      settle(run)
       report(cause)
       return false
     }
@@ -738,14 +747,10 @@ export function useThread(
       thread: turnThread(base),
       profile: turnProfile(profileRef.current),
     }
-    const run: LocalRun = {
-      threadId,
-      store: target,
-      images: holdImages(
-        uploaded(fields.attachments),
-        heldImages(base.messages),
-      ),
-    }
+    run.images = holdImages(
+      uploaded(fields.attachments),
+      heldImages(base.messages),
+    )
     pending.current = { input, run }
     showSent(input)
     return stream('/v1/threads/turn', input, run)
@@ -974,10 +979,10 @@ export function useThread(
   async function moveToCloud(threadId: string) {
     const running =
       localRuns.current.has(threadId) ||
+      starting.current?.threadId === threadId ||
       (idRef.current === threadId &&
         (current.current.status === 'streaming' ||
-          current.current.status === 'queued' ||
-          starting.current))
+          current.current.status === 'queued'))
     if (running) throw transferInFlight()
     return whileMoving(threadId, async () => {
       const { summary, original } = await moveThreadToCloud(
