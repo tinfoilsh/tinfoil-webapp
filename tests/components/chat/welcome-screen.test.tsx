@@ -15,6 +15,9 @@ vi.mock('@/components/chat/chat-input', () => ({ ChatInput: () => null }))
 vi.mock('@/components/chat/model-selector', () => ({
   ModelSelector: () => null,
 }))
+vi.mock('@/components/chat/hooks/use-prompt-library', () => ({
+  usePromptLibrary: () => ({ favoritePresets: [] }),
+}))
 
 function renderWelcome(isDarkMode = false) {
   return render(

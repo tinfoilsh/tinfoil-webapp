@@ -1,12 +1,12 @@
 import { TextureGrid } from '@/components/texture-grid'
 import { useToast } from '@/hooks/use-toast'
 import {
-  isShareTooLarge,
-  revokeShare,
-  SHARE_TOO_LARGE_MESSAGE,
-  shareStatus,
-} from '@/services/harness/shares'
-import { logError } from '@/utils/error-handling'
+  deleteSharedChat,
+  getShareStatus,
+  uploadSharedChat,
+} from '@/services/share-api'
+import { shareSeal as enclaveShareSeal } from '@/services/sync-enclave/sync-api'
+import type { ShareableChatData } from '@/utils/share-payload'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import {
   TfBoxCheckmark,
@@ -24,7 +24,6 @@ import {
   hasMessageAttachments,
 } from './attachment-helpers'
 import { CONSTANTS } from './constants'
-import type { LoadDocumentText } from './document-text-context'
 import type { Message } from './types'
 
 type ShareModalProps = {
@@ -37,11 +36,6 @@ type ShareModalProps = {
   chatTitle?: string
   chatCreatedAt?: Date
   chatId?: string
-  // Creates the chat's share link and returns it.
-  share: (chatId: string) => Promise<string>
-  // Reads the text of a document whose message does not carry it, so the
-  // markdown includes it.
-  loadDocumentText?: LoadDocumentText
 }
 
 export function ShareModal(props: ShareModalProps) {
@@ -58,8 +52,6 @@ function ShareModalContent({
   chatTitle,
   chatCreatedAt,
   chatId,
-  share,
-  loadDocumentText,
 }: ShareModalProps) {
   const { toast } = useToast()
   const [isCopied, setIsCopied] = useState(false)
@@ -75,11 +67,6 @@ function ShareModalContent({
   const shareLinkInputRef = useRef<HTMLInputElement>(null)
   const previousShareUrlRef = useRef<string | null>(null)
   const isMountedRef = useRef(false)
-  const [documentTexts, setDocumentTexts] = useState<Record<string, string>>({})
-  const requestedTexts = useRef(new Set<string>())
-  const failedTexts = useRef(new Set<string>())
-  const isOpenRef = useRef(isOpen)
-  isOpenRef.current = isOpen
   const isBusy = isUploading || isRevoking
   const canChangeSharing = !isBusy && !isCheckingShare && hasShare !== null
   const showShareEnabled = hasShare !== null && isShareEnabled
@@ -102,7 +89,7 @@ function ShareModalContent({
     let ignore = false
     setHasShare(null)
     setIsCheckingShare(true)
-    shareStatus(chatId)
+    getShareStatus(chatId)
       .then((shared) => {
         if (ignore) return
         setHasShare(shared)
@@ -127,44 +114,6 @@ function ShareModalContent({
     setIsLinkCopied(false)
     previousShareUrlRef.current = null
   }, [chatId])
-
-  // Each document's text is read once while the dialog is open; one that
-  // failed is read again when the dialog next opens.
-  useEffect(() => {
-    if (!isOpen) {
-      for (const id of failedTexts.current) requestedTexts.current.delete(id)
-      failedTexts.current.clear()
-      return
-    }
-    if (!loadDocumentText) return
-    for (const attachment of messages.flatMap(getMessageAttachments)) {
-      if (
-        attachment.type !== 'document' ||
-        attachment.textContent !== undefined ||
-        requestedTexts.current.has(attachment.id)
-      )
-        continue
-      requestedTexts.current.add(attachment.id)
-      loadDocumentText(attachment)
-        .then((text) => {
-          if (isMountedRef.current)
-            setDocumentTexts((previous) => ({
-              ...previous,
-              [attachment.id]: text,
-            }))
-        })
-        .catch((error) => {
-          // The markdown still lists the document by name. A read that
-          // failed after the dialog closed is also read again next time.
-          if (isOpenRef.current) failedTexts.current.add(attachment.id)
-          else requestedTexts.current.delete(attachment.id)
-          logError('Failed to load document text for sharing', error, {
-            component: 'ShareModal',
-            action: 'loadDocumentText',
-          })
-        })
-    }
-  }, [isOpen, messages, loadDocumentText])
 
   // Reset transient state when modal closes
   useEffect(() => {
@@ -262,14 +211,8 @@ function ShareModalContent({
 
         // Add document text content if any
         const docTexts = allAttachments
-          .filter(
-            (a) =>
-              a.type === 'document' && (a.textContent ?? documentTexts[a.id]),
-          )
-          .map(
-            (a) =>
-              `Document title: ${a.fileName}\n${a.textContent ?? documentTexts[a.id]}`,
-          )
+          .filter((a) => a.type === 'document' && a.textContent)
+          .map((a) => `Document title: ${a.fileName}\n${a.textContent}`)
         if (docTexts.length > 0) {
           markdown += '**Document Content:**\n'
           markdown += '```\n'
@@ -330,28 +273,98 @@ function ShareModalContent({
 
     setIsUploading(true)
     try {
-      const url = await share(chatId)
-      // A link for a conversation the user has since left must not appear
-      // as another conversation's link.
-      if (!isMountedRef.current) return
+      const shareableData: ShareableChatData = {
+        v: 1,
+        title: chatTitle || 'Shared Chat',
+        messages: messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          modelDisplayName: m.modelDisplayName,
+          documentContent:
+            m.documentContent ??
+            (m.attachments
+              ?.filter((a) => a.type === 'document' && a.textContent)
+              .map(
+                (a) =>
+                  `Document title: ${a.fileName}\nDocument contents:\n${a.textContent}`,
+              )
+              .join('\n\n') ||
+              undefined),
+          documents:
+            m.documents ??
+            (m.attachments?.map((a) => ({ name: a.fileName })) || undefined),
+          timestamp:
+            m.timestamp instanceof Date
+              ? m.timestamp.getTime()
+              : typeof m.timestamp === 'string'
+                ? Date.parse(m.timestamp)
+                : m.timestamp,
+          thoughts: m.thoughts,
+          thinkingDuration: m.thinkingDuration,
+          isError: m.isError,
+          attachments: m.attachments?.length
+            ? m.attachments.map((a) => ({
+                id: a.id,
+                type: a.type,
+                fileName: a.fileName,
+                mimeType: a.mimeType,
+                thumbnailBase64: a.thumbnailBase64,
+                encryptionKey: a.encryptionKey,
+                textContent: a.textContent,
+                description: a.description,
+              }))
+            : undefined,
+          timeline: m.timeline,
+          annotations: m.annotations,
+          webSearch: m.webSearch,
+          webSearchBeforeThinking: m.webSearchBeforeThinking,
+          urlFetches: m.urlFetches,
+        })),
+        createdAt: chatCreatedAt ? chatCreatedAt.getTime() : Date.now(),
+      }
+
+      // Seal through the sync enclave: the enclave generates a fresh
+      // share key, gzips, AES-GCM-seals, and returns key + ciphertext.
+      // The owner uploads ciphertext to controlplane and embeds the
+      // key in the URL fragment with a `v2:` prefix so the recipient
+      // can tell which decryption path to use.
+      const plaintext = new TextEncoder().encode(JSON.stringify(shareableData))
+      let sealed: { share_key: string; ciphertext: string }
+      try {
+        sealed = await enclaveShareSeal({ plaintext })
+      } catch (e) {
+        throw new Error(
+          `Share seal failed: ${e instanceof Error ? e.message : String(e)}`,
+        )
+      }
+
+      try {
+        if (!isMountedRef.current) return
+        const bin = Uint8Array.from(atob(sealed.ciphertext), (c) =>
+          c.charCodeAt(0),
+        )
+        await uploadSharedChat(chatId, bin)
+      } catch (e) {
+        throw new Error(
+          `Upload failed: ${e instanceof Error ? e.message : String(e)}`,
+        )
+      }
+
+      const url = `${window.location.origin}/share/${chatId}#v2:${sealed.share_key}`
       setShareUrl(url)
       setHasShare(true)
     } catch (error) {
-      if (!isMountedRef.current) return
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to create share link'
       toast({
         title: 'Share failed',
-        description: isShareTooLarge(error)
-          ? SHARE_TOO_LARGE_MESSAGE
-          : error instanceof Error
-            ? error.message
-            : 'Failed to create share link',
+        description: errorMessage,
         variant: 'destructive',
         position: 'top-left',
       })
-      // The link may have been stored though its response was lost.
       setStatusRetry((value) => value + 1)
     } finally {
-      if (isMountedRef.current) setIsUploading(false)
+      setIsUploading(false)
     }
   }
 
@@ -364,14 +377,12 @@ function ShareModalContent({
 
     setIsRevoking(true)
     try {
-      await revokeShare(chatId)
-      if (!isMountedRef.current) return
+      await deleteSharedChat(chatId)
       setIsShareEnabled(false)
       setHasShare(false)
       setShareUrl(null)
       setIsLinkCopied(false)
     } catch {
-      if (!isMountedRef.current) return
       toast({
         title: 'Could not disable sharing',
         description: 'The link may still be active. Please try again.',
@@ -380,12 +391,12 @@ function ShareModalContent({
       })
       setStatusRetry((value) => value + 1)
     } finally {
-      if (isMountedRef.current) setIsRevoking(false)
+      setIsRevoking(false)
     }
   }
 
   const markdown = convertToMarkdown()
-  const statusText = isRevoking
+  const shareStatus = isRevoking
     ? 'Revoking share link'
     : isCheckingShare
       ? 'Checking share status'
@@ -427,7 +438,7 @@ function ShareModalContent({
               Share Conversation
             </DialogPrimitive.Title>
             <span className="sr-only" role="status" aria-live="polite">
-              {statusText}
+              {shareStatus}
             </span>
             <button
               onClick={onClose}

@@ -1,13 +1,15 @@
 export const SPEECH = {
-  // The harness asks for Qwen's raw audio stream: mono, signed 16-bit
-  // little-endian PCM.
+  MODEL: 'qwen3-tts',
+  VOICE: 'aiden',
+  INSTRUCTIONS:
+    'Read in a calm, natural conversational voice with a steady pace, consistent pitch range, and restrained expression. Use natural sentence pauses and maintain an even narration style.',
+  // Qwen's raw HTTP audio stream is mono, signed 16-bit little-endian PCM.
   SAMPLE_RATE: 24000,
   CHANNELS: 1,
   BYTES_PER_SAMPLE: 2,
   PCM_SCALE: 32768,
   BLOCK_SAMPLES: 6000,
   TARGET_CHUNK_CHARACTERS: 300,
-  // The longest text the harness reads aloud in one request.
   MAX_CHUNK_CHARACTERS: 600,
   MAX_TEXT_CHARACTERS: 100000,
   CONCURRENT_REQUESTS: 2,

@@ -1,4 +1,4 @@
-import type { ImportFailureReason } from '@/services/harness/archives'
+import type { ImportFailureReason } from '@/services/sync-enclave/sync-api'
 
 /** Which user flow drove the enclave import job; picks matching wording. */
 export type ImportSurface = 'chat_import' | 'backup_restore'

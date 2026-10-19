@@ -1,5 +1,4 @@
 import { AuthTokenUnavailableError } from '@/services/auth'
-import { HarnessError } from '@/services/harness/sse'
 import { NativeBackupCollectionError } from '@/services/native-backup/collect'
 import {
   nativeBackupExportError,
@@ -7,6 +6,7 @@ import {
   type NativeBackupExportDependencies,
 } from '@/services/native-backup/export'
 import { NativeBackupWriterError } from '@/services/native-backup/write'
+import { SyncEnclaveError } from '@/services/sync-enclave'
 import { describe, expect, it, vi } from 'vitest'
 
 describe('native backup export orchestration', () => {
@@ -166,25 +166,14 @@ describe('native backup export orchestration', () => {
   it('returns actionable errors for expected failures', () => {
     expect(
       nativeBackupExportError(
-        new NativeBackupCollectionError('limits', 'collection', 'too large'),
+        new NativeBackupCollectionError('cloud chat', 'chat-1', 'missing'),
       ),
-    ).toContain('too large to create')
-    expect(
-      nativeBackupExportError(
-        new HarnessError(
-          {
-            code: 'ATTACHMENT_TOO_LARGE',
-            message: 'The backup exceeds the archive limits',
-          },
-          413,
-        ),
-      ),
-    ).toContain('too large to create')
+    ).toContain('changed or went missing')
     expect(
       nativeBackupExportError(
         new NativeBackupWriterError('compressed_limit', 'too large'),
       ),
-    ).toContain('too large to save in your browser')
+    ).toContain('too large')
     expect(
       nativeBackupExportError(new DOMException('Denied', 'NotAllowedError')),
     ).toContain('Allow file downloads')
@@ -193,33 +182,19 @@ describe('native backup export orchestration', () => {
     ).toContain('No backup file was saved')
     expect(
       nativeBackupExportError(
-        new HarnessError({
-          code: 'KEY_REQUIRED',
-          message: 'Unlock your encryption key in Settings to continue.',
-        }),
+        new NativeBackupCollectionError('account', 'active', 'unavailable'),
+      ),
+    ).toContain('Sign in again')
+    expect(
+      nativeBackupExportError(
+        new NativeBackupCollectionError('account', 'user-1', 'locked'),
       ),
     ).toContain('Unlock your cloud encryption key')
     expect(
       nativeBackupExportError(new AuthTokenUnavailableError('unavailable')),
     ).toContain('Sign in again')
-    expect(
-      nativeBackupExportError(
-        new HarnessError(
-          { code: 'UNAUTHENTICATED', message: 'Sign in again to continue.' },
-          401,
-        ),
-      ),
-    ).toContain('Sign in again, then retry the backup')
-    expect(
-      nativeBackupExportError(
-        new HarnessError(
-          { code: 'BUSY', message: 'Another archive is being built.' },
-          503,
-        ),
-      ),
-    ).toBe('Another archive is being built.')
-    expect(nativeBackupExportError(new TypeError('Failed to fetch'))).toBe(
-      'The backup could not be created. Check your connection and try again.',
+    expect(nativeBackupExportError(new SyncEnclaveError('', 401))).toContain(
+      'Sign in again',
     )
   })
 })

@@ -13,8 +13,8 @@
  *
  * The legacy decoder `decryptKeyBundle` uses client-side AES-256-GCM. Optimistic
  * concurrency is enforced by the enclave: register-key uses
- * `if_match='*'` for first-time writes and the harness returns
- * KEY_MISMATCH when a key already exists;
+ * `if_match='*'` for first-time writes and returns
+ * EXISTING_DATA_UNDER_OTHER_KEY when a key already exists;
  * add-bundle is idempotent per credential_id. The legacy
  * `sync_version` / `bundle_version` counters are synthesized from the
  * enclave's `bundle_version` so callers that read them keep working.
@@ -28,6 +28,8 @@ import {
   type PRFResult,
   type WrappedKey,
 } from '@tinfoilsh/passkey-kit'
+import { requirePrimaryKeyB64 } from '../cloud/cek-encoding'
+import type { CloudKeyAuthorizationMode } from '../cloud/cloud-key-authorization'
 import { encryptionService } from '../encryption/encryption-service'
 import {
   bytesToBase64,
@@ -37,12 +39,10 @@ import {
   removeBundle as enclaveRemoveBundle,
   hexToB64,
   newIdempotencyKey,
-} from '../harness/keys'
-import { HarnessError as SyncEnclaveError } from '../harness/sse'
-import { requirePrimaryKeyB64 } from '../keys/cek-encoding'
-import type { CloudKeyAuthorizationMode } from '../keys/cloud-key-authorization'
-import { deriveTinfoilKeyIdHex } from '../keys/tinfoil-key-id'
-import { HARNESS_KEY_CODES, IF_MATCH_SENTINELS } from '../keys/wire-contract'
+} from '../sync-enclave/sync-api'
+import { SyncEnclaveError } from '../sync-enclave/sync-enclave-client'
+import { deriveTinfoilKeyIdHex } from '../sync-enclave/tinfoil-key-id'
+import { IF_MATCH_SENTINELS, WIRE_CODES } from '../sync-enclave/wire-contract'
 import {
   evaluateTinfoilCredential,
   getCachedCredentialId,
@@ -548,7 +548,7 @@ export async function storeEncryptedKeys(
       } catch (err) {
         if (
           err instanceof SyncEnclaveError &&
-          err.code === HARNESS_KEY_CODES.KeyMismatch
+          err.code === WIRE_CODES.ExistingDataUnderOtherKey
         ) {
           throw new PasskeyCredentialConflictError(
             'Remote key already exists under a different CEK; recover first.',

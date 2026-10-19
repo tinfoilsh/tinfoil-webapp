@@ -1,98 +1,75 @@
-import {
-  AUTH_ACTIVE_USER_ID,
-  USER_ENCRYPTION_KEY,
-} from '@/constants/storage-keys'
 import { useChatSearch } from '@/hooks/use-chat-search'
-import type { HarnessClient } from '@/services/harness/client'
-import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
-import type { ThreadSummary } from '@/services/harness/types'
+import type { ChatSearchOutcome } from '@/services/cloud/chat-search'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../harness-fixture'
 
-const ACCOUNT_KEY = `key_${'ar'.repeat(32)}`
-const ACCOUNT_KEY_B64 = 'ERERERERERERERERERERERERERERERERERERERERERE='
+const searchSyncedChats = vi.fn()
+const resolveSearchResultChats = vi.fn()
 
-type SearchPage = {
-  results: Partial<ThreadSummary>[]
-  indexing: boolean
-}
+vi.mock('@/services/cloud/chat-search', () => ({
+  searchSyncedChats: (...args: unknown[]) => searchSyncedChats(...args),
+  resolveSearchResultChats: (...args: unknown[]) =>
+    resolveSearchResultChats(...args),
+}))
 
-const search =
-  vi.fn<(input: unknown, signal: AbortSignal) => Promise<SearchPage>>()
-let release: () => void
+vi.mock('@/utils/error-handling', () => ({
+  logError: vi.fn(),
+}))
 
-function page(ids: string[], options: Partial<SearchPage> = {}): SearchPage {
+function indexingOutcome(
+  reindexSettled: ChatSearchOutcome['reindexSettled'] = new Promise(() => {}),
+): ChatSearchOutcome {
   return {
-    results: ids.map((id) => ({ id, title: `${id} result`, projectId: null })),
-    indexing: false,
-    ...options,
+    results: [],
+    totalIndexed: 0,
+    indexing: true,
+    available: true,
+    reindexSettled,
   }
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise
-  })
-  return { promise, resolve }
+function readyOutcome(): ChatSearchOutcome {
+  return {
+    results: [],
+    totalIndexed: 3,
+    indexing: false,
+    available: true,
+    reindexSettled: null,
+  }
 }
 
 async function flushDebounce() {
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(300)
+    await vi.advanceTimersByTimeAsync(400)
   })
 }
 
-beforeEach(() => {
-  vi.useFakeTimers()
-  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_1')
-  localStorage.setItem(USER_ENCRYPTION_KEY, ACCOUNT_KEY)
-  search.mockReset().mockRejectedValue(new Error('Unexpected search request'))
-  const client = {
-    post: vi.fn(async (path: string, input: unknown, signal: AbortSignal) => {
-      if (path !== '/v1/threads/search')
-        throw new Error(`Unexpected request: ${path}`)
-      return search(input, signal)
-    }),
-  }
-  release = activateAPI(
-    new HarnessAPI(client as unknown as HarnessClient, 'user_1'),
-  )
-  publish({ session: testSession, keyReady: true })
-})
-
-afterEach(() => {
-  release()
-  vi.useRealTimers()
-})
-
 describe('useChatSearch', () => {
-  it('searches the harness with the trimmed term after the debounce', async () => {
-    search.mockResolvedValueOnce(page(['duck']))
-    const { result } = renderHook(() => useChatSearch('  duck  ', true))
-    expect(result.current.isSearching).toBe(true)
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(200)
-    })
-    expect(search).not.toHaveBeenCalled()
+  beforeEach(() => {
+    vi.useFakeTimers()
+    searchSyncedChats.mockReset()
+    resolveSearchResultChats.mockReset()
+    resolveSearchResultChats.mockResolvedValue([])
+  })
 
-    await flushDebounce()
-    expect(search).toHaveBeenCalledExactlyOnceWith(
-      { key: ACCOUNT_KEY_B64, query: 'duck', limit: 20 },
-      expect.any(AbortSignal),
-    )
-    expect(result.current.results.map((thread) => thread.id)).toEqual(['duck'])
-    expect(result.current.isSearching).toBe(false)
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('hides the old query results as soon as the user edits the search', async () => {
-    search
-      .mockResolvedValueOnce(page(['old']))
-      .mockResolvedValueOnce(page(['new']))
+    searchSyncedChats.mockResolvedValue(readyOutcome())
+    resolveSearchResultChats
+      .mockResolvedValueOnce([
+        { id: 'old', title: 'Old result', messageCount: 2 },
+      ])
+      .mockResolvedValueOnce([
+        { id: 'new', title: 'New result', messageCount: 2 },
+      ])
     const { result, rerender } = renderHook(
       ({ term }) => useChatSearch(term, true),
-      { initialProps: { term: 'old' } },
+      {
+        initialProps: { term: 'old' },
+      },
     )
     await flushDebounce()
     expect(result.current.results[0].id).toBe('old')
@@ -105,103 +82,37 @@ describe('useChatSearch', () => {
     rerender({ term: '' })
     expect(result.current.results).toEqual([])
     expect(result.current.isSearching).toBe(false)
-    expect(search).toHaveBeenCalledTimes(2)
-  })
-
-  it('never renders the previous term results for a new term', async () => {
-    search
-      .mockResolvedValueOnce(page(['old']))
-      .mockResolvedValueOnce(page(['new']))
-    const renders: { term: string; ids: string[]; isSearching: boolean }[] = []
-    const { rerender } = renderHook(
-      ({ term }) => {
-        const state = useChatSearch(term, true)
-        renders.push({
-          term,
-          ids: state.results.map((thread) => thread.id),
-          isSearching: state.isSearching,
-        })
-        return state
-      },
-      { initialProps: { term: 'old' } },
-    )
-    await flushDebounce()
-    expect(renders.at(-1)).toEqual({
-      term: 'old',
-      ids: ['old'],
-      isSearching: false,
-    })
-
-    rerender({ term: 'new' })
-    await flushDebounce()
-
-    const forNewTerm = renders.filter((render) => render.term === 'new')
-    expect(forNewTerm[0]).toEqual({ term: 'new', ids: [], isSearching: true })
-    expect(forNewTerm.filter((render) => render.ids.includes('old'))).toEqual(
-      [],
-    )
-    expect(forNewTerm.at(-1)).toEqual({
-      term: 'new',
-      ids: ['new'],
-      isSearching: false,
-    })
   })
 
   it('hides project hits immediately when the allowed search scope changes', async () => {
-    const mixed = {
-      results: [
-        { id: 'project-chat', title: 'Project result', projectId: 'p1' },
-        { id: 'plain-chat', title: 'Plain result', projectId: null },
-      ],
-      indexing: false,
-    }
-    search.mockResolvedValueOnce(mixed).mockResolvedValueOnce(mixed)
+    searchSyncedChats.mockResolvedValue(readyOutcome())
+    resolveSearchResultChats
+      .mockResolvedValueOnce([
+        {
+          id: 'project-chat',
+          title: 'Project result',
+          projectId: 'p1',
+          messageCount: 2,
+        },
+      ])
+      .mockResolvedValueOnce([])
     const { result, rerender } = renderHook(
       ({ premium }) => useChatSearch('result', true, premium),
-      { initialProps: { premium: true } },
+      {
+        initialProps: { premium: true },
+      },
     )
     await flushDebounce()
-    expect(result.current.results.map((thread) => thread.id)).toEqual([
-      'project-chat',
-      'plain-chat',
-    ])
+    expect(result.current.results).toHaveLength(1)
     rerender({ premium: false })
     expect(result.current.results).toEqual([])
     await flushDebounce()
-    expect(result.current.results.map((thread) => thread.id)).toEqual([
-      'plain-chat',
-    ])
+    expect(resolveSearchResultChats).toHaveBeenLastCalledWith([], false)
+    expect(result.current.results).toEqual([])
   })
 
-  it('ignores a response for a superseded term', async () => {
-    const stale = deferred<SearchPage>()
-    search
-      .mockReturnValueOnce(stale.promise)
-      .mockResolvedValueOnce(page(['current']))
-    const { result, rerender } = renderHook(
-      ({ term }) => useChatSearch(term, true),
-      { initialProps: { term: 'old' } },
-    )
-    await flushDebounce()
-    const staleSignal = search.mock.calls[0][1]
-    rerender({ term: 'current' })
-    expect(staleSignal.aborted).toBe(true)
-    await flushDebounce()
-    expect(result.current.results.map((thread) => thread.id)).toEqual([
-      'current',
-    ])
-
-    await act(async () => stale.resolve(page(['old'])))
-    expect(result.current.results.map((thread) => thread.id)).toEqual([
-      'current',
-    ])
-    expect(result.current.isSearching).toBe(false)
-  })
-
-  it('clears the indexing flag when a later search fails', async () => {
-    search
-      .mockResolvedValueOnce(page([], { indexing: true }))
-      .mockRejectedValueOnce(new Error('enclave timeout'))
+  it('clears the indexing flag when a later search run fails', async () => {
+    searchSyncedChats.mockResolvedValueOnce(indexingOutcome())
     const { result, rerender } = renderHook(
       ({ term }) => useChatSearch(term, true),
       { initialProps: { term: 'duc' } },
@@ -209,6 +120,7 @@ describe('useChatSearch', () => {
     await flushDebounce()
     expect(result.current.isIndexing).toBe(true)
 
+    searchSyncedChats.mockRejectedValueOnce(new Error('enclave timeout'))
     rerender({ term: 'duck' })
     expect(result.current.isIndexing).toBe(true)
     await flushDebounce()
@@ -219,10 +131,96 @@ describe('useChatSearch', () => {
     expect(result.current.results).toEqual([])
   })
 
+  it('clears the indexing flag when resolving hits fails after needs_reindex', async () => {
+    searchSyncedChats.mockResolvedValueOnce(indexingOutcome())
+    resolveSearchResultChats.mockRejectedValueOnce(new Error('pull failed'))
+    const { result } = renderHook(() => useChatSearch('duck', true))
+    await flushDebounce()
+
+    expect(result.current.isSearching).toBe(false)
+    expect(result.current.isIndexing).toBe(false)
+    expect(result.current.failed).toBe(true)
+  })
+
+  it.each(['failed', 'skipped'] as const)(
+    'marks the search failed without re-querying when the rebuild is %s',
+    async (settled) => {
+      searchSyncedChats.mockResolvedValueOnce(
+        indexingOutcome(Promise.resolve(settled)),
+      )
+      const { result } = renderHook(() => useChatSearch('duck', true))
+      await flushDebounce()
+
+      expect(result.current.isIndexing).toBe(false)
+      expect(result.current.failed).toBe(true)
+      await flushDebounce()
+      expect(searchSyncedChats).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('re-queries after a completed rebuild and publishes the refreshed hits', async () => {
+    searchSyncedChats
+      .mockResolvedValueOnce(indexingOutcome(Promise.resolve('completed')))
+      .mockResolvedValueOnce(readyOutcome())
+    const rebuiltHits = [
+      { id: 'rebuilt', title: 'Rebuilt result', messageCount: 2 },
+    ]
+    resolveSearchResultChats
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(rebuiltHits)
+    const { result } = renderHook(() => useChatSearch('duck', true))
+    await flushDebounce()
+    await flushDebounce()
+
+    expect(searchSyncedChats).toHaveBeenCalledTimes(2)
+    expect(searchSyncedChats).toHaveBeenNthCalledWith(1, 'duck', 20)
+    expect(searchSyncedChats).toHaveBeenNthCalledWith(2, 'duck', 20)
+    expect(result.current.results).toEqual(rebuiltHits)
+    expect(result.current.isSearching).toBe(false)
+    expect(result.current.isIndexing).toBe(false)
+    expect(result.current.failed).toBe(false)
+  })
+
+  it('ignores a completed rebuild after the search term changes', async () => {
+    let finishRebuild!: (outcome: 'completed') => void
+    const rebuild = new Promise<'completed'>((resolve) => {
+      finishRebuild = resolve
+    })
+    const currentHits = [
+      { id: 'current', title: 'Current result', messageCount: 2 },
+    ]
+    searchSyncedChats
+      .mockResolvedValueOnce(indexingOutcome(rebuild))
+      .mockResolvedValue(readyOutcome())
+    resolveSearchResultChats
+      .mockResolvedValueOnce([])
+      .mockResolvedValue(currentHits)
+    const { result, rerender } = renderHook(
+      ({ term }) => useChatSearch(term, true),
+      { initialProps: { term: 'old' } },
+    )
+    await flushDebounce()
+    expect(result.current.isIndexing).toBe(true)
+    rerender({ term: 'current' })
+    await flushDebounce()
+    expect(result.current.results).toEqual(currentHits)
+    await act(async () => finishRebuild('completed'))
+    await flushDebounce()
+    expect(searchSyncedChats).toHaveBeenCalledTimes(2)
+    expect(searchSyncedChats).toHaveBeenLastCalledWith('current', 20)
+    expect(result.current.results).toEqual(currentHits)
+    expect(result.current.isSearching).toBe(false)
+    expect(result.current.isIndexing).toBe(false)
+  })
+
   it('clears a previous failure when the term changes and the new run succeeds', async () => {
-    search
+    searchSyncedChats
       .mockRejectedValueOnce(new Error('enclave timeout'))
-      .mockResolvedValueOnce(page(['recovered']))
+      .mockResolvedValueOnce(readyOutcome())
+    const recoveredHits = [
+      { id: 'recovered', title: 'Recovered result', messageCount: 2 },
+    ]
+    resolveSearchResultChats.mockResolvedValueOnce(recoveredHits)
     const { result, rerender } = renderHook(
       ({ term }) => useChatSearch(term, true),
       { initialProps: { term: 'duc' } },
@@ -231,31 +229,10 @@ describe('useChatSearch', () => {
     expect(result.current.failed).toBe(true)
 
     rerender({ term: 'duck' })
-    expect(result.current.failed).toBe(false)
     await flushDebounce()
     expect(result.current.failed).toBe(false)
-    expect(result.current.results.map((thread) => thread.id)).toEqual([
-      'recovered',
-    ])
+    expect(searchSyncedChats).toHaveBeenLastCalledWith('duck', 20)
+    expect(result.current.results).toEqual(recoveredHits)
     expect(result.current.isSearching).toBe(false)
-  })
-
-  it('does not search before the account key is ready', async () => {
-    publish({ keyReady: false })
-    const { result, rerender } = renderHook(
-      ({ enabled }) => useChatSearch('duck', enabled),
-      { initialProps: { enabled: true } },
-    )
-    await flushDebounce()
-    expect(result.current.available).toBe(false)
-    expect(result.current.isSearching).toBe(false)
-    expect(search).not.toHaveBeenCalled()
-
-    search.mockResolvedValueOnce(page(['duck']))
-    act(() => publish({ keyReady: true }))
-    rerender({ enabled: true })
-    await flushDebounce()
-    expect(result.current.available).toBe(true)
-    expect(search).toHaveBeenCalledOnce()
   })
 })

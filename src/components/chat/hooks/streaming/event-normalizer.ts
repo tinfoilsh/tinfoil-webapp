@@ -1,0 +1,391 @@
+/**
+ * Event normalizer.
+ *
+ * Consumes parsed chat chunks (after content preprocessing) and emits
+ * a flat list of NormalizedEvent[]. Thinking is read only from the structured
+ * reasoning fields supported by the chat API.
+ *
+ * After this module, the downstream processor only sees `thinking_start`,
+ * `thinking_delta`, `thinking_end`, `content_delta`, etc. — no format
+ * sniffing needed.
+ */
+
+import type { ChatChunk } from '@/services/inference/chat-stream'
+import type { StreamLogger } from '@/utils/dev-stream-logger'
+import {
+  TINFOIL_TOOL_CALL_TYPE,
+  type TinfoilEvent,
+  type TinfoilToolCallEvent,
+} from '@/utils/tinfoil-events'
+import type { ContentPreprocessor } from './content-preprocessor'
+import type { NormalizedEvent } from './types'
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+type SSEJson = ChatChunk
+
+function extractReasoningContent(json: SSEJson): string | null {
+  const delta =
+    json.choices?.[0]?.delta?.reasoning_content ??
+    json.choices?.[0]?.delta?.reasoning
+  const message =
+    json.choices?.[0]?.message?.reasoning_content ??
+    json.choices?.[0]?.message?.reasoning
+  return delta ?? message ?? null
+}
+
+function extractAnnotations(json: SSEJson): NormalizedEvent[] {
+  const annotations = json.choices?.[0]?.delta?.annotations
+  if (!annotations || !Array.isArray(annotations)) return []
+  const events: NormalizedEvent[] = []
+  for (const a of annotations) {
+    if (a.type === 'url_citation' && a.url_citation?.url) {
+      events.push({
+        type: 'annotation',
+        url: a.url_citation.url,
+        title: a.url_citation.title || a.url_citation.url,
+      })
+    }
+  }
+  return events
+}
+
+type WebSearchStatus = Extract<
+  NormalizedEvent,
+  { type: 'web_search' }
+>['status']
+type URLFetchStatus = Extract<NormalizedEvent, { type: 'url_fetch' }>['status']
+
+/** Map tinfoil event status → our canonical status (drops 'searching'). */
+function toWebSearchStatus(s: string): WebSearchStatus {
+  if (s === 'searching') return 'in_progress'
+  return s as WebSearchStatus
+}
+
+function toURLFetchStatus(s: string): URLFetchStatus {
+  if (s === 'searching') return 'in_progress'
+  return s as URLFetchStatus
+}
+
+function normalizeCodeExecEvent(
+  event: TinfoilToolCallEvent,
+  logger?: StreamLogger,
+): NormalizedEvent[] {
+  logger?.logTinfoilEvent(event)
+
+  // `item_id` is what pairs in-progress with the terminal event in
+  // process-stream.
+  if (!event.item_id) return []
+
+  const mapped: NormalizedEvent = {
+    type: 'code_exec_tool_call',
+    id: event.item_id,
+    toolName: event.tool?.name || 'unknown',
+    status: event.status,
+    arguments: event.tool?.arguments,
+    output: event.tool?.output,
+  }
+  return [mapped]
+}
+
+function normalizeToolEvent(
+  event: TinfoilEvent,
+  logger?: StreamLogger,
+): NormalizedEvent[] {
+  if (event.type === TINFOIL_TOOL_CALL_TYPE) {
+    return normalizeCodeExecEvent(event, logger)
+  }
+
+  logger?.logTinfoilEvent(event)
+
+  const action = event.action
+  if (action?.type === 'open_page' && action.url) {
+    const mapped: NormalizedEvent = {
+      type: 'url_fetch',
+      id: event.item_id || action.url,
+      url: action.url,
+      status: toURLFetchStatus(event.status),
+      sources: event.sources,
+    }
+    logger?.logWebSearchDispatch(mapped)
+    return [mapped]
+  }
+
+  const mapped: NormalizedEvent = {
+    type: 'web_search',
+    id: event.item_id,
+    status: toWebSearchStatus(event.status),
+    query: action?.query,
+    sources: event.sources,
+    reason: event.error?.code,
+  }
+  logger?.logWebSearchDispatch(mapped)
+  return [mapped]
+}
+
+function normalizeLegacyToolEvent(json: SSEJson): NormalizedEvent[] {
+  return [
+    {
+      type: 'web_search',
+      id: typeof json.id === 'string' ? json.id : undefined,
+      status: toWebSearchStatus(String(json.status ?? '')),
+      query: json.action?.query,
+      reason: typeof json.reason === 'string' ? json.reason : undefined,
+    },
+  ]
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export interface EventNormalizer {
+  processChunk(
+    sseJson: SSEJson,
+    preprocessor: ContentPreprocessor,
+    logger?: StreamLogger,
+  ): NormalizedEvent[]
+  flush(): NormalizedEvent[]
+  assertComplete(): void
+}
+
+/**
+ * Extracts tool-call events from an OpenAI streaming chunk. The model may
+ * emit multiple concurrent tool calls identified by `index`; `id` and
+ * `function.name` only appear on the first chunk per tool call, while
+ * subsequent chunks only carry `function.arguments` deltas.
+ */
+function extractToolCallEvents(
+  json: SSEJson,
+  indexToId: Map<number, string>,
+  startedIds: Set<string>,
+): NormalizedEvent[] {
+  const toolCalls = json.choices?.[0]?.delta?.tool_calls
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return []
+
+  const events: NormalizedEvent[] = []
+  for (const tc of toolCalls) {
+    const index: number | undefined =
+      typeof tc.index === 'number' ? tc.index : undefined
+    if (index === undefined) continue
+
+    const incomingId: string | undefined =
+      typeof tc.id === 'string' && tc.id.length > 0 ? tc.id : undefined
+    const id: string | undefined = incomingId ?? indexToId.get(index)
+    if (incomingId) {
+      indexToId.set(index, incomingId)
+    }
+    if (!id) continue
+
+    const name: string | undefined =
+      typeof tc.function?.name === 'string' ? tc.function.name : undefined
+
+    if (name && !startedIds.has(id)) {
+      events.push({ type: 'genui_tool_call_start', id, name })
+      startedIds.add(id)
+    }
+
+    const argsDelta: string | undefined =
+      typeof tc.function?.arguments === 'string'
+        ? tc.function.arguments
+        : undefined
+    if (argsDelta) {
+      events.push({
+        type: 'genui_tool_call_delta',
+        id,
+        argumentsDelta: argsDelta,
+      })
+    }
+  }
+  return events
+}
+
+export function createEventNormalizer(): EventNormalizer {
+  let isInThinking = false
+  let isReasoningFormat = false
+  let receivedFinishReason = false
+  // True while the last thinking block was closed by content (not by a
+  // tool boundary). Reasoning arriving in that state is the late tail of
+  // that block — routers/upstreams race the think-close boundary so the
+  // final reasoning fragment can land after content started.
+  let thinkingClosedByContent = false
+  const toolCallIndexToId = new Map<number, string>()
+  const toolCallStartedIds = new Set<string>()
+
+  return {
+    processChunk(sseJson, preprocessor, logger): NormalizedEvent[] {
+      const events: NormalizedEvent[] = []
+      if (
+        Array.isArray(sseJson.choices) &&
+        sseJson.choices.some(
+          (choice) =>
+            choice?.finish_reason !== null &&
+            choice?.finish_reason !== undefined,
+        )
+      ) {
+        receivedFinishReason = true
+      }
+
+      // Legacy top-level web_search_call records
+      if (sseJson.type === 'web_search_call') {
+        if (isInThinking) {
+          events.push({ type: 'thinking_end' })
+          isInThinking = false
+        }
+        thinkingClosedByContent = false
+        events.push(...normalizeLegacyToolEvent(sseJson))
+        return events
+      }
+
+      // GenUI tool calls (OpenAI streaming shape). Close any open thinking
+      // block first so tool calls appear after it chronologically, same
+      // pattern as web_search / url_fetch.
+      const toolCallEvents = extractToolCallEvents(
+        sseJson,
+        toolCallIndexToId,
+        toolCallStartedIds,
+      )
+      if (toolCallEvents.length > 0) {
+        if (isInThinking) {
+          events.push({ type: 'thinking_end' })
+          isInThinking = false
+        }
+        thinkingClosedByContent = false
+        events.push(...toolCallEvents)
+      }
+      if (sseJson.choices?.[0]?.finish_reason === 'tool_calls') {
+        toolCallIndexToId.clear()
+      }
+
+      // Search reasoning
+      const searchReasoning = sseJson.choices?.[0]?.delta?.search_reasoning
+      if (searchReasoning) {
+        events.push({ type: 'search_reasoning', content: searchReasoning })
+      }
+
+      // Annotations
+      events.push(...extractAnnotations(sseJson))
+
+      // Preprocess content (strip tinfoil markers, normalize channel tags).
+      const rawContent = sseJson.choices?.[0]?.delta?.content || ''
+      const preprocessed = preprocessor.process(rawContent)
+
+      // Tool events from tinfoil markers — close thinking first so
+      // downstream gets proper thinking_end → tool → thinking_start
+      // boundaries when reasoning resumes.
+      if (preprocessed.toolEvents.length > 0) {
+        if (isInThinking) {
+          events.push({ type: 'thinking_end' })
+          isInThinking = false
+        }
+        thinkingClosedByContent = false
+        for (const toolEvent of preprocessed.toolEvents) {
+          events.push(...normalizeToolEvent(toolEvent, logger))
+        }
+      }
+
+      const content = preprocessed.text
+      const reasoningContent = extractReasoningContent(sseJson)
+
+      // -----------------------------------------------------------------
+      // reasoning_content format (OpenAI-style)
+      // -----------------------------------------------------------------
+
+      if (reasoningContent !== null && !isReasoningFormat && !isInThinking) {
+        // First reasoning chunk — enter reasoning format
+        isReasoningFormat = true
+        isInThinking = true
+        thinkingClosedByContent = false
+        events.push({ type: 'thinking_start' })
+        if (reasoningContent) {
+          events.push({ type: 'thinking_delta', content: reasoningContent })
+        }
+        // Some routers attach content to the same chunk as reasoning;
+        // emit it so it isn't silently dropped.
+        if (content) {
+          events.push({ type: 'thinking_end' })
+          isInThinking = false
+          thinkingClosedByContent = true
+          events.push({ type: 'content_delta', content })
+        }
+        return events
+      }
+
+      if (isReasoningFormat && reasoningContent !== null) {
+        // Continued reasoning chunks
+        if (reasoningContent) {
+          if (isInThinking) {
+            events.push({ type: 'thinking_delta', content: reasoningContent })
+          } else if (thinkingClosedByContent) {
+            // Late tail of the reasoning that content already closed.
+            // Merge it back into that block instead of opening a phantom
+            // "Thought for 0.0 seconds" block that splits the answer.
+            events.push({
+              type: 'thinking_tail_delta',
+              content: reasoningContent,
+            })
+          } else {
+            // Reasoning resumed after a tool boundary — a new thinking
+            // phase of the next model turn.
+            isInThinking = true
+            thinkingClosedByContent = false
+            events.push({ type: 'thinking_start' })
+            events.push({ type: 'thinking_delta', content: reasoningContent })
+          }
+        }
+        // Content must be emitted regardless of thinking state: the
+        // router sends `reasoning_content: ""` alongside content on some
+        // chunks, and dropping those silently loses message text.
+        if (content) {
+          if (isInThinking) {
+            events.push({ type: 'thinking_end' })
+            isInThinking = false
+            thinkingClosedByContent = true
+          }
+          events.push({ type: 'content_delta', content })
+        }
+        return events
+      }
+
+      if (isReasoningFormat && content) {
+        // Content-only chunk after reasoning format was established
+        if (isInThinking) {
+          events.push({ type: 'thinking_end' })
+          isInThinking = false
+          thinkingClosedByContent = true
+        }
+        events.push({ type: 'content_delta', content })
+        return events
+      }
+
+      // If reasoning format is active but no content/reasoning, return
+      // whatever metadata events we collected (annotations etc.)
+      if (isReasoningFormat) {
+        return events
+      }
+
+      if (content) {
+        events.push({ type: 'content_delta', content })
+      }
+
+      return events
+    },
+
+    flush(): NormalizedEvent[] {
+      const events: NormalizedEvent[] = []
+      if (isInThinking) {
+        events.push({ type: 'thinking_end' })
+        isInThinking = false
+      }
+      return events
+    },
+
+    assertComplete(): void {
+      if (!receivedFinishReason) {
+        throw new Error('Chat response ended before its completion marker')
+      }
+    },
+  }
+}

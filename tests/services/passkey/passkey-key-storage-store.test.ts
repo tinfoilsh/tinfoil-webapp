@@ -9,8 +9,6 @@
  * conflict) rather than version counters.
  */
 
-import { HarnessError } from '@/services/harness/sse'
-import { deriveTinfoilKeyIdHex } from '@/services/keys/tinfoil-key-id'
 import { TINFOIL_PASSKEY_PROFILE } from '@/services/passkey/kit'
 import {
   PasskeyCredentialConflictError,
@@ -18,6 +16,8 @@ import {
   type KeyBundle,
   type TinfoilWrappedKeyBundle,
 } from '@/services/passkey/passkey-key-storage'
+import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
+import { deriveTinfoilKeyIdHex } from '@/services/sync-enclave/tinfoil-key-id'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
@@ -29,10 +29,10 @@ const mockRegisterKey = vi.fn()
 const mockAddBundle = vi.fn()
 const mockKeyCurrent = vi.fn()
 
-vi.mock('@/services/harness/keys', async () => {
-  const real = await vi.importActual<typeof import('@/services/harness/keys')>(
-    '@/services/harness/keys',
-  )
+vi.mock('@/services/sync-enclave/sync-api', async () => {
+  const real = await vi.importActual<
+    typeof import('@/services/sync-enclave/sync-api')
+  >('@/services/sync-enclave/sync-api')
   return {
     ...real,
     registerKey: (...args: unknown[]) => mockRegisterKey(...args),
@@ -154,25 +154,15 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     expect(arg.initialBundle.credentialId).toBe('AQID')
   })
 
-  it.each([
-    { code: 'KEY_MISMATCH', conflict: true },
-    { code: 'REVISION_CONFLICT', conflict: false },
-  ])(
-    'maps only the harness key-mismatch refusal to a credential conflict: $code',
-    async ({ code, conflict }) => {
-      mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
-      mockRegisterKey.mockRejectedValue(
-        new HarnessError({ message: 'refused', code }, 409),
-      )
-      const stored = storeEncryptedKeys(wrappedKeys('AQID'), KEY_BUNDLE)
-      if (conflict)
-        await expect(stored).rejects.toBeInstanceOf(
-          PasskeyCredentialConflictError,
-        )
-      else await expect(stored).resolves.toBeNull()
-      expect(mockRegisterKey).toHaveBeenCalledOnce()
-    },
-  )
+  it('maps EXISTING_DATA_UNDER_OTHER_KEY from register-key to a credential conflict', async () => {
+    mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
+    mockRegisterKey.mockRejectedValue(
+      new SyncEnclaveError('exists', 409, 'EXISTING_DATA_UNDER_OTHER_KEY'),
+    )
+    await expect(
+      storeEncryptedKeys(wrappedKeys('AQID'), KEY_BUNDLE),
+    ).rejects.toBeInstanceOf(PasskeyCredentialConflictError)
+  })
 
   it('adds a bundle when the enclave already has the same primary CEK registered', async () => {
     mockKeyCurrent

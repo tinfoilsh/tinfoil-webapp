@@ -12,8 +12,10 @@ import {
 } from '@/services/passkey/passkey-key-storage'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/services/harness/keys', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/harness/keys')>()),
+vi.mock('@/services/sync-enclave/sync-api', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@/services/sync-enclave/sync-api')
+  >()),
   keyCurrent: vi.fn(async () => ({ key_id: null, bundles: {} })),
 }))
 

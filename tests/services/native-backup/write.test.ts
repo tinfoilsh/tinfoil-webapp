@@ -3,7 +3,7 @@ import {
   writeNativeBackupArchive,
   type NativeBackupArchiveInput,
   type NativeBackupWriterDependencies,
-} from '@/services/native-backup/write'
+} from '@/services/native-backup'
 import { BlobReader, Uint8ArrayWriter, ZipReader } from '@zip.js/zip.js'
 
 const manifestBytes = new TextEncoder().encode(

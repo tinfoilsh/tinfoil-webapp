@@ -1,21 +1,13 @@
 import { ChatInput } from '@/components/chat/chat-input'
 import { CONSTANTS } from '@/components/chat/constants'
 import {
-  formatRecordingDuration,
   RecordingWaveform,
+  formatRecordingDuration,
 } from '@/components/chat/recording-waveform'
-import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
-import {
-  activateAPI,
-  HarnessAPI,
-  harnessAPI,
-  publish,
-} from '@/services/harness/runtime'
-import { HarnessError } from '@/services/harness/sse'
+import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { createRef, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
 
 vi.mock('@/components/project', () => ({
   ProjectModeBanner: () => null,
@@ -33,6 +25,10 @@ vi.mock('@/hooks/use-toast', () => ({
 vi.mock('@/components/chat/hooks/use-chat-font', () => ({
   CHAT_FONT_CLASSES: { default: '' },
   useChatFont: () => 'default',
+}))
+
+vi.mock('@/services/inference/tinfoil-client', () => ({
+  getTinfoilClient: vi.fn(),
 }))
 
 function stubRecording(deferStop = false) {
@@ -66,16 +62,10 @@ function stubRecording(deferStop = false) {
     }
   }
   vi.stubGlobal('MediaRecorder', FakeMediaRecorder)
-  const transcribe = vi
-    .fn<(file: File) => Promise<string>>()
-    .mockResolvedValue('More details')
-  vi.mocked(harnessAPI().client.upload).mockImplementation(
-    async (path: string, file: File) => {
-      if (path !== '/v1/transcriptions')
-        throw new Error(`Unexpected upload: ${path}`)
-      return { text: await transcribe(file) }
-    },
-  )
+  const transcribe = vi.fn().mockResolvedValue('More details')
+  vi.mocked(getTinfoilClient).mockResolvedValue({
+    audio: { transcriptions: { create: transcribe } },
+  } as unknown as Awaited<ReturnType<typeof getTinfoilClient>>)
   return {
     transcribe,
     tracks,
@@ -146,9 +136,9 @@ function stubCanvasContext(width = 120, height = 28) {
 }
 
 beforeEach(() => {
-  vi.mocked(harnessAPI().client.upload)
+  vi.mocked(getTinfoilClient)
     .mockReset()
-    .mockRejectedValue(new Error('Unexpected transcription request'))
+    .mockRejectedValue(new Error('Unexpected transcription client request'))
   stubCanvasContext()
 })
 
@@ -278,38 +268,6 @@ describe('RecordingWaveform', () => {
 })
 
 describe('ChatInput recording UI', () => {
-  it.each([
-    { isPremium: true, transcription: false },
-    { isPremium: false, transcription: true },
-  ])(
-    'offers recording only with premium access and a transcription service: %o',
-    ({ isPremium, transcription }) => {
-      publish({
-        session: {
-          ...testSession,
-          features: { ...testSession.features, transcription },
-        },
-      })
-      render(
-        <ChatInput
-          input=""
-          setInput={vi.fn()}
-          handleSubmit={vi.fn()}
-          loadingState="idle"
-          cancelGeneration={vi.fn()}
-          inputRef={createRef<HTMLTextAreaElement>()}
-          handleInputFocus={vi.fn()}
-          inputMinHeight="40px"
-          isDarkMode
-          isPremium={isPremium}
-        />,
-      )
-      expect(
-        screen.queryByRole('button', { name: 'Start recording' }),
-      ).not.toBeInTheDocument()
-    },
-  )
-
   it.each([false, true])(
     'keeps an expanded draft above repeated recordings (compact: %s)',
     async (hasMessages) => {
@@ -350,6 +308,7 @@ describe('ChatInput recording UI', () => {
             isDarkMode
             isPremium
             hasMessages={hasMessages}
+            audioModel="audio-model"
           />
         )
       }
@@ -434,50 +393,10 @@ describe('ChatInput recording UI', () => {
     },
   )
 
-  it('transcribes for a signed-in account whose content key is locked', async () => {
-    const api = new HarnessAPI(harnessAPI().client, 'alice')
-    activateAPI(api)
-    publish({ session: testSession, keyReady: false, profileReady: true })
-    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
-    expect(() => api.key()).toThrow(HarnessError)
-    const { transcribe } = stubRecording()
-    const setInput = vi.fn()
-    render(
-      <ChatInput
-        input=""
-        setInput={setInput}
-        handleSubmit={vi.fn()}
-        loadingState="idle"
-        cancelGeneration={vi.fn()}
-        inputRef={createRef<HTMLTextAreaElement>()}
-        handleInputFocus={vi.fn()}
-        inputMinHeight="40px"
-        isDarkMode
-        isPremium
-      />,
-    )
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Start recording' }))
-    })
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Stop recording' }))
-    })
-
-    expect(transcribe).toHaveBeenCalledOnce()
-    expect(setInput).toHaveBeenCalledExactlyOnceWith('More details')
-    expect(api.client.upload).toHaveBeenCalledExactlyOnceWith(
-      '/v1/transcriptions',
-      expect.any(File),
-      {},
-      expect.any(AbortSignal),
-    )
-  })
-
   it.each(['', ' \n'])(
     'swaps an empty draft %j for the waveform while recording and back on stop',
     async (input) => {
-      const { transcribe } = stubRecording()
+      stubRecording()
       const setInput = vi.fn()
 
       render(
@@ -492,6 +411,7 @@ describe('ChatInput recording UI', () => {
           inputMinHeight="40px"
           isDarkMode
           isPremium
+          audioModel="audio-model"
         />,
       )
 
@@ -513,10 +433,6 @@ describe('ChatInput recording UI', () => {
       expect(textarea).not.toHaveClass('hidden')
       expect(setInput).toHaveBeenCalledExactlyOnceWith('More details')
       expect(textarea).not.toHaveAttribute('readonly')
-      const [audio] = transcribe.mock.calls[0]
-      expect(transcribe).toHaveBeenCalledOnce()
-      expect(audio).toMatchObject({ name: 'audio.webm', type: 'audio/webm' })
-      expect(await audio.text()).toBe('audio')
     },
   )
 })

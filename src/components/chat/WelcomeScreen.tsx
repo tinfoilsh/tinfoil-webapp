@@ -435,6 +435,13 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   removeDocument={removeDocument}
                   isPremium={isPremium}
                   hasMessages={false}
+                  audioModel={
+                    (
+                      models?.find(
+                        (m) => m.modelName === CONSTANTS.DEFAULT_AUDIO_MODEL,
+                      ) || models?.find((m) => m.type === 'audio')
+                    )?.modelName
+                  }
                   modelSelectorButton={
                     models &&
                     selectedModel &&

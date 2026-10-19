@@ -16,6 +16,7 @@ const { registryMock } = vi.hoisted(() => ({
       .strict()
     const input: GenUIWidget = {
       name: 'ask_user_input',
+      description: 'Synthetic input widget for selector contracts',
       surface: 'input',
       renderInputArea: () => null,
       schema,

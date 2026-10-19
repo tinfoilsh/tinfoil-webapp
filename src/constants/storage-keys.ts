@@ -132,9 +132,6 @@ export const USER_PREFS_FAVORITE_PROMPT_PRESETS =
 export const USER_PREFS_DEFAULT_PROMPT_PRESET_ID =
   'tinfoil-user-prefs-default-prompt-preset-id'
 export const USER_PREFS_PINNED_CHAT_IDS = 'tinfoil-user-prefs-pinned-chat-ids'
-// Settings of an account without cloud sync and of a signed-out visitor, in
-// the chat service's profile format.
-export const USER_PREFS_LOCAL_PROFILE = 'tinfoil-user-prefs-local-profile'
 export const USER_PREFS_NATIVE_APP_DISMISSED =
   'tinfoil-user-prefs-native-app-dismissed'
 

@@ -165,6 +165,11 @@ export function refreshSafeguards(): Promise<void> {
   return request
 }
 
+export async function refreshSafeguardsAfterMutation(): Promise<void> {
+  if (inflight) await inflight
+  await refreshSafeguards()
+}
+
 /** Drops all loaded data, e.g. on sign-out or account switch. Any request
  * still in flight is orphaned and its result discarded. */
 export function resetSafeguards(): void {

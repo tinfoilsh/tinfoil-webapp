@@ -2,36 +2,32 @@
 
 import { cn } from '@/components/ui/utils'
 import { DAILY_RATE_LIMIT_MESSAGE } from '@/constants/rate-limits'
-import type { RateLimit as RateLimitInfo } from '@/services/harness/types'
-import { logError } from '@/utils/error-handling'
+import {
+  refreshRateLimit,
+  type RateLimitInfo,
+} from '@/services/inference/tinfoil-client'
 import { useState } from 'react'
 
 const RATE_LIMIT_WARNING_THRESHOLD = 3
 
 interface RateLimitBannerProps {
-  rateLimit: RateLimitInfo & { remaining: number }
+  rateLimit: RateLimitInfo
   isDarkMode: boolean
   /** Tailwind classes applied to the outer wrapper (positioning, visibility). */
   className?: string
   /** Tailwind classes applied to the inner pill (e.g. corner radius). */
   pillClassName?: string
-  /** Reads the quota again, as a capped subscriber's may lift early. */
-  onCheckAgain?: () => Promise<unknown>
 }
 
-// A subscriber has no request quota until the hourly cap refuses requests.
 export function shouldShowRateLimitBanner(
   rateLimit: RateLimitInfo | null,
-): rateLimit is RateLimitInfo & { remaining: number } {
+): rateLimit is RateLimitInfo {
   return (
-    rateLimit !== null &&
-    rateLimit.kind !== null &&
-    typeof rateLimit.remaining === 'number' &&
-    rateLimit.remaining <= RATE_LIMIT_WARNING_THRESHOLD
+    rateLimit !== null && rateLimit.remaining <= RATE_LIMIT_WARNING_THRESHOLD
   )
 }
 
-function formatResetTime(resetsAt?: string): string | null {
+function formatResetTime(resetsAt: string): string | null {
   if (!resetsAt) return null
   const at = new Date(resetsAt)
   if (Number.isNaN(at.getTime())) return null
@@ -43,7 +39,6 @@ export function RateLimitBanner({
   isDarkMode,
   className,
   pillClassName,
-  onCheckAgain,
 }: RateLimitBannerProps) {
   const [isChecking, setIsChecking] = useState(false)
   const exhausted = rateLimit.remaining <= 0
@@ -51,16 +46,9 @@ export function RateLimitBanner({
   const resetLabel = formatResetTime(rateLimit.resetsAt)
 
   const checkAgain = async () => {
-    if (!onCheckAgain) return
     setIsChecking(true)
     try {
-      await onCheckAgain()
-    } catch (error) {
-      // The limit stays shown until a check reads that it lifted.
-      logError('Failed to check the usage limit again', error, {
-        component: 'RateLimitBanner',
-        action: 'checkAgain',
-      })
+      await refreshRateLimit({ force: true })
     } finally {
       setIsChecking(false)
     }
@@ -91,7 +79,7 @@ export function RateLimitBanner({
               ? DAILY_RATE_LIMIT_MESSAGE
               : `You have ${rateLimit.remaining} free request${rateLimit.remaining === 1 ? '' : 's'} left today`}
         </span>
-        {isHourly && onCheckAgain && (
+        {isHourly && (
           <button
             type="button"
             onClick={checkAgain}

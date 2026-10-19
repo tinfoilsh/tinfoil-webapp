@@ -82,7 +82,6 @@ function parseInput(
 
 function GenUIWidgetContent({
   toolCallId,
-  result,
   toolName,
   input,
   isActive,
@@ -90,7 +89,6 @@ function GenUIWidgetContent({
   isStreaming,
 }: {
   toolCallId: string
-  result?: unknown
   toolName: string
   input: unknown
   isActive: boolean
@@ -102,7 +100,6 @@ function GenUIWidgetContent({
     isDarkMode,
     isStreaming,
     toolCallId,
-    result,
   })
   if (rendered === null) throw new Error('Widget render returned null')
   return rendered
@@ -170,7 +167,6 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
             >
               <div className="my-4">
                 <GenUIWidgetContent
-                  result={tc.result}
                   toolCallId={tc.id}
                   toolName={tc.name}
                   input={parsedInput.data}

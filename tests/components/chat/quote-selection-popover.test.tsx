@@ -9,7 +9,6 @@ import {
 import type { MessageRenderer } from '@/components/chat/renderers/types'
 import { SharedChatView } from '@/components/chat/shared-chat-view'
 import type { BaseModel } from '@/config/models'
-import { publish } from '@/services/harness/runtime'
 import {
   act,
   cleanup,
@@ -20,7 +19,6 @@ import {
 } from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
 import {
   controlledSpeech,
   FakeAudioContext,
@@ -51,7 +49,6 @@ const model: BaseModel = {
   image: '',
   description: '',
   type: 'chat',
-  chat: true,
 }
 
 const customRenderer: MessageRenderer = {
@@ -141,14 +138,8 @@ beforeEach(() => {
   getRendererRegistry().registerMessageRenderer(customRenderer)
   generation = controlledSpeech()
   audio = new FakeAudioContext()
-  audioMocks.stream.mockReset().mockImplementation(generation.stream)
-  audioMocks.context.mockReset().mockReturnValue(audio)
-  publish({
-    session: {
-      ...testSession,
-      features: { ...testSession.features, speech: true },
-    },
-  })
+  audioMocks.stream.mockImplementation(generation.stream)
+  audioMocks.context.mockReturnValue(audio)
   frames.clear()
   nextFrame = 0
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
@@ -280,17 +271,6 @@ describe('QuoteSelectionPopover', () => {
     expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
     expect(generation.requests[0].signal.aborted).toBe(true)
     expect(audio.close).toHaveBeenCalledOnce()
-  })
-
-  it('does not offer reading the selection when the harness does not offer speech', () => {
-    publish({ session: testSession })
-    render(<Harness enabled />)
-    selectText()
-    flushFrames()
-    expect(screen.getByRole('toolbar')).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Read' }),
-    ).not.toBeInTheDocument()
   })
 
   it('keeps the wider toolbar inside the viewport near either edge', () => {
@@ -462,21 +442,12 @@ describe.each(['custom', 'default'])(
       const { container } = render(
         <SharedChatView
           chatData={{
+            v: 1,
             title: 'Shared conversation',
-            createdAt: '1970-01-01T00:00:00.000Z',
+            createdAt: 0,
             messages: [
-              {
-                id: 'shared-prompt',
-                role: 'user',
-                content: 'Shared prompt',
-                createdAt: '1970-01-01T00:00:00.000Z',
-              },
-              {
-                id: 'shared-answer',
-                role: 'assistant',
-                content: 'Shared answer',
-                createdAt: '1970-01-01T00:00:00.001Z',
-              },
+              { role: 'user', content: 'Shared prompt', timestamp: 0 },
+              { role: 'assistant', content: 'Shared answer', timestamp: 1 },
             ],
           }}
           model={model}

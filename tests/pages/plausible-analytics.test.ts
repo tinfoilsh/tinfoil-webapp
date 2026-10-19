@@ -97,7 +97,6 @@ describe('Plausible analytics', () => {
   it.each([
     ['home with prefilled prompt', 'https://chat.tinfoil.sh/?q=private+prompt'],
     ['home with hash prompt', 'https://chat.tinfoil.sh/#send=cHJpdmF0ZQ=='],
-    ['home alias', 'https://chat.tinfoil.sh/harness?q=private'],
     [
       'new chat with prefilled prompt',
       'https://chat.tinfoil.sh/newchat?q=private',
@@ -117,7 +116,7 @@ describe('Plausible analytics', () => {
     expect(analytics.fetchMock).not.toHaveBeenCalled()
   })
 
-  it.each(['/chat/local/chat-id', '/newchat/', '/harness'])(
+  it.each(['/chat/local/chat-id', '/newchat/'])(
     'stops sending events after navigating to %s',
     (privatePath) => {
       const analytics = loadPlausible('https://chat.tinfoil.sh/signin')

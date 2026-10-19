@@ -20,6 +20,12 @@ const projectContext = vi.hoisted(() => ({
 vi.mock('@/components/project/project-context', () => ({
   useProject: () => projectContext,
 }))
+vi.mock('@/components/chat/document-uploader', () => ({
+  useDocumentUploader: () => ({
+    handleDocumentUpload: vi.fn(),
+    isDocumentUploading: false,
+  }),
+}))
 vi.mock('@clerk/react', () => ({
   useAuth: () => ({
     isSignedIn: true,
@@ -31,6 +37,8 @@ vi.mock('@clerk/react', () => ({
 vi.mock('next/router', () => ({
   useRouter: () => ({ asPath: '/project/test-project' }),
 }))
+vi.mock('@/hooks/use-rate-limit', () => ({ useRateLimit: () => null }))
+vi.mock('@/hooks/use-safeguards', () => ({ useFlaggedChatIds: () => ({}) }))
 
 const project: Project = {
   id: 'test-project',
@@ -56,6 +64,7 @@ function renderSidebar(
         isClient
         pixelateSidebarChatTitles={false}
         cloudSyncEnabled
+        isPremium
         windowWidth={1200}
         project={project}
         onExitProject={onExitProject}
@@ -152,36 +161,6 @@ describe('project sidebar layout', () => {
       screen.getAllByRole('listitem').map((row) => row.textContent),
     ).toEqual(['Recently updated', 'Recently created', 'Older chat'])
     expect(chats.map((chat) => chat.id)).toEqual(['old', 'updated', 'created'])
-  })
-
-  it('leaves loading the open project to the provider when it renders', () => {
-    const first = vi.fn()
-    projectContext.refreshDocuments = first
-    const sidebar = () => (
-      <DragProvider>
-        <ProjectSidebar
-          isOpen
-          setIsOpen={vi.fn()}
-          isDarkMode={false}
-          isClient
-          pixelateSidebarChatTitles={false}
-          cloudSyncEnabled
-          windowWidth={1200}
-          project={project}
-          onExitProject={vi.fn()}
-          onSelectChat={vi.fn()}
-          onNewChat={vi.fn()}
-        />
-      </DragProvider>
-    )
-    const view = render(sidebar())
-    // The provider hands over a new context value whenever it renders.
-    const next = vi.fn()
-    projectContext.refreshDocuments = next
-    view.rerender(sidebar())
-
-    expect(first).not.toHaveBeenCalled()
-    expect(next).not.toHaveBeenCalled()
   })
 
   it('uses a compact content-width blue exit button and preserves its action', () => {

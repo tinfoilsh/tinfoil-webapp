@@ -1,18 +1,12 @@
 import { cn } from '@/components/ui/utils'
-import { logError } from '@/utils/error-handling'
 import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { PiSpinner } from 'react-icons/pi'
 
 import { FilePreview } from '../../components/file-preview'
-import {
-  UnsavedImagesNotice,
-  useUnsavedImages,
-} from '../../components/unsaved-images-notice'
 
 import { getMessageAttachments } from '../../attachment-helpers'
-import { useDocumentText } from '../../document-text-context'
 import {
   attachmentToImageSrc,
   ImageLightbox,
@@ -76,17 +70,11 @@ export const DocumentList = memo(function DocumentList({
   imageData,
 }: DocumentListProps) {
   const gallery = useImageGallery()
-  const loadText = useDocumentText()
-  const imagesUnsaved = useUnsavedImages()
   const [modalOpen, setModalOpen] = useState(false)
   const [modalContent, setModalContent] = useState<{
-    attachment: Attachment
+    name: string
     content: string
-    status: 'ready' | 'loading' | 'failed'
   } | null>(null)
-  // Text read on demand for documents whose message does not carry it.
-  const [loadedTexts, setLoadedTexts] = useState<Record<string, string>>({})
-  const textRequest = useRef(0)
   // Local fallback lightbox for render contexts without a gallery provider
   // (e.g. shared/printable views); scoped to this message's images.
   const [localLightboxOpen, setLocalLightboxOpen] = useState(false)
@@ -130,34 +118,13 @@ export const DocumentList = memo(function DocumentList({
     (a) => a.type === 'document',
   )
 
-  const textOf = (attachment: Attachment) =>
-    attachment.textContent ?? loadedTexts[attachment.id]
-
   const openModal = (attachment: Attachment) => {
-    const request = ++textRequest.current
-    const known = textOf(attachment)
-    if (known !== undefined) {
-      setModalContent({ attachment, content: known.trim(), status: 'ready' })
-      setModalOpen(true)
-      return
-    }
-    if (!loadText) return
-    setModalContent({ attachment, content: '', status: 'loading' })
+    if (!attachment.textContent) return
+    setModalContent({
+      name: attachment.fileName,
+      content: attachment.textContent.trim(),
+    })
     setModalOpen(true)
-    loadText(attachment)
-      .then((text) => {
-        setLoadedTexts((previous) => ({ ...previous, [attachment.id]: text }))
-        if (request === textRequest.current)
-          setModalContent({ attachment, content: text.trim(), status: 'ready' })
-      })
-      .catch((error) => {
-        logError('Failed to load document text', error, {
-          component: 'DocumentList',
-          action: 'openModal',
-        })
-        if (request === textRequest.current)
-          setModalContent({ attachment, content: '', status: 'failed' })
-      })
   }
 
   const localImages: GalleryImage[] = imageAttachments
@@ -229,17 +196,11 @@ export const DocumentList = memo(function DocumentList({
           </div>
         </div>
       )}
-      {imageAttachments.length > 0 && imagesUnsaved && (
-        <div className="mb-2 flex justify-end px-4">
-          <UnsavedImagesNotice />
-        </div>
-      )}
       {docAttachments.length > 0 && (
         <div className="mb-2 flex flex-wrap justify-end gap-2 px-4">
           {docAttachments.map((attachment) => {
-            const text = textOf(attachment)
-            const preview = text
-              ? text
+            const preview = attachment.textContent
+              ? attachment.textContent
                   .split('\n')
                   .filter((l) => l.trim() && !l.trim().startsWith('# '))
                   .slice(0, 2)
@@ -256,7 +217,7 @@ export const DocumentList = memo(function DocumentList({
                 <span className="flex items-center gap-2">
                   <FilePreview
                     filename={attachment.fileName}
-                    textContent={text}
+                    textContent={attachment.textContent}
                   />
                   <span className="truncate text-sm font-medium text-content-primary">
                     {attachment.fileName}
@@ -303,14 +264,14 @@ export const DocumentList = memo(function DocumentList({
               <div className="flex items-center justify-between border-b border-border-subtle px-6 py-4">
                 <div className="flex items-center gap-3">
                   <FilePreview
-                    filename={modalContent.attachment.fileName}
+                    filename={modalContent.name}
                     textContent={modalContent.content}
                   />
                   <h2
                     id="document-modal-title"
                     className="text-lg font-semibold text-content-primary"
                   >
-                    {modalContent.attachment.fileName}
+                    {modalContent.name}
                   </h2>
                 </div>
                 <button
@@ -323,39 +284,9 @@ export const DocumentList = memo(function DocumentList({
               </div>
 
               <div className="flex-1 overflow-auto p-6">
-                {modalContent.status === 'loading' ? (
-                  <div
-                    role="status"
-                    className="flex h-full items-center justify-center gap-2 text-sm text-content-secondary"
-                  >
-                    <PiSpinner
-                      className="h-4 w-4 animate-spin"
-                      aria-hidden="true"
-                    />
-                    Loading document…
-                  </div>
-                ) : modalContent.status === 'failed' ? (
-                  <div
-                    role="alert"
-                    className="flex h-full flex-col items-center justify-center gap-3 text-sm text-content-secondary"
-                  >
-                    This document could not be loaded.
-                    <button
-                      onClick={() => openModal(modalContent.attachment)}
-                      className="rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
-                    >
-                      Try again
-                    </button>
-                  </div>
-                ) : modalContent.content ? (
-                  <pre className="whitespace-pre-wrap font-mono text-sm text-content-primary">
-                    {modalContent.content}
-                  </pre>
-                ) : (
-                  <p className="text-sm text-content-secondary">
-                    No text was extracted from this document.
-                  </p>
-                )}
+                <pre className="whitespace-pre-wrap font-mono text-sm text-content-primary">
+                  {modalContent.content}
+                </pre>
               </div>
 
               <div className="flex items-center justify-end border-t border-border-subtle px-6 py-4">

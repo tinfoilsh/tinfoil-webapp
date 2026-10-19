@@ -1,3 +1,11 @@
+import type { PendingRecoveryEnvelope } from '@/types/chat-recovery'
+
+export {
+  MAX_PENDING_RECOVERIES_PER_CHAT,
+  RECOVERY_ENVELOPE_EXPIRY_MS,
+  type PendingRecoveryEnvelope,
+} from '@/types/chat-recovery'
+
 export type URLCitation = {
   title: string
   url: string
@@ -79,10 +87,6 @@ export type TimelineToolCallBlock = {
   arguments: string
   // Set once a `surface: 'input'` widget has been resolved by the user.
   resolvedAt?: number
-  complete?: boolean
-  result?: unknown
-  metadata?: unknown
-  progress?: unknown[]
   resolution?: {
     text: string
     data?: unknown
@@ -138,8 +142,6 @@ export type Attachment = {
 }
 
 export type Message = {
-  id?: string
-  isInterrupted?: boolean
   role: 'user' | 'assistant'
   content: string
   turnId?: string
@@ -177,14 +179,13 @@ export type Message = {
 export type TitleState = 'placeholder' | 'generated' | 'manual'
 
 export type Chat = {
-  activeRun?: { runId: string; lastEventId: number } | null
-  pinned?: boolean
   id: string
   title: string
   titleState?: TitleState
   messages: Message[]
   messageCount?: number
   isMetadataOnly?: boolean
+  pendingRecoveries?: PendingRecoveryEnvelope[]
   createdAt: Date
   // Latest server-bumped write time, used as the canonical sort
   // key for the sidebar. Absent for chats that have never been

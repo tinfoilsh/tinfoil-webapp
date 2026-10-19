@@ -1,7 +1,6 @@
 import { DefaultMessageRenderer } from '@/components/chat/renderers/default/DefaultMessageRenderer'
 import type { Message, TimelineBlock } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
-import { publish } from '@/services/harness/runtime'
 import { ForwardIcon } from '@heroicons/react/24/outline'
 import {
   act,
@@ -11,8 +10,7 @@ import {
   screen,
   within,
 } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
+import { describe, expect, it, vi } from 'vitest'
 
 const model = {
   modelName: 'current-model',
@@ -21,7 +19,6 @@ const model = {
   image: '',
   description: '',
   type: 'chat',
-  chat: true,
 } satisfies BaseModel
 
 const Renderer = DefaultMessageRenderer.render
@@ -729,15 +726,6 @@ describe('DefaultMessageRenderer message actions', () => {
 })
 
 describe('DefaultMessageRenderer read aloud', () => {
-  beforeEach(() => {
-    publish({
-      session: {
-        ...testSession,
-        features: { ...testSession.features, speech: true },
-      },
-    })
-  })
-
   it('offers read aloud only on completed assistant responses', () => {
     renderMessage({
       role: 'assistant',
@@ -746,21 +734,6 @@ describe('DefaultMessageRenderer read aloud', () => {
     })
     expect(
       screen.getByRole('button', { name: 'Read aloud' }),
-    ).toBeInTheDocument()
-  })
-
-  it('does not offer read aloud when the harness does not offer speech', () => {
-    publish({ session: testSession })
-    renderMessage({
-      role: 'assistant',
-      content: 'Hello.',
-      timestamp: new Date(),
-    })
-    expect(
-      screen.queryByRole('button', { name: 'Read aloud' }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'Copy message' }),
     ).toBeInTheDocument()
   })
 
@@ -882,68 +855,6 @@ describe('DefaultMessageRenderer work traces', () => {
       screen.getByText('Searching the web for "second"').closest('button'),
     ).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText(/Worked/)).not.toBeInTheDocument()
-  })
-
-  it.each([
-    { isStreaming: true, label: 'Searching the web...' },
-    { isStreaming: false, label: 'Search failed for "tinfoil"' },
-  ])(
-    'shows a search without a result while streaming=$isStreaming as $label',
-    ({ isStreaming, label }) => {
-      const { container } = render(
-        <Renderer
-          message={{
-            role: 'assistant',
-            content: '',
-            timestamp: new Date('2026-08-07T00:00:01.000Z'),
-            timeline: [
-              {
-                type: 'tool_call',
-                id: 'call-1',
-                toolCallId: 'call-1',
-                name: 'web_search',
-                arguments: '{"query":"tinfoil"}',
-              },
-            ],
-          }}
-          messageIndex={0}
-          model={model}
-          isDarkMode={false}
-          isLastMessage
-          isStreaming={isStreaming}
-        />,
-      )
-      expect(container).toHaveTextContent(label)
-      expect(container).not.toHaveTextContent('Searched the web')
-    },
-  )
-
-  it('shows a search the model called with null arguments as failed', () => {
-    const { container } = render(
-      <Renderer
-        message={{
-          role: 'assistant',
-          content: '',
-          timestamp: new Date('2026-08-07T00:00:01.000Z'),
-          timeline: [
-            {
-              type: 'tool_call',
-              id: 'call-1',
-              toolCallId: 'call-1',
-              name: 'web_search',
-              arguments: 'null',
-              result: { error: 'A search query is required' },
-            },
-          ],
-        }}
-        messageIndex={0}
-        model={model}
-        isDarkMode={false}
-        isLastMessage
-      />,
-    )
-    expect(container).toHaveTextContent('Search failed')
-    expect(container).not.toHaveTextContent('Search failed for')
   })
 
   it('does not treat an earlier run as active when answer text follows it', () => {

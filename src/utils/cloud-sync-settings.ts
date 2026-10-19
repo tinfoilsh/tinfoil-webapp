@@ -2,7 +2,6 @@ import {
   SETTINGS_CLOUD_SYNC_ENABLED,
   SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
   SETTINGS_LOCAL_ONLY_MODE_ENABLED,
-  USER_ENCRYPTION_KEY,
 } from '@/constants/storage-keys'
 
 export const CLOUD_SYNC_SETTING_CHANGED_EVENT = 'cloudSyncSettingChanged'
@@ -24,25 +23,6 @@ export function recordCloudSyncPreference(enabled: boolean): void {
     // Storage unavailable (e.g., Safari private mode) - silently fail
   }
   setCloudSyncEnabled(enabled)
-}
-
-/**
- * Accounts whose encryption key is on this device sync by default, unless
- * the user turned cloud sync off here.
- */
-export function enableCloudSyncForExistingKey(): void {
-  if (typeof window === 'undefined') return
-  try {
-    if (
-      localStorage.getItem(USER_ENCRYPTION_KEY) &&
-      !isCloudSyncEnabled() &&
-      localStorage.getItem(SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED) !== 'true'
-    ) {
-      setCloudSyncEnabled(true)
-    }
-  } catch {
-    // Storage unavailable (e.g., Safari private mode) - silently fail
-  }
 }
 
 export function isCloudSyncEnabled(): boolean {

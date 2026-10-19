@@ -331,6 +331,18 @@ async function parseLocalTinfoilExportWithProjectPolicy(
   return { chats, skippedProjectChats }
 }
 
+export async function parseLocalTinfoilExport(
+  file: File,
+  options: LocalTinfoilImportOptions,
+): Promise<Chat[]> {
+  const result = await parseLocalTinfoilExportWithProjectPolicy(
+    file,
+    options,
+    true,
+  )
+  return result.chats
+}
+
 export function parseLocalTinfoilExportForAccess(
   file: File,
   options: LocalTinfoilImportOptions,

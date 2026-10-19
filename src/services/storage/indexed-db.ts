@@ -2,6 +2,7 @@ import type {
   Attachment,
   Chat as ChatType,
   Message,
+  PendingRecoveryEnvelope,
 } from '@/components/chat/types'
 import { ACCOUNT_RESET_FAILED_EVENT } from '@/constants/auth-events'
 import {
@@ -10,7 +11,6 @@ import {
   AUTH_ACTIVE_USER_ID,
 } from '@/constants/storage-keys'
 import { nextClock } from '@/services/cloud/edit-clock'
-import type { PendingRecoveryEnvelope } from '@/types/chat-recovery'
 import type { Project } from '@/types/project'
 import { logError, logWarning } from '@/utils/error-handling'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -21,7 +21,6 @@ export interface Chat extends Omit<ChatType, 'createdAt'> {
   createdAt: string
   updatedAt: string
   model?: string
-  pendingRecoveries?: PendingRecoveryEnvelope[]
 }
 
 export interface StoredChat extends Chat {

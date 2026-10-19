@@ -1,5 +1,6 @@
 import { OnboardingView } from '@/components/onboarding/onboarding-view'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
+import OnboardingFlowDevPage from '@/pages/dev/onboarding-flow'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -10,6 +11,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@clerk/react', () => ({
   useUser: mocks.useUser,
+}))
+
+vi.mock('@/config', () => ({
+  IS_DEV: true,
 }))
 
 vi.mock('@/utils/error-handling', () => ({
@@ -134,20 +139,45 @@ describe('OnboardingView', () => {
     })
   })
 
-  it('shows safeguards and completes without persisting when persistence is off', async () => {
+  it('shows safeguards in the dev flow and reopens without persisting completion', async () => {
     const update = vi.fn()
     mocks.useUser.mockReturnValue({
       user: { unsafeMetadata: {}, update },
     })
-    const onComplete = vi.fn()
-    render(<OnboardingView onComplete={onComplete} persistCompletion={false} />)
+    render(<OnboardingFlowDevPage />)
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Open onboarding/ }),
+    )
+    expect(
+      await screen.findByRole('heading', { name: 'Why Tinfoil Chat' }),
+    ).toBeInTheDocument()
 
     await advanceToSafeguards()
     fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
 
-    expect(onComplete).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('onComplete()')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('heading', { name: 'Tending the Garden' }),
+      ).not.toBeInTheDocument()
+    })
     expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBeNull()
     expect(update).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /Open onboarding/ }))
+    expect(
+      await screen.findByRole('heading', { name: 'Why Tinfoil Chat' }),
+    ).toBeInTheDocument()
+    await advanceToPrivacy()
+    expect(
+      screen.getByRole('button', { name: 'Toggle privacy' }),
+    ).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(
+      await screen.findByRole('heading', { name: 'Tending the Garden' }),
+    ).toBeInTheDocument()
   })
 
   it('enables privacy when Continue is pressed without toggling', async () => {

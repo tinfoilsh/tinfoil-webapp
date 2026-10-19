@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 /**
- * next.config.mjs is env-sensitive (dev vs production). We import it fresh
- * under each scenario and inspect the returned rewrites and headers.
+ * next.config.mjs is env-sensitive (dev vs hosted, controlplane URL). We
+ * import it fresh under each scenario and inspect the returned rewrites.
  */
 
 import path from 'node:path'
@@ -42,7 +42,7 @@ function restoreEnv() {
   }
 }
 
-describe('next.config.mjs', () => {
+describe('next.config.mjs rewrites', () => {
   beforeEach(() => {
     delete process.env.VERCEL
     delete process.env.CI
@@ -51,16 +51,44 @@ describe('next.config.mjs', () => {
     restoreEnv()
   })
 
-  it.each([
-    { dev: true, nodeEnv: 'development' },
-    { dev: false, nodeEnv: 'development' },
-    { dev: true, nodeEnv: 'production' },
-  ])(
-    'never proxies API traffic around the attested harness (dev flag $dev, $nodeEnv)',
-    async ({ dev, nodeEnv }) => {
-      setConfigEnv({ dev, nodeEnv })
+  it('sends local-router traffic directly and all other APIs through the local gateway', async () => {
+    setConfigEnv()
+    const cfg = await loadConfig()
+
+    expect(await cfg.rewrites()).toEqual([
+      {
+        source: '/api/local-router/:path*',
+        destination: 'http://localhost:8090/:path*',
+      },
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:3001/api/:path*',
+      },
+    ])
+  })
+
+  it.each([false, true])(
+    'omits the catch-all in a production build with dev flag %s',
+    async (dev) => {
+      setConfigEnv({ dev, nodeEnv: 'production' })
       const cfg = await loadConfig()
-      expect(cfg.rewrites).toBeUndefined()
+      const rules = await cfg.rewrites()
+      expect(rules).toEqual([])
+    },
+  )
+
+  it('does not enable the proxy in next dev without the explicit Tinfoil dev flag', async () => {
+    setConfigEnv({ dev: false })
+    const cfg = await loadConfig()
+    expect(await cfg.rewrites()).toEqual([])
+  })
+
+  it.each(['VERCEL', 'CI'])(
+    'refuses NEXT_PUBLIC_DEV=true in a hosted build detected by %s',
+    async (host) => {
+      setConfigEnv()
+      process.env[host] = '1'
+      await expect(loadConfig()).rejects.toThrow(/NEXT_PUBLIC_DEV=true/)
     },
   )
 

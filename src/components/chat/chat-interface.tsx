@@ -1,5 +1,32 @@
-import { getSelectedModelLabel } from '@/config/models'
+import {
+  findSelectableModel,
+  getAIModels,
+  getCachedAIModels,
+  getCachedSystemPromptAndRules,
+  getReasoningHistoryPolicy,
+  getResolvedModelContextWindowTokens,
+  getSelectedModelLabel,
+  getSystemPromptAndRules,
+  isUsingDevModelCatalog,
+  resolveModelSelection,
+  type BaseModel,
+} from '@/config/models'
+import { DEFAULT_CHAT_TITLE, TEMPORARY_CHAT_TITLE } from '@/constants/chat'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
+import { PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT } from '@/constants/settings-events'
+import {
+  SETTINGS_CODE_EXECUTION_ENABLED,
+  SETTINGS_GENUI_ENABLED,
+  SETTINGS_PII_CHECK_ENABLED,
+  SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
+  SETTINGS_WEB_SEARCH_AVAILABLE,
+  UI_EXPAND_PROJECT_DOCUMENTS,
+} from '@/constants/storage-keys'
+import {
+  useChatRecoveryActiveTurnIds,
+  useChatRecoveryDrafts,
+} from '@/hooks/use-chat-recovery-drafts'
+import { useChatRouter } from '@/hooks/use-chat-router'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
@@ -10,24 +37,22 @@ import {
   useSafeguardStatusNotification,
 } from '@/hooks/use-safeguards'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
-import { toast } from '@/hooks/use-toast'
-import { logError, logInfo } from '@/utils/error-handling'
+import { useSyncHealthAttention } from '@/hooks/use-sync-health'
+import { useToast } from '@/hooks/use-toast'
+import { ChatQueryBuilder } from '@/services/inference/chat-query-builder'
+import { isChatRecoveryActive } from '@/services/inference/chat-recovery-drafts'
+import {
+  getRateLimitInfo,
+  getSessionToken,
+  invalidateSessionCache,
+} from '@/services/inference/tinfoil-client'
+import { generateTitle, getTitleContent } from '@/services/inference/title'
 import { useAuth, useUser } from '@clerk/react'
 import { ArrowDownIcon } from '@heroicons/react/24/outline'
-import {
-  TfChat2,
-  TfDocumentPlus,
-  TfGhost2,
-  TfLockLocked,
-  TfLockOpened,
-  TfShare,
-  TfSidebarOpen,
-  TfTinSad,
-  TfWriting2,
-} from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
 import { PiSpinner } from 'react-icons/pi'
+import { getMessageImages } from './attachment-helpers'
 
 import {
   RateLimitBanner,
@@ -40,23 +65,72 @@ import {
   ProjectModeIndicator,
   ProjectSidebar,
   useProject,
+  useProjectSystemPrompt,
 } from '@/components/project'
 import { GridTexture } from '@/components/ui/grid-texture'
 import { LogoLoading } from '@/components/ui/logo-loading'
 import { cn } from '@/components/ui/utils'
+import { CLOUD_SYNC } from '@/config'
+import { useCloudSync } from '@/hooks/use-cloud-sync'
 import { usePasskeyBackup } from '@/hooks/use-passkey-backup'
-
-import { encryptionService } from '@/services/encryption/encryption-service'
-import { useCloudSyncSetting } from '@/services/harness/storage-mode'
+import { usePinnedChats } from '@/hooks/use-pinned-chats'
+import { useProfileSync } from '@/hooks/use-profile-sync'
+import { runManualCloudSync } from '@/services/cloud/manual-cloud-sync'
+import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
+import { hydratePinnedChatById } from '@/services/storage/pinned-chat-hydration'
 import {
+  canRequestChatPin,
+  isResolvedFavoriteChat,
+} from '@/services/storage/pinned-chats'
+
+import { cloudSync, SyncInProgressError } from '@/services/cloud/cloud-sync'
+import { encryptionService } from '@/services/encryption/encryption-service'
+import { generateCodeExecutionAccessToken } from '@/services/exec-snapshot/access-token'
+import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
+import { chatEvents } from '@/services/storage/chat-events'
+import { buildForkedChat } from '@/services/storage/chat-fork'
+import {
+  ChatImagesUnavailableError,
+  chatStorage,
+} from '@/services/storage/chat-storage'
+import {
+  INDEXED_DB_UPGRADE_BLOCKED_EVENT,
+  isIndexedDBUpgradeBlocked,
+} from '@/services/storage/indexed-db'
+import { sessionChatStorage } from '@/services/storage/session-storage'
+import {
+  CLOUD_SYNC_SETTING_CHANGED_EVENT,
   isCloudSyncEnabled,
   setCloudSyncEnabled,
 } from '@/utils/cloud-sync-settings'
+import { logError, logInfo } from '@/utils/error-handling'
+import { isProbablyTextFile, isSupportedFile } from '@/utils/file-types'
+import { getNewChatPath, isPlainPrimaryClick } from '@/utils/navigation'
 import {
-  getChatPath,
-  getNewChatPath,
-  isPlainPrimaryClick,
-} from '@/utils/navigation'
+  PERFORMANCE_METRICS,
+  recordPerformanceDuration,
+  startPerformanceTimer,
+} from '@/utils/performance-metrics'
+import { generateReverseId } from '@/utils/reverse-id'
+import {
+  estimateMessageTokens,
+  estimateTokenCount,
+  findContextStartIndex,
+  getContextTokenBudget,
+  getHistoryTokenBudget,
+} from '@/utils/token-estimation'
+import {
+  TfChat2,
+  TfDocumentPlus,
+  TfGhost2,
+  TfLockLocked,
+  TfLockOpened,
+  TfPerson,
+  TfShare,
+  TfSidebarOpen,
+  TfTinSad,
+  TfWriting2,
+} from '@tinfoilsh/tinfoil-icons'
 import dynamic from 'next/dynamic'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
@@ -71,10 +145,22 @@ import { ChatAnnouncer } from './chat-announcer'
 import { ChatHeader } from './chat-header'
 import { ChatInput } from './chat-input'
 import { ChatMessages } from './chat-messages'
+import {
+  getChatContentBottomScrollTop,
+  getChatSpacerHeight,
+  getDistanceFromChatContentBottom,
+} from './chat-scroll'
 import { ChatSidebar } from './chat-sidebar'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
+import { getDocumentTextContent } from './document-content'
+import { useDocumentUploader } from './document-uploader'
 import { DragProvider } from './drag-context'
+import { openFavoriteChat } from './favorite-navigation'
+import {
+  resolveProjectUploadTarget,
+  routeChatFileUpload,
+} from './file-upload-routing'
 import { ForkOverlay } from './fork-overlay'
 import { GenUIInputAreaRenderer } from './genui/GenUIInputAreaRenderer'
 import { selectPendingInputToolCallFromChat } from './genui/pending-input-tool-call'
@@ -84,7 +170,18 @@ import {
   type ArtifactPreviewSidebarDetail,
   type ArtifactPreviewSidebarEventDetail,
 } from './genui/widgets/ArtifactPreview'
+import {
+  applyPresetSettingsToChat,
+  canToggleTemporaryChat,
+  createTemporaryChat,
+  resolveWebSearchEnabled,
+  upsertChatById,
+} from './hooks/chat-operations'
 import { useAutoIntelligence } from './hooks/use-auto-intelligence'
+import { useBrowserTabChatTitle } from './hooks/use-browser-tab-chat-title'
+import { useChatState } from './hooks/use-chat-state'
+import { useCustomSystemPrompt } from './hooks/use-custom-system-prompt'
+import { useMessageQueue } from './hooks/use-message-queue'
 import { usePromptLibrary } from './hooks/use-prompt-library'
 import {
   useReasoningEffort,
@@ -92,20 +189,25 @@ import {
 } from './hooks/use-reasoning-effort'
 import { useSidebarChat } from './hooks/use-sidebar-chat'
 import { MessageQueue } from './message-queue'
+import { getBlankQueueId } from './message-queue-identity'
 import { ModelSelector } from './model-selector'
 import { ModelSelectorTriggerLabel } from './model-selector-trigger-label'
 import { openProjectChat } from './project-navigation'
+import { pruneUnavailablePresetModels } from './prompts/default-preset'
 import { QuoteSelectionPopover } from './quote-selection-popover'
 import { initializeRenderers } from './renderers/client'
 import type { ProcessedDocument } from './renderers/types'
 import type { SettingsTab } from './settings-modal'
 import { SIDEBAR_PANEL_ID } from './sidebar-layout'
-import type { Chat } from './types'
-import { uploadErrorMessage } from './upload-error'
+import type { Attachment, Chat, DocumentPage } from './types'
 // Lazy-load modals that aren't shown on initial load. The loaders are
 // hoisted so they can be pre-warmed (see preloadCloudSyncModals) before
 // the user clicks, keeping the chunk fetch off the click critical path.
 const loadCloudSyncSetupModal = () => import('../modals/cloud-sync-setup-modal')
+
+function preloadCloudSyncModals(): void {
+  void loadCloudSyncSetupModal()
+}
 
 const CloudSyncSetupModal = dynamic(
   () => loadCloudSyncSetupModal().then((m) => m.CloudSyncSetupModal),
@@ -149,920 +251,166 @@ const OnboardingView = dynamic(
   { ssr: false },
 )
 
-import { displayModels } from '@/config/models'
-import { useHarness } from '@/services/harness/provider'
-import { isAttachmentsUnavailable } from '@/services/harness/transfer'
-import type { Turn } from '@/services/harness/types'
-import { useThread } from '@/services/harness/use-thread'
-import { attachmentView } from '@/services/harness/view-model'
-import {
-  authorizeCurrentPrimaryKeyOrThrow,
-  registerStartFreshKeyIfNeeded,
-} from '@/services/keys/cloud-key-authorization'
-import { useUIState } from './hooks/use-ui-state'
-
 type ChatInterfaceProps = {
+  verificationState?: any
+  showVerifyButton?: boolean
+  minHeight?: string
+  inputMinHeight?: string
+  isDarkMode?: boolean
   initialChatId?: string | null
   initialProjectId?: string | null
   isLocalChatUrl?: boolean
   initialNewChatIsLocalOnly?: boolean
+  /**
+   * When true, suppresses auto-opening intro/setup modals on this mount
+   * (onboarding, passkey setup/recovery prompts, cloud sync setup, and the
+   * "passkey setup failed" warning). Used by routes like /newchat where the
+   * user explicitly wants to start chatting without interruptions. The user
+   * can still open these flows manually from settings.
+   */
   suppressIntroModals?: boolean
-  inputMinHeight?: string
 }
+
+function buildAttachment(opts: {
+  id: string
+  fileName: string
+  imageData?: { base64: string; mimeType: string; thumbnailBase64?: string }
+  textContent?: string
+  description?: string
+  pages?: DocumentPage[]
+}): Attachment | undefined {
+  if (opts.imageData) {
+    return {
+      id: opts.id,
+      type: 'image',
+      fileName: opts.fileName,
+      mimeType: opts.imageData.mimeType,
+      base64: opts.imageData.base64,
+      thumbnailBase64: opts.imageData.thumbnailBase64,
+      description: opts.description ?? opts.fileName,
+    }
+  }
+  // Synthesize textContent from pages when the document was uploaded in
+  // images mode and md_content is missing, so consumers that filter on
+  // textContent (share, preview) still see the document.
+  const textContent =
+    getDocumentTextContent(opts.textContent ?? '', opts.pages) ?? undefined
+  if (textContent || opts.pages?.length) {
+    return {
+      id: opts.id,
+      type: 'document',
+      fileName: opts.fileName,
+      textContent: textContent || undefined,
+      pages: opts.pages,
+    }
+  }
+  return undefined
+}
+
+function buildCompletedAttachments(
+  documents: ProcessedDocument[],
+): Attachment[] {
+  return documents
+    .filter(
+      (document) =>
+        !document.isUploading &&
+        !document.isGeneratingDescription &&
+        !document.isUnsupported &&
+        (!document.isImageDescription ||
+          document.imageData ||
+          document.attachment),
+    )
+    .map((document) => {
+      if (document.attachment) return document.attachment
+      return (
+        buildAttachment({
+          id: document.id,
+          fileName: document.name,
+          imageData: document.imageData ?? undefined,
+          textContent: document.content ?? undefined,
+          description:
+            document.isImageDescription && document.content
+              ? document.content
+              : undefined,
+        }) ?? {
+          id: document.id,
+          type: 'document' as const,
+          fileName: document.name,
+        }
+      )
+    })
+}
+
 export function ChatInterface({
+  verificationState,
+  minHeight,
+  inputMinHeight = '28px',
+  isDarkMode: propIsDarkMode,
   initialChatId,
   initialProjectId,
-  isLocalChatUrl = false,
+  isLocalChatUrl: isLocalChatUrlProp,
   initialNewChatIsLocalOnly = false,
   suppressIntroModals = false,
-  inputMinHeight = '60px',
 }: ChatInterfaceProps) {
-  const {
-    api,
-    session,
-    profile,
-    keyReady,
-    profileReady,
-    error: sessionError,
-  } = useHarness()
-  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
-  // The harness stores chats only for a signed-in account with cloud sync;
-  // otherwise every chat stays on this device.
-  const cloudSyncSetting = useCloudSyncSetting()
-  const cloudSyncEnabled = !!isSignedIn && cloudSyncSetting
-  const { user } = useUser()
+  const { toast } = useToast()
   const router = useRouter()
-  const {
-    isClient,
-    isSidebarOpen,
-    setIsSidebarOpen,
-    isDarkMode,
-    themeMode,
-    setThemeMode,
-    windowWidth,
-    handleInputFocus,
-  } = useUIState()
-  const {
-    activeProject,
-    loadingProject,
-    isProjectMode,
-    enterProjectMode,
-    exitProjectMode,
-    createProject,
-    uploadDocument,
-  } = useProject()
-  const { projects } = useProjects({ autoLoad: cloudSyncEnabled })
-  const thread = useThread(
-    initialChatId,
-    activeProject?.id ?? initialProjectId,
-    {
-      local: isLocalChatUrl,
-      newChatLocal: initialNewChatIsLocalOnly,
-    },
-  )
-  const {
-    chat: currentChat,
-    chats,
-    loading: isChatHydrating,
-    running: isStreaming,
-    model: selectedModel,
-    presetId: activePresetId,
-  } = thread
+  const indexedDBBlockedToastShownRef = useRef(false)
+
   useEffect(() => {
-    if (
-      !currentChat.id ||
-      currentChat.isTemporary ||
-      currentChat.pendingSave ||
-      currentChat.id === initialChatId
+    const showUpgradeBlockedToast = () => {
+      if (indexedDBBlockedToastShownRef.current) return
+      indexedDBBlockedToastShownRef.current = true
+      toast({
+        title: 'Local cache upgrade blocked',
+        description:
+          'Close other Tinfoil tabs, then reload this page to enable local project caching.',
+        variant: 'destructive',
+      })
+    }
+
+    if (isIndexedDBUpgradeBlocked()) showUpgradeBlockedToast()
+    window.addEventListener(
+      INDEXED_DB_UPGRADE_BLOCKED_EVENT,
+      showUpgradeBlockedToast,
     )
-      return
-    const path = getChatPath(currentChat.id, {
-      isLocalOnly: currentChat.isLocalOnly,
-      projectId: currentChat.projectId,
-    })
-    if (window.location.pathname !== path)
-      void router
-        .replace(path, undefined, { shallow: true })
-        .catch(thread.report)
-  }, [
-    currentChat.id,
-    currentChat.isTemporary,
-    currentChat.isLocalOnly,
-    currentChat.pendingSave,
-    currentChat.projectId,
-    initialChatId,
-    router,
-    thread.report,
-  ])
-  const models = useMemo(() => displayModels(session), [session])
-  const isLoadingConfig = !session
-  const hasValidatedModel = !!session
-  const loadingState = isStreaming ? 'streaming' : 'idle'
-  const isWaitingForResponse =
-    isStreaming && currentChat.messages.at(-1)?.role !== 'assistant'
-  const isTemporaryMode = thread.temporary
-  useSafeguardsLoader()
-  useSafeguardStatusNotification()
-  const safeguardsLoaded = useSafeguardsLoaded()
-  const flaggedChatIds = useFlaggedChatIds()
-  // A chat the safeguards flagged is read-only, by its chat id, which the
-  // harness gives the safeguards as the conversation id.
-  const currentChatIsFlagged = Boolean(
-    currentChat.id && flaggedChatIds[currentChat.id],
-  )
-  const waitingForSafeguards =
-    !isAuthLoaded || (!!isSignedIn && !safeguardsLoaded)
-  const generationBlocked = currentChatIsFlagged || waitingForSafeguards
-  const submitAfterSafeguards = useRef(false)
+    return () =>
+      window.removeEventListener(
+        INDEXED_DB_UPGRADE_BLOCKED_EVENT,
+        showUpgradeBlockedToast,
+      )
+  }, [toast])
+  const {
+    isSignedIn,
+    isLoaded: isAuthLoaded,
+    userId: authUserId,
+    sessionId: authSessionId,
+  } = useAuth()
+  const [authRestorationStartedAt] = useState(startPerformanceTimer)
+  useEffect(() => {
+    if (isAuthLoaded) {
+      recordPerformanceDuration(
+        PERFORMANCE_METRICS.AUTH_RESTORATION,
+        authRestorationStartedAt,
+      )
+    }
+  }, [authRestorationStartedAt, isAuthLoaded])
+  // TODO: unflip this
+  const canUseCodeExecution = false
+  const { user } = useUser()
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({})
   const rateLimit = useRateLimit()
-  const retryInfo = null
-  const failure = thread.state.error
-  const streamError = thread.error
-    ? {
-        message: thread.error,
-        code: failure?.code,
-        kind: failure?.kind,
-        resetsAt: failure?.resetsAt,
-        retryAfter: failure?.retryAfter,
-        upstreamCode: failure?.upstreamCode,
-        timestamp: thread.errorAt,
-      }
-    : null
-  // A capped subscriber's cap may lift before it resets.
-  const checkQuota = () => api.refresh()
-  const dismissStreamError = thread.dismissError
-  const { isLoading: isSubscriptionLoading, chat_subscription_active } =
-    useSubscriptionStatus()
-  const isPremium = !isSubscriptionLoading && chat_subscription_active
-  // The composer only uses premium status to decide which controls to show,
-  // and the server enforces access on every request. Using the cached value
-  // while auth loads keeps the toolbar from reflowing once Clerk resolves.
-  const showPremiumComposerControls = chat_subscription_active
-  const encryptionKey = encryptionService.getKey()
-  const [input, setInput] = useState('')
-  const inputRef = useRef<HTMLTextAreaElement>(null)
-  const [expandedLabel, setExpandedLabel] = useState<
-    'model' | 'verify' | 'info' | null
-  >(null)
-  const handleLabelClick = (
-    label: 'model' | 'verify' | 'info',
-    action: () => void,
-  ) => {
-    setExpandedLabel((value) => (value === label ? null : label))
-    action()
-  }
-  const [processedDocuments, setProcessedDocuments] = useState<
-    ProcessedDocument[]
-  >([])
-  const [quote, setQuote] = useState<string | null>(null)
-  // Onboarding is shown to signed-in users once their profile has loaded.
-  const { showOnboarding, dismissOnboarding } = useOnboarding({
-    isAuthLoaded: isAuthLoaded && !!session,
-    isSignedIn,
-    userId: user?.id,
-    hasCompletedOnboarding: !profileReady || profile.hasSeenOnboarding === true,
-    suppressIntroModals,
-  })
-  const [logoAnimDone, setLogoAnimDone] = useState(false)
-  const handleLogoAnimFinished = useCallback(() => {
-    setLogoAnimDone(true)
-  }, [])
-  const [isVerifierSidebarOpen, setIsVerifierSidebarOpen] = useState(false)
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
-  const [hasMountedSettingsModal, setHasMountedSettingsModal] = useState(false)
-  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>()
-  const [isShareModalOpen, setIsShareModalOpen] = useState(false)
-  const [hasMountedShareModal, setHasMountedShareModal] = useState(false)
-  const [isPromptLibraryModalOpen, setIsPromptLibraryModalOpen] =
-    useState(false)
-  const [hasMountedPromptLibrary, setHasMountedPromptLibrary] = useState(false)
-  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false)
-  const [hasMountedSearchModal, setHasMountedSearchModal] = useState(false)
-  const [isReportBugModalOpen, setIsReportBugModalOpen] = useState(false)
-  const [hasMountedReportBugModal, setHasMountedReportBugModal] =
-    useState(false)
-  const [showCloudSyncSetupModal, setShowCloudSyncSetupModal] = useState(false)
-  const [isFirstTimePasskeySetupBusy, setIsFirstTimePasskeySetupBusy] =
-    useState(false)
   const [isSubscribePromptOpen, setIsSubscribePromptOpen] = useState(false)
-  const [isAskSidebarOpen, setIsAskSidebarOpen] = useState(false)
-  const [isArtifactSidebarOpen, setIsArtifactSidebarOpen] = useState(false)
-  const [artifactSidebarWidth, setArtifactSidebarWidth] = useState<number>(
-    CONSTANTS.ASK_SIDEBAR_WIDTH_PX,
-  )
-  const [artifactPreview, setArtifactPreview] =
-    useState<ArtifactPreviewSidebarDetail | null>(null)
-  const [activeArtifactToolCallId, setActiveArtifactToolCallId] = useState<
-    string | null
-  >(null)
-  const [, setVerificationDocument] = useState<unknown>(null)
-  const [verificationStatus, setVerificationStatus] = useState<
-    'pending' | 'verified' | 'failed'
-  >('pending')
-  const [showAddToProjectModal, setShowAddToProjectModal] = useState(false)
-  const [pendingProjectUpload, setPendingProjectUpload] = useState<{
-    projectId: string
-    files: File[]
-  } | null>(null)
-  const [isGlobalDragActive, setIsGlobalDragActive] = useState(false)
-  const dragCounterRef = useRef(0)
-  const { reasoningEffort, setReasoningEffort } = useReasoningEffort()
-  const { thinkingEnabled, setThinkingEnabled } = useThinkingEnabled()
-  const { autoIntelligence, setAutoIntelligence } = useAutoIntelligence()
-  const { getPresetById, pruneUnavailableModels, userPresets } =
-    usePromptLibrary()
-  // A saved prompt may name a model the catalog has since retired.
-  const pruneRef = useRef(pruneUnavailableModels)
-  pruneRef.current = pruneUnavailableModels
-  useEffect(() => {
-    if (!profileReady) return
-    const pruned = pruneRef.current(models)
-    if (pruned.length)
-      logInfo('Cleared unavailable models from prompt presets', {
-        component: 'ChatInterface',
-        metadata: { presetIds: pruned },
-      })
-  }, [models, profileReady, userPresets])
 
-  const activePreset = getPresetById(activePresetId)
-  const pixelateSidebarChatTitles =
-    profile.pixelateSidebarChatTitlesEnabled ?? false
-  const webSearchAvailable = session?.features.webSearch ?? false
-  const effectiveWebSearchEnabled =
-    currentChat.webSearchEnabled ?? profile.webSearchEnabled ?? true
-  const codeExecutionEnabled = profile.codeExecutionEnabled ?? false
-  const canEnableCodeExecution = session?.features.codeExecution ?? false
-  const contextUsage = thread.state.snapshot.thread?.contextUsage ?? undefined
-  const modKey =
-    typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
-      ? '⌘'
-      : 'Ctrl+'
-  const documentTitle =
-    (profile.browserTabChatTitleEnabled ?? true) &&
-    currentChat.titleState !== 'placeholder'
-      ? `${currentChat.title} · Tinfoil`
-      : 'Tinfoil Private Chat'
-  const handleInputFocusWithRateLimitCheck = handleInputFocus
-  // A chat on this device changes its own copy; the harness changes a stored
-  // chat, and a temporary one is not stored at all.
-  const canChangeMessages =
-    !!currentChat.id && (thread.runsLocally || !isTemporaryMode)
-  const canFork =
-    !!currentChat.id && !currentChat.isTemporary && !currentChat.isBlankChat
-  const canShare =
-    !!isSignedIn && !currentChat.isTemporary && currentChat.messages.length > 0
-  const canChat = profileReady && (thread.runsLocally || keyReady)
-  const reloadChats = () => thread.refresh()
-  const createNewChat = (isLocalOnly = false, fromUserAction = true) => {
-    thread.newChat({ local: isLocalOnly })
-    setInput('')
-    setQuote(null)
-    setProcessedDocuments([])
-    // The sidebar switches a blank chat to its tab's storage without moving
-    // the page, which may still be opening a chat from its URL.
-    if (!fromUserAction) return
-    void router.push(
-      activeProject ? `/project/${activeProject.id}` : '/',
-      undefined,
-      { shallow: true },
-    )
-  }
-  const handleChatSelect = (id: string) => {
-    setProcessedDocuments([])
-    setQuote(null)
-    const isLocalOnly =
-      !cloudSyncEnabled || !!chats.find((chat) => chat.id === id)?.isLocalOnly
-    void thread
-      .open(id, { local: isLocalOnly })
-      .then(() =>
-        router.push(
-          getChatPath(id, {
-            isLocalOnly,
-            projectId: isLocalOnly ? undefined : activeProject?.id,
-          }),
-          undefined,
-          { shallow: true },
-        ),
-      )
-      .catch(thread.report)
-  }
-  const loadChatById = (id: string, _local?: boolean) => thread.open(id)
-  const deleteChat = (id: string) => {
-    void thread.remove(id).catch(thread.report)
-  }
-  const updateChatTitle = (id: string, title: string) => {
-    void thread.update(id, { title }).catch(thread.report)
-  }
-  const handleModelSelect = (model: string) => {
-    thread.setModel(model)
-    setExpandedLabel(null)
-    if (currentChat.id && !isTemporaryMode)
-      void thread.update(currentChat.id, { model }).catch(thread.report)
-    void api.updateProfile({ selectedModel: model }).catch(thread.report)
-  }
-  // Choosing a prompt also applies its model and web search setting.
-  const handleSetActivePreset = (presetId: string | null) => {
-    void thread.selectPreset(presetId).catch(thread.report)
-  }
-  const options = {
-    model: selectedModel,
-    autoIntelligence,
-    reasoningEffort,
-    thinking: thinkingEnabled,
-    webSearch: effectiveWebSearchEnabled,
-    codeExecution: codeExecutionEnabled,
-    piiCheck: profile.piiCheckEnabled ?? true,
-    genUI: profile.genUIEnabled ?? true,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  }
-  const handleQuery = (content: string, fields: Partial<Turn> = {}) => {
-    if (generationBlocked) return
-    try {
-      return thread.send({ content, options, ...fields })
-    } catch (cause) {
-      thread.report(cause)
-    }
-  }
-  const handleSubmit = (event: React.FormEvent) => {
-    event.preventDefault()
-    if (currentChatIsFlagged) return
-    // A send waits for the account's safeguard flags, so a flagged chat
-    // cannot be continued before its flag is known.
-    if (waitingForSafeguards) {
-      submitAfterSafeguards.current = true
-      return
-    }
-    submitComposer()
-  }
-  const submitComposer = () => {
-    if (
-      isChatHydrating ||
-      processedDocuments.some((d) => d.isUploading) ||
-      (!input.trim() && !processedDocuments.length)
-    )
-      return
-    const result = handleQuery(input, {
-      quote: quote ?? undefined,
-      attachments: processedDocuments.flatMap((d) =>
-        d.attachment ? [d.attachment.id] : [],
-      ),
+  // Onboarding state (must be defined before usePasskeyBackup so we can gate it)
+  const { showOnboarding, isOnboardingReady, dismissOnboarding } =
+    useOnboarding({
+      isAuthLoaded,
+      isSignedIn,
+      userId: user?.id === authUserId ? user?.id : undefined,
+      hasCompletedOnboarding:
+        user?.unsafeMetadata?.has_completed_onboarding === true,
+      suppressIntroModals,
     })
-    if (result) {
-      setInput('')
-      setQuote(null)
-      setProcessedDocuments([])
-    }
-  }
-  const editMessage = (index: number, content: string) => {
-    void handleQuery(content, {
-      kind: 'edit',
-      messageId: currentChat.messages[index]?.id,
-    })
-  }
-  const regenerateMessage = (index: number) => {
-    if (generationBlocked) return
-    void thread.regenerate(index, { options }).catch(thread.report)
-  }
-  const resolveInputToolCall = (
-    toolCallId: string,
-    text: string,
-    data?: unknown,
-  ) => {
-    void handleQuery('', {
-      kind: 'resolve',
-      toolCallId,
-      resolution: { text, data: data as any },
-    })
-  }
-  const retryToolCall = async (index: number, toolCallId: string) => {
-    return Boolean(
-      await handleQuery('', {
-        kind: 'retryToolCall',
-        messageId: currentChat.messages[index]?.id,
-        toolCallId,
-      }),
-    )
-  }
-  const retryLastMessage = () => {
-    if (generationBlocked) return
-    void thread.retry({ options }).catch(thread.report)
-  }
-  // Message actions wait for the reply in progress, as on main.
-  const deleteMessage = (index: number) => {
-    if (isStreaming || currentChatIsFlagged) return
-    void thread.deleteMessage(index).catch(thread.report)
-  }
-  const editAssistantMessage = (index: number, content: string) => {
-    if (isStreaming || currentChatIsFlagged) return
-    void thread.editReply(index, content).catch(thread.report)
-  }
-  const continueAssistantMessage = (index: number) => {
-    if (isStreaming || generationBlocked) return
-    try {
-      void thread.continueReply(index, { options })
-    } catch (cause) {
-      thread.report(cause)
-    }
-  }
-  const [isForking, setIsForking] = useState(false)
-  const forkInFlight = useRef(false)
-  const handleForkMessage = async (index: number) => {
-    if (isStreaming || forkInFlight.current) return
-    forkInFlight.current = true
-    setIsForking(true)
-    const startedAt = Date.now()
-    try {
-      const forkId = await thread.fork(index)
-      if (!forkId) return
-      setProcessedDocuments([])
-      setQuote(null)
-      // The overlay stays long enough to read as a step, not a flicker.
-      const elapsed = Date.now() - startedAt
-      if (elapsed < CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS)
-        await new Promise((resolve) =>
-          setTimeout(resolve, CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS - elapsed),
-        )
-    } catch (cause) {
-      if (cause instanceof DOMException && cause.name === 'AbortError') return
-      logError('Failed to fork conversation', cause, {
-        component: 'ChatInterface',
-        action: 'handleForkMessage',
-      })
-      toast({
-        title: 'Failed to fork conversation',
-        description: 'Please try again.',
-        variant: 'destructive',
-      })
-    } finally {
-      forkInFlight.current = false
-      setIsForking(false)
-    }
-  }
-  const cancelGenerationAndResumeQueue = () => {
-    void thread.cancel().catch(thread.report)
-  }
-  const queuedMessages = thread.state.snapshot.queue.map((q) => ({
-    id: q.queueId,
-    text: q.content,
-  }))
-  const removeQueuedMessage = (id: string) => {
-    void thread.removeQueued(id).catch(thread.report)
-  }
-  const pinnedChatIds = thread.threads.filter((t) => t.pinned).map((t) => t.id)
-  const favoriteChats = chats.filter((c) => c.pinned)
-  const unpinChat = (id: string) => {
-    void thread.update(id, { pinned: false }).catch(thread.report)
-  }
-  // Chats move between the cloud and this device with cloud sync.
-  const canMoveChats = cloudSyncEnabled
-  const isAbort = (cause: unknown) =>
-    cause instanceof DOMException && cause.name === 'AbortError'
-  const handleConvertChatToCloud = async (chatId: string): Promise<boolean> => {
-    try {
-      await thread.moveToCloud(chatId)
-      await reloadChats()
-      toast({
-        title: 'Chat moved to cloud',
-        description: 'The chat will now sync across your devices.',
-      })
-      return true
-    } catch (error) {
-      if (isAbort(error)) return false
-      logError('Failed to convert chat to cloud', error, {
-        component: 'ChatInterface',
-        action: 'handleConvertChatToCloud',
-        metadata: { chatId },
-      })
-      toast({
-        title: 'Failed to move chat to cloud',
-        description: 'Please try again.',
-        variant: 'destructive',
-      })
-      return false
-    }
-  }
-  const handleConvertChatToLocal = async (chatId: string): Promise<void> => {
-    try {
-      await thread.moveToDevice(chatId)
-      await reloadChats()
-      toast({
-        title: 'Chat moved to local',
-        description: 'The chat is now only stored on this device.',
-      })
-    } catch (error) {
-      if (isAbort(error)) return
-      logError('Failed to convert chat to local', error, {
-        component: 'ChatInterface',
-        action: 'handleConvertChatToLocal',
-        metadata: { chatId },
-      })
-      toast({
-        title: 'Failed to move chat to local',
-        description: isAttachmentsUnavailable(error)
-          ? 'Some attachments in this chat could not be downloaded. Check your connection and try again.'
-          : 'Please try again.',
-        variant: 'destructive',
-      })
-    }
-  }
-  // Pinning a chat kept on this device moves it to the cloud first, where
-  // favorites are stored.
-  const handleToggleFavorite = async (favorite: {
-    id: string
-    isLocalOnly?: boolean
-  }) => {
-    if (pinnedChatIds.includes(favorite.id)) {
-      unpinChat(favorite.id)
-      return
-    }
-    const chat = chats.find((candidate) => candidate.id === favorite.id)
-    if (chat?.isLocalOnly ?? favorite.isLocalOnly) {
-      if (!canMoveChats) return
-      if (!(await handleConvertChatToCloud(favorite.id))) return
-    }
-    await thread.update(favorite.id, { pinned: true }).catch(thread.report)
-  }
-  const handleOpenFavorite = (chat: { id: string }) => handleChatSelect(chat.id)
-  // A chat kept on this device moves to the cloud before it joins a project;
-  // when the move into the project fails, it returns to the device as it was.
-  const handleMoveChatToProject = async (chatId: string, projectId: string) => {
-    if (!isPremium) {
-      setIsSubscribePromptOpen(true)
-      return
-    }
-    const moving = chats.find((chat) => chat.id === chatId)
-    let original: Awaited<ReturnType<typeof thread.moveToCloud>> | undefined
-    try {
-      if (moving?.isLocalOnly) {
-        if (!canMoveChats) throw new Error('Chats cannot move to the cloud')
-        original = await thread.moveToCloud(chatId)
-      }
-      await thread.update(chatId, { projectId })
-      await reloadChats()
-      if (currentChat.id === chatId) createNewChat(false, true)
-      toast({
-        title: 'Chat moved to project',
-        description: 'The chat has been moved successfully.',
-      })
-    } catch (error) {
-      if (original) {
-        try {
-          await thread.moveToDevice(chatId, original)
-        } catch (rollbackError) {
-          logError(
-            'Failed to restore local chat after project move',
-            rollbackError,
-            {
-              component: 'ChatInterface',
-              action: 'handleMoveChatToProject.rollback',
-              metadata: { chatId, projectId },
-            },
-          )
-        }
-      }
-      if (isAbort(error)) return
-      logError('Failed to move chat to project', error, {
-        component: 'ChatInterface',
-        action: 'handleMoveChatToProject',
-        metadata: { chatId, projectId },
-      })
-      await reloadChats().catch(thread.report)
-      toast({
-        title: 'Failed to move chat',
-        description: 'Please try again.',
-        variant: 'destructive',
-      })
-    }
-  }
-  const handleRemoveChatFromProject = (id: string) =>
-    thread.update(id, { projectId: null }).then(reloadChats)
-  const handleDeleteProjectChats = async () => {
-    if (!activeProject) return
-    await api.post('/v1/threads/delete-all', { projectId: activeProject.id })
-    thread.newChat()
-    await thread.refresh()
-  }
-  const handleCreateProject = async () => {
-    const project = await createProject({ name: 'New Project' })
-    await enterProjectMode(project.id)
-    createNewChat()
-  }
-  const handleExitProject = () => {
-    exitProjectMode()
-    thread.newChat()
-    void router.push('/')
-  }
-  // Leaving a project while one of its chats is dragged keeps the open chat
-  // and the page, so the drag can end on the Cloud or Local tab.
-  const handleExitProjectWhileDragging = () => {
-    setPendingProjectUpload(null)
-    setShowAddToProjectModal(false)
-    exitProjectMode()
-  }
-  const canToggleTemporaryChat = (chat: Chat) =>
-    !chat.id && !processedDocuments.length && !isStreaming
-  const handleToggleTemporaryMode = () => {
-    if (canToggleTemporaryChat(currentChat))
-      thread.setTemporary(!thread.temporary)
-  }
-  const handleWebSearchToggle = () => {
-    thread.setWebSearch(!effectiveWebSearchEnabled)
-    if (currentChat.id && !isTemporaryMode)
-      void thread
-        .update(currentChat.id, {
-          webSearchEnabled: !effectiveWebSearchEnabled,
-        })
-        .catch(thread.report)
-    void api
-      .updateProfile({ webSearchEnabled: !effectiveWebSearchEnabled })
-      .catch(thread.report)
-  }
-  const handleCodeExecutionToggle = () => {
-    void api
-      .updateProfile({ codeExecutionEnabled: !codeExecutionEnabled })
-      .catch(thread.report)
-  }
-  const handleOpenVerifierSidebar = () => {
-    setIsVerifierSidebarOpen((value) => !value)
-  }
-  const handleSetVerifierSidebarOpen = setIsVerifierSidebarOpen
-  const handleOpenSettingsModal = () => {
-    setHasMountedSettingsModal(true)
-    setIsSettingsModalOpen(true)
-  }
-  const handleOpenSafeguardsSettings = () => {
-    setSettingsInitialTab('safeguards')
-    handleOpenSettingsModal()
-  }
-  const handleOpenEncryptionKeyModal = () => {
-    setSettingsInitialTab('cloud-sync')
-    handleOpenSettingsModal()
-  }
-  const handleOpenShareModal = () => {
-    setHasMountedShareModal(true)
-    setIsShareModalOpen(true)
-  }
-  const handleOpenPromptLibrary = () => {
-    setHasMountedPromptLibrary(true)
-    setIsPromptLibraryModalOpen(true)
-  }
-  const handleClosePromptLibrary = () => setIsPromptLibraryModalOpen(false)
-  const handleOpenSearchModal = useCallback(() => {
-    setIsSettingsModalOpen(false)
-    setIsShareModalOpen(false)
-    setIsPromptLibraryModalOpen(false)
-    setIsReportBugModalOpen(false)
-    setHasMountedSearchModal(true)
-    setIsSearchModalOpen(true)
-  }, [])
-  const handleOpenReportBugModal = () => {
-    setHasMountedReportBugModal(true)
-    setIsReportBugModalOpen(true)
-  }
-  const handleOpenCloudSyncSetup = () => setShowCloudSyncSetupModal(true)
-  const handleCloseSubscribePrompt = () => setIsSubscribePromptOpen(false)
-  const handleKeyChanged = async (key: string, options?: { mode?: string }) => {
-    const previous = encryptionService.getKey()
-    await encryptionService.setKey(key, { persist: false })
-    try {
-      if (options?.mode === 'explicitStartFresh')
-        await registerStartFreshKeyIfNeeded()
-      else await authorizeCurrentPrimaryKeyOrThrow()
-      api.lifetime.signal.throwIfAborted()
-      encryptionService.persistCurrentKeyState()
-      await api.refresh()
-    } catch (cause) {
-      if (!api.lifetime.signal.aborted) {
-        if (previous)
-          await encryptionService.setKey(previous, { persist: false })
-        else encryptionService.clearKey({ persist: false })
-      }
-      throw cause
-    }
-  }
-  const backupStartFreshKeyWithPasskey = async () => {
-    await setupPasskey()
-  }
-  const isCloudSyncRoutePending = false
-  const sidebarChat = useSidebarChat({ context: thread.askContext, options })
-  // A flag stops the chat: its reply in progress, its queued turns, and an
-  // ask about it.
-  const runningRef = useRef(isStreaming)
-  runningRef.current = isStreaming
-  const queueRef = useRef(thread.state.snapshot.queue)
-  queueRef.current = thread.state.snapshot.queue
-  useEffect(() => {
-    if (!currentChatIsFlagged) return
-    for (const item of queueRef.current)
-      void thread.removeQueued(item.queueId).catch(thread.report)
-    if (runningRef.current) void thread.cancel().catch(thread.report)
-    setIsAskSidebarOpen(false)
-    sidebarChat.reset()
-    // Only a newly flagged chat is stopped.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentChatIsFlagged, currentChat.id])
-  useEffect(() => {
-    if (waitingForSafeguards || !submitAfterSafeguards.current) return
-    submitAfterSafeguards.current = false
-    if (!currentChatIsFlagged) submitComposer()
-    // The send the user made while the flags loaded goes out once.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waitingForSafeguards])
-  async function processFileForChat(file: File) {
-    const localId = crypto.randomUUID()
-    setProcessedDocuments((previous) => [
-      ...previous,
-      { id: localId, name: file.name, time: new Date(), isUploading: true },
-    ])
-    try {
-      const attachment = await thread.upload(file)
-      setProcessedDocuments((previous) =>
-        previous.map((d) =>
-          d.id === localId
-            ? {
-                id: attachment.id,
-                name: attachment.fileName,
-                time: d.time,
-                attachment: attachmentView(attachment),
-              }
-            : d,
-        ),
-      )
-    } catch (cause) {
-      setProcessedDocuments((previous) =>
-        previous.filter((d) => d.id !== localId),
-      )
-      if (cause instanceof DOMException && cause.name === 'AbortError') return
-      toast({
-        title: 'Processing failed',
-        description: uploadErrorMessage(cause),
-        variant: 'destructive',
-        position: 'top-right',
-      })
-    }
-  }
-  const handleFileUpload = async (file: File) => {
-    if (activeProject) {
-      setPendingProjectUpload((previous) => ({
-        projectId: activeProject.id,
-        files: [...(previous?.files ?? []), file],
-      }))
-      setShowAddToProjectModal(true)
-    } else await processFileForChat(file)
-  }
-  const handleAddToProjectConfirm = async (addToProject: boolean) => {
-    const pending = pendingProjectUpload
-    setPendingProjectUpload(null)
-    setShowAddToProjectModal(false)
-    for (const file of pending?.files ?? []) {
-      if (!addToProject) {
-        await processFileForChat(file)
-        continue
-      }
-      try {
-        await uploadDocument(file, '')
-      } catch (cause) {
-        toast({
-          title: 'Upload failed',
-          description: uploadErrorMessage(
-            cause,
-            'Failed to add document to project context.',
-          ),
-          variant: 'destructive',
-          position: 'top-right',
-        })
-      }
-    }
-  }
-  const removeDocument = (id: string) =>
-    setProcessedDocuments((previous) => previous.filter((d) => d.id !== id))
-  useEffect(() => {
-    initializeRenderers()
-    void api.client
-      .ready()
-      .then(() => setVerificationStatus('verified'))
-      .catch(() => setVerificationStatus('failed'))
-  }, [api])
-  useEffect(() => {
-    if (!initialProjectId || !keyReady) return
-    void enterProjectMode(initialProjectId).catch(thread.report)
-  }, [initialProjectId, keyReady, enterProjectMode, thread.report])
-  const {
-    passkeyActive,
-    passkeyRecoveryNeeded,
-    manualRecoveryNeeded,
-    passkeySetupAvailable,
-    passkeyAddDeviceAvailable,
-    passkeySetupFailed,
-    passkeyRecoveryFailure,
-    passkeyFirstTimePromptAvailable,
-    setupPasskey,
-    setupFirstTimePasskey,
-    dismissFirstTimePasskeyPrompt,
-    recoverWithPasskey,
-    setupNewKeySplit,
-    dismissBackupWarning,
-    skipPasskeyRecovery,
-    addPasskeyToThisDevice,
-    refreshBundleState,
-  } = usePasskeyBackup({
-    encryptionKey,
-    initialized: !!session,
-    isSignedIn,
-    user,
-    onEncryptionKeyRecovered: useCallback(
-      (key: string) => {
-        void api.refresh().catch(thread.report)
-      },
-      [api, thread.report],
-    ),
-  })
-  useEffect(() => {
-    if (suppressIntroModals) return
-    // Passkey recovery opens because remote chats need unlocking, and a
-    // first passkey setup starts here so the cloud sync intro shows first.
-    // Without cloud sync every chat stays on this device.
-    if (passkeyRecoveryNeeded || passkeyFirstTimePromptAvailable)
-      setShowCloudSyncSetupModal(true)
-  }, [
-    passkeyFirstTimePromptAvailable,
-    passkeyRecoveryNeeded,
-    suppressIntroModals,
-  ])
-  // A chat the harness stores cannot stay open once cloud sync is off.
-  const previousCloudSync = useRef(cloudSyncEnabled)
-  useEffect(() => {
-    if (previousCloudSync.current === cloudSyncEnabled) return
-    previousCloudSync.current = cloudSyncEnabled
-    if (!cloudSyncEnabled && currentChat.id && !currentChat.isLocalOnly)
-      createNewChat(true)
-    // Only a change of the storage mode moves the view.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cloudSyncEnabled])
-  useEffect(() => {
-    if (!router.isReady || router.query.upgrade !== 'projects') return
-    setIsSubscribePromptOpen(true)
-    void router.replace('/chat', undefined, { shallow: true })
-  }, [router])
-
-  // Handle upgrade requests from error CTA buttons and quota-gated sends
-  useEffect(() => {
-    const handleRequestUpgrade = () => {
-      setIsSubscribePromptOpen(true)
-    }
-    window.addEventListener(REQUEST_UPGRADE_EVENT, handleRequestUpgrade)
-    return () => {
-      window.removeEventListener(REQUEST_UPGRADE_EVENT, handleRequestUpgrade)
-    }
-  }, [])
-
-  const hasCurrentMessages = currentChat.messages.length > 0
-  const createNewChatRef = useRef(createNewChat)
-  createNewChatRef.current = createNewChat
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+. (or Ctrl+.) to toggle sidebar
-      if ((e.metaKey || e.ctrlKey) && e.key === '.') {
-        e.preventDefault()
-        setIsSidebarOpen((prev) => !prev)
-        return
-      }
-
-      // Cmd+K (or Ctrl+K) to search chats and projects
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        !e.shiftKey &&
-        !e.altKey &&
-        e.key.toLowerCase() === 'k'
-      ) {
-        e.preventDefault()
-        if (isSearchModalOpen) setIsSearchModalOpen(false)
-        else handleOpenSearchModal()
-        return
-      }
-
-      // Shift+Cmd+O (or Shift+Ctrl+O) for new chat
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        e.shiftKey &&
-        e.key.toLowerCase() === 'o'
-      ) {
-        e.preventDefault()
-        if (hasCurrentMessages) {
-          createNewChatRef.current()
-        }
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [
-    setIsSidebarOpen,
-    hasCurrentMessages,
-    isSearchModalOpen,
-    handleOpenSearchModal,
-  ])
 
   // iOS Safari keyboard fix: keep a CSS var in sync with the *visual* viewport height.
   // Without this, fixed full-screen layouts can leave an untouchable "dead zone"
@@ -1097,6 +445,1426 @@ export function ChatInterface({
       window.removeEventListener('resize', update)
     }
   }, [])
+
+  // Track whether we've loaded the initial chat from URL (to prevent URL flickering)
+  const initialUrlChatLoadedRef = useRef(false)
+  const { isLoading: isSubscriptionLoading, chat_subscription_active } =
+    useSubscriptionStatus()
+
+  // Initialize cloud sync and passkey backup as two separate hooks.
+  // usePasskeyBackup depends on useCloudSync's `initialized` and `encryptionKey`,
+  // and bridges key changes back via onEncryptionKeyRecovered / updatePasskeyBackup.
+  // Ref bridges the forward dependency: useCloudSync needs updatePasskeyBackup (from
+  // usePasskeyBackup), which is defined after useCloudSync returns.
+  const updatePasskeyBackupRef = useRef<(() => Promise<void>) | null>(null)
+
+  const {
+    syncing,
+    lastSyncFailed,
+    syncChats,
+    smartSyncChats,
+    encryptionKey,
+    initialized: cloudSyncInitialized,
+    setEncryptionKey,
+    retryDecryptionWithNewKey,
+    decryptionProgress,
+  } = useCloudSync({
+    onKeyChanged: () => {
+      void updatePasskeyBackupRef.current?.()
+    },
+  })
+  const [chatPagination, setChatPagination] = useState<{
+    isReady: boolean
+    userId?: string
+  }>({ isReady: false })
+  const [cloudSyncSettingEnabled, setCloudSyncSettingEnabled] =
+    useState(isCloudSyncEnabled)
+
+  useEffect(() => {
+    const handleCloudSyncSettingChange = () => {
+      setCloudSyncSettingEnabled(isCloudSyncEnabled())
+    }
+    window.addEventListener(
+      CLOUD_SYNC_SETTING_CHANGED_EVENT,
+      handleCloudSyncSettingChange,
+    )
+    window.addEventListener('storage', handleCloudSyncSettingChange)
+    handleCloudSyncSettingChange()
+    return () => {
+      window.removeEventListener(
+        CLOUD_SYNC_SETTING_CHANGED_EVENT,
+        handleCloudSyncSettingChange,
+      )
+      window.removeEventListener('storage', handleCloudSyncSettingChange)
+    }
+  }, [])
+
+  const {
+    passkeyActive,
+    passkeyRecoveryNeeded,
+    manualRecoveryNeeded,
+    passkeySetupAvailable,
+    passkeyAddDeviceAvailable,
+    passkeySetupFailed,
+    passkeyRecoveryFailure,
+    passkeyFirstTimePromptAvailable,
+    setupPasskey,
+    setupFirstTimePasskey,
+    showFirstTimePasskeyPrompt,
+    showPasskeyRecoveryPrompt,
+    dismissFirstTimePasskeyPrompt,
+    recoverWithPasskey,
+    setupNewKeySplit,
+    updatePasskeyBackup,
+    dismissBackupWarning,
+    skipPasskeyRecovery,
+    addPasskeyToThisDevice,
+    refreshBundleState,
+  } = usePasskeyBackup({
+    encryptionKey,
+    initialized: cloudSyncInitialized && isOnboardingReady && !showOnboarding,
+    isSignedIn,
+    user,
+    onEncryptionKeyRecovered: useCallback(
+      (key: string) => {
+        void setEncryptionKey(key, { mode: 'recoverExisting' })
+      },
+      [setEncryptionKey],
+    ),
+  })
+  updatePasskeyBackupRef.current = updatePasskeyBackup
+
+  const {
+    retryDecryption: retryProfileDecryption,
+    syncFromCloud: syncProfileFromCloud,
+    smartSyncFromCloud: smartSyncProfileFromCloud,
+    syncToCloud: syncProfileToCloud,
+  } = useProfileSync()
+
+  // State for API data
+  const [models, setModels] = useState<BaseModel[]>([])
+  const [systemPrompt, setSystemPrompt] = useState<string>('')
+  const [rules, setRules] = useState<string>('')
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true)
+  // Set once the controlplane has answered; a cached catalog may seed
+  // `models` earlier but must not drive catalog-dependent cleanup.
+  const [hasAuthoritativeModels, setHasAuthoritativeModels] = useState(false)
+  const [configLoadFailed, setConfigLoadFailed] = useState(false)
+  const [logoAnimDone, setLogoAnimDone] = useState(false)
+  const handleLogoAnimFinished = useCallback(() => {
+    setLogoAnimDone(true)
+  }, [])
+
+  // State for right sidebar
+  const [isVerifierSidebarOpen, setIsVerifierSidebarOpen] = useState(false)
+
+  // State for settings modal
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
+  const [hasMountedSettingsModal, setHasMountedSettingsModal] = useState(false)
+  const [settingsInitialTab, setSettingsInitialTab] = useState<
+    SettingsTab | undefined
+  >(undefined)
+  const syncNeedsAttention = useSyncHealthAttention()
+  useSafeguardsLoader()
+  useSafeguardStatusNotification()
+  const flaggedChatIds = useFlaggedChatIds()
+  const safeguardsLoaded = useSafeguardsLoaded()
+
+  // State for share modal
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false)
+  const [hasMountedShareModal, setHasMountedShareModal] = useState(false)
+  const [isReportBugModalOpen, setIsReportBugModalOpen] = useState(false)
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false)
+  const [hasMountedSearchModal, setHasMountedSearchModal] = useState(false)
+  const [hasMountedReportBugModal, setHasMountedReportBugModal] =
+    useState(false)
+
+  // State for cloud sync setup modal
+  const [showCloudSyncSetupModal, setShowCloudSyncSetupModal] = useState(false)
+  const [isCloudSyncRoutePending, setIsCloudSyncRoutePending] = useState(false)
+  // Tracks the in-flight first-time passkey setup call so the modal can
+  // disable its buttons while the native dialog is showing.
+  const [isFirstTimePasskeySetupBusy, setIsFirstTimePasskeySetupBusy] =
+    useState(false)
+
+  useEffect(() => {
+    if (suppressIntroModals) return
+    // Passkey-based recovery auto-opens because remote chats need unlocking.
+    // Fresh passkey setup also starts here so the cloud-sync intro is shown
+    // before the dedicated passkey prompt. Manual recovery remains available
+    // from the sidebar warning.
+    if (passkeyRecoveryNeeded || passkeyFirstTimePromptAvailable) {
+      setShowCloudSyncSetupModal(true)
+    }
+  }, [
+    passkeyFirstTimePromptAvailable,
+    passkeyRecoveryNeeded,
+    suppressIntroModals,
+  ])
+
+  // State for add-to-project-context modal
+  const [showAddToProjectModal, setShowAddToProjectModal] = useState(false)
+  const [pendingProjectUpload, setPendingProjectUpload] = useState<{
+    projectId: string
+    files: File[]
+  } | null>(null)
+
+  // Quote state for highlighted text from messages
+  const [quote, setQuote] = useState<string | null>(null)
+
+  // Ask-sidebar state: a disposable side conversation seeded with highlighted
+  // text. Nothing is persisted unless the user clicks "Open as chat".
+  const [isAskSidebarOpen, setIsAskSidebarOpen] = useState(false)
+
+  // Temporary chat mode: when active the current chat is replaced with an
+  // ephemeral in-memory chat that is never persisted (no IndexedDB, no session
+  // storage, no cloud sync). Disabling restores the previously active chat.
+  // The mode is derived from currentChat.isTemporary further below, after
+  // useChatState provides currentChat.
+  const previousChatRef = useRef<Pick<
+    Chat,
+    'id' | 'isBlankChat' | 'isLocalOnly'
+  > | null>(null)
+
+  // Artifact-sidebar state — opened when a `render_artifact_preview` inline
+  // card dispatches `OPEN_ARTIFACT_PREVIEW_EVENT` on the window.
+  const [isArtifactSidebarOpen, setIsArtifactSidebarOpen] = useState(false)
+  const [artifactSidebarWidth, setArtifactSidebarWidth] = useState<number>(
+    CONSTANTS.ARTIFACT_SIDEBAR_WIDTH_PX,
+  )
+  const [artifactPreview, setArtifactPreview] =
+    useState<ArtifactPreviewSidebarDetail | null>(null)
+  const [activeArtifactToolCallId, setActiveArtifactToolCallId] = useState<
+    string | null
+  >(null)
+
+  const [webSearchAvailable, setWebSearchAvailable] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const saved = localStorage.getItem(SETTINGS_WEB_SEARCH_AVAILABLE)
+    return saved === null ? true : saved === 'true'
+  })
+
+  // State for code execution toggle (persisted in localStorage, defaults to off)
+  const [codeExecutionEnabled, setCodeExecutionEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const saved = localStorage.getItem(SETTINGS_CODE_EXECUTION_ENABLED)
+    return saved === null ? false : saved === 'true'
+  })
+
+  // PII check setting (controlled from settings modal, defaults to on)
+  const [piiCheckEnabled, setPiiCheckEnabled] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const saved = localStorage.getItem(SETTINGS_PII_CHECK_ENABLED)
+    return saved === null ? true : saved === 'true'
+  })
+
+  const [pixelateSidebarChatTitles, setPixelateSidebarChatTitles] = useState(
+    () => {
+      if (typeof window === 'undefined') return false
+      const saved = localStorage.getItem(
+        SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
+      )
+      return saved === 'true'
+    },
+  )
+
+  // Generative UI setting (controlled from settings modal, defaults to on)
+  const [genUIEnabled, setGenUIEnabled] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const saved = localStorage.getItem(SETTINGS_GENUI_ENABLED)
+    return saved === null ? true : saved === 'true'
+  })
+
+  // State for tracking processed documents
+  const [processedDocuments, setProcessedDocuments] = useState<
+    ProcessedDocument[]
+  >([])
+
+  // State for global drag and drop overlay
+  const [isGlobalDragActive, setIsGlobalDragActive] = useState(false)
+  const dragCounterRef = useRef(0)
+
+  // State for tracking verification document
+  const [verificationDocument, setVerificationDocument] = useState<any>(null)
+  const [verificationStatus, setVerificationStatus] = useState<
+    'pending' | 'verified' | 'failed'
+  >('pending')
+
+  const userEmail = user?.primaryEmailAddress?.emailAddress || ''
+
+  const isPremium = !isSubscriptionLoading && chat_subscription_active
+  // The composer only uses premium status to decide which controls to show,
+  // and the server enforces access on every request. Using the cached value
+  // while auth loads keeps the toolbar from reflowing once Clerk resolves.
+  const showPremiumComposerControls = chat_subscription_active
+
+  useEffect(() => {
+    if (!router.isReady || router.query.upgrade !== 'projects') return
+    setIsSubscribePromptOpen(true)
+    void router.replace('/chat', undefined, { shallow: true })
+  }, [router])
+
+  // Load projects for move to project functionality
+  const { projects } = useProjects({
+    autoLoad: isSignedIn && isCloudSyncEnabled() && isPremium,
+  })
+
+  // Reasoning controls — graded effort for models that support it, on/off
+  // toggle for models that expose a thinking flag. Both are persisted globally
+  // (not per-model) and only surfaced for models whose reasoningConfig opts in.
+  const { reasoningEffort, setReasoningEffort } = useReasoningEffort()
+  const { thinkingEnabled, setThinkingEnabled } = useThinkingEnabled()
+  const { autoIntelligence, setAutoIntelligence } = useAutoIntelligence()
+
+  // Detect platform for keyboard shortcut display
+  const isMac = useMemo(() => {
+    if (typeof navigator === 'undefined') return true
+    return /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+  }, [])
+  const modKey = isMac ? '⌘' : 'Ctrl+'
+  const shiftKey = isMac ? '⇧' : 'Shift+'
+
+  // Prompt library: per-chat preset that overrides the default system prompt.
+  // activePresetId mirrors currentChat.presetId and is kept in sync via an
+  // effect after useChatState resolves currentChat below.
+  const [activePresetId, setActivePresetId] = useState<string | null>(null)
+  const [isPromptLibraryModalOpen, setIsPromptLibraryModalOpen] =
+    useState(false)
+  const [hasMountedPromptLibrary, setHasMountedPromptLibrary] = useState(false)
+  const { getPresetById, defaultPreset, userPresets } = usePromptLibrary()
+  const activePreset = getPresetById(activePresetId)
+
+  // Catalog used to validate a preset's model before stamping it on a chat.
+  // Undefined until the controlplane has answered so a preset selected during
+  // startup is not rejected against an empty or stale cached list; the chat's
+  // model is then resolved lazily by resolveChatModel once models load.
+  const presetModelCatalog = hasAuthoritativeModels ? models : undefined
+
+  // A preset may name a model the controlplane has since retired. Once the
+  // authoritative catalog is in (not the cached seed, not the hardcoded dev
+  // list), drop such models from the presets so they do not linger locally or
+  // in the synced profile. Re-runs when presets arrive from another device.
+  useEffect(() => {
+    if (!hasAuthoritativeModels || isUsingDevModelCatalog()) return
+    const prunedIds = pruneUnavailablePresetModels(models)
+    if (prunedIds.length > 0) {
+      logInfo('Cleared unavailable models from prompt presets', {
+        component: 'ChatInterface',
+        metadata: { presetIds: prunedIds },
+      })
+    }
+  }, [hasAuthoritativeModels, models, userPresets])
+
+  const { effectiveSystemPrompt, processedRules } = useCustomSystemPrompt(
+    systemPrompt,
+    rules,
+    activePreset?.systemPrompt ?? null,
+  )
+
+  // Use project system prompt hook to inject project context
+  const {
+    isProjectMode,
+    activeProject,
+    enterProjectMode,
+    exitProjectMode,
+    createProject,
+    loadingProject,
+    error: projectError,
+    uploadDocument: uploadProjectDocument,
+    addUploadingFile,
+    removeUploadingFile,
+  } = useProject()
+
+  useEffect(() => {
+    if (!pendingProjectUpload) return
+
+    if (loadingProject) {
+      if (loadingProject.id === pendingProjectUpload.projectId) return
+      setPendingProjectUpload(null)
+      setShowAddToProjectModal(false)
+      toast({
+        title: 'Upload canceled',
+        description: 'The file was not attached because the project changed.',
+        variant: 'destructive',
+        position: 'top-right',
+      })
+      return
+    }
+
+    if (activeProject?.id === pendingProjectUpload.projectId) {
+      setShowAddToProjectModal(true)
+      return
+    }
+
+    if (projectError) {
+      setPendingProjectUpload(null)
+      setShowAddToProjectModal(false)
+      toast({
+        title: 'Project unavailable',
+        description:
+          'The file was not attached because the project failed to load.',
+        variant: 'destructive',
+        position: 'top-right',
+      })
+      return
+    }
+
+    setPendingProjectUpload(null)
+    setShowAddToProjectModal(false)
+    toast({
+      title: 'Upload canceled',
+      description: activeProject?.id
+        ? 'The file was not attached because the project changed.'
+        : 'The file was not attached because project mode ended.',
+      variant: 'destructive',
+      position: 'top-right',
+    })
+  }, [
+    activeProject?.id,
+    loadingProject,
+    pendingProjectUpload,
+    projectError,
+    toast,
+  ])
+  const { effectiveSystemPrompt: finalSystemPrompt } = useProjectSystemPrompt({
+    baseSystemPrompt: effectiveSystemPrompt,
+    baseRules: processedRules,
+  })
+
+  // URL routing for deep links
+  const {
+    updateUrlForChat,
+    updateUrlForLocalChat,
+    updateUrlForProject,
+    clearUrl,
+    isLocalChatUrl: isLocalChatUrlFromRouter,
+  } = useChatRouter()
+
+  // Combine prop and router detection for local chat URL
+  const isLocalChatUrl = isLocalChatUrlProp || isLocalChatUrlFromRouter
+
+  useEffect(() => {
+    initializeRenderers()
+  }, [])
+
+  // Load models and system prompt immediately in parallel. Cached values
+  // seed the first render, but the controlplane response is authoritative:
+  // a failed fetch blocks the app even when a cache exists.
+  useEffect(() => {
+    let cancelled = false
+    const configStartedAt = startPerformanceTimer()
+    let recordedConfigReady = false
+    const recordConfigReady = () => {
+      if (recordedConfigReady) return
+      recordedConfigReady = true
+      recordPerformanceDuration(
+        PERFORMANCE_METRICS.CONFIG_READY,
+        configStartedAt,
+      )
+    }
+    const loadInitial = async () => {
+      const cachedPrompt = getCachedSystemPromptAndRules()
+      const cachedModels = getCachedAIModels()
+      if (cachedPrompt) {
+        setSystemPrompt(cachedPrompt.systemPrompt)
+        setRules(cachedPrompt.rules)
+      }
+      if (cachedModels) {
+        setModels(cachedModels)
+      }
+      if (cachedPrompt && cachedModels) {
+        setIsLoadingConfig(false)
+        recordConfigReady()
+      }
+
+      try {
+        const [promptData, models] = await Promise.all([
+          getSystemPromptAndRules(),
+          getAIModels(),
+        ])
+
+        if (cancelled) return
+        if (!promptData || !models) {
+          setConfigLoadFailed(true)
+          setIsLoadingConfig(false)
+          return
+        }
+        setSystemPrompt(promptData.systemPrompt)
+        setRules(promptData.rules)
+        setModels(models)
+        setHasAuthoritativeModels(true)
+        setIsLoadingConfig(false)
+        recordConfigReady()
+      } catch (error) {
+        logError('Failed to load chat configuration', error, {
+          component: 'ChatInterface',
+          action: 'loadConfig',
+        })
+        if (!cancelled) {
+          setConfigLoadFailed(true)
+          setIsLoadingConfig(false)
+        }
+      }
+    }
+
+    loadInitial()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // State for scroll button - define early so it can be used in useChatState
+  const [showScrollButton, setShowScrollButton] = useState(false)
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  const inputAreaObserverRef = useRef<ResizeObserver | null>(null)
+  const [inputAreaHeight, setInputAreaHeight] = useState(0)
+  const inputAreaRef = useCallback((node: HTMLDivElement | null) => {
+    inputAreaObserverRef.current?.disconnect()
+    inputAreaObserverRef.current = null
+    if (!node) {
+      setInputAreaHeight(0)
+      return
+    }
+    setInputAreaHeight(node.offsetHeight)
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      setInputAreaHeight(node.offsetHeight)
+    })
+    observer.observe(node)
+    inputAreaObserverRef.current = observer
+  }, [])
+  const scrollCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  )
+
+  // Function to scroll to bottom with optional smooth behavior
+  const scrollToBottom = useCallback((smooth = true) => {
+    if (scrollContainerRef.current) {
+      const el = scrollContainerRef.current
+      const top = getChatContentBottomScrollTop(
+        el.scrollHeight,
+        el.clientHeight,
+        getChatSpacerHeight(el),
+      )
+      if (smooth) {
+        el.scrollTo({
+          top,
+          behavior: 'smooth',
+        })
+      } else {
+        el.scrollTop = top
+      }
+    }
+  }, [])
+
+  // Scroll the last user message to the top of the viewport (with offset for header)
+  const scrollUserMessageToTop = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    // Wait for DOM to render, then scroll
+    setTimeout(() => {
+      const userMessages = container.querySelectorAll(
+        '[data-message-role="user"]',
+      )
+      const lastUserMessage = userMessages[
+        userMessages.length - 1
+      ] as HTMLElement | null
+
+      if (lastUserMessage) {
+        // Calculate scroll position with offset for header buttons
+        // Mobile needs more offset due to overlapping header buttons
+        const messageTop = lastUserMessage.offsetTop
+        const isMobile = window.innerWidth < CONSTANTS.MOBILE_BREAKPOINT
+        const headerOffset = isMobile ? 80 : 16
+        container.scrollTo({
+          top: messageTop - headerOffset,
+          behavior: 'smooth',
+        })
+      }
+    }, 100)
+  }, [])
+
+  // Scroll to the last message (for the scroll button)
+  const scrollToLastMessage = useCallback(() => {
+    scrollToBottom(true)
+    // Move keyboard/screen-reader focus to the latest message so it is read
+    // out and becomes the navigation anchor. preventScroll avoids fighting the
+    // smooth scroll above.
+    const container = scrollContainerRef.current
+    if (!container) return
+    const messageEls = container.querySelectorAll('[data-message-role]')
+    const lastMessage = messageEls[messageEls.length - 1] as HTMLElement | null
+    lastMessage?.focus({ preventScroll: true })
+  }, [scrollToBottom])
+
+  const {
+    // State
+    chats,
+    currentChat,
+    input,
+    loadingState,
+    retryInfo,
+    inputRef,
+    isClient,
+    isSidebarOpen,
+    isDarkMode,
+    themeMode,
+    isInitialLoad,
+    isChatHydrating,
+    isThinking,
+    isWaitingForResponse,
+    isStreaming,
+    streamError,
+    dismissStreamError,
+    retryLastMessage,
+    selectedModel,
+    hasValidatedModel,
+    expandedLabel,
+    windowWidth,
+    codeExecutionEncryptionKey,
+
+    // Setters
+    setInput,
+    setIsSidebarOpen,
+    setIsInitialLoad,
+    setChats,
+    setCurrentChat,
+
+    // Actions
+    handleQuery,
+    createNewChat: createNewChatWithoutNavigationInvalidation,
+    deleteChat,
+    handleChatSelect: handleChatSelectWithoutNavigationInvalidation,
+    toggleTheme,
+    setThemeMode,
+    openAndExpandVerifier,
+    handleInputFocus,
+    handleLabelClick,
+    handleModelSelect,
+    cancelGeneration,
+    updateChatTitle,
+    reloadChats,
+    editMessage,
+    deleteMessage,
+    editAssistantMessage,
+    continueAssistantMessage,
+    regenerateMessage,
+    resolveInputToolCall,
+    retryToolCall,
+    initialChatDecryptionFailed,
+    clearInitialChatDecryptionFailed,
+    localChatNotFound,
+    initialChatLoadFailed,
+    cloudChatNotFound,
+    retryInitialChatLoad,
+    loadChatById: loadChatByIdWithoutNavigationInvalidation,
+  } = useChatState({
+    systemPrompt: finalSystemPrompt,
+    rules: processedRules,
+    storeHistory: isSignedIn || !isCloudSyncEnabled(), // Enable storage for signed-in users OR local-only mode
+    models: models,
+    // Scroll user message to top of viewport when sending
+    scrollToBottom: scrollUserMessageToTop,
+    reasoningEffort,
+    thinkingEnabled,
+    autoIntelligence,
+    initialChatId,
+    isLocalChatUrl,
+    initialNewChatIsLocalOnly,
+    webSearchAvailable,
+    // Feature flag gates key derivation in useExecSnapshot; the toggle
+    // gates request plumbing. Both layers must be on to use code-exec.
+    canUseCodeExecution,
+    codeExecutionEnabled: canUseCodeExecution ? codeExecutionEnabled : false,
+    piiCheckEnabled,
+    genUIEnabled,
+  })
+
+  const favoriteNavigationGenerationRef = useRef(0)
+  const invalidateFavoriteNavigation = useCallback(() => {
+    favoriteNavigationGenerationRef.current += 1
+  }, [])
+  useEffect(
+    () => () => {
+      invalidateFavoriteNavigation()
+    },
+    [invalidateFavoriteNavigation],
+  )
+  useEffect(() => {
+    invalidateFavoriteNavigation()
+  }, [authUserId, invalidateFavoriteNavigation])
+  const createNewChat = useCallback(
+    (isLocalOnly?: boolean, fromUserAction?: boolean) => {
+      invalidateFavoriteNavigation()
+      createNewChatWithoutNavigationInvalidation(isLocalOnly, fromUserAction)
+    },
+    [createNewChatWithoutNavigationInvalidation, invalidateFavoriteNavigation],
+  )
+  const handleChatSelect = useCallback(
+    (chatId: string) => {
+      invalidateFavoriteNavigation()
+      handleChatSelectWithoutNavigationInvalidation(chatId)
+    },
+    [
+      handleChatSelectWithoutNavigationInvalidation,
+      invalidateFavoriteNavigation,
+    ],
+  )
+  const loadChatById = useCallback(
+    async (chatId: string, isLocalUrl: boolean) => {
+      invalidateFavoriteNavigation()
+      await loadChatByIdWithoutNavigationInvalidation(chatId, isLocalUrl)
+    },
+    [invalidateFavoriteNavigation, loadChatByIdWithoutNavigationInvalidation],
+  )
+
+  const { pinnedChatIds, pinChat, unpinChat, unpinChats } =
+    usePinnedChats(authUserId)
+  const favoriteHydrationGenerationRef = useRef(0)
+  const favoriteHydrationAccountRef = useRef(authUserId)
+  const currentFavoriteAccountRef = useRef(authUserId)
+  currentFavoriteAccountRef.current = authUserId
+  const favoriteHydrationCloudSyncRef = useRef(cloudSyncSettingEnabled)
+  const favoriteHydrationMountedRef = useRef(false)
+  const attemptedFavoriteHydrationsRef = useRef(new Set<string>())
+  const unavailableFavoriteHydrationsRef = useRef(new Set<string>())
+  const favoriteHydrationRetrySignalRef = useRef(0)
+  const [favoriteHydrationRetryVersion, setFavoriteHydrationRetryVersion] =
+    useState(0)
+  const retryUnavailableFavoriteHydrations = useCallback(() => {
+    favoriteHydrationRetrySignalRef.current += 1
+    if (unavailableFavoriteHydrationsRef.current.size === 0) return
+    for (const chatId of unavailableFavoriteHydrationsRef.current) {
+      attemptedFavoriteHydrationsRef.current.delete(chatId)
+    }
+    unavailableFavoriteHydrationsRef.current.clear()
+    setFavoriteHydrationRetryVersion((version) => version + 1)
+  }, [])
+  const missingPinnedChatIds = useMemo(() => {
+    const loadedIds = new Set(chats.map((chat) => chat.id))
+    return pinnedChatIds.filter((chatId) => !loadedIds.has(chatId))
+  }, [chats, pinnedChatIds])
+  const missingPinnedChatIdsKey = missingPinnedChatIds.join('\u0000')
+
+  useEffect(() => {
+    favoriteHydrationMountedRef.current = true
+    return () => {
+      favoriteHydrationMountedRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (
+      favoriteHydrationAccountRef.current === authUserId &&
+      favoriteHydrationCloudSyncRef.current === cloudSyncSettingEnabled
+    ) {
+      return
+    }
+    favoriteHydrationAccountRef.current = authUserId
+    favoriteHydrationCloudSyncRef.current = cloudSyncSettingEnabled
+    favoriteHydrationGenerationRef.current += 1
+    attemptedFavoriteHydrationsRef.current.clear()
+    unavailableFavoriteHydrationsRef.current.clear()
+  }, [authUserId, cloudSyncSettingEnabled])
+
+  useEffect(() => {
+    const unsubscribeChats = chatEvents.on((event) => {
+      if (
+        event.reason === 'sync' ||
+        event.reason === 'pagination' ||
+        event.reason === 'recovery'
+      ) {
+        retryUnavailableFavoriteHydrations()
+      }
+    })
+    window.addEventListener('online', retryUnavailableFavoriteHydrations)
+    window.addEventListener(
+      ENCRYPTION_KEY_CHANGED_EVENT,
+      retryUnavailableFavoriteHydrations,
+    )
+    return () => {
+      unsubscribeChats()
+      window.removeEventListener('online', retryUnavailableFavoriteHydrations)
+      window.removeEventListener(
+        ENCRYPTION_KEY_CHANGED_EVENT,
+        retryUnavailableFavoriteHydrations,
+      )
+    }
+  }, [retryUnavailableFavoriteHydrations])
+
+  useEffect(() => {
+    const pinnedIds = new Set(pinnedChatIds)
+    const loadedIds = new Set(chats.map((chat) => chat.id))
+    for (const attemptedId of attemptedFavoriteHydrationsRef.current) {
+      if (!pinnedIds.has(attemptedId) || loadedIds.has(attemptedId)) {
+        attemptedFavoriteHydrationsRef.current.delete(attemptedId)
+        unavailableFavoriteHydrationsRef.current.delete(attemptedId)
+      }
+    }
+    const invalidLoadedFavoriteIds = chats
+      .filter(
+        (chat) =>
+          pinnedIds.has(chat.id) &&
+          (chat.isBlankChat || chat.isTemporary || chat.dataCorrupted),
+      )
+      .map((chat) => chat.id)
+    if (invalidLoadedFavoriteIds.length > 0) {
+      unpinChats(invalidLoadedFavoriteIds)
+    }
+    if (!isSignedIn || !cloudSyncSettingEnabled || !missingPinnedChatIdsKey)
+      return
+
+    const chatIds = missingPinnedChatIds.filter(
+      (chatId) => !attemptedFavoriteHydrationsRef.current.has(chatId),
+    )
+    if (chatIds.length === 0) return
+    chatIds.forEach((chatId) =>
+      attemptedFavoriteHydrationsRef.current.add(chatId),
+    )
+    const generation = favoriteHydrationGenerationRef.current
+    const retrySignal = favoriteHydrationRetrySignalRef.current
+    const accountId = authUserId
+
+    const hydrateFavorites = async () => {
+      const results = await Promise.all(
+        chatIds.map(async (chatId) => {
+          try {
+            return { chatId, result: await hydratePinnedChatById(chatId) }
+          } catch (error) {
+            logError('Failed to hydrate favorite', error, {
+              component: 'ChatInterface',
+              action: 'hydrateFavorites',
+              metadata: { chatId },
+            })
+            return { chatId, result: { status: 'unavailable' } as const }
+          }
+        }),
+      )
+      if (
+        !favoriteHydrationMountedRef.current ||
+        currentFavoriteAccountRef.current !== accountId ||
+        favoriteHydrationGenerationRef.current !== generation
+      ) {
+        return
+      }
+
+      const idsToPrune = results
+        .filter(({ result }) => result.status === 'invalid')
+        .map(({ chatId }) => chatId)
+      if (idsToPrune.length > 0) unpinChats(idsToPrune)
+      let shouldRetry = false
+      for (const { chatId, result } of results) {
+        if (result.status === 'unavailable') {
+          if (favoriteHydrationRetrySignalRef.current !== retrySignal) {
+            attemptedFavoriteHydrationsRef.current.delete(chatId)
+            shouldRetry = true
+          } else {
+            unavailableFavoriteHydrationsRef.current.add(chatId)
+          }
+        }
+      }
+      if (shouldRetry) {
+        setFavoriteHydrationRetryVersion((version) => version + 1)
+      }
+
+      const hydratedChats = results.flatMap(({ result }) =>
+        result.status === 'ready' ? [result.chat] : [],
+      )
+      if (hydratedChats.length === 0) return
+      setChats((current) => {
+        let updated = current
+        for (const hydrated of hydratedChats) {
+          if (updated.some((chat) => chat.id === hydrated.id)) continue
+          updated = upsertChatById(updated, hydrated)
+        }
+        return updated
+      })
+    }
+
+    void hydrateFavorites()
+  }, [
+    authUserId,
+    chats,
+    cloudSyncSettingEnabled,
+    favoriteHydrationRetryVersion,
+    isSignedIn,
+    missingPinnedChatIds,
+    missingPinnedChatIdsKey,
+    pinnedChatIds,
+    setChats,
+    unpinChats,
+  ])
+
+  const isTemporaryMode = currentChat?.isTemporary === true
+  const currentChatId = currentChat?.id
+  const currentChatIsFlagged = Boolean(
+    currentChatId && flaggedChatIds[currentChatId],
+  )
+  const safeguardGenerationBlocked =
+    !isAuthLoaded ||
+    currentChatIsFlagged ||
+    (Boolean(isSignedIn) && !safeguardsLoaded)
+  const recoveryDrafts = useChatRecoveryDrafts(currentChatId ?? '')
+  const activeRecoveryTurnIds = useChatRecoveryActiveTurnIds(
+    currentChatId ?? '',
+  )
+  const hasPendingRecovery = Boolean(currentChat?.pendingRecoveries?.length)
+  const hasPendingRecoveryRef = useRef(hasPendingRecovery)
+  hasPendingRecoveryRef.current = hasPendingRecovery
+
+  const effectiveWebSearchEnabled = resolveWebSearchEnabled(
+    webSearchAvailable,
+    currentChat?.webSearchEnabled,
+  )
+
+  const currentChatRef = useRef<Chat | null>(null)
+  useEffect(() => {
+    currentChatRef.current = currentChat ?? null
+  }, [currentChat])
+
+  useEffect(() => {
+    setActivePresetId(currentChat?.presetId ?? null)
+  }, [currentChat?.id, currentChat?.presetId])
+
+  // Blank chats are stamped with the default preset when created, so when
+  // the default changes while a blank is already open it would otherwise
+  // start its first conversation with the old preset.
+  const defaultPresetId = defaultPreset?.id
+  const previousDefaultPresetIdRef = useRef(defaultPresetId)
+  useEffect(() => {
+    const previous = previousDefaultPresetIdRef.current
+    previousDefaultPresetIdRef.current = defaultPresetId
+    if (previous === defaultPresetId) return
+    const restamp = (chat: Chat): Chat =>
+      chat.isBlankChat && chat.presetId === previous
+        ? applyPresetSettingsToChat(
+            { ...chat, presetId: defaultPresetId },
+            defaultPreset,
+            presetModelCatalog,
+          )
+        : chat
+    setChats((prev) => prev.map(restamp))
+    setCurrentChat((prev) => restamp(prev))
+  }, [
+    defaultPresetId,
+    defaultPreset,
+    presetModelCatalog,
+    setChats,
+    setCurrentChat,
+  ])
+
+  const handleSetActivePreset = useCallback(
+    (presetId: string | null) => {
+      setActivePresetId(presetId)
+      if (!currentChat) return
+      const updatedChat: Chat = applyPresetSettingsToChat(
+        {
+          ...currentChat,
+          presetId: presetId ?? undefined,
+        },
+        getPresetById(presetId),
+        presetModelCatalog,
+      )
+      setCurrentChat(updatedChat)
+      // Blank chats share an empty id (one per storage mode), so also match
+      // the mode to avoid rewriting the other blank entry.
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === currentChat.id &&
+          (!currentChat.isBlankChat ||
+            c.isLocalOnly === currentChat.isLocalOnly)
+            ? updatedChat
+            : c,
+        ),
+      )
+      const storeHistory = isSignedIn || !isCloudSyncEnabled()
+      if (!updatedChat.isTemporary && storeHistory) {
+        chatStorage.saveChat(updatedChat).catch((err) => {
+          logError('Failed to persist prompt preset selection', err, {
+            component: 'ChatInterface',
+            metadata: { chatId: updatedChat.id, presetId },
+          })
+        })
+      }
+    },
+    [
+      currentChat,
+      getPresetById,
+      presetModelCatalog,
+      setCurrentChat,
+      setChats,
+      isSignedIn,
+    ],
+  )
+
+  const handleOpenPromptLibrary = useCallback(() => {
+    setHasMountedPromptLibrary(true)
+    setIsPromptLibraryModalOpen(true)
+  }, [])
+
+  const handleClosePromptLibrary = useCallback(() => {
+    setIsPromptLibraryModalOpen(false)
+  }, [])
+
+  // Only the free-tier daily quota gates sending and the subscribe prompt. The
+  // per-account hourly cap (subscribers) reuses the same indicator channel but
+  // must not block the queue or prompt subscribing; those sends fail fast with
+  // an in-chat rate-limit message and recover once the hourly window resets.
+  //
+  // Reads the live cache rather than the mirrored `rateLimit` state so the
+  // queue pump's pre-dequeue check can never lag behind handleQuery's own
+  // quota gate (which reads the same cache): a stale mirror would let the
+  // pump dequeue a message the gate then drops. `rateLimit` stays a
+  // dependency so the queue-resume effect re-fires when the limit clears.
+  const isRateLimited = useCallback(() => {
+    void rateLimit
+    const limit = getRateLimitInfo()
+    return Boolean(limit && limit.remaining <= 0 && limit.kind !== 'hourly')
+  }, [rateLimit])
+
+  const handleQueueRateLimited = useCallback(() => {
+    setIsSubscribePromptOpen(true)
+  }, [])
+
+  // Queue of user messages submitted while the assistant is busy. The hook
+  // observes `loadingState` and dispatches one queued message per idle
+  // window, so the user's in-progress input is never wiped.
+  const {
+    queuedMessages,
+    submit: submitMessage,
+    removeQueuedMessage,
+    clearQueuedMessages,
+    sendQueuedMessage,
+    notifyGenerationCancelled,
+  } = useMessageQueue({
+    chatId: currentChat?.id ?? null,
+    queueId: currentChat?.id
+      ? currentChat.id
+      : getBlankQueueId(currentChat?.isLocalOnly === true),
+    persistQueue: !isTemporaryMode,
+    loadingState,
+    handleQuery,
+    isRateLimited,
+    isDispatchBlocked: () =>
+      models.length === 0 ||
+      isChatHydrating ||
+      hasPendingRecoveryRef.current ||
+      safeguardGenerationBlocked ||
+      (currentChatId ? isChatRecoveryActive(currentChatId) : false),
+    dispatchBlocked:
+      models.length === 0 ||
+      isChatHydrating ||
+      hasPendingRecovery ||
+      activeRecoveryTurnIds.length > 0 ||
+      safeguardGenerationBlocked,
+    onRateLimited: handleQueueRateLimited,
+    cancelGeneration,
+  })
+
+  useEffect(() => {
+    if (!currentChatIsFlagged || !currentChatId) return
+    clearQueuedMessages()
+    notifyGenerationCancelled(currentChatId)
+    void cancelGeneration(currentChatId)
+  }, [
+    cancelGeneration,
+    clearQueuedMessages,
+    currentChatId,
+    currentChatIsFlagged,
+    notifyGenerationCancelled,
+  ])
+
+  // Stop button path: tell the queue about the cancellation first so its
+  // pump abandons the cancelled dispatch (whose promise may never settle)
+  // and resumes draining queued messages once the chat goes idle.
+  const cancelGenerationAndResumeQueue = useCallback(() => {
+    const id = currentChat?.id
+    if (id != null) notifyGenerationCancelled(id)
+    void cancelGeneration()
+  }, [currentChat?.id, notifyGenerationCancelled, cancelGeneration])
+
+  const canEnableCodeExecution =
+    canUseCodeExecution && codeExecutionEncryptionKey != null
+
+  // Ask sidebar - ephemeral streaming only. Nothing is persisted until the
+  // user clicks "Open as chat", which creates a new real chat seeded with the
+  // sidebar's messages.
+  const sidebarChat = useSidebarChat({
+    systemPrompt: finalSystemPrompt,
+    rules: processedRules,
+    models,
+    selectedModel,
+    reasoningEffort,
+    thinkingEnabled,
+    autoIntelligence,
+    webSearchEnabled: effectiveWebSearchEnabled,
+    piiCheckEnabled,
+  })
+
+  useEffect(() => {
+    if (!currentChatIsFlagged) return
+    setIsAskSidebarOpen(false)
+    sidebarChat.reset()
+  }, [currentChatIsFlagged, sidebarChat.reset])
+
+  // Sync URL with current chat state
+  useEffect(() => {
+    // Don't update URL during initial load
+    if (isInitialLoad) return
+    // Don't clear URL when showing error screens
+    if (initialChatDecryptionFailed) return
+    if (initialChatLoadFailed) return
+    if (cloudChatNotFound) return
+    if (localChatNotFound) return
+
+    // Track when we've successfully loaded the initial chat from URL
+    if (initialChatId && currentChat.id === initialChatId) {
+      initialUrlChatLoadedRef.current = true
+    }
+
+    // Temporary chats are ephemeral and never appear in the URL.
+    if (currentChat.isTemporary) {
+      clearUrl()
+      return
+    }
+
+    // In local-only mode, a blank "new chat" should live at `/` (not `/chat/local`)
+    // so it never depends on host routing for that path.
+    if (currentChat.isLocalOnly && currentChat.isBlankChat) {
+      clearUrl()
+      return
+    }
+
+    // Local-only chats get /chat/local/[chatId] URLs (regardless of sign-in status)
+    if (currentChat.isLocalOnly) {
+      updateUrlForLocalChat(currentChat.id)
+      return
+    }
+
+    // For local chat URLs that are still loading, don't clear the URL yet
+    // (the chat will be loaded from IndexedDB and set as currentChat)
+    // Only apply this guard if we haven't yet loaded the initial chat from URL
+    if (
+      isLocalChatUrl &&
+      currentChat.isBlankChat &&
+      initialChatId &&
+      !initialUrlChatLoadedRef.current
+    ) {
+      return
+    }
+
+    // Non-signed-in users don't get URLs (their chats are temporary sessionStorage)
+    if (!isSignedIn) {
+      clearUrl()
+      return
+    }
+
+    if (currentChat.isBlankChat) {
+      // In project mode, show /project/[projectId] for blank chats
+      if (isProjectMode && activeProject?.id) {
+        updateUrlForProject(activeProject.id)
+      } else {
+        clearUrl()
+      }
+      return
+    }
+
+    // Update URL based on whether we're in project mode
+    if (isProjectMode && activeProject?.id) {
+      updateUrlForChat(currentChat.id, activeProject.id)
+    } else if (currentChat.projectId) {
+      // Chat belongs to a project but we're not in project mode yet
+      // Use the chat's projectId for the URL
+      updateUrlForChat(currentChat.id, currentChat.projectId)
+    } else {
+      // Regular chat, no project
+      updateUrlForChat(currentChat.id)
+    }
+  }, [
+    currentChat.id,
+    currentChat.isBlankChat,
+    currentChat.isLocalOnly,
+    currentChat.isTemporary,
+    currentChat.projectId,
+    isProjectMode,
+    activeProject?.id,
+    isInitialLoad,
+    initialChatDecryptionFailed,
+    initialChatLoadFailed,
+    cloudChatNotFound,
+    localChatNotFound,
+    isSignedIn,
+    isLocalChatUrl,
+    initialChatId,
+    updateUrlForChat,
+    updateUrlForLocalChat,
+    updateUrlForProject,
+    clearUrl,
+  ])
+
+  // Compute the browser-tab title from the active chat. The value is emitted
+  // declaratively via <Head> in the render below so Next.js owns head
+  // reconciliation — an imperative document.title write would be overwritten
+  // on the next render by the <title> declared in _app.tsx's <Head>.
+  // Blank/placeholder/temporary chats keep the base title because their
+  // displayed "title" is a generic label.
+  const chatTitle = currentChat?.title
+  const chatTitleState = currentChat?.titleState
+  const chatIsBlank = currentChat?.isBlankChat
+  const chatIsTemporary = currentChat?.isTemporary
+  const showChatTitleInTab = useBrowserTabChatTitle()
+  const documentTitle = useMemo(() => {
+    const base = CONSTANTS.BASE_DOCUMENT_TITLE
+    const trimmed = chatTitle?.trim()
+    const hasMeaningfulTitle =
+      showChatTitleInTab &&
+      !chatIsBlank &&
+      !chatIsTemporary &&
+      chatTitleState !== 'placeholder' &&
+      !!trimmed &&
+      trimmed !== 'New Chat'
+    return hasMeaningfulTitle ? `${trimmed} · ${base}` : base
+  }, [
+    showChatTitleInTab,
+    chatTitle,
+    chatTitleState,
+    chatIsBlank,
+    chatIsTemporary,
+  ])
+
+  // Initialize verification for the current resolved authentication state.
+  useEffect(() => {
+    setVerificationStatus('pending')
+    setVerificationDocument(null)
+    if (!isAuthLoaded) return
+    let active = true
+    const initTinfoil = async () => {
+      try {
+        const { getVerificationDocument } =
+          await import('@/services/inference/tinfoil-client')
+        const doc = await getVerificationDocument()
+        if (active && doc) {
+          setVerificationDocument(doc)
+          setVerificationStatus(
+            doc.securityVerified === true
+              ? 'verified'
+              : doc.securityVerified === false
+                ? 'failed'
+                : 'pending',
+          )
+        } else if (active) {
+          setVerificationStatus('failed')
+        }
+      } catch (error) {
+        logError('Failed to initialize tinfoil client', error, {
+          component: 'ChatInterface',
+          action: 'initTinfoil',
+        })
+        if (active) setVerificationStatus('failed')
+      }
+    }
+    void initTinfoil()
+    return () => {
+      active = false
+    }
+  }, [isAuthLoaded, isSignedIn, authUserId, authSessionId])
+
+  // Refresh credentials after sign-in or an entitlement transition so a
+  // free-tier token cannot remain cached after upgrade and a premium token
+  // cannot remain cached after access ends.
+  useEffect(() => {
+    if (!isSignedIn || !cloudSyncInitialized) return
+    invalidateSessionCache()
+    void getSessionToken().catch(() => {
+      // best-effort; the next real request will retry
+    })
+  }, [isSignedIn, cloudSyncInitialized, chat_subscription_active])
+
+  // Handle upgrade requests from error CTA buttons and quota-gated sends
+  useEffect(() => {
+    const handleRequestUpgrade = () => {
+      setIsSubscribePromptOpen(true)
+    }
+    window.addEventListener(REQUEST_UPGRADE_EVENT, handleRequestUpgrade)
+    return () => {
+      window.removeEventListener(REQUEST_UPGRADE_EVENT, handleRequestUpgrade)
+    }
+  }, [])
+
+  const handleWebSearchToggle = useCallback(() => {
+    if (!currentChat) return
+    const next = !resolveWebSearchEnabled(true, currentChat.webSearchEnabled)
+    const updatedChat: Chat = {
+      ...currentChat,
+      webSearchEnabled: next,
+    }
+    setCurrentChat(updatedChat)
+    // Blank chats share an empty id (one per storage mode), so also match
+    // the mode to avoid rewriting the other blank entry.
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === currentChat.id &&
+        (!currentChat.isBlankChat || c.isLocalOnly === currentChat.isLocalOnly)
+          ? updatedChat
+          : c,
+      ),
+    )
+    const storeHistory = isSignedIn || !isCloudSyncEnabled()
+    if (!updatedChat.isTemporary && !updatedChat.isBlankChat && storeHistory) {
+      chatStorage.saveChat(updatedChat).catch((err) => {
+        logError('Failed to persist web search preference', err, {
+          component: 'ChatInterface',
+          metadata: { chatId: updatedChat.id, webSearchEnabled: next },
+        })
+      })
+    }
+  }, [currentChat, setCurrentChat, setChats, isSignedIn])
+
+  // Persist code execution toggle to localStorage
+  useEffect(() => {
+    localStorage.setItem(
+      SETTINGS_CODE_EXECUTION_ENABLED,
+      String(codeExecutionEnabled),
+    )
+  }, [codeExecutionEnabled])
+
+  const handleCodeExecutionToggle = useCallback(() => {
+    setCodeExecutionEnabled((prev) => {
+      const next = !prev
+      window.dispatchEvent(
+        new CustomEvent('codeExecutionEnabledChanged', {
+          detail: { enabled: next },
+        }),
+      )
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    const handleWebSearchAvailableChange = (
+      event: CustomEvent<{ enabled: boolean }>,
+    ) => {
+      setWebSearchAvailable(event.detail.enabled)
+    }
+    const handleCodeExecutionChange = (
+      event: CustomEvent<{ enabled: boolean }>,
+    ) => {
+      setCodeExecutionEnabled(event.detail.enabled)
+    }
+
+    window.addEventListener(
+      'webSearchAvailableChanged',
+      handleWebSearchAvailableChange as EventListener,
+    )
+    window.addEventListener(
+      'codeExecutionEnabledChanged',
+      handleCodeExecutionChange as EventListener,
+    )
+
+    return () => {
+      window.removeEventListener(
+        'webSearchAvailableChanged',
+        handleWebSearchAvailableChange as EventListener,
+      )
+      window.removeEventListener(
+        'codeExecutionEnabledChanged',
+        handleCodeExecutionChange as EventListener,
+      )
+    }
+  }, [])
+
+  // Listen for privacy setting changes from settings modal
+  useEffect(() => {
+    const handlePiiCheckChange = (event: CustomEvent<{ enabled: boolean }>) => {
+      setPiiCheckEnabled(event.detail.enabled)
+    }
+    const handlePixelateSidebarChatTitlesChange = (
+      event: CustomEvent<{ enabled: boolean }>,
+    ) => {
+      setPixelateSidebarChatTitles(event.detail.enabled)
+    }
+    const handlePixelateSidebarChatTitlesStorageChange = (
+      event: StorageEvent,
+    ) => {
+      if (
+        event.key !== null &&
+        event.key !== SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED
+      ) {
+        return
+      }
+      setPixelateSidebarChatTitles(event.newValue === 'true')
+    }
+
+    window.addEventListener(
+      'piiCheckEnabledChanged',
+      handlePiiCheckChange as EventListener,
+    )
+    window.addEventListener(
+      PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
+      handlePixelateSidebarChatTitlesChange as EventListener,
+    )
+    window.addEventListener(
+      'storage',
+      handlePixelateSidebarChatTitlesStorageChange,
+    )
+
+    return () => {
+      window.removeEventListener(
+        'piiCheckEnabledChanged',
+        handlePiiCheckChange as EventListener,
+      )
+      window.removeEventListener(
+        PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
+        handlePixelateSidebarChatTitlesChange as EventListener,
+      )
+      window.removeEventListener(
+        'storage',
+        handlePixelateSidebarChatTitlesStorageChange,
+      )
+    }
+  }, [])
+
+  // Listen for Generative UI setting changes from settings modal
+  useEffect(() => {
+    const handleGenUIChange = (event: CustomEvent<{ enabled: boolean }>) => {
+      setGenUIEnabled(event.detail.enabled)
+    }
+
+    window.addEventListener(
+      'genUIEnabledChanged',
+      handleGenUIChange as EventListener,
+    )
+
+    return () => {
+      window.removeEventListener(
+        'genUIEnabledChanged',
+        handleGenUIChange as EventListener,
+      )
+    }
+  }, [])
+
+  // Effect to handle window resize and enforce single sidebar rule
+  useEffect(() => {
+    // When window becomes narrow and both types of sidebars are open, close the right one
+    if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
+      if (
+        isSidebarOpen &&
+        (isVerifierSidebarOpen || isAskSidebarOpen || isArtifactSidebarOpen)
+      ) {
+        // Close right sidebars to prioritize left sidebar
+        setIsVerifierSidebarOpen(false)
+        setIsAskSidebarOpen(false)
+        setIsArtifactSidebarOpen(false)
+      }
+    }
+  }, [
+    windowWidth,
+    isSidebarOpen,
+    isVerifierSidebarOpen,
+    isAskSidebarOpen,
+    isArtifactSidebarOpen,
+  ])
 
   // Listen for `OPEN_ARTIFACT_PREVIEW_EVENT` dispatched by the
   // `render_artifact_preview` inline card. Shows the artifact in the right
@@ -1150,6 +1918,1370 @@ export function ChatInterface({
     activeArtifactToolCallId,
   ])
 
+  // Auto-focus input when component mounts and is ready (no autoscroll)
+  // Keyed on the chat id, not the chat object: the object's identity changes
+  // on every stream flush and sync update, which would re-run this effect and
+  // repeatedly steal focus from whatever the user is typing in.
+  useEffect(() => {
+    if (isClient && !isLoadingConfig && currentChatId) {
+      // Skip auto-focus when sidebar is open on mobile — focusing the input
+      // triggers handleInputFocus which closes the sidebar
+      if (isSidebarOpen && windowWidth < CONSTANTS.MOBILE_BREAKPOINT) {
+        return
+      }
+      // Small delay to ensure DOM is ready and input is rendered
+      const timer = setTimeout(() => {
+        // Re-runs triggered by viewport or sidebar changes (e.g. the mobile
+        // keyboard resizing the window) must never yank the caret out of
+        // another editable element the user is already typing in.
+        const active = document.activeElement
+        if (
+          active instanceof HTMLElement &&
+          active !== inputRef.current &&
+          (active.tagName === 'INPUT' ||
+            active.tagName === 'TEXTAREA' ||
+            active.isContentEditable)
+        ) {
+          return
+        }
+        inputRef.current?.focus()
+      }, 200)
+      return () => clearTimeout(timer)
+    }
+  }, [
+    isClient,
+    isLoadingConfig,
+    currentChatId,
+    inputRef,
+    isSidebarOpen,
+    windowWidth,
+  ])
+
+  const handleOpenSearchModal = useCallback(() => {
+    setIsSettingsModalOpen(false)
+    setIsShareModalOpen(false)
+    setIsPromptLibraryModalOpen(false)
+    setIsReportBugModalOpen(false)
+    setHasMountedSearchModal(true)
+    setIsSearchModalOpen(true)
+  }, [])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+. (or Ctrl+.) to toggle sidebar
+      if ((e.metaKey || e.ctrlKey) && e.key === '.') {
+        e.preventDefault()
+        setIsSidebarOpen((prev) => !prev)
+        return
+      }
+
+      // Cmd+K (or Ctrl+K) to search chats and projects
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'k'
+      ) {
+        e.preventDefault()
+        if (isSearchModalOpen) setIsSearchModalOpen(false)
+        else handleOpenSearchModal()
+        return
+      }
+
+      // Shift+Cmd+O (or Shift+Ctrl+O) for new chat
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === 'o'
+      ) {
+        e.preventDefault()
+        if (currentChat?.messages?.length !== 0) {
+          createNewChat()
+        }
+        return
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [
+    setIsSidebarOpen,
+    currentChat?.messages?.length,
+    createNewChat,
+    isSearchModalOpen,
+    handleOpenSearchModal,
+  ])
+
+  // Get the selected model details
+  const selectedModelDetails = findSelectableModel(selectedModel, models) as
+    BaseModel | undefined
+  const prefersMultimodalContext = useMemo(
+    () =>
+      currentChat?.messages.some(
+        (message) => getMessageImages(message).length > 0,
+      ) ||
+      processedDocuments.some(
+        (document) =>
+          Boolean(document.imageData) || document.attachment?.type === 'image',
+      ),
+    [currentChat?.messages, processedDocuments],
+  )
+  const contextModelSelection = resolveModelSelection(selectedModel, models, {
+    preferMultimodal: prefersMultimodalContext,
+    preferToolCalling:
+      effectiveWebSearchEnabled || codeExecutionEnabled || genUIEnabled,
+  })
+  const reasoningHistoryPolicy = getReasoningHistoryPolicy(
+    contextModelSelection,
+  )
+  const contextWindowTokens = getResolvedModelContextWindowTokens(
+    contextModelSelection,
+  )
+  const contextModelName = contextModelSelection.model?.name ?? ''
+  const systemPromptTokens = useMemo(
+    () =>
+      ChatQueryBuilder.estimateSystemTokens({
+        modelName: contextModelName,
+        systemPrompt: finalSystemPrompt,
+        rules: processedRules,
+        includeGenUIHint: genUIEnabled,
+      }),
+    [contextModelName, finalSystemPrompt, processedRules, genUIEnabled],
+  )
+  const pendingAttachments = buildCompletedAttachments(processedDocuments)
+  const pendingContextTokens = estimateMessageTokens({
+    role: 'user',
+    content: input.trim(),
+    attachments: pendingAttachments,
+    quote: quote ?? undefined,
+    timestamp: new Date(),
+  })
+
+  // Initialize document uploader hook
+  const { handleDocumentUpload, describeImageWithMultimodal } =
+    useDocumentUploader(selectedModelDetails?.multimodal)
+
+  // Generate descriptions for images when switching to a non-multimodal model
+  useEffect(() => {
+    if (selectedModelDetails?.multimodal) return
+
+    const imagesNeedingDescriptions = processedDocuments.filter(
+      (doc) =>
+        (doc.imageData ||
+          (doc.attachment?.type === 'image' && doc.attachment?.base64)) &&
+        !doc.hasDescription &&
+        !doc.isUploading &&
+        !doc.isGeneratingDescription,
+    )
+
+    if (imagesNeedingDescriptions.length === 0) return
+
+    // Mark images as generating descriptions
+    setProcessedDocuments((prev) =>
+      prev.map((doc) =>
+        imagesNeedingDescriptions.some((img) => img.id === doc.id)
+          ? { ...doc, isGeneratingDescription: true }
+          : doc,
+      ),
+    )
+
+    Promise.all(
+      imagesNeedingDescriptions.map(async (doc) => {
+        const base64 = doc.attachment?.base64 ?? doc.imageData?.base64
+        const mimeType = doc.attachment?.mimeType ?? doc.imageData?.mimeType
+        if (!base64 || !mimeType)
+          return { id: doc.id, name: doc.name, description: '', success: false }
+        try {
+          const description = await describeImageWithMultimodal(
+            base64,
+            mimeType,
+          )
+          return { id: doc.id, name: doc.name, description, success: true }
+        } catch (error) {
+          logError('Lazy image description failed', error, {
+            component: 'ChatInterface',
+            action: 'lazyDescribeImage',
+            metadata: { documentId: doc.id },
+          })
+          return { id: doc.id, name: doc.name, description: '', success: false }
+        }
+      }),
+    ).then((results) => {
+      const failedImages = results.filter((r) => !r.success)
+      if (failedImages.length > 0) {
+        toast({
+          title: 'Image processing failed',
+          description: `Could not process ${failedImages.length === 1 ? `"${failedImages[0].name}"` : `${failedImages.length} images`} for this model. Please try uploading again.`,
+          variant: 'destructive',
+          position: 'top-right',
+        })
+      }
+
+      setProcessedDocuments((prev) =>
+        prev
+          .filter((doc) => {
+            const result = results.find((r) => r.id === doc.id)
+            return !result || result.success
+          })
+          .map((doc) => {
+            const result = results.find((r) => r.id === doc.id)
+            if (result) {
+              return {
+                ...doc,
+                content: result.description,
+                hasDescription: true,
+                isGeneratingDescription: false,
+                // Update description on the attachment if present
+                attachment: doc.attachment
+                  ? { ...doc.attachment, description: result.description }
+                  : undefined,
+              }
+            }
+            return doc
+          }),
+      )
+    })
+  }, [
+    selectedModelDetails?.multimodal,
+    processedDocuments,
+    describeImageWithMultimodal,
+    toast,
+  ])
+
+  const activeProjectIdForSync = activeProject?.id
+
+  // Sync chats when user signs in and periodically
+  // Profile sync is handled separately by useProfileSync hook
+  // Context-aware: syncs personal chats when not in project mode, project chats when in project mode
+  useEffect(() => {
+    if (
+      !isAuthLoaded ||
+      !isSignedIn ||
+      !cloudSyncInitialized ||
+      !cloudSyncSettingEnabled ||
+      !encryptionService.getKey()
+    ) {
+      setChatPagination({ isReady: false, userId: authUserId ?? undefined })
+      return
+    }
+
+    let cancelled = false
+    setChatPagination({ isReady: false, userId: authUserId ?? undefined })
+
+    // Initial sync based on current mode
+    const initialSync =
+      isProjectMode && activeProjectIdForSync
+        ? () => smartSyncChats(activeProjectIdForSync)
+        : () => syncChats()
+
+    const runInitialSync = async () => {
+      while (!cancelled) {
+        try {
+          return await initialSync()
+        } catch (error) {
+          if (!(error instanceof SyncInProgressError)) throw error
+          await cloudSync.waitForCurrentSync()
+        }
+      }
+      return false
+    }
+
+    runInitialSync()
+      .then(async () => {
+        await reloadChats()
+        if (!cancelled && !isProjectMode) {
+          setChatPagination({
+            isReady: true,
+            userId: authUserId ?? undefined,
+          })
+        }
+      })
+      .catch((error) => {
+        if (!cancelled && !isProjectMode) {
+          setChatPagination({
+            isReady: true,
+            userId: authUserId ?? undefined,
+          })
+        }
+        logError('Failed to sync chats on page load', error, {
+          component: 'ChatInterface',
+          action: 'initialSync',
+          metadata: { isProjectMode, projectId: activeProjectIdForSync },
+        })
+      })
+
+    // Use smart sync at regular intervals - checks sync status first to reduce bandwidth
+    // Syncs project chats when in project mode, personal chats otherwise
+    const interval = setInterval(() => {
+      const projectId =
+        isProjectMode && activeProjectIdForSync
+          ? activeProjectIdForSync
+          : undefined
+      smartSyncChats(projectId)
+        .then((result) => {
+          // Only reload chats if something was actually synced
+          if (result.uploaded > 0 || result.downloaded > 0) {
+            return reloadChats()
+          }
+        })
+        .catch((error) => {
+          logError('Failed to sync chats (periodic)', error, {
+            component: 'ChatInterface',
+            action: 'periodicSync',
+            metadata: { isProjectMode, projectId: activeProjectIdForSync },
+          })
+        })
+    }, CLOUD_SYNC.CHAT_SYNC_INTERVAL)
+
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [
+    isAuthLoaded,
+    isSignedIn,
+    authUserId,
+    cloudSyncInitialized,
+    cloudSyncSettingEnabled,
+    isProjectMode,
+    activeProjectIdForSync,
+    syncChats,
+    smartSyncChats,
+    reloadChats,
+  ])
+
+  // Reload chats when the chat encryption key changes (manual entry,
+  // passkey recovery, etc.). Without this, previously-undecryptable chats
+  // stay hidden until the user manually refreshes.
+  useEffect(() => {
+    const handler = () => {
+      reloadChats().catch((error) => {
+        logError('Failed to reload chats after encryption key change', error, {
+          component: 'ChatInterface',
+          action: 'encryptionKeyChangedReload',
+        })
+      })
+    }
+    window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, handler)
+    return () =>
+      window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, handler)
+  }, [reloadChats])
+
+  const handleManualSync = useCallback(async () => {
+    try {
+      return await runManualCloudSync({
+        syncChats,
+        syncProfile: syncProfileFromCloud,
+        reloadChats,
+      })
+    } catch (error) {
+      logError('Manual cloud sync failed', error, {
+        component: 'ChatInterface',
+        action: 'handleManualSync',
+      })
+      return false
+    }
+  }, [syncChats, syncProfileFromCloud, reloadChats])
+
+  // Handler for opening verifier sidebar
+  const handleOpenVerifierSidebar = () => {
+    if (isVerifierSidebarOpen) {
+      // If already open, close it
+      handleSetVerifierSidebarOpen(false)
+    } else {
+      // Open verifier and close other right-side panels
+      handleSetVerifierSidebarOpen(true)
+      setIsSettingsModalOpen(false)
+      setIsAskSidebarOpen(false)
+      setIsArtifactSidebarOpen(false)
+      sidebarChat.reset()
+    }
+  }
+
+  // Handler for setting verifier sidebar state
+  const handleSetVerifierSidebarOpen = (isOpen: boolean) => {
+    setIsVerifierSidebarOpen(isOpen)
+    if (isOpen) {
+      // If window is narrow, close left sidebar when opening right sidebar
+      if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
+        setIsSidebarOpen(false)
+      }
+    }
+  }
+
+  const openSettingsModal = (initialTab: SettingsTab | undefined) => {
+    setSettingsInitialTab(initialTab)
+    setHasMountedSettingsModal(true)
+    setIsSettingsModalOpen(true)
+    handleSetVerifierSidebarOpen(false)
+    setIsAskSidebarOpen(false)
+    setIsArtifactSidebarOpen(false)
+    // If window is narrow, close left sidebar when opening settings
+    if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
+      setIsSidebarOpen(false)
+    }
+  }
+
+  // Handler for settings modal
+  const handleOpenSettingsModal = (tab?: SettingsTab) => {
+    if (isSettingsModalOpen && !tab) {
+      // If already open, close it
+      setIsSettingsModalOpen(false)
+    } else {
+      // Open settings and close verifier if open
+      openSettingsModal(tab ?? (syncNeedsAttention ? 'cloud-sync' : undefined))
+    }
+  }
+
+  const handleOpenSafeguardsSettings = () => {
+    openSettingsModal('safeguards')
+  }
+
+  const handleOpenReportBugModal = () => {
+    setHasMountedReportBugModal(true)
+    setIsReportBugModalOpen(true)
+  }
+
+  // Handler for opening share modal
+  const handleOpenShareModal = () => {
+    setHasMountedShareModal(true)
+    setIsShareModalOpen(true)
+  }
+
+  // Handler for encryption key button - opens settings modal to cloud-sync tab
+  const handleOpenEncryptionKeyModal = () => {
+    openSettingsModal('cloud-sync')
+  }
+
+  // Handler for cloud sync setup. When the user has no local key we first
+  // check if the backend already holds a passkey credential — if so, route
+  // them back to passkey recovery even if they previously dismissed it, so
+  // clicking "Enable Cloud Sync" is always a valid re-entry path. Next
+  // show the cloud-sync intro for brand-new signed-in users, then let its
+  // Continue action route to passkey or manual setup. Remote data bypasses
+  // the intro and routes directly to recovery.
+  const handleOpenCloudSyncSetup = useCallback(async () => {
+    if (!encryptionService.getKey()) {
+      // Open the modal immediately for instant feedback. It renders
+      // its recovery / manual UI from the live hook state, so we don't
+      // block the popup on the slow enclave key-state probe. The
+      // probes below run in the background and the modal reacts to the
+      // resulting state changes (e.g. a manual-recovery warning getting
+      // upgraded to a passkey-recovery flow).
+      setShowCloudSyncSetupModal(true)
+      setIsCloudSyncRoutePending(true)
+      try {
+        const recovered = await showPasskeyRecoveryPrompt()
+        if (recovered) return
+        await showFirstTimePasskeyPrompt()
+      } finally {
+        setIsCloudSyncRoutePending(false)
+      }
+      return
+    }
+    setShowCloudSyncSetupModal(true)
+  }, [showPasskeyRecoveryPrompt, showFirstTimePasskeyPrompt])
+
+  // Pre-warm the cloud-sync modal chunks as soon as a cloud-sync entry
+  // point is reachable, so clicking the sidebar prompt opens the popup
+  // without first paying for an on-demand chunk fetch.
+  useEffect(() => {
+    if (!isSignedIn) return
+    if (
+      passkeyRecoveryNeeded ||
+      manualRecoveryNeeded ||
+      passkeySetupFailed ||
+      passkeySetupAvailable ||
+      passkeyAddDeviceAvailable
+    ) {
+      preloadCloudSyncModals()
+    }
+  }, [
+    isSignedIn,
+    passkeyRecoveryNeeded,
+    manualRecoveryNeeded,
+    passkeySetupFailed,
+    passkeySetupAvailable,
+    passkeyAddDeviceAvailable,
+  ])
+
+  const handleKeyChanged = useCallback(
+    async (
+      key: string,
+      options?: {
+        mode?: 'recoverExisting' | 'explicitStartFresh'
+      },
+    ) => {
+      const syncResult = await setEncryptionKey(key, options)
+      if (syncResult) {
+        await retryProfileDecryption()
+        await reloadChats()
+        // `encryptionKeyChanged` is fired by encryptionService itself
+        // from setKey → persistKeyState; no need to dispatch here.
+      }
+    },
+    [setEncryptionKey, retryProfileDecryption, reloadChats],
+  )
+
+  // After an explicit "start fresh" the new key lives only on this
+  // device. If the platform supports passkeys and the user doesn't
+  // already have one, create a passkey now so the fresh key stays
+  // recoverable. Users who already have an active passkey get their
+  // backup re-encrypted by the key-change handler in useCloudSync, so
+  // there's nothing to do for them here. Best-effort: a cancel or
+  // failure just leaves the sidebar backup warning in place.
+  const backupStartFreshKeyWithPasskey = useCallback(async () => {
+    if (passkeyActive) return
+    try {
+      if (!(await isPrfSupported())) return
+      await setupPasskey()
+    } catch (error) {
+      if (error instanceof PrfNotSupportedError) return
+      logError(
+        'Failed to back up new key with passkey after start fresh',
+        error,
+        {
+          component: 'ChatInterface',
+          action: 'backupStartFreshKeyWithPasskey',
+        },
+      )
+    }
+  }, [passkeyActive, setupPasskey])
+
+  const handleCreateProject = useCallback(async () => {
+    if (!isPremium) {
+      setIsSubscribePromptOpen(true)
+      return
+    }
+    invalidateFavoriteNavigation()
+    try {
+      const name = `My Project #${projects.length + 1}`
+      const project = await createProject({ name, description: '' })
+      await openProjectChat({
+        projectId: project.id,
+        createNewChat,
+        enterProjectMode,
+      })
+    } catch (error) {
+      logError('Failed to create project', error, {
+        component: 'ChatInterface',
+        action: 'handleCreateProject',
+      })
+      toast({
+        title: 'Failed to create project',
+        description: 'Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }, [
+    createProject,
+    createNewChat,
+    enterProjectMode,
+    invalidateFavoriteNavigation,
+    isPremium,
+    projects.length,
+    toast,
+  ])
+
+  // Handler for exiting project mode - creates a new chat and exits
+  const handleExitProject = useCallback(() => {
+    setPendingProjectUpload(null)
+    setShowAddToProjectModal(false)
+    createNewChat(false, true)
+    exitProjectMode()
+  }, [createNewChat, exitProjectMode])
+
+  useEffect(() => {
+    if (
+      isSubscriptionLoading ||
+      isPremium ||
+      (!isProjectMode && !currentChat.projectId)
+    )
+      return
+    setPendingProjectUpload(null)
+    setShowAddToProjectModal(false)
+    createNewChat(false, true)
+    exitProjectMode()
+    clearUrl()
+  }, [
+    clearUrl,
+    createNewChat,
+    currentChat.projectId,
+    exitProjectMode,
+    isPremium,
+    isProjectMode,
+    isSubscriptionLoading,
+  ])
+
+  const handleToggleTemporaryMode = useCallback(() => {
+    invalidateFavoriteNavigation()
+    if (!canToggleTemporaryChat(currentChat)) return
+
+    const hasMessages = (currentChat?.messages?.length ?? 0) > 0
+    const storeHistory = isSignedIn || !isCloudSyncEnabled()
+
+    if (currentChat?.isTemporary) {
+      // Deselecting temporary mode on a started chat saves it permanently.
+      if (hasMessages) {
+        const permanentChat: Chat = {
+          ...currentChat,
+          isTemporary: false,
+          isBlankChat: false,
+          title:
+            currentChat.title === TEMPORARY_CHAT_TITLE
+              ? DEFAULT_CHAT_TITLE
+              : currentChat.title,
+          codeExecutionAccessToken:
+            currentChat.codeExecutionAccessToken ??
+            generateCodeExecutionAccessToken(),
+          createdAt: currentChat.createdAt ?? new Date(),
+        }
+        previousChatRef.current = null
+        setCurrentChat(permanentChat)
+        setChats((prev) => upsertChatById(prev, permanentChat))
+        const persist = (chat: Chat) => {
+          if (storeHistory) {
+            chatStorage.saveChatAndSync(chat).catch((err) => {
+              logError('Failed to save temporary chat as permanent', err, {
+                component: 'ChatInterface',
+                action: 'handleToggleTemporaryMode.save',
+                metadata: { chatId: chat.id },
+              })
+            })
+          } else {
+            sessionChatStorage.saveChat(chat)
+          }
+        }
+        persist(permanentChat)
+
+        // Temporary chats never get titles generated during streaming, so
+        // generate one now from the first user message (falling back to
+        // attachment text) to avoid a list full of "Untitled" entries.
+        if (permanentChat.title === DEFAULT_CHAT_TITLE) {
+          const firstUser = permanentChat.messages.find(
+            (m) => m.role === 'user',
+          )
+          const titleContent = firstUser ? getTitleContent(firstUser) : ''
+          if (titleContent) {
+            generateTitle([{ role: 'user', content: titleContent }])
+              .then((generated) => {
+                if (!generated || generated === DEFAULT_CHAT_TITLE) return
+                // If the user navigated away while the title was generating,
+                // skip persistence for the inactive chat.
+                const active = currentChatRef.current
+                if (
+                  !active ||
+                  active.id !== permanentChat.id ||
+                  active.isTemporary
+                ) {
+                  return
+                }
+                const titled: Chat = {
+                  ...active,
+                  title: generated,
+                  titleState: 'generated',
+                }
+                setCurrentChat((cur) => (cur?.id === titled.id ? titled : cur))
+                setChats((prev) =>
+                  prev.map((c) => (c.id === titled.id ? titled : c)),
+                )
+                persist(titled)
+              })
+              .catch(() => {})
+          }
+        }
+        return
+      }
+
+      const previousChat = previousChatRef.current
+      previousChatRef.current = null
+      const restored = previousChat?.isBlankChat
+        ? chats.find(
+            (chat) =>
+              chat.isBlankChat && chat.isLocalOnly === previousChat.isLocalOnly,
+          )
+        : chats.find((chat) => chat.id === previousChat?.id)
+      if (restored) {
+        setCurrentChat(restored)
+      } else {
+        createNewChat(false, true)
+      }
+      return
+    }
+
+    previousChatRef.current = currentChat
+      ? {
+          id: currentChat.id,
+          isBlankChat: currentChat.isBlankChat,
+          isLocalOnly: currentChat.isLocalOnly,
+        }
+      : null
+    const tempChat = createTemporaryChat({
+      presetId: currentChat?.presetId,
+      model: currentChat?.model,
+      webSearchEnabled: currentChat?.webSearchEnabled,
+      isLocalOnly: currentChat?.isLocalOnly,
+    })
+    setCurrentChat(tempChat)
+  }, [
+    chats,
+    createNewChat,
+    currentChat,
+    invalidateFavoriteNavigation,
+    isSignedIn,
+    setChats,
+    setCurrentChat,
+  ])
+
+  useEffect(() => {
+    if (!isTemporaryMode && previousChatRef.current !== null) {
+      previousChatRef.current = null
+    }
+  }, [isTemporaryMode])
+
+  // Handler for exiting project mode while dragging - does NOT create a new chat
+  // so the drag operation can continue and drop into cloud/local tabs
+  const handleExitProjectWhileDragging = useCallback(() => {
+    invalidateFavoriteNavigation()
+    setPendingProjectUpload(null)
+    setShowAddToProjectModal(false)
+    exitProjectMode()
+  }, [exitProjectMode, invalidateFavoriteNavigation])
+
+  // Handler for moving a chat to a project via drag and drop
+  const handleMoveChatToProject = useCallback(
+    async (chatId: string, projectId: string) => {
+      if (!isPremium) {
+        setIsSubscribePromptOpen(true)
+        return
+      }
+      try {
+        await chatStorage.moveChatToProject(chatId, projectId)
+
+        // Reload chats to update the UI
+        await reloadChats()
+
+        // If the moved chat was the current chat, create a new blank chat
+        if (currentChat.id === chatId) {
+          createNewChat(false, true)
+        }
+
+        toast({
+          title: 'Chat moved to project',
+          description: 'The chat has been moved successfully.',
+        })
+      } catch (error) {
+        logError('Failed to move chat to project', error, {
+          component: 'ChatInterface',
+          action: 'handleMoveChatToProject',
+          metadata: { chatId, projectId },
+        })
+
+        // Rollback: reload chats to restore original state
+        await reloadChats()
+
+        toast({
+          title: 'Failed to move chat',
+          description: 'Please try again.',
+          variant: 'destructive',
+        })
+      }
+    },
+    [currentChat.id, createNewChat, isPremium, reloadChats, toast],
+  )
+
+  // Handler for removing a chat from a project via drag and drop
+  const handleRemoveChatFromProject = useCallback(
+    async (chatId: string): Promise<void> => {
+      if (!isPremium) {
+        setIsSubscribePromptOpen(true)
+        return
+      }
+      try {
+        await chatStorage.removeChatFromProject(chatId)
+
+        await reloadChats()
+
+        toast({
+          title: 'Chat removed from project',
+          description: 'The chat is now in your main chat list.',
+        })
+      } catch (error) {
+        logError('Failed to remove chat from project', error, {
+          component: 'ChatInterface',
+          action: 'handleRemoveChatFromProject',
+          metadata: { chatId },
+        })
+
+        // Rollback: reload chats to restore original state
+        await reloadChats()
+
+        toast({
+          title: 'Failed to remove chat',
+          description: 'Please try again.',
+          variant: 'destructive',
+        })
+      }
+    },
+    [isPremium, reloadChats, toast],
+  )
+
+  // Handler for deleting every chat that belongs to a project. Reloads from
+  // storage afterwards so the deleted chats disappear locally without a
+  // page refresh.
+  const handleDeleteProjectChats = useCallback(
+    async (projectId: string): Promise<void> => {
+      if (!isPremium) {
+        setIsSubscribePromptOpen(true)
+        return
+      }
+      try {
+        const deletedChatIds =
+          await chatStorage.deleteChatsByProjectWithIds(projectId)
+        unpinChats(deletedChatIds)
+        await reloadChats()
+      } catch (error) {
+        logError('Failed to delete project chats', error, {
+          component: 'ChatInterface',
+          action: 'handleDeleteProjectChats',
+          metadata: { projectId },
+        })
+
+        // Rollback: reload chats to restore original state
+        await reloadChats()
+
+        throw error
+      }
+    },
+    [isPremium, reloadChats, unpinChats],
+  )
+
+  // Handler for converting a local-only chat to cloud chat via drag and drop
+  const handleConvertChatToCloud = useCallback(
+    async (chatId: string): Promise<boolean> => {
+      try {
+        await chatStorage.convertChatToCloud(chatId)
+        await reloadChats()
+
+        toast({
+          title: 'Chat moved to cloud',
+          description: 'The chat will now sync across your devices.',
+        })
+        return true
+      } catch (error) {
+        logError('Failed to convert chat to cloud', error, {
+          component: 'ChatInterface',
+          action: 'handleConvertChatToCloud',
+          metadata: { chatId },
+        })
+
+        toast({
+          title: 'Failed to move chat to cloud',
+          description: 'Please try again.',
+          variant: 'destructive',
+        })
+        return false
+      }
+    },
+    [reloadChats, toast],
+  )
+
+  // Start a new conversation from the messages up to and including the
+  // chosen one. A placeholder fork appears in the sidebar at once and the
+  // conversation is dimmed under a status overlay while storage does the
+  // real work (local copy or via the sync enclave); the placeholder is
+  // then swapped for the stored row. Guest chats are copied into session
+  // storage. One fork runs at a time, and the result is only selected if
+  // the user is still viewing the chat it was forked from.
+  const forkInFlightRef = useRef(false)
+  const [isForking, setIsForking] = useState(false)
+  const handleForkMessage = useCallback(
+    async (messageIndex: number) => {
+      if (!currentChat || currentChat.isTemporary || currentChat.isBlankChat) {
+        return
+      }
+      if (loadingState !== 'idle' || isStreaming) return
+      if (forkInFlightRef.current) return
+      const messageCount = messageIndex + 1
+      if (messageCount < 1 || messageCount > currentChat.messages.length) {
+        return
+      }
+      const sourceId = currentChat.id
+      const forkId = generateReverseId().id
+      const placeholder: Chat = {
+        ...buildForkedChat(currentChat, messageCount, forkId),
+        pendingSave: true,
+      }
+      forkInFlightRef.current = true
+      setIsForking(true)
+      setChats((current) => upsertChatById(current, placeholder))
+      const startedAt = Date.now()
+      try {
+        let fork: Chat
+        if (isSignedIn) {
+          fork = await chatStorage.forkChat(sourceId, messageCount, forkId)
+        } else {
+          fork = { ...placeholder, pendingSave: false }
+          sessionChatStorage.saveChat(fork)
+        }
+        const elapsed = Date.now() - startedAt
+        if (elapsed < CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS) {
+          await new Promise((resolve) =>
+            setTimeout(
+              resolve,
+              CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS - elapsed,
+            ),
+          )
+        }
+        setChats((current) => upsertChatById(current, fork))
+        if (currentChatRef.current?.id !== sourceId) return
+        invalidateFavoriteNavigation()
+        setCurrentChat(fork)
+      } catch (error) {
+        setChats((current) => current.filter((chat) => chat.id !== forkId))
+        logError('Failed to fork conversation', error, {
+          component: 'ChatInterface',
+          action: 'handleForkMessage',
+          metadata: { chatId: sourceId, messageCount },
+        })
+        toast({
+          title: 'Failed to fork conversation',
+          description: 'Please try again.',
+          variant: 'destructive',
+        })
+      } finally {
+        forkInFlightRef.current = false
+        setIsForking(false)
+      }
+    },
+    [
+      currentChat,
+      invalidateFavoriteNavigation,
+      isSignedIn,
+      isStreaming,
+      loadingState,
+      setChats,
+      setCurrentChat,
+      toast,
+    ],
+  )
+
+  const handleToggleFavorite = useCallback(
+    async (favorite: Pick<Chat, 'id' | 'isLocalOnly'>) => {
+      if (pinnedChatIds.includes(favorite.id)) {
+        unpinChat(favorite.id)
+        return
+      }
+
+      const accountId = authUserId
+      const hydrationGeneration = favoriteHydrationGenerationRef.current
+      let chat = chats.find((candidate) => candidate.id === favorite.id)
+      if (!chat) {
+        try {
+          const hydration = await hydratePinnedChatById(favorite.id)
+          if (
+            hydration.status !== 'ready' ||
+            currentFavoriteAccountRef.current !== accountId ||
+            favoriteHydrationGenerationRef.current !== hydrationGeneration
+          ) {
+            return
+          }
+          chat = hydration.chat
+          const loadedChat = chat
+          setChats((current) => upsertChatById(current, loadedChat))
+        } catch (error) {
+          logError('Failed to load chat before pinning', error, {
+            component: 'ChatInterface',
+            action: 'handleToggleFavorite',
+            metadata: { chatId: favorite.id },
+          })
+          return
+        }
+      }
+      if (!canRequestChatPin(chat)) {
+        return
+      }
+      if (chat.isLocalOnly && !(await handleConvertChatToCloud(chat.id))) return
+      if (
+        currentFavoriteAccountRef.current !== accountId ||
+        favoriteHydrationGenerationRef.current !== hydrationGeneration
+      ) {
+        return
+      }
+      pinChat(chat.id)
+    },
+    [
+      chats,
+      authUserId,
+      handleConvertChatToCloud,
+      pinChat,
+      pinnedChatIds,
+      setChats,
+      unpinChat,
+    ],
+  )
+
+  const handleOpenFavorite = useCallback(
+    async (favorite: Pick<Chat, 'id' | 'projectId'>) => {
+      const generation = favoriteNavigationGenerationRef.current + 1
+      favoriteNavigationGenerationRef.current = generation
+      await openFavoriteChat({
+        favorite,
+        activeProjectId: activeProject?.id,
+        isProjectMode,
+        enterProjectMode: (projectId, isCurrent) =>
+          enterProjectMode(projectId, undefined, { isCurrent }),
+        exitProjectMode,
+        openChat: (chatId) =>
+          loadChatByIdWithoutNavigationInvalidation(chatId, false),
+        isCurrent: () => favoriteNavigationGenerationRef.current === generation,
+      })
+    },
+    [
+      activeProject?.id,
+      enterProjectMode,
+      exitProjectMode,
+      isProjectMode,
+      loadChatByIdWithoutNavigationInvalidation,
+    ],
+  )
+
+  const favoriteChats = useMemo(() => {
+    const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
+    return pinnedChatIds
+      .map((chatId) => chatsById.get(chatId))
+      .filter((chat): chat is Chat =>
+        Boolean(
+          chat &&
+          isResolvedFavoriteChat(chat) &&
+          (isPremium || !chat.projectId),
+        ),
+      )
+  }, [chats, isPremium, pinnedChatIds])
+
+  // Handler for converting a cloud chat to local-only via drag and drop
+  const handleConvertChatToLocal = useCallback(
+    async (chatId: string): Promise<void> => {
+      try {
+        await chatStorage.convertChatToLocal(chatId)
+        unpinChat(chatId)
+        await reloadChats()
+
+        toast({
+          title: 'Chat moved to local',
+          description: 'The chat is now only stored on this device.',
+        })
+      } catch (error) {
+        logError('Failed to convert chat to local', error, {
+          component: 'ChatInterface',
+          action: 'handleConvertChatToLocal',
+          metadata: { chatId },
+        })
+
+        toast({
+          title: 'Failed to move chat to local',
+          description:
+            error instanceof ChatImagesUnavailableError
+              ? 'Some attachments in this chat could not be downloaded. Check your connection and try again.'
+              : 'Please try again.',
+          variant: 'destructive',
+        })
+      }
+    },
+    [reloadChats, toast, unpinChat],
+  )
+
+  // Helper to process file and add to chat attachments
+  const processFileForChat = useCallback(
+    async (file: File) => {
+      const tempDocId = crypto.randomUUID()
+
+      if (!isSupportedFile(file.name) && !(await isProbablyTextFile(file))) {
+        setProcessedDocuments((prev) => [
+          ...prev,
+          {
+            id: tempDocId,
+            name: file.name,
+            time: new Date(),
+            isUnsupported: true,
+          },
+        ])
+        return
+      }
+
+      setProcessedDocuments((prev) => [
+        ...prev,
+        {
+          id: tempDocId,
+          name: file.name,
+          time: new Date(),
+          isUploading: true,
+        },
+      ])
+
+      await handleDocumentUpload(
+        file,
+        (content, documentId, imageData, hasDescription, pages) => {
+          const newDocTokens = estimateTokenCount(content)
+          const contextBudget = getHistoryTokenBudget(
+            contextWindowTokens,
+            systemPromptTokens,
+          )
+
+          // Attachments are part of the next message, which cannot be
+          // archived, so all pending attachments together must fit within
+          // the budget the system prompt leaves.
+          const pendingTokens = processedDocuments.reduce(
+            (total, doc) => total + estimateTokenCount(doc.content),
+            0,
+          )
+
+          if (pendingTokens + newDocTokens > contextBudget) {
+            setProcessedDocuments((prev) =>
+              prev.filter((doc) => doc.id !== tempDocId),
+            )
+
+            toast({
+              title: 'Attachment too large for this model',
+              description: `"${file.name}" needs ~${Math.round(newDocTokens / 1000)}k tokens but this model can fit ~${Math.round((contextBudget - pendingTokens) / 1000)}k. Remove an attachment or switch to a model with a larger context window.`,
+              variant: 'destructive',
+              position: 'top-right',
+            })
+            return
+          }
+
+          // Build an Attachment object from the upload result
+          const attachment = buildAttachment({
+            id: documentId,
+            fileName: file.name,
+            imageData: imageData ?? undefined,
+            textContent: content ?? undefined,
+            description: hasDescription && content ? content : undefined,
+            pages,
+          })
+
+          setProcessedDocuments((prev) => {
+            return prev.map((doc) =>
+              doc.id === tempDocId
+                ? {
+                    id: documentId,
+                    name: file.name,
+                    time: new Date(),
+                    content,
+                    imageData,
+                    attachment,
+                    isImageDescription: !!imageData,
+                    hasDescription: hasDescription ?? !!content,
+                    isGeneratingDescription: false,
+                  }
+                : doc,
+            )
+          })
+        },
+        (error) => {
+          setProcessedDocuments((prev) =>
+            prev.filter((doc) => doc.id !== tempDocId),
+          )
+
+          toast({
+            title: 'Processing failed',
+            description: error.message || 'Failed to process document',
+            variant: 'destructive',
+            position: 'top-right',
+          })
+        },
+        (documentId, imageData) => {
+          // Called when image description generation starts
+          const imgAttachment = buildAttachment({
+            id: documentId,
+            fileName: file.name,
+            imageData: imageData ?? undefined,
+          })
+
+          setProcessedDocuments((prev) =>
+            prev.map((doc) =>
+              doc.id === tempDocId
+                ? {
+                    ...doc,
+                    isUploading: false,
+                    isGeneratingDescription: true,
+                    imageData,
+                    attachment: imgAttachment,
+                  }
+                : doc,
+            ),
+          )
+        },
+      )
+    },
+    [
+      handleDocumentUpload,
+      processedDocuments,
+      contextWindowTokens,
+      systemPromptTokens,
+      toast,
+    ],
+  )
+
+  // Helper to process file and add to project context
+  const addFileToProjectContext = useCallback(
+    async (file: File) => {
+      const uploadId = crypto.randomUUID()
+
+      // Add to shared uploading state so sidebar shows progress
+      addUploadingFile({
+        id: uploadId,
+        name: file.name,
+        size: file.size,
+      })
+
+      // Open sidebar and expand documents section immediately
+      sessionStorage.setItem(UI_EXPAND_PROJECT_DOCUMENTS, 'true')
+      setIsSidebarOpen(true)
+
+      await handleDocumentUpload(
+        file,
+        async (content, _documentId, imageData, _hasDescription, pages) => {
+          try {
+            const projectContent = getDocumentTextContent(content, pages)
+            if (!projectContent) {
+              throw new Error('No readable content was found in this document.')
+            }
+            await uploadProjectDocument(
+              file,
+              projectContent,
+              imageData?.thumbnailBase64,
+            )
+          } catch (error) {
+            toast({
+              title: 'Upload failed',
+              description:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to add document to project context.',
+              variant: 'destructive',
+              position: 'top-right',
+            })
+          } finally {
+            removeUploadingFile(uploadId)
+          }
+        },
+        (error) => {
+          toast({
+            title: 'Processing failed',
+            description: error.message || 'Failed to process document',
+            variant: 'destructive',
+            position: 'top-right',
+          })
+          removeUploadingFile(uploadId)
+        },
+        undefined,
+        { requireTextContent: true },
+      )
+    },
+    [
+      handleDocumentUpload,
+      uploadProjectDocument,
+      toast,
+      setIsSidebarOpen,
+      addUploadingFile,
+      removeUploadingFile,
+    ],
+  )
+
+  // Handler for modal confirmation
+  const handleAddToProjectConfirm = useCallback(
+    async (addToProject: boolean) => {
+      if (
+        !pendingProjectUpload ||
+        activeProject?.id !== pendingProjectUpload.projectId
+      ) {
+        setPendingProjectUpload(null)
+        setShowAddToProjectModal(false)
+        toast({
+          title: 'Upload canceled',
+          description: 'The file was not attached because the project changed.',
+          variant: 'destructive',
+          position: 'top-right',
+        })
+        return
+      }
+
+      // Capture files and close modal immediately
+      const filesToUpload = pendingProjectUpload.files
+      setPendingProjectUpload(null)
+      setShowAddToProjectModal(false)
+
+      // Then process uploads (UI will show upload progress)
+      if (addToProject) {
+        // Start all uploads before awaiting so every file registers its
+        // "Uploading..." placeholder immediately, mirroring the sidebar's
+        // own upload path. A sequential loop would surface one row at a
+        // time as each upload finishes.
+        await Promise.all(
+          filesToUpload.map((file) => addFileToProjectContext(file)),
+        )
+      } else {
+        for (const file of filesToUpload) {
+          await processFileForChat(file)
+        }
+      }
+    },
+    [
+      activeProject?.id,
+      pendingProjectUpload,
+      addFileToProjectContext,
+      processFileForChat,
+      toast,
+    ],
+  )
+
+  // Document upload handler wrapper
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      const projectTarget = resolveProjectUploadTarget({
+        activeProjectId: activeProject?.id,
+        loadingProjectId: loadingProject?.id,
+      })
+
+      await routeChatFileUpload(file, {
+        projectTarget,
+        requestDestination: (pendingFile, target) => {
+          if (
+            pendingProjectUpload &&
+            pendingProjectUpload.projectId !== target.projectId
+          ) {
+            toast({
+              title: 'Previous upload canceled',
+              description: 'The project changed before the file was attached.',
+              variant: 'destructive',
+              position: 'top-right',
+            })
+          }
+          setPendingProjectUpload((previous) => ({
+            projectId: target.projectId,
+            files:
+              previous?.projectId === target.projectId
+                ? [...previous.files, pendingFile]
+                : [pendingFile],
+          }))
+          if (target.isReady) {
+            setShowAddToProjectModal(true)
+          }
+        },
+        processFileForChat,
+      })
+    },
+    [
+      activeProject,
+      loadingProject,
+      pendingProjectUpload,
+      processFileForChat,
+      toast,
+    ],
+  )
+
   // Global drag and drop handlers
   const handleGlobalDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -1179,96 +3311,375 @@ export function ChatInterface({
     }
   }, [])
 
-  const handleGlobalDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
+  const handleGlobalDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
 
-    dragCounterRef.current = 0
-    setIsGlobalDragActive(false)
+      dragCounterRef.current = 0
+      setIsGlobalDragActive(false)
 
-    const files = e.dataTransfer.files
-    if (files && files.length > 0) {
-      for (const file of Array.from(files)) {
-        handleFileUpload(file)
+      const files = e.dataTransfer.files
+      if (files && files.length > 0) {
+        for (const file of Array.from(files)) {
+          handleFileUpload(file)
+        }
+      }
+    },
+    [handleFileUpload],
+  )
+
+  // Handler for removing documents
+  const removeDocument = (id: string) => {
+    setProcessedDocuments((prev) => prev.filter((doc) => doc.id !== id))
+  }
+
+  // Calculate context usage (memoized to prevent re-calculation during streaming)
+  const contextUsage = useMemo(() => {
+    const limitTokens = getContextTokenBudget(contextWindowTokens)
+
+    let usedTokens = systemPromptTokens + pendingContextTokens
+
+    // Count tokens from messages (including their attachments), skipping
+    // archived messages that are excluded from the prompt
+    if (currentChat?.messages) {
+      const messages = currentChat.messages
+      const historyBudget = getHistoryTokenBudget(
+        contextWindowTokens,
+        systemPromptTokens + pendingContextTokens,
+      )
+      const startIndex = findContextStartIndex(messages, historyBudget, {
+        reasoningHistoryPolicy,
+        keepMostRecent: pendingContextTokens === 0,
+      })
+      for (let i = startIndex; i < messages.length; i++) {
+        usedTokens += estimateMessageTokens(messages[i], {
+          reasoningHistoryPolicy,
+        })
       }
     }
+
+    return {
+      percentage: (usedTokens / limitTokens) * 100,
+      usedTokens,
+      limitTokens,
+    }
+  }, [
+    currentChat?.messages,
+    contextWindowTokens,
+    reasoningHistoryPolicy,
+    systemPromptTokens,
+    pendingContextTokens,
+  ])
+
+  // Tracks whether the user already saw and dismissed the rate-limit modal
+  // for the current depleted window. Without this, dismissing via the close
+  // button immediately refocuses the textarea and the focus handler would
+  // pop the same modal right back open.
+  const rateLimitModalDismissedRef = useRef(false)
+
+  useEffect(() => {
+    if (rateLimit && rateLimit.remaining > 0) {
+      rateLimitModalDismissedRef.current = false
+    }
+  }, [rateLimit])
+
+  const handleCloseSubscribePrompt = useCallback(() => {
+    setIsSubscribePromptOpen(false)
+    if (rateLimit && rateLimit.remaining <= 0) {
+      rateLimitModalDismissedRef.current = true
+    }
+  }, [rateLimit])
+
+  const handleInputFocusWithRateLimitCheck = useCallback(() => {
+    if (
+      rateLimit &&
+      rateLimit.remaining <= 0 &&
+      rateLimit.kind !== 'hourly' &&
+      !rateLimitModalDismissedRef.current
+    ) {
+      setIsSubscribePromptOpen(true)
+    }
+    handleInputFocus()
+  }, [rateLimit, handleInputFocus])
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (isChatHydrating || currentChatIsFlagged) return
+
+    if (rateLimit && rateLimit.remaining <= 0 && rateLimit.kind !== 'hourly') {
+      setIsSubscribePromptOpen(true)
+      return
+    }
+
+    const messageText = input.trim()
+    const attachments = buildCompletedAttachments(processedDocuments)
+
+    // Don't proceed if there's no input text, no quote, and no documents
+    if (!messageText && !quote && attachments.length === 0) {
+      return
+    }
+
+    // Don't auto-scroll here - let the message append handler do it
+    // This prevents the dip when thoughts start streaming
+
+    setInput('')
+    submitMessage({
+      text: messageText,
+      attachments,
+      quote: quote ?? undefined,
+    })
+
+    // Clear the quote after submission
+    if (quote) {
+      setQuote(null)
+    }
+
+    // Keep documents that are still uploading or generating descriptions
+    const remainingDocuments = processedDocuments.filter(
+      (doc) => doc.isUploading || doc.isGeneratingDescription,
+    )
+    setProcessedDocuments(remainingDocuments)
   }
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const [showScrollButton, setShowScrollButton] = useState(false)
-  const [inputAreaHeight, setInputAreaHeight] = useState(0)
-  const inputAreaObserver = useRef<ResizeObserver | null>(null)
-  const inputAreaRef = useCallback((node: HTMLDivElement | null) => {
-    inputAreaObserver.current?.disconnect()
-    if (!node) return
-    const measure = () =>
-      setInputAreaHeight(node.getBoundingClientRect().height)
-    measure()
-    inputAreaObserver.current = new ResizeObserver(measure)
-    inputAreaObserver.current.observe(node)
-  }, [])
-  useEffect(() => () => inputAreaObserver.current?.disconnect(), [])
-  const handleScroll = () => {
-    const el = scrollContainerRef.current
-    if (el)
-      setShowScrollButton(
-        el.scrollHeight - el.scrollTop - el.clientHeight > 200,
-      )
-  }
-  const scrollToLastMessage = () => {
+  // Check if scroll button should be shown (throttled for performance)
+  const checkScrollPosition = useCallback(() => {
     const el = scrollContainerRef.current
     if (!el) return
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    // Move keyboard/screen-reader focus to the latest message so it is read
-    // out and becomes the navigation anchor. preventScroll avoids fighting the
-    // smooth scroll above.
-    const messageEls = el.querySelectorAll('[data-message-role]')
-    const lastMessage = messageEls[messageEls.length - 1] as HTMLElement | null
-    lastMessage?.focus({ preventScroll: true })
-  }
-  useEffect(() => {
-    if (!showScrollButton) {
-      const el = scrollContainerRef.current
-      el?.scrollTo({ top: el.scrollHeight })
-    }
-  }, [currentChat.messages.length, isStreaming, showScrollButton])
-  const showEmptyChatGrid =
-    currentChat.messages.length === 0 && !isWaitingForResponse
 
-  if (!session && sessionError) {
+    // Show button when user has scrolled up from the bottom by more than threshold
+    // Subtract spacer height since it's empty space, not content
+    const distanceFromBottom = getDistanceFromChatContentBottom(
+      el.scrollHeight,
+      el.scrollTop,
+      el.clientHeight,
+      getChatSpacerHeight(el),
+    )
+    const SCROLL_THRESHOLD = 200
+
+    setShowScrollButton(distanceFromBottom > SCROLL_THRESHOLD)
+  }, [])
+
+  // Throttled scroll handler
+  const lastScrollCheckRef = useRef<number>(0)
+  const handleScroll = useCallback(() => {
+    const now = Date.now()
+    const timeSinceLastCheck = now - lastScrollCheckRef.current
+
+    // Check immediately if enough time has passed since last check
+    if (timeSinceLastCheck >= 100) {
+      checkScrollPosition()
+      lastScrollCheckRef.current = now
+    } else {
+      // Otherwise schedule a check after the remaining throttle time
+      if (scrollCheckTimeoutRef.current) {
+        clearTimeout(scrollCheckTimeoutRef.current)
+      }
+      scrollCheckTimeoutRef.current = setTimeout(() => {
+        checkScrollPosition()
+        lastScrollCheckRef.current = Date.now()
+      }, 100 - timeSinceLastCheck)
+    }
+  }, [checkScrollPosition])
+
+  // Check scroll position when content or layout changes
+  useEffect(() => {
+    checkScrollPosition()
+    // Scroll to bottom when switching to a chat with messages
+    if (currentChat?.messages && currentChat.messages.length > 0) {
+      // Small delay to ensure DOM is ready
+      const timer = setTimeout(() => {
+        scrollToBottom(false)
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkScrollPosition, currentChat?.id, scrollToBottom])
+
+  // Re-check button visibility when content size changes (no scrolling)
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container || typeof ResizeObserver === 'undefined') return
+
+    let rafId: number | null = null
+    const observer = new ResizeObserver(() => {
+      if (rafId !== null) cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(() => {
+        checkScrollPosition()
+        rafId = null
+      })
+    })
+
+    const content = container.firstElementChild
+    if (content) observer.observe(content)
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId)
+      observer.disconnect()
+    }
+  }, [checkScrollPosition])
+
+  // Re-check on window resize
+  useEffect(() => {
+    const onResize = () => checkScrollPosition()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [checkScrollPosition])
+
+  // Re-check when messages/streaming state updates (no scrolling)
+  useEffect(() => {
+    checkScrollPosition()
+  }, [
+    checkScrollPosition,
+    currentChat?.messages,
+    isWaitingForResponse,
+    loadingState,
+  ])
+
+  // Nudge scroll slightly when content starts after thinking, only if near bottom
+  const contentStartSnapshotRef = useRef<{
+    key: string
+    contentLen: number
+    wasThinking: boolean
+  } | null>(null)
+  const scrolledForContentStartKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    const messages = currentChat?.messages
+    if (!el || !messages || messages.length === 0) return
+
+    const last = messages[messages.length - 1]
+    if (last.role !== 'assistant') {
+      contentStartSnapshotRef.current = null
+      return
+    }
+
+    const key = `${
+      last.timestamp instanceof Date
+        ? last.timestamp.getTime()
+        : String(last.timestamp || '')
+    }`
+
+    const prev = contentStartSnapshotRef.current
+    const prevSame = prev && prev.key === key
+    const prevContentLen = prevSame ? prev.contentLen : 0
+    const nowContentLen = (last.content || '').length
+    const nowThinkingish = Boolean(
+      last.isThinking ||
+      ((last.thoughts || '').length > 0 && nowContentLen === 0),
+    )
+
+    const contentStartedNow =
+      prevSame && prevContentLen === 0 && nowContentLen > 0
+    const wasThinkingBefore = Boolean(prev?.wasThinking)
+
+    if (
+      contentStartedNow &&
+      wasThinkingBefore &&
+      scrolledForContentStartKeyRef.current !== key
+    ) {
+      const distanceFromBottom = getDistanceFromChatContentBottom(
+        el.scrollHeight,
+        el.scrollTop,
+        el.clientHeight,
+        getChatSpacerHeight(el),
+      )
+      const ANCHOR_THRESHOLD = 140
+      const isNearBottom = distanceFromBottom <= ANCHOR_THRESHOLD
+      if (isNearBottom) {
+        scrolledForContentStartKeyRef.current = key
+        el.scrollTo({ top: el.scrollTop + 120, behavior: 'smooth' })
+      }
+    }
+
+    // Update snapshot
+    contentStartSnapshotRef.current = {
+      key,
+      contentLen: nowContentLen,
+      wasThinking: nowThinkingish || Boolean(prev?.wasThinking),
+    }
+  }, [currentChat?.messages])
+
+  // Show loading while auth or config is still loading
+  const needsAuthLoading = (initialChatId || initialProjectId) && !isAuthLoaded
+  const needsLoading = needsAuthLoading || isLoadingConfig
+  if (needsLoading || !logoAnimDone) {
     return (
-      <div className="flex h-screen items-center justify-center bg-surface-chat-background px-4 font-aeonik">
+      <LogoLoading
+        isLoading={!!needsLoading}
+        onFinished={handleLogoAnimFinished}
+      />
+    )
+  }
+
+  // Show sign-in required message when accessing a cloud chat/project URL while not signed in
+  if (
+    ((initialChatId && !isLocalChatUrl) || initialProjectId) &&
+    isAuthLoaded &&
+    !isSignedIn
+  ) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-surface-chat-background px-4 font-aeonik">
         <div className="max-w-md text-center">
           <div className="mb-6 flex justify-center">
-            <TfTinSad
-              className="h-24 w-24 !text-content-secondary"
-              aria-hidden="true"
-            />
+            <div className="rounded-full bg-surface-chat p-4">
+              <TfPerson
+                className="h-8 w-8 !text-content-secondary"
+                aria-hidden="true"
+              />
+            </div>
           </div>
           <h2 className="mb-3 text-xl font-semibold text-content-primary">
-            Something went wrong
+            Sign in required
           </h2>
-          <p role="alert" className="mb-6 text-content-secondary">
-            {sessionError}
+          <p className="mb-6 text-content-secondary">
+            You need to sign in to access this chat.
+          </p>
+          <Link
+            href="/signin"
+            className="inline-block rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
+          >
+            Sign in
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  // Show decryption failed message when accessing a chat that couldn't be decrypted
+  if (initialChatId && initialChatDecryptionFailed) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-surface-chat-background px-4 font-aeonik">
+        <div className="max-w-md text-center">
+          <div className="mb-6 flex justify-center">
+            <div className="rounded-full bg-surface-chat p-4">
+              <TfLockLocked
+                className="h-8 w-8 !text-orange-500"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+          <h2 className="mb-3 text-xl font-semibold text-content-primary">
+            Unable to decrypt chat
+          </h2>
+          <p className="mb-6 text-content-secondary">
+            This chat was encrypted with a different key. You can update the key
+            in settings.
           </p>
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => clearInitialChatDecryptionFailed()}
             className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
           >
-            Try Now
+            Done
           </button>
         </div>
       </div>
     )
   }
 
-  if (!session || !logoAnimDone) {
-    return (
-      <LogoLoading isLoading={!session} onFinished={handleLogoAnimFinished} />
-    )
-  }
-
-  if (isLocalChatUrl && thread.notFound) {
+  // Show local chat not found message when accessing a local chat URL that doesn't exist
+  if (isLocalChatUrl && localChatNotFound) {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-surface-chat-background px-4 font-aeonik">
         <div className="max-w-md text-center">
@@ -1297,7 +3708,127 @@ export function ChatInterface({
     )
   }
 
-  const showChatHeader = currentChat.messages.length > 0 && !isChatHydrating
+  // Cloud chat referenced by the URL does not exist on the server.
+  if (cloudChatNotFound) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-surface-chat-background px-4 font-aeonik">
+        <div className="max-w-md text-center">
+          <div className="mb-6 flex justify-center">
+            <div className="rounded-full bg-surface-chat p-4">
+              <TfChat2
+                className="h-8 w-8 !text-content-secondary"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+          <h2 className="mb-3 text-xl font-semibold text-content-primary">
+            Chat not found
+          </h2>
+          <p className="mb-6 text-content-secondary">
+            This chat may have been deleted or is no longer available.
+          </p>
+          <Link
+            href="/"
+            className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
+          >
+            Start new chat
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  // While the chat referenced by the URL is still being fetched, show a
+  // loading screen instead of flashing the welcome screen before the chat
+  // appears. The ref keeps later in-app chat switches from re-triggering it.
+  if (
+    initialChatId &&
+    !initialUrlChatLoadedRef.current &&
+    currentChat.id !== initialChatId &&
+    !initialChatLoadFailed
+  ) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-surface-chat-background px-4 font-aeonik">
+        <PiSpinner className="h-8 w-8 animate-spin text-content-secondary" />
+        <p className="text-content-secondary">Loading chat...</p>
+      </div>
+    )
+  }
+
+  // Cloud chat failed to load due to a transient error (network, key
+  // not ready, etc.). Offer a retry instead of silently landing on a
+  // blank new chat and losing the URL.
+  if (initialChatLoadFailed) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-surface-chat-background px-4 font-aeonik">
+        <div className="max-w-md text-center">
+          <div className="mb-6 flex justify-center">
+            <div className="rounded-full bg-surface-chat p-4">
+              <TfTinSad
+                className="h-8 w-8 !text-content-secondary"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+          <h2 className="mb-3 text-xl font-semibold text-content-primary">
+            Couldn&apos;t load chat
+          </h2>
+          <p className="mb-6 text-content-secondary">
+            A network error occurred while loading this chat. Please try again.
+          </p>
+          <div className="flex justify-center gap-3">
+            <button
+              onClick={retryInitialChatLoad}
+              className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
+            >
+              Try again
+            </button>
+            <Link
+              href="/"
+              className="rounded-lg border border-border-subtle px-6 py-2.5 text-content-primary transition-colors hover:bg-surface-chat"
+            >
+              Start new chat
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state if no models are available (configuration error)
+  if (!isLoadingConfig && (configLoadFailed || models.length === 0)) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-surface-chat-background px-4 font-aeonik">
+        <div className="max-w-md text-center">
+          <div className="mb-6 flex justify-center">
+            <TfTinSad
+              className="h-24 w-24 !text-content-secondary"
+              aria-hidden="true"
+            />
+          </div>
+          <h2 className="mb-3 text-xl font-semibold text-content-primary">
+            Something went wrong
+          </h2>
+          <p className="mb-6 text-content-secondary">
+            Tinfoil Chat is experiencing some technical difficulties. We&apos;re
+            working on resolving it. Please try again later.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
+          >
+            Try Now
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const showEmptyChatGrid =
+    (currentChat?.messages.length ?? 0) === 0 && !isWaitingForResponse
+
+  const showChatHeader =
+    !!currentChat && currentChat.messages.length > 0 && !isChatHydrating
 
   const hideTopControlsOnMobile =
     windowWidth < CONSTANTS.MOBILE_BREAKPOINT &&
@@ -1357,7 +3888,7 @@ export function ChatInterface({
   const topControls = (
     <>
       {/* New chat button - only show in compact conversations with messages */}
-      {currentChat.messages.length > 0 && (
+      {currentChat?.messages && currentChat.messages.length > 0 && (
         <Link
           href={getNewChatPath({
             isLocalOnly: currentChat.isLocalOnly,
@@ -1375,10 +3906,10 @@ export function ChatInterface({
         </Link>
       )}
 
-      {!!isSignedIn &&
-        canToggleTemporaryChat(currentChat) &&
+      {canToggleTemporaryChat(currentChat) &&
         (() => {
-          const hasMessages = currentChat.messages.length > 0
+          const hasMessages =
+            !!currentChat?.messages && currentChat.messages.length > 0
           const label = isTemporaryMode
             ? hasMessages
               ? 'Save chat'
@@ -1410,19 +3941,22 @@ export function ChatInterface({
           )
         })()}
 
-      {/* Share button - a signed-in user shares a chat the harness stores,
-          or one kept on this device when the harness seals local shares */}
-      {canShare && (
-        <button
-          type="button"
-          onClick={handleOpenShareModal}
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:px-3 @3xl/conversation:py-2"
-          aria-label="Share"
-        >
-          <TfShare className="h-4 w-4" aria-hidden="true" />
-          <span className="hidden text-sm @3xl/conversation:inline">Share</span>
-        </button>
-      )}
+      {/* Share button - only show when there are messages and chat is not temporary */}
+      {!currentChat?.isTemporary &&
+        currentChat?.messages &&
+        currentChat.messages.length > 0 && (
+          <button
+            type="button"
+            onClick={handleOpenShareModal}
+            className="flex items-center justify-center gap-1.5 rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:px-3 @3xl/conversation:py-2"
+            aria-label="Share"
+          >
+            <TfShare className="h-4 w-4" aria-hidden="true" />
+            <span className="hidden text-sm @3xl/conversation:inline">
+              Share
+            </span>
+          </button>
+        )}
 
       {/* Verifier toggle button */}
       <div className="group relative">
@@ -1497,25 +4031,6 @@ export function ChatInterface({
     </>
   )
 
-  const projectSidebarChats = (projectId: string | undefined) =>
-    chats
-      .filter((c) => c.projectId === projectId)
-      .map((c) => ({
-        id: c.id,
-        title: c.title,
-        messageCount: c.isMetadataOnly
-          ? (c.messageCount ?? 0)
-          : c.messages.length,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
-        projectId: c.projectId,
-        isBlankChat: c.isBlankChat,
-        decryptionFailed: c.decryptionFailed,
-        dataCorrupted: c.dataCorrupted,
-        isTemporary: c.isTemporary,
-        activeRun: c.activeRun,
-      }))
-
   return (
     <div
       className="app-shell flex overflow-hidden bg-surface-chat-background"
@@ -1546,22 +4061,25 @@ export function ChatInterface({
       {/* URL Hash Message Handler */}
       <UrlHashMessageHandler
         isReady={
+          isAuthLoaded &&
+          !isInitialLoad &&
           !isLoadingConfig &&
           isClient &&
-          canChat &&
-          !isChatHydrating &&
+          !!currentChat &&
           hasValidatedModel &&
-          !generationBlocked
+          !currentChatIsFlagged
         }
-        onSubmit={({ text }) => {
-          handleQuery(text)
-        }}
+        onSubmit={submitMessage}
       />
 
       {/* URL Hash Settings Handler */}
       <UrlHashSettingsHandler
         isReady={
-          !isLoadingConfig && isClient && profileReady && hasValidatedModel
+          isAuthLoaded &&
+          !isLoadingConfig &&
+          isClient &&
+          !!currentChat &&
+          hasValidatedModel
         }
         onSettingsTabReady={(tab) => {
           setSettingsInitialTab(tab)
@@ -1579,7 +4097,7 @@ export function ChatInterface({
 
       {/* Temporary chat indicator (top-left, fills inner corner). Once a
           chat has messages the header's metadata line marks it instead. */}
-      {(isTemporaryMode || currentChat.isTemporary) && !showChatHeader && (
+      {(isTemporaryMode || currentChat?.isTemporary) && !showChatHeader && (
         <div
           inert={isSidebarCoveringChat}
           className="pointer-events-none fixed top-0 z-40 flex items-center gap-1.5 rounded-br-lg bg-[hsl(18,90%,92%)] py-7 pl-16 pr-3 text-xs font-medium text-orange-600 transition-all duration-300 dark:bg-[hsl(20,40%,15%)] dark:text-orange-500 md:py-2 md:pl-3"
@@ -1637,8 +4155,6 @@ export function ChatInterface({
             >
               {isProjectMode && activeProject ? (
                 <ProjectSidebar
-                  hasMore={!!thread.cursor}
-                  onLoadMore={() => thread.refresh(thread.cursor ?? undefined)}
                   isOpen={isSidebarOpen}
                   setIsOpen={setIsSidebarOpen}
                   project={activeProject}
@@ -1648,9 +4164,24 @@ export function ChatInterface({
                   onExitProjectWhileDragging={handleExitProjectWhileDragging}
                   onNewChat={() => createNewChat(false, true)}
                   onSelectChat={handleChatSelect}
-                  currentChatId={currentChat.id}
+                  currentChatId={currentChat?.id}
                   isClient={isClient}
-                  chats={projectSidebarChats(activeProject.id)}
+                  chats={chats
+                    .filter((c) => c.projectId === activeProject.id)
+                    .map((c) => ({
+                      id: c.id,
+                      title: c.title,
+                      messageCount: c.isMetadataOnly
+                        ? (c.messageCount ?? 0)
+                        : c.messages.length,
+                      createdAt: c.createdAt,
+                      updatedAt: c.updatedAt,
+                      projectId: c.projectId,
+                      isBlankChat: c.isBlankChat,
+                      decryptionFailed: c.decryptionFailed,
+                      dataCorrupted: c.dataCorrupted,
+                      isTemporary: c.isTemporary,
+                    }))}
                   deleteChat={deleteChat}
                   updateChatTitle={updateChatTitle}
                   onEncryptionKeyClick={
@@ -1668,14 +4199,17 @@ export function ChatInterface({
                   }))}
                   onSettingsClick={handleOpenSettingsModal}
                   onReportBugClick={handleOpenReportBugModal}
+                  isPremium={isPremium}
                   favoriteChats={favoriteChats}
                   pinnedChatIds={pinnedChatIds}
                   onToggleFavorite={handleToggleFavorite}
                   onRemoveFavorite={unpinChat}
                   onOpenFavorite={handleOpenFavorite}
-                  cloudSyncEnabled={cloudSyncEnabled}
+                  cloudSyncEnabled={cloudSyncSettingEnabled}
                   windowWidth={windowWidth}
-                  isPremium={isPremium}
+                  onManualSync={handleManualSync}
+                  isSyncing={syncing}
+                  lastSyncFailed={lastSyncFailed}
                 />
               ) : (
                 <ProjectSidebar
@@ -1691,21 +4225,39 @@ export function ChatInterface({
                   onExitProjectWhileDragging={handleExitProjectWhileDragging}
                   onNewChat={() => {}}
                   onSelectChat={handleChatSelect}
-                  currentChatId={currentChat.id}
+                  currentChatId={currentChat?.id}
                   isClient={isClient}
-                  chats={projectSidebarChats(loadingProject?.id)}
+                  chats={chats
+                    .filter((c) => c.projectId === loadingProject?.id)
+                    .map((c) => ({
+                      id: c.id,
+                      title: c.title,
+                      messageCount: c.isMetadataOnly
+                        ? (c.messageCount ?? 0)
+                        : c.messages.length,
+                      createdAt: c.createdAt,
+                      updatedAt: c.updatedAt,
+                      projectId: c.projectId,
+                      isBlankChat: c.isBlankChat,
+                      decryptionFailed: c.decryptionFailed,
+                      dataCorrupted: c.dataCorrupted,
+                      isTemporary: c.isTemporary,
+                    }))}
                   deleteChat={deleteChat}
                   updateChatTitle={updateChatTitle}
                   onSettingsClick={handleOpenSettingsModal}
                   onReportBugClick={handleOpenReportBugModal}
+                  isPremium={isPremium}
                   favoriteChats={favoriteChats}
                   pinnedChatIds={pinnedChatIds}
                   onToggleFavorite={handleToggleFavorite}
                   onRemoveFavorite={unpinChat}
                   onOpenFavorite={handleOpenFavorite}
-                  cloudSyncEnabled={cloudSyncEnabled}
+                  cloudSyncEnabled={cloudSyncSettingEnabled}
                   windowWidth={windowWidth}
-                  isPremium={isPremium}
+                  onManualSync={handleManualSync}
+                  isSyncing={syncing}
+                  lastSyncFailed={lastSyncFailed}
                 />
               )}
             </motion.div>
@@ -1722,8 +4274,6 @@ export function ChatInterface({
                 isOpen={isSidebarOpen}
                 setIsOpen={setIsSidebarOpen}
                 chats={chats}
-                hasMore={!!thread.cursor}
-                onLoadMore={() => thread.refresh(thread.cursor ?? undefined)}
                 currentChat={currentChat}
                 isDarkMode={isDarkMode}
                 pixelateSidebarChatTitles={pixelateSidebarChatTitles}
@@ -1752,6 +4302,12 @@ export function ChatInterface({
                 backupWarningNeedsRecovery={manualRecoveryNeeded}
                 onDismissBackupWarning={dismissBackupWarning}
                 onChatsUpdated={reloadChats}
+                isInitialChatPageReady={
+                  chatPagination.userId === authUserId && chatPagination.isReady
+                }
+                onManualSync={handleManualSync}
+                isSyncing={syncing}
+                lastSyncFailed={lastSyncFailed}
                 isProjectMode={isProjectMode}
                 activeProjectName={activeProject?.name}
                 onEnterProject={async (projectId, projectName) => {
@@ -1767,12 +4323,8 @@ export function ChatInterface({
                 onCreateProject={handleCreateProject}
                 onMoveChatToProject={handleMoveChatToProject}
                 onRemoveChatFromProject={handleRemoveChatFromProject}
-                onConvertChatToCloud={
-                  canMoveChats ? handleConvertChatToCloud : undefined
-                }
-                onConvertChatToLocal={
-                  canMoveChats ? handleConvertChatToLocal : undefined
-                }
+                onConvertChatToCloud={handleConvertChatToCloud}
+                onConvertChatToLocal={handleConvertChatToLocal}
                 onSettingsClick={handleOpenSettingsModal}
                 onReportBugClick={handleOpenReportBugModal}
                 onSearchClick={handleOpenSearchModal}
@@ -1781,6 +4333,7 @@ export function ChatInterface({
                 onRemoveFavorite={unpinChat}
                 onOpenFavorite={handleOpenFavorite}
                 windowWidth={windowWidth}
+                chatDecryptionProgress={decryptionProgress}
               />
             </motion.div>
           )}
@@ -1840,7 +4393,7 @@ export function ChatInterface({
           onClose={() => setIsSearchModalOpen(false)}
           chats={chats}
           projects={projects}
-          searchEnabled={cloudSyncEnabled && keyReady}
+          searchEnabled={Boolean(isSignedIn && cloudSyncSettingEnabled)}
           isPremium={isPremium}
           onOpenChat={handleOpenFavorite}
           onOpenProject={(project) =>
@@ -1868,7 +4421,7 @@ export function ChatInterface({
         <ShareModalLazy
           isOpen={isShareModalOpen}
           onClose={() => setIsShareModalOpen(false)}
-          messages={currentChat.messages}
+          messages={currentChat?.messages || []}
           isDarkMode={isDarkMode}
           isSidebarOpen={
             isSidebarOpen && windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
@@ -1880,11 +4433,9 @@ export function ChatInterface({
               isArtifactSidebarOpen) &&
             windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
           }
-          chatTitle={currentChat.title}
-          chatCreatedAt={currentChat.createdAt}
-          chatId={currentChat.id}
-          share={thread.share}
-          loadDocumentText={thread.documentText}
+          chatTitle={currentChat?.title}
+          chatCreatedAt={currentChat?.createdAt}
+          chatId={currentChat?.id}
         />
       )}
 
@@ -1925,13 +4476,6 @@ export function ChatInterface({
             isSignedIn ? handleOpenCloudSyncSetup : undefined
           }
           onChatsUpdated={reloadChats}
-          onDeleteAllChats={thread.removeAll}
-          onAllChatsDeleted={() => createNewChat()}
-          onAllProjectsDeleted={() => {
-            exitProjectMode()
-            thread.newChat()
-            void router.push('/')
-          }}
           isSignedIn={isSignedIn}
           isPremium={isPremium}
           encryptionKey={encryptionKey}
@@ -1949,7 +4493,7 @@ export function ChatInterface({
       {/* Outside the main area so it keeps announcing while the mobile
           sidebar makes that area inert. */}
       <ChatAnnouncer
-        messages={currentChat.messages}
+        messages={currentChat?.messages || []}
         isStreaming={isStreaming}
         isWaitingForResponse={isWaitingForResponse}
       />
@@ -2012,7 +4556,6 @@ export function ChatInterface({
             {!hasVisibleChatHeader && shouldShowRateLimitBanner(rateLimit) && (
               <RateLimitBanner
                 rateLimit={rateLimit}
-                onCheckAgain={checkQuota}
                 isDarkMode={isDarkMode}
                 className="hidden md:flex"
               />
@@ -2028,7 +4571,6 @@ export function ChatInterface({
                   shouldShowRateLimitBanner(rateLimit) ? (
                     <RateLimitBanner
                       rateLimit={rateLimit}
-                      onCheckAgain={checkQuota}
                       isDarkMode={isDarkMode}
                       className="w-auto px-0"
                     />
@@ -2059,22 +4601,15 @@ export function ChatInterface({
                   setIsSidebarOpen(false)
                 }
                 setIsAskSidebarOpen(true)
-                // The chat service reads the current conversation as context
-                // for the highlighted snippet; only the quote and assistant
-                // reply are shown in the sidebar UI.
-                sidebarChat.askQuote(text)
+                // Hand the current chat transcript to the sidebar so the model
+                // can reason about the highlighted snippet in context. The
+                // transcript is sent as a hidden user message; only the quote
+                // and assistant reply are shown in the sidebar UI.
+                sidebarChat.askQuote(text, currentChat?.messages ?? [])
               }}
             />
             <div className="relative flex min-h-0 flex-1">
               <AnimatePresence>{isForking && <ForkOverlay />}</AnimatePresence>
-              {thread.hasOlder && (
-                <button
-                  className="absolute top-16 z-10 rounded-full border border-border-subtle px-4 py-2 text-content-secondary"
-                  onClick={() => void thread.older().catch(thread.report)}
-                >
-                  Load earlier messages
-                </button>
-              )}
               <div
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
@@ -2108,7 +4643,14 @@ export function ChatInterface({
                     </div>
                   ) : (
                     <ChatMessages
-                      messages={currentChat.messages}
+                      messages={currentChat?.messages || []}
+                      pendingRecoveries={currentChat?.pendingRecoveries}
+                      recoveryDrafts={recoveryDrafts}
+                      activeRecoveryTurnIds={activeRecoveryTurnIds}
+                      reasoningHistoryPolicy={reasoningHistoryPolicy}
+                      contextWindowTokens={contextWindowTokens}
+                      systemPromptTokens={systemPromptTokens}
+                      pendingContextTokens={pendingContextTokens}
                       isDarkMode={isDarkMode}
                       chatId={currentChat.id}
                       isWaitingForResponse={isWaitingForResponse}
@@ -2137,23 +4679,22 @@ export function ChatInterface({
                       onEditMessage={editMessage}
                       onRegenerateMessage={regenerateMessage}
                       onDeleteMessage={
-                        canChangeMessages && currentChat.messages.length > 1
+                        currentChat.messages.length > 1
                           ? deleteMessage
                           : undefined
                       }
-                      onEditAssistantMessage={
-                        canChangeMessages ? editAssistantMessage : undefined
-                      }
+                      onEditAssistantMessage={editAssistantMessage}
                       onContinueAssistantMessage={continueAssistantMessage}
                       onForkMessage={
-                        canFork && !isStreaming && !isForking
-                          ? handleForkMessage
-                          : undefined
+                        currentChat.isTemporary ||
+                        currentChat.isBlankChat ||
+                        isStreaming ||
+                        isForking ||
+                        loadingState !== 'idle'
+                          ? undefined
+                          : handleForkMessage
                       }
                       onRetryToolCall={retryToolCall}
-                      loadImage={thread.loadImage}
-                      loadDocumentText={thread.documentText}
-                      imagesUnsaved={!api.userId && !isTemporaryMode}
                       showScrollButton={showScrollButton}
                       webSearchEnabled={effectiveWebSearchEnabled}
                       onWebSearchToggle={
@@ -2187,7 +4728,7 @@ export function ChatInterface({
             {isClient &&
               !isChatHydrating &&
               (windowWidth < CONSTANTS.MOBILE_BREAKPOINT ||
-                currentChat.messages.length > 0) && (
+                (currentChat?.messages && currentChat.messages.length > 0)) && (
                 <div
                   ref={inputAreaRef}
                   data-chat-input-area
@@ -2216,7 +4757,7 @@ export function ChatInterface({
                   />
                   {/* Scroll button - absolutely positioned above the input, and
                       placed before it so focus order matches what is on screen. */}
-                  {showScrollButton && currentChat.messages.length > 0 && (
+                  {showScrollButton && currentChat?.messages?.length > 0 && (
                     <div className="pointer-events-auto absolute -top-[50px] left-1/2 z-10 -translate-x-1/2">
                       <button
                         onClick={() => scrollToLastMessage()}
@@ -2231,7 +4772,7 @@ export function ChatInterface({
                       </button>
                     </div>
                   )}
-                  <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 @3xl/conversation:px-8">
+                  <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 md:px-8">
                     <SafeguardFlagBanner
                       chatId={currentChat.id}
                       isDarkMode={isDarkMode}
@@ -2260,7 +4801,6 @@ export function ChatInterface({
                       {shouldShowRateLimitBanner(rateLimit) && (
                         <RateLimitBanner
                           rateLimit={rateLimit}
-                          onCheckAgain={checkQuota}
                           isDarkMode={isDarkMode}
                           className="mb-2 flex @3xl/conversation:hidden"
                           pillClassName="rounded-full border"
@@ -2268,7 +4808,6 @@ export function ChatInterface({
                       )}
                       {streamError && (
                         <StreamErrorBanner
-                          key={streamError.timestamp}
                           error={streamError}
                           onDismiss={dismissStreamError}
                           onRetry={retryLastMessage}
@@ -2278,9 +4817,7 @@ export function ChatInterface({
                       <MessageQueue
                         queue={queuedMessages}
                         onRemove={removeQueuedMessage}
-                        onSend={(queueId) => {
-                          void thread.sendQueued(queueId).catch(thread.report)
-                        }}
+                        onSend={sendQueuedMessage}
                       />
                       <ChatInput
                         input={input}
@@ -2307,7 +4844,7 @@ export function ChatInterface({
                           // With a preset active, the preset tab attached to
                           // the input card already opens the library; the
                           // mobile Prompts button would collide with it.
-                          !currentChat.messages.length && !activePreset ? (
+                          !currentChat?.messages?.length && !activePreset ? (
                             <div className="mb-3 md:hidden">
                               <PromptPresetSuggestions
                                 activePreset={activePreset}
@@ -2317,7 +4854,18 @@ export function ChatInterface({
                             </div>
                           ) : undefined
                         }
-                        hasMessages={currentChat.messages.length > 0}
+                        hasMessages={
+                          currentChat?.messages &&
+                          currentChat.messages.length > 0
+                        }
+                        audioModel={
+                          (
+                            models.find(
+                              (m) =>
+                                m.modelName === CONSTANTS.DEFAULT_AUDIO_MODEL,
+                            ) || models.find((m) => m.type === 'audio')
+                          )?.modelName
+                        }
                         modelSelectorButton={
                           models.length > 0 &&
                           selectedModel &&
@@ -2391,7 +4939,8 @@ export function ChatInterface({
             if (passkeyFirstTimePromptAvailable) {
               dismissFirstTimePasskeyPrompt()
             }
-            if (!encryptionService.getKey() && isCloudSyncEnabled()) {
+            // If no key was set, turn off cloud sync
+            if (!encryptionService.getKey()) {
               setCloudSyncEnabled(false)
             }
           }}
@@ -2477,15 +5026,7 @@ export function ChatInterface({
 
       <AnimatePresence>
         {showOnboarding && (
-          <OnboardingView
-            key={user?.id}
-            onComplete={() => {
-              dismissOnboarding()
-              void api
-                .updateProfile({ hasSeenOnboarding: true })
-                .catch(thread.report)
-            }}
-          />
+          <OnboardingView key={authUserId} onComplete={dismissOnboarding} />
         )}
       </AnimatePresence>
 

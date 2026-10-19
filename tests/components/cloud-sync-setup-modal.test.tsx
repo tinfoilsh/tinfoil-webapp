@@ -2,6 +2,10 @@ import { CloudSyncSetupModal } from '@/components/modals/cloud-sync-setup-modal'
 import * as setupMode from '@/components/modals/cloud-sync-setup-mode'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { PasskeyTimeoutError, PrfNotSupportedError } from '@/services/passkey'
+import {
+  isCloudSyncEnabled,
+  setCloudSyncEnabled,
+} from '@/utils/cloud-sync-settings'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -207,14 +211,15 @@ describe('CloudSyncSetupModal onboarding', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('closes without activating a key when dismissed with Maybe later', () => {
+  it('does not disable an existing cloud sync setting when dismissed', () => {
     const onClose = vi.fn()
+    setCloudSyncEnabled(true)
     render(<CloudSyncSetupModal {...baseProps} onClose={onClose} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Maybe later' }))
 
+    expect(isCloudSyncEnabled()).toBe(true)
     expect(onClose).toHaveBeenCalledTimes(1)
-    expect(baseProps.onSetupComplete).not.toHaveBeenCalled()
   })
 
   it('shows a spinner while generating an encryption key', async () => {

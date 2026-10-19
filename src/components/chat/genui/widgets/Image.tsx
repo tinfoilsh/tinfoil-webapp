@@ -6,16 +6,26 @@ import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
 
 const imageSchema = z.object({
-  url: z.string(),
-  alt: z.string().optional(),
+  url: z.string().describe('Image URL'),
+  alt: z.string().optional().describe('Accessible alt text'),
   caption: z.string().optional(),
-  link: z.string().optional(),
+  link: z.string().optional().describe('Optional destination when clicked'),
 })
 
 const schema = z.object({
-  images: z.array(imageSchema).min(1),
+  images: z
+    .array(imageSchema)
+    .min(1)
+    .describe(
+      'One or more images. A single image renders large with an optional caption; multiple images render in a responsive grid.',
+    ),
   title: z.string().optional(),
-  aspectRatio: z.enum(['square', 'video', 'auto']).optional(),
+  aspectRatio: z
+    .enum(['square', 'video', 'auto'])
+    .optional()
+    .describe(
+      'Single-image only. Container shape: square (1:1), video (16:9), or auto. Ignored when multiple images are provided.',
+    ),
 })
 
 type ImageWidgetArgs = z.infer<typeof schema>
@@ -319,6 +329,10 @@ function ImageGalleryRoot({ images, title, aspectRatio }: ImageWidgetArgs) {
 
 export const widget = defineGenUIWidget({
   name: 'render_image',
+  description:
+    'Display one or more images. Pass a single item for a large standalone image; pass multiple items to render a responsive grid (galleries, comparisons, multi-visual references).',
   schema,
+  promptHint:
+    'one or more images — pass a single item for a large standalone image, or multiple items for a responsive grid',
   render: (args: ImageWidgetArgs) => <ImageGalleryRoot {...args} />,
 })
