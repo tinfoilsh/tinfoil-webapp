@@ -3,7 +3,12 @@ import {
   type LocalThread,
 } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
-import type { Frame, Message, Turn } from '@/services/harness/types'
+import type {
+  AttachmentDescriptor,
+  Frame,
+  Message,
+  Turn,
+} from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -707,20 +712,8 @@ describe('local chats of a signed-in account without cloud sync', () => {
       mimeType: 'image/png',
       size: 4,
       thumbnail: 'dGh1bWI=',
-      pages: null,
-      status: 'ready',
     }
-    client.upload.mockResolvedValue({
-      ...view,
-      descriptor: {
-        id: 'att_door',
-        type: 'image',
-        fileName: 'door.png',
-        mimeType: 'image/png',
-        fileSize: 4,
-        thumbnailBase64: 'dGh1bWI=',
-      },
-    })
+    client.upload.mockResolvedValue({ attachment: view })
     client.events.mockImplementation((_path: string, input: Turn) =>
       reply(
         input.threadId!,
@@ -740,30 +733,31 @@ describe('local chats of a signed-in account without cloud sync', () => {
     const first = renderHook(() => useThread())
     await waitFor(() => expect(first.result.current.model).toBe('test-model'))
 
-    let uploaded: unknown
+    let uploaded!: AttachmentDescriptor
     await act(async () => {
       uploaded = await first.result.current.upload(
         new File([bytes], 'door.png', { type: 'image/png' }),
       )
     })
-    expect(uploaded).toEqual(view)
+    expect(uploaded).toEqual({ ...view, base64 })
     expect(client.upload).toHaveBeenCalledExactlyOnceWith(
       '/v1/attachments/upload',
       expect.any(File),
-      { local: 'true' },
+      {},
       expect.any(AbortSignal),
     )
     await act(() =>
       first.result.current.send({
         content: 'What door?',
-        attachments: ['att_door'],
+        attachments: [uploaded],
       }),
     )
     const threadId = turn().threadId!
-    expect(turn().attachments).toEqual(['att_door'])
+    expect(turn().attachments).toEqual([{ ...view, base64 }])
     const descriptor = {
       id: 'att_door',
       type: 'image',
+      kind: 'image',
       fileName: 'door.png',
       mimeType: 'image/png',
       fileSize: 4,

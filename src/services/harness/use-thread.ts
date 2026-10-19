@@ -42,13 +42,13 @@ import {
   transferInFlight,
 } from './transfer'
 import type {
+  AttachmentDescriptor,
   Frame,
   HarnessErrorBody,
   RateLimit,
   Thread,
   ThreadSummary,
   Turn,
-  Attachment as WireAttachment,
 } from './types'
 import { messageView, threadView } from './view-model'
 
@@ -830,6 +830,15 @@ export function useThread(
           createdAt: new Date().toISOString(),
           content: input.content ?? '',
           ...(input.quote ? { quote: input.quote } : {}),
+          ...(input.attachments?.length
+            ? {
+                attachments: input.attachments.flatMap((attachment) => {
+                  if (!('kind' in attachment)) return []
+                  const { base64: _, pages: __, ...shown } = attachment
+                  return [shown]
+                }),
+              }
+            : {}),
         },
       ],
     }
@@ -840,6 +849,7 @@ export function useThread(
     if (runsLocally() && starting.current) return
     if (idRef.current && moving.current.has(idRef.current)) return
     setFailure(null)
+    rememberSent(fields.attachments)
     lastTurn.current = {
       kind: fields.kind ?? 'send',
       messageId: fields.messageId,
@@ -1060,29 +1070,38 @@ export function useThread(
     setLocalThreads([])
     return { cloudDeletionCompleted }
   }
-  async function upload(file: File): Promise<WireAttachment> {
-    if (!runsLocally())
-      return api.upload<WireAttachment>('/v1/attachments/upload', file, {
-        ephemeral: String(temporary),
-        ...(idRef.current ? { threadId: idRef.current } : {}),
-      })
-    const { descriptor, ...view } = await api.upload<
-      WireAttachment & { descriptor: unknown }
-    >('/v1/attachments/upload', file, { local: 'true' }, undefined, false)
-    // The harness keeps an upload's image bytes only briefly; a local
-    // thread sends them back with later turns.
-    const base64 =
-      view.kind === 'image'
-        ? uint8ArrayToBase64(new Uint8Array(await file.arrayBuffer()))
-        : undefined
-    const attachment = localAttachment(descriptor, base64)
-    uploads.current.set(attachment.id, attachment)
-    if (base64)
-      images.current.set(attachment.id, {
-        base64,
-        mimeType: attachment.mimeType,
-      })
-    return view
+  // Converts a file into the descriptor the turn that uses it sends. The
+  // harness keeps nothing of an upload, so an image keeps its bytes.
+  async function upload(file: File): Promise<AttachmentDescriptor> {
+    const { attachment } = await api.upload<{
+      attachment: AttachmentDescriptor
+    }>('/v1/attachments/upload', file, {}, undefined, false)
+    if (attachment.kind !== 'image') return attachment
+    return {
+      ...attachment,
+      base64: uint8ArrayToBase64(new Uint8Array(await file.arrayBuffer())),
+    }
+  }
+  // The attachments a turn sends stay readable in the view until the chat
+  // stores them: a document's text, and an image's bytes, which a chat on
+  // this device keeps.
+  function rememberSent(attachments: Turn['attachments'] = []) {
+    for (const attachment of attachments) {
+      if (!('kind' in attachment)) continue
+      uploads.current.set(
+        attachment.id,
+        localAttachment({
+          ...attachment,
+          fileSize: attachment.size,
+          thumbnailBase64: attachment.thumbnail,
+        }),
+      )
+      if (attachment.base64)
+        images.current.set(attachment.id, {
+          base64: attachment.base64,
+          mimeType: attachment.mimeType,
+        })
+    }
   }
   // An attachment of the open chat. The harness finds a stored chat's
   // attachments under the chat; only a fresh upload resolves without it.

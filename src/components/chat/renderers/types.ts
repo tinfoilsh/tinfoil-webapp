@@ -1,5 +1,6 @@
 import type { Attachment, LoadingState, Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import type { AttachmentDescriptor } from '@/services/harness/types'
 import type { JSX } from 'react'
 
 // ProcessedDocument type for chat input documents
@@ -11,6 +12,8 @@ export type ProcessedDocument = {
   isUploading?: boolean
   isUnsupported?: boolean
   attachment?: Attachment // The resolved attachment for this document
+  // What the upload returned, which the message that uses it sends.
+  descriptor?: AttachmentDescriptor
   isImageDescription?: boolean // True if content is from multimodal image description
   hasDescription?: boolean // True if a multimodal description has been generated
   isGeneratingDescription?: boolean // True while generating image description

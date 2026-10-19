@@ -1,3 +1,4 @@
+import type { DocumentPage } from '@/components/chat/types'
 import type { LocalTurnThread } from './local-threads'
 
 export type Json =
@@ -28,7 +29,22 @@ export interface Attachment {
   description?: string
   attKey?: string
   pages?: number | null
-  status: string
+  status?: string
+}
+
+// An attachment as an upload returns it and a turn sends it. The harness
+// keeps nothing of an upload, so a turn carries an image's bytes.
+export interface AttachmentDescriptor {
+  id: string
+  kind: string
+  fileName: string
+  mimeType: string
+  size: number
+  thumbnail?: string | null
+  textContent?: string
+  description?: string
+  pages?: DocumentPage[]
+  base64?: string
 }
 
 export interface TimelineBlock {
@@ -177,7 +193,8 @@ export interface Turn {
   messageId?: string
   toolCallId?: string
   resolution?: { text: string; data?: Json }
-  attachments?: string[]
+  // New uploads, or an attachment the stored chat has, by id.
+  attachments?: (AttachmentDescriptor | { id: string })[]
   widgets?: string[]
   options?: {
     model?: string

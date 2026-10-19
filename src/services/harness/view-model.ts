@@ -10,7 +10,18 @@ import type {
   Message as WireMessage,
 } from './types'
 
-export function attachmentView(a: WireAttachment): Attachment {
+export function attachmentView(
+  a: Pick<
+    WireAttachment,
+    | 'id'
+    | 'kind'
+    | 'fileName'
+    | 'mimeType'
+    | 'size'
+    | 'textContent'
+    | 'thumbnail'
+  >,
+): Attachment {
   return {
     id: a.id,
     type: a.kind === 'image' ? 'image' : 'document',

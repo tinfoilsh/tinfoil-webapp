@@ -502,7 +502,7 @@ export function ChatInterface({
     const result = handleQuery(input, {
       quote: quote ?? undefined,
       attachments: processedDocuments.flatMap((d) =>
-        d.attachment ? [d.attachment.id] : [],
+        d.descriptor ? [d.descriptor] : [],
       ),
     })
     if (result) {
@@ -862,15 +862,16 @@ export function ChatInterface({
       { id: localId, name: file.name, time: new Date(), isUploading: true },
     ])
     try {
-      const attachment = await thread.upload(file)
+      const descriptor = await thread.upload(file)
       setProcessedDocuments((previous) =>
         previous.map((d) =>
           d.id === localId
             ? {
-                id: attachment.id,
-                name: attachment.fileName,
+                id: descriptor.id,
+                name: descriptor.fileName,
                 time: d.time,
-                attachment: attachmentView(attachment),
+                attachment: attachmentView(descriptor),
+                descriptor,
               }
             : d,
         ),
