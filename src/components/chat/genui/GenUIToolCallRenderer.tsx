@@ -10,7 +10,6 @@ import { logError } from '@/utils/error-handling'
 import { TfRefresh1, TfStars } from '@tinfoilsh/tinfoil-icons'
 import React, { memo, useEffect, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
-import { tryParsePartialJson } from './partial-json'
 import { getGenUIWidget, renderGenUIInline } from './render'
 import { ArtifactRetryError, type ArtifactRetryErrorCode } from './retry'
 import type { GenUIToolCall } from './types'
@@ -23,28 +22,6 @@ import type { GenUIToolCall } from './types'
  */
 function prettyWidgetName(toolName: string): string {
   return toolName.replace(/^render_/, '').replace(/_/g, ' ')
-}
-
-/**
- * Pull a short human-readable hint out of partially-streamed tool
- * arguments. We try the small set of fields most widgets surface as
- * their primary label so the tracer can show "Generating chart: Sales
- * by region" rather than a generic spinner. Returns null when nothing
- * useful has streamed yet.
- */
-function extractPartialHint(parsed: unknown): string | null {
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return null
-  }
-  const obj = parsed as Record<string, unknown>
-  const candidates = ['title', 'question', 'description', 'label', 'name']
-  for (const key of candidates) {
-    const value = obj[key]
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value.trim()
-    }
-  }
-  return null
 }
 
 interface GenUIToolCallRendererProps {
@@ -268,14 +245,10 @@ class GenUIWidgetErrorBoundary extends React.Component<
 }
 
 /**
- * Live tracer shown while the model is streaming a GenUI tool call.
- *
- * Replaces a static spinner with the widget name and a title when one has
- * streamed far enough to parse safely.
+ * Tracer shown while the model is streaming a GenUI tool call. The chat
+ * service sends a widget's arguments only once they are complete.
  */
 function StreamingToolCallTracer({ toolCall }: { toolCall: GenUIToolCall }) {
-  const partial = tryParsePartialJson(toolCall.arguments)
-  const hint = extractPartialHint(partial)
   const label = prettyWidgetName(toolCall.name)
 
   return (
@@ -287,7 +260,6 @@ function StreamingToolCallTracer({ toolCall }: { toolCall: GenUIToolCall }) {
         />
         <span className="text-sm font-medium text-content-primary">
           Generating {label}
-          {hint ? `: ${hint}` : null}
         </span>
       </div>
     </div>
