@@ -16,8 +16,6 @@
 
 /** Sentinel If-Match values; see controlplane/pkg/contract/sentinels.go. */
 export const IF_MATCH_SENTINELS = {
-  /** "Create only" — succeeds only if no row exists yet (blob scope). */
-  CreateOnly: '0',
   /** "Any key" — succeeds only if no key is registered for the user. */
   AnyKey: '*',
 } as const

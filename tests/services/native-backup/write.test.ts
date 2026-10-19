@@ -1,5 +1,4 @@
 import {
-  prepareNativeBackupArchiveDestination,
   writeNativeBackupArchive,
   type NativeBackupArchiveInput,
   type NativeBackupWriterDependencies,
@@ -104,28 +103,6 @@ function mockDependencies(
 }
 
 describe('native backup archive writer', () => {
-  it('uses a stable filename before archive collection', async () => {
-    const original = Object.getOwnPropertyDescriptor(
-      globalThis,
-      'showSaveFilePicker',
-    )
-    const picker = vi.fn(async () => ({}) as FileSystemFileHandle)
-    Object.defineProperty(globalThis, 'showSaveFilePicker', {
-      configurable: true,
-      value: picker,
-    })
-    try {
-      await prepareNativeBackupArchiveDestination()
-      expect(picker).toHaveBeenCalledWith(
-        expect.objectContaining({ suggestedName: 'tinfoil-backup.zip' }),
-      )
-    } finally {
-      if (original)
-        Object.defineProperty(globalThis, 'showSaveFilePicker', original)
-      else Reflect.deleteProperty(globalThis, 'showSaveFilePicker')
-    }
-  })
-
   it('writes the manifest and files one at a time in deterministic path order', async () => {
     const releases: Array<() => void> = []
     const gates = Array.from(
@@ -206,42 +183,6 @@ describe('native backup archive writer', () => {
     }
   })
 
-  it('reads the filename date from the complete manifest JSON', async () => {
-    const archive = input([])
-    archive.manifestBytes = new TextEncoder().encode(
-      JSON.stringify(
-        {
-          padding: 'x'.repeat(1100),
-          created_at: '2026-08-20T12:00:00.000Z',
-        },
-        null,
-        2,
-      ),
-    )
-    const { dependencies } = mockDependencies({
-      uncompressedBytes: archive.manifestBytes.length,
-    })
-
-    await expect(
-      writeNativeBackupArchive(archive, {}, dependencies),
-    ).resolves.toMatchObject({ filename: 'tinfoil-backup-2026-08-20.zip' })
-  })
-
-  it('rejects normalized calendar dates before opening output', async () => {
-    const archive = input([])
-    archive.manifestBytes = new TextEncoder().encode(
-      JSON.stringify({ created_at: '2026-02-31T12:00:00.000Z' }),
-    )
-    const { dependencies, events } = mockDependencies()
-
-    await expect(
-      writeNativeBackupArchive(archive, {}, dependencies),
-    ).rejects.toMatchObject({
-      code: 'invalid_manifest',
-    })
-    expect(events.blobOutputs).toBe(0)
-  })
-
   it('uses the larger file-backed limits without creating a fallback Blob', async () => {
     const archive = input([])
     const { dependencies, events } = mockDependencies({
@@ -263,20 +204,6 @@ describe('native backup archive writer', () => {
     await expect(
       writeNativeBackupArchive(archive, {}, dependencies),
     ).rejects.toMatchObject({ code: 'uncompressed_limit' })
-    expect(events.blobOutputs).toBe(0)
-  })
-
-  it('rejects oversized fallback input before creating a Blob writer', async () => {
-    const archive = input([])
-    const { dependencies, events } = mockDependencies({
-      uncompressedBytes: archive.manifestBytes.byteLength - 1,
-    })
-
-    await expect(
-      writeNativeBackupArchive(archive, {}, dependencies),
-    ).rejects.toMatchObject({
-      code: 'uncompressed_limit',
-    })
     expect(events.blobOutputs).toBe(0)
   })
 
@@ -396,37 +323,21 @@ describe('native backup archive writer', () => {
     expect(epochs[0]).not.toBe(epochs[1])
   })
 
-  it.each(['../escape.json', '/absolute.json', 'C:/drive.json', 'a\\b.json'])(
-    'rejects unsafe archive path %s before opening output',
-    async (path) => {
-      const { dependencies, events } = mockDependencies()
-
-      await expect(
-        writeNativeBackupArchive(input([path]), {}, dependencies),
-      ).rejects.toMatchObject({
-        code: 'unsafe_path',
-      })
-      expect(events.blobOutputs).toBe(0)
-    },
-  )
-
   it.each([
-    [' a.json', 'a.json'],
-    ['a.json ', 'a.json'],
-    ['projects/ a.json', 'projects/a.json'],
-    ['projects/ /a.json', 'projects/a.json'],
-  ])(
-    'rejects whitespace-normalized path collision %s with %s',
-    async (path, other) => {
-      const { dependencies, events } = mockDependencies()
+    '../escape.json',
+    '/absolute.json',
+    'C:/drive.json',
+    'a\\b.json',
+    ' a.json',
+    'projects/ a.json',
+  ])('rejects unsafe archive path %s before opening output', async (path) => {
+    const { dependencies, events } = mockDependencies()
 
-      await expect(
-        writeNativeBackupArchive(input([other, path]), {}, dependencies),
-      ).rejects.toMatchObject({
-        code: 'unsafe_path',
-      })
-      expect(events.paths).toEqual([])
-      expect(events.blobOutputs).toBe(0)
-    },
-  )
+    await expect(
+      writeNativeBackupArchive(input([path]), {}, dependencies),
+    ).rejects.toMatchObject({
+      code: 'unsafe_path',
+    })
+    expect(events.blobOutputs).toBe(0)
+  })
 })

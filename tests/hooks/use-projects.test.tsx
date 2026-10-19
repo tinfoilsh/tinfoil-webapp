@@ -1,9 +1,8 @@
 import { PROJECTS_CHANGED, useProjects } from '@/hooks/use-projects'
-import type { HarnessClient } from '@/services/harness/client'
-import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { beforeEach, expect, it, vi, type Mock } from 'vitest'
+import { client, signIn } from '../harness-fixture'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -24,14 +23,11 @@ const project = (id: string) => ({
 const ALPHA = project('alpha')
 const BETA = project('beta')
 
-let post: ReturnType<typeof vi.fn>
+let post: Mock
 
 beforeEach(() => {
-  post = vi.fn()
-  const api = new HarnessAPI({ post } as unknown as HarnessClient, 'alice')
-  vi.spyOn(api, 'key').mockReturnValue('Y29udGVudC1rZXk=')
-  activateAPI(api)
-  publish({ keyReady: true, profileReady: true })
+  signIn()
+  post = client.post
 })
 
 it('keeps the list read after a change when an earlier read finishes last', async () => {
