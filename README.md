@@ -17,7 +17,7 @@ A static [Next.js](https://nextjs.org/) app (TypeScript, [Tailwind CSS](https://
 
 ## Development
 
-See **[dev.md](./dev.md)** for environment setup, the local workflow, Dev Simulator commands, controlplane mocks, safeguard testing, and the release process.
+See **[DEVELOPMENT.md](./DEVELOPMENT.md)** for environment setup, the local workflow, Dev Simulator commands, controlplane mocks, safeguard testing, and the release process.
 
 ## Reporting Vulnerabilities
 
