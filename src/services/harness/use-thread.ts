@@ -1371,6 +1371,7 @@ export function useThread(
     // which the harness answers with the run it may already have started.
     if (pending.current) {
       const { input, run } = pending.current
+      if (run) starting.current = run
       return stream(
         '/v1/threads/turn',
         run ? input : { ...input, key: contentKey() },
