@@ -1295,6 +1295,58 @@ describe('cloud chats', () => {
     })
   })
 
+  it('show as stored, without an error, once the harness no longer has their run', async () => {
+    signIn('alice', true)
+    const stored = summary('cloud-thread', 'Stored')
+    const question = {
+      id: 'u1',
+      role: 'user',
+      createdAt: 't1',
+      content: 'Question',
+    }
+    const answer = {
+      id: 'a1',
+      role: 'assistant',
+      createdAt: 't2',
+      timeline: [{ id: 'b1', type: 'content', content: 'Committed answer' }],
+    }
+    const reads = [
+      {
+        ...stored,
+        activeRun: { runId: 'run-1', expiresAt: '2026-05-01T10:10:00Z' },
+        messages: [question],
+        hasOlder: false,
+      },
+      { ...stored, messages: [question, answer], hasOlder: false },
+    ]
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      if (path === '/v1/threads/get') return reads.shift()
+      throw new Error(`Unexpected ${path}`)
+    })
+    client.events.mockImplementationOnce(async function* () {
+      throw new HarnessError(
+        { code: 'RUN_NOT_FOUND', message: 'The run is not running here' },
+        404,
+      )
+    })
+
+    const { result } = renderHook(() => useThread(stored.id))
+
+    await waitFor(() =>
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+        'Question',
+        'Committed answer',
+      ]),
+    )
+    expect(client.events.mock.calls[0].slice(0, 2)).toEqual([
+      '/v1/threads/follow',
+      { key: KEY, threadId: stored.id, runId: 'run-1' },
+    ])
+    expect(result.current.error).toBe('')
+    expect(result.current.state.status).toBe('idle')
+  })
+
   it('keep the chat list when a chat opens from its link', async () => {
     signIn('alice', true)
     const listed = [summary('cloud-a', 'First'), summary('cloud-b', 'Second')]

@@ -78,7 +78,9 @@ export interface ThreadSummary {
   pinned: boolean
   webSearchEnabled: boolean
   messageCount: number
-  activeRun: { runId: string; lastEventId: number } | null
+  // A hint that a run may be live, set when it starts and cleared when it
+  // commits. It never blocks an action.
+  activeRun: { runId: string; expiresAt: string } | null
 }
 
 export interface Thread extends ThreadSummary {

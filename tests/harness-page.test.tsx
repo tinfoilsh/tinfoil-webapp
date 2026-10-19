@@ -110,24 +110,39 @@ it('retries an ambiguous initial request with its original nonce and input', asy
   expect(client.events.mock.calls[1][1]).toEqual(client.events.mock.calls[0][1])
   expect(result.current.chat.messages).toHaveLength(2)
 })
-it('reattaches an accepted turn by run id and last event cursor', async () => {
+it('reattaches an accepted turn by its run, which replays from its start', async () => {
+  const chunk = (id: number, delta: string): Frame => ({
+    id,
+    event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a', delta },
+  })
   client.events
     .mockImplementationOnce(async function* () {
       yield started
       yield messages
+      yield chunk(2, ', and more')
       throw new TypeError('connection closed')
     })
     .mockImplementationOnce(async function* () {
-      yield finished
+      yield started
+      yield messages
+      yield chunk(2, ', and more')
+      yield chunk(3, ', and the end')
+      yield { ...finished, id: 4 }
     })
   const { result } = renderHook(() => useThread())
   await act(() => result.current.send({ content: 'private question' }))
   await act(() => result.current.reconnect())
-  expect(client.events.mock.calls[1][0]).toBe('/v1/threads/follow')
-  expect(client.events.mock.calls[1][1]).toMatchObject({
-    threadId: (client.events.mock.calls[0][1] as Turn).threadId,
-    runId: 'run-1',
-  })
-  expect(client.events.mock.calls[1][3]).toBe(1)
-  expect(result.current.chat.messages).toHaveLength(2)
+  expect(client.events.mock.calls[1]).toEqual([
+    '/v1/threads/follow',
+    {
+      threadId: (client.events.mock.calls[0][1] as Turn).threadId,
+      runId: 'run-1',
+    },
+    expect.any(AbortSignal),
+  ])
+  expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+    'private question',
+    'private answer, and more, and the end',
+  ])
+  expect(result.current.state.status).toBe('idle')
 })

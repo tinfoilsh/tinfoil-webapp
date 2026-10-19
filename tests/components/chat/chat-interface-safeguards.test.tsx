@@ -139,7 +139,7 @@ describe('a chat the safeguards flagged', () => {
       if (path === '/v1/threads/get')
         return {
           ...structuredClone(thread),
-          activeRun: { runId: 'run-1', lastEventId: 0 },
+          activeRun: { runId: 'run-1', expiresAt: '2026-04-01T10:00:00Z' },
         }
       if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
       if (['/v1/threads/cancel', '/v1/threads/queue/remove'].includes(path))
@@ -171,7 +171,6 @@ describe('a chat the safeguards flagged', () => {
         '/v1/threads/follow',
         expect.objectContaining({ runId: 'run-1' }),
         expect.any(AbortSignal),
-        undefined,
       ),
     )
     expect(

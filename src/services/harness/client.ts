@@ -81,21 +81,11 @@ export class HarnessClient {
     path: string,
     body: string | FormData,
     signal?: AbortSignal,
-    lastEventId?: number,
   ): Promise<Response> {
     if (!/^\/v1\/(?:[a-z-]+\/)*[a-z-]+$/.test(path)) {
       throw new HarnessError({
         code: 'BAD_REQUEST',
         message: 'Invalid chat service path.',
-      })
-    }
-    if (
-      lastEventId !== undefined &&
-      (!Number.isSafeInteger(lastEventId) || lastEventId < 0)
-    ) {
-      throw new HarnessError({
-        code: 'BAD_REQUEST',
-        message: 'Invalid run cursor.',
       })
     }
     signal?.throwIfAborted()
@@ -114,8 +104,6 @@ export class HarnessClient {
       if (typeof body === 'string')
         headers.set('Content-Type', 'application/json')
       if (token) headers.set('Authorization', `Bearer ${token}`)
-      if (lastEventId !== undefined)
-        headers.set('Last-Event-ID', String(lastEventId))
       const response = await this.secure.fetch(this.origin + path, {
         method: 'POST',
         headers,
@@ -210,18 +198,13 @@ export class HarnessClient {
   ): Promise<Response> {
     return this.request(path, JSON.stringify(input), signal)
   }
+  // A run's events. Following a run replays it from its first frame.
   async *events(
     path: '/v1/threads/turn' | '/v1/threads/follow',
     input: Turn | { key?: string; threadId: string; runId: string },
     signal?: AbortSignal,
-    lastEventId?: number,
   ): AsyncGenerator<Frame> {
-    const response = await this.request(
-      path,
-      JSON.stringify(input),
-      signal,
-      lastEventId,
-    )
+    const response = await this.request(path, JSON.stringify(input), signal)
     if (
       !response.headers
         .get('Content-Type')

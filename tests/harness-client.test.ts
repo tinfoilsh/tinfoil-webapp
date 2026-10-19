@@ -412,16 +412,15 @@ describe('attested harness transport', () => {
         headers: { 'Content-Type': 'text/event-stream' },
       }),
     )
-    for await (const frame of client.events(
-      '/v1/threads/follow',
-      { threadId: 't', runId: 'r' },
-      undefined,
-      0,
-    ))
+    for await (const frame of client.events('/v1/threads/follow', {
+      threadId: 't',
+      runId: 'r',
+    }))
       expect(frame.event.type).toBe('RUN_FINISHED')
-    expect(
-      new Headers(secure.fetch.mock.calls[2][1].headers).get('Last-Event-ID'),
-    ).toBe('0')
+    expect(JSON.parse(secure.fetch.mock.calls[2][1].body)).toEqual({
+      threadId: 't',
+      runId: 'r',
+    })
   })
   it('abandons an attestation that stalls and verifies again with a new client', async () => {
     vi.useFakeTimers()

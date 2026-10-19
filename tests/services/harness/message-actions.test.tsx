@@ -258,7 +258,10 @@ describe('regenerating a reply', () => {
     signIn({ cloud: true, session })
     client.post.mockImplementation(async (path: string) =>
       path === '/v1/threads/get'
-        ? { ...cloudThread(), activeRun: { runId: 'run-1', lastEventId: 0 } }
+        ? {
+            ...cloudThread(),
+            activeRun: { runId: 'run-1', expiresAt: '2026-04-01T10:00:00Z' },
+          }
         : path === '/v1/threads/list'
           ? { threads: [], nextCursor: null }
           : {},

@@ -382,7 +382,6 @@ export function useThread(
   async function stream(
     path: '/v1/threads/turn' | '/v1/threads/follow',
     input: Turn | FollowInput,
-    lastEventId?: number,
     run?: LocalRun,
     quiet = false,
   ) {
@@ -401,7 +400,6 @@ export function useThread(
         path,
         input,
         api.signal(controller.signal, !run),
-        lastEventId,
       )) {
         const attached = version === generation.current
         if (!attached && !run) break
@@ -483,9 +481,14 @@ export function useThread(
         // follow a turn the harness did not accept.
         if (run && !run.runId) starting.current = false
         // A turn sent again after the harness applied it changed the chat
-        // already, which shows it as stored.
-        if (cause instanceof HarnessError && cause.code === 'ALREADY_APPLIED') {
+        // already, and a run the harness no longer has ended, finished or
+        // not: either way the chat shows as stored.
+        if (
+          cause instanceof HarnessError &&
+          (cause.code === 'ALREADY_APPLIED' || cause.code === 'RUN_NOT_FOUND')
+        ) {
           pending.current = null
+          forgetReceipt(runId)
           await showStored(input.threadId!).catch(report)
         }
         // A run the harness refused to follow is gone. One that could not be
@@ -560,7 +563,6 @@ export function useThread(
     void stream(
       '/v1/threads/follow',
       { threadId: thread.id, runId },
-      undefined,
       { threadId: thread.id, base: thread, store, uploads: new Map() },
       true,
     )
@@ -759,7 +761,7 @@ export function useThread(
     }
     pending.current = { input, run }
     showSent(input)
-    return stream('/v1/threads/turn', input, undefined, run)
+    return stream('/v1/threads/turn', input, run)
   }
   // A new chat takes its id with its first turn. Until the harness accepts a
   // turn of a stored chat, or a chat on this device is first saved, the chat
@@ -1373,7 +1375,6 @@ export function useThread(
       return stream(
         '/v1/threads/turn',
         run ? input : { ...input, key: contentKey() },
-        undefined,
         run,
       )
     }
@@ -1382,11 +1383,11 @@ export function useThread(
     const threadId = idRef.current
     if (threadId && runId) {
       if (!runsLocally())
-        return stream(
-          '/v1/threads/follow',
-          { key: contentKey(), threadId, runId },
-          current.current.cursors[runId],
-        )
+        return stream('/v1/threads/follow', {
+          key: contentKey(),
+          threadId,
+          runId,
+        })
       const target = storeFor(temporaryRef.current)
       const run = localRuns.current.get(threadId) ?? {
         threadId,
@@ -1394,12 +1395,7 @@ export function useThread(
         store: target,
         uploads: new Map(uploads.current),
       }
-      return stream(
-        '/v1/threads/follow',
-        { threadId, runId },
-        current.current.cursors[runId],
-        run,
-      )
+      return stream('/v1/threads/follow', { threadId, runId }, run)
     }
     if (initialId) return open(initialId, { local: !!route.local })
   }
@@ -1473,7 +1469,7 @@ export function useThread(
     const runId =
       localRuns.current.get(listed.id)?.runId ??
       (listed.id === id && running ? state.runId : undefined)
-    return runId ? { ...listed, activeRun: { runId, lastEventId: 0 } } : listed
+    return runId ? { ...listed, activeRun: { runId } } : listed
   }
   const summary = state.snapshot.thread
   const chat: Chat = summary

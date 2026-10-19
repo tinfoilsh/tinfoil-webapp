@@ -177,7 +177,7 @@ export type Message = {
 export type TitleState = 'placeholder' | 'generated' | 'manual'
 
 export type Chat = {
-  activeRun?: { runId: string; lastEventId: number } | null
+  activeRun?: { runId: string } | null
   pinned?: boolean
   id: string
   title: string

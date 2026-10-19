@@ -26,7 +26,7 @@ import { getBlankQueueId } from './message-queue-identity'
 import { TypingAnimation } from './typing-animation'
 
 export interface ChatItemData {
-  activeRun?: { runId: string; lastEventId: number } | null
+  activeRun?: { runId: string } | null
   id: string
   title: string
   isBlankChat?: boolean

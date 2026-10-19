@@ -112,7 +112,7 @@ describe('chat sidebar during streaming', () => {
     const handleChatSelect = vi.fn()
     const streamingChat: Chat = {
       ...activeChat,
-      activeRun: { runId: 'run-1', lastEventId: 0 },
+      activeRun: { runId: 'run-1' },
     }
     const sidebar = (currentChat: Chat) => (
       <SidebarHarness
