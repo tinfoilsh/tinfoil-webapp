@@ -93,7 +93,9 @@ resetChatStoresAroundEachTest()
 describe('the default prompt of a new stored chat', () => {
   it('shows the default and leaves it to the harness to stamp', async () => {
     signIn({ cloud: true, profile: { defaultPromptPresetId: QUIET.id } })
-    client.events.mockImplementation(finished('thread-1'))
+    client.events.mockImplementation((_path: string, input: Turn) =>
+      finished(input.threadId!)(),
+    )
     const { result } = renderHook(() => useThread())
     await waitFor(() => expect(result.current.model).toBe('test-model'))
     expect(result.current.presetId).toBe(QUIET.id)
@@ -104,13 +106,15 @@ describe('the default prompt of a new stored chat', () => {
     expect(sent()).not.toHaveProperty('presetId')
     expect(sent().key).toBe(KEY)
     // The chat keeps showing the prompt it started with.
-    expect(result.current.chat.id).toBe('thread-1')
+    expect(result.current.chat.id).toBe(sent().threadId)
     expect(result.current.presetId).toBe(QUIET.id)
   })
 
   it('names a prompt chosen instead, or none', async () => {
     signIn({ cloud: true, profile: { defaultPromptPresetId: QUIET.id } })
-    client.events.mockImplementation(finished('thread-1'))
+    client.events.mockImplementation((_path: string, input: Turn) =>
+      finished(input.threadId!)(),
+    )
     const { result } = renderHook(() => useThread())
     await waitFor(() => expect(result.current.model).toBe('test-model'))
 
@@ -128,7 +132,9 @@ describe('the default prompt of a new stored chat', () => {
 
   it('names the default itself in a temporary chat, which is not stamped', async () => {
     signIn({ cloud: true, profile: { defaultPromptPresetId: QUIET.id } })
-    client.events.mockImplementation(finished('thread-1'))
+    client.events.mockImplementation((_path: string, input: Turn) =>
+      finished(input.threadId!)(),
+    )
     const { result } = renderHook(() => useThread())
     await waitFor(() => expect(result.current.model).toBe('test-model'))
     act(() => result.current.setTemporary(true))
@@ -140,7 +146,9 @@ describe('the default prompt of a new stored chat', () => {
 
   it("applies the default prompt's model to a new chat", async () => {
     signIn({ cloud: true, profile: { defaultPromptPresetId: RESEARCH.id } })
-    client.events.mockImplementation(finished('thread-1'))
+    client.events.mockImplementation((_path: string, input: Turn) =>
+      finished(input.threadId!)(),
+    )
     const { result } = renderHook(() => useThread())
 
     await waitFor(() => expect(result.current.model).toBe('deep-model'))

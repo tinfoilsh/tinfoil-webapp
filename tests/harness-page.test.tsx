@@ -84,7 +84,7 @@ it('runs a signed-out first turn as a local thread with its preset and keeps it 
     sessionStorage.getItem('tinfoil-sync-session-chats') ?? '[]',
   )
   expect(saved).toMatchObject({
-    id: 'thread-1',
+    id: input.threadId,
     presetId: 'builtin:tutor',
     messages: [
       { id: 'u', content: 'private question' },
@@ -125,7 +125,7 @@ it('reattaches an accepted turn by run id and last event cursor', async () => {
   await act(() => result.current.reconnect())
   expect(client.events.mock.calls[1][0]).toBe('/v1/threads/follow')
   expect(client.events.mock.calls[1][1]).toMatchObject({
-    threadId: 'thread-1',
+    threadId: (client.events.mock.calls[0][1] as Turn).threadId,
     runId: 'run-1',
   })
   expect(client.events.mock.calls[1][3]).toBe(1)

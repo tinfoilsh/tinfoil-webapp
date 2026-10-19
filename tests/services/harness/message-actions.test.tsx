@@ -384,6 +384,42 @@ describe('retrying after an error', () => {
     expect(turn(2).content).toBe('second')
   })
 
+  it('shows the stored chat when a turn sent again was already applied', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))
+    client.events.mockImplementationOnce(async function* () {
+      throw new TypeError('Failed to fetch')
+    })
+    await act(() => result.current.send({ content: 'two' }))
+    expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+      'one',
+      'first answer',
+      'two',
+    ])
+    client.events.mockImplementationOnce(async function* () {
+      throw new HarnessError(
+        { code: 'ALREADY_APPLIED', message: 'The turn was already applied' },
+        409,
+      )
+    })
+    client.post.mockImplementation(async (path: string) =>
+      path === '/v1/threads/get' ? cloudThread() : {},
+    )
+
+    await act(() => result.current.retry())
+
+    expect(client.events.mock.calls[1][0]).toBe('/v1/threads/turn')
+    expect(turn(1)).toEqual(turn(0))
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+    ])
+    expect(result.current.error).toBe('')
+    expect(result.current.state.status).toBe('idle')
+  })
+
   it('records the exhausted quota a refused turn names', async () => {
     const { result } = openCloud()
     await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))

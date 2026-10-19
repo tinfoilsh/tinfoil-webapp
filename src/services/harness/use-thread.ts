@@ -184,6 +184,7 @@ export function useThread(
   // A new local chat until its first save lands. Its route waits, since
   // opening the route before then would find nothing on the device.
   const [unsaved, setUnsaved] = useState<string | null>(null)
+  const unsavedRef = useRef(unsaved)
   // An action that failed. The open chat's run reports how it ended through
   // its own stream, in the chat state.
   const [failure, setFailure] = useState<{
@@ -302,6 +303,7 @@ export function useThread(
     setId(null)
     setFailure(null)
     setNotFound(false)
+    unsavedRef.current = null
     setUnsaved(null)
     starting.current = false
     pending.current = null
@@ -355,8 +357,7 @@ export function useThread(
         },
       ),
     )
-    if (saved)
-      setUnsaved((threadId) => (threadId === saved.id ? null : threadId))
+    if (saved) markSaved(saved.id)
     if (saved && idRef.current === run.threadId) {
       rememberImages(saved)
       // A title the user set during the run outranks the run's title.
@@ -428,10 +429,6 @@ export function useThread(
         if (event.type === 'MESSAGES_SNAPSHOT') windowed = true
         if (event.type === 'RUN_STARTED') {
           if (run) {
-            if (event.threadId && event.threadId !== run.threadId) {
-              run.threadId = event.threadId
-              run.base = { ...run.base, id: event.threadId }
-            }
             run.runId = event.runId
             localRuns.current.set(run.threadId, run)
             setLocalRunsChanged((count) => count + 1)
@@ -439,22 +436,24 @@ export function useThread(
           if (attached) {
             pending.current = null
             starting.current = false
-            initial.current = event.threadId!
-            setId(event.threadId!)
-            idRef.current = event.threadId!
-            try {
-              sessionStorage.setItem(
-                storageKey,
-                JSON.stringify({
-                  threadId: event.threadId,
-                  runId,
-                  temporary,
-                  ...(run ? { local: true } : {}),
-                }),
-              )
-            } catch {
-              /* routing hints are optional */
-            }
+            // The harness stored a new chat's first turn.
+            if (!run) markSaved(input.threadId!)
+            // A stored chat names its run itself; a temporary chat or one on
+            // this device is rejoined after a reload through this hint.
+            if (run || temporary)
+              try {
+                sessionStorage.setItem(
+                  storageKey,
+                  JSON.stringify({
+                    threadId: input.threadId,
+                    runId,
+                    temporary,
+                    ...(run ? { local: true } : {}),
+                  }),
+                )
+              } catch {
+                /* routing hints are optional */
+              }
           }
         }
         // A run has committed nothing until its first window arrives.
@@ -483,9 +482,15 @@ export function useThread(
         // A local thread has its id before it starts, so another message may
         // follow a turn the harness did not accept.
         if (run && !run.runId) starting.current = false
+        // A turn sent again after the harness applied it changed the chat
+        // already, which shows it as stored.
+        if (cause instanceof HarnessError && cause.code === 'ALREADY_APPLIED') {
+          pending.current = null
+          await showStored(input.threadId!).catch(report)
+        }
         // A run the harness refused to follow is gone. One that could not be
         // reached keeps its receipt, so it can still be rejoined.
-        if (!quiet) failRun(cause)
+        else if (!quiet) failRun(cause)
         else if (cause instanceof HarnessError && cause.status !== undefined)
           forgetReceipt(runId)
       }
@@ -493,6 +498,29 @@ export function useThread(
       followers.current.delete(controller)
     }
     return succeeded && version === generation.current
+  }
+  // Shows the open chat as it is stored once its run is over, as when the
+  // harness no longer has the run or had applied a turn sent again. A
+  // temporary chat, or one never saved, keeps what it shows.
+  async function showStored(threadId: string) {
+    if (idRef.current !== threadId) return
+    const version = generation.current
+    let thread: Thread | null = null
+    if (localRef.current) {
+      const stored = await storeFor(temporaryRef.current).get(threadId)
+      if (stored) {
+        rememberImages(stored)
+        thread = localThreadView(stored)
+      }
+    } else if (!temporaryRef.current)
+      thread = await api.post<Thread>('/v1/threads/get', { id: threadId })
+    if (version !== generation.current) return
+    if (thread) markSaved(threadId)
+    const next = thread
+      ? initialChat(thread)
+      : { ...current.current, status: 'idle' as const, error: undefined }
+    current.current = next
+    setState(next)
   }
   // The quota a run reports, and its spend once it finishes.
   function reportQuota(event: Frame['event']) {
@@ -706,8 +734,7 @@ export function useThread(
     starting.current = true
     const version = generation.current
     const target = storeFor(temporaryRef.current)
-    const threadId =
-      idRef.current ?? pending.current?.run?.threadId ?? generateReverseId().id
+    const threadId = startChat()
     let base: LocalThread
     try {
       base = await localTranscript(threadId, target)
@@ -717,8 +744,6 @@ export function useThread(
       return false
     }
     if (version !== generation.current) return false
-    keepStartingPreset()
-    if (!idRef.current && !temporaryRef.current) setUnsaved(threadId)
     const input: Turn = {
       ...turnFields(fields),
       threadId,
@@ -733,14 +758,55 @@ export function useThread(
       uploads: new Map(uploads.current),
     }
     pending.current = { input, run }
+    showSent(input)
     return stream('/v1/threads/turn', input, undefined, run)
   }
-  // A new chat keeps showing the prompt it started with once it has an id.
-  function keepStartingPreset() {
-    if (!idRef.current && !presetChosenRef.current) choosePreset(presetId)
+  // A new chat takes its id with its first turn. Until the harness accepts a
+  // turn of a stored chat, or a chat on this device is first saved, the chat
+  // is new: its route waits, and its turns carry what a first turn sets.
+  function startChat(): string {
+    if (idRef.current) return idRef.current
+    const threadId = generateReverseId().id
+    // The chat keeps showing the prompt it started with.
+    if (!presetChosenRef.current) choosePreset(presetId)
+    initial.current = threadId
+    idRef.current = threadId
+    setId(threadId)
+    unsavedRef.current = threadId
+    setUnsaved(threadId)
+    return threadId
+  }
+  const isNewChat = () => !idRef.current || unsavedRef.current === idRef.current
+  function markSaved(threadId: string) {
+    if (unsavedRef.current !== threadId) return
+    unsavedRef.current = null
+    setUnsaved(null)
+  }
+  // A message the user sends shows at once, under the id the harness stores
+  // it with, until the run's first window replaces the messages. A message
+  // queued behind a running reply shows in the queue instead.
+  function showSent(input: Turn) {
+    const { status, messages } = current.current
+    if (input.kind !== 'send' || status === 'streaming' || status === 'queued')
+      return
+    const next = {
+      ...current.current,
+      messages: [
+        ...messages,
+        {
+          id: input.clientRequestId,
+          role: 'user' as const,
+          createdAt: new Date().toISOString(),
+          content: input.content ?? '',
+          ...(input.quote ? { quote: input.quote } : {}),
+        },
+      ],
+    }
+    current.current = next
+    setState(next)
   }
   function send(fields: Partial<Turn> = {}) {
-    if ((!idRef.current || runsLocally()) && starting.current) return
+    if (runsLocally() && starting.current) return
     if (idRef.current && moving.current.has(idRef.current)) return
     setFailure(null)
     lastTurn.current = {
@@ -748,22 +814,22 @@ export function useThread(
       messageId: fields.messageId,
     }
     if (runsLocally()) return sendLocal(fields)
+    const key = contentKey()
+    const first = isNewChat()
+    const chosen = presetChosenRef.current
     const input = turnFields({
-      key: contentKey(),
+      key,
+      threadId: startChat(),
       ephemeral: temporary,
-      projectId: idRef.current ? undefined : projectId,
+      projectId: first ? projectId : undefined,
       // The harness starts a stored chat with the default prompt when its
       // first turn names none, and keeps a first turn's choice, null too. A
       // temporary chat is not stamped, so it names the default itself.
-      presetId:
-        idRef.current || (!presetChosenRef.current && !temporary)
-          ? undefined
-          : presetId,
+      presetId: !first || (!chosen && !temporary) ? undefined : presetId,
       ...fields,
     })
-    keepStartingPreset()
     pending.current = { input: { ...input, key: undefined } }
-    if (!idRef.current) starting.current = true
+    showSent(input)
     return stream('/v1/threads/turn', input)
   }
   function cancel() {

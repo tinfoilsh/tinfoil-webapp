@@ -1241,6 +1241,60 @@ describe('cloud chats', () => {
     expect(await localThreadStore('device').list()).toEqual([])
   })
 
+  it('name a new chat and send again after its first message was refused', async () => {
+    signIn('alice', true)
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      throw new Error(`Unexpected ${path}`)
+    })
+    client.events
+      .mockImplementationOnce(async function* () {
+        throw new HarnessError(
+          { code: 'RATE_LIMITED', message: 'Chat access is busy' },
+          429,
+        )
+      })
+      .mockImplementationOnce((_path: string, input: Turn) =>
+        frames(
+          { type: 'RUN_STARTED', threadId: input.threadId!, runId: 'run-1' },
+          { type: 'RUN_FINISHED', threadId: input.threadId!, runId: 'run-1' },
+        )(),
+      )
+    const { result } = renderHook(() => useThread(null, 'project-1'))
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+
+    await act(() => result.current.send({ content: 'First try' }))
+
+    const threadId = turn().threadId
+    expect(threadId).toMatch(REVERSE_ID)
+    expect(result.current.chat).toMatchObject({
+      id: threadId,
+      pendingSave: true,
+    })
+    expect(result.current.chat.messages).toEqual([
+      expect.objectContaining({
+        id: turn().clientRequestId,
+        role: 'user',
+        content: 'First try',
+      }),
+    ])
+    expect(result.current.error).toBe('Chat access is busy')
+
+    await act(() => result.current.send({ content: 'Second try' }))
+
+    expect(client.events).toHaveBeenCalledTimes(2)
+    expect(turn(1)).toMatchObject({
+      threadId,
+      projectId: 'project-1',
+      content: 'Second try',
+    })
+    expect(turn(1).clientRequestId).not.toBe(turn().clientRequestId)
+    expect(result.current.chat).toMatchObject({
+      id: threadId,
+      pendingSave: false,
+    })
+  })
+
   it('keep the chat list when a chat opens from its link', async () => {
     signIn('alice', true)
     const listed = [summary('cloud-a', 'First'), summary('cloud-b', 'Second')]
@@ -1383,20 +1437,14 @@ describe('cloud chats', () => {
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
-    client.events.mockImplementation(async function* () {
-      yield {
-        id: 0,
-        event: { type: 'RUN_STARTED', threadId: 'temp-thread', runId: 'run-1' },
-      }
+    client.events.mockImplementation(async function* (
+      _path: string,
+      input: Turn,
+    ) {
+      const threadId = input.threadId!
+      yield { id: 0, event: { type: 'RUN_STARTED', threadId, runId: 'run-1' } }
       await held
-      yield {
-        id: 1,
-        event: {
-          type: 'RUN_FINISHED',
-          threadId: 'temp-thread',
-          runId: 'run-1',
-        },
-      }
+      yield { id: 1, event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' } }
     })
     const { result, unmount } = renderHook(() => useThread())
     await waitFor(() => expect(result.current.model).toBe('test-model'))
@@ -1407,11 +1455,12 @@ describe('cloud chats', () => {
     })
     await waitFor(() =>
       expect(JSON.parse(sessionStorage.getItem('harness-run:alice')!)).toEqual({
-        threadId: 'temp-thread',
+        threadId: turn().threadId,
         runId: 'run-1',
         temporary: true,
       }),
     )
+    expect(turn().threadId).toMatch(REVERSE_ID)
 
     await act(async () => {
       release()
