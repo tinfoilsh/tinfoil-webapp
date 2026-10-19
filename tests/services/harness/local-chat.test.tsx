@@ -805,6 +805,50 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(turn().thread).toEqual(upgraded)
   })
 
+  it("shows the messages before a run's window from the copy on this device", async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const [, , u2, a2] = SEEDED_MESSAGES
+    const question = {
+      id: 'u3',
+      role: 'user' as const,
+      createdAt: 't5',
+      content: 'third',
+    }
+    client.events.mockImplementation(
+      frames(
+        { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-1' },
+        {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [u2, a2, question] as Message[],
+          hasOlder: true,
+        },
+        finished(
+          SEEDED_ID,
+          seeded({ messages: [...SEEDED_MESSAGES, question] }),
+        ),
+      ),
+    )
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    await act(() => result.current.send({ content: 'third' }))
+    expect(result.current.hasOlder).toBe(true)
+
+    await act(() => result.current.older())
+
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+      'u3',
+    ])
+    expect(result.current.hasOlder).toBe(false)
+    expect(client.post).not.toHaveBeenCalled()
+  })
+
   it('cancels and removes queued turns without sending a key', async () => {
     signIn('alice')
     let release!: () => void
