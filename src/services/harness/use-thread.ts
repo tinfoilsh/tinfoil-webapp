@@ -244,15 +244,18 @@ export function useThread(
     },
     [api],
   )
+  // Counts listings of the stored chats apart from the open chat, so that
+  // opening a chat keeps the list and only the latest listing applies.
+  const listing = useRef(0)
   const refresh = useCallback(
     async (next?: string) => {
       if (!cloud || !keyReady) return
-      const version = generation.current
+      const version = next ? listing.current : ++listing.current
       const result = await api.post<{
         threads: ThreadSummary[]
         nextCursor: string | null
       }>('/v1/threads/list', { cursor: next, projectId, limit: 100 })
-      if (version !== generation.current) return
+      if (version !== listing.current) return
       setThreads((previous) =>
         next
           ? [
@@ -600,7 +603,10 @@ export function useThread(
   useEffect(() => {
     if (previousCloud.current === cloud) return
     previousCloud.current = cloud
-    if (!cloud) setThreads([])
+    if (!cloud) {
+      listing.current++
+      setThreads([])
+    }
     // A blank chat follows the storage mode; a stored chat of the harness
     // cannot stay open once cloud sync is off.
     if (!idRef.current) setLocal(!cloud || !!route.newChatLocal)
@@ -624,6 +630,7 @@ export function useThread(
   }, [initialId, keyReady, route.local])
   useEffect(() => {
     const clear = () => {
+      listing.current++
       setThreads([])
       if (localRef.current) return
       reset()
@@ -936,6 +943,7 @@ export function useThread(
     }
     await store.deleteAll()
     reset()
+    listing.current++
     setThreads([])
     setLocalThreads([])
     return { cloudDeletionCompleted }

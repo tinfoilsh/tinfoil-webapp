@@ -1241,6 +1241,38 @@ describe('cloud chats', () => {
     expect(await localThreadStore('device').list()).toEqual([])
   })
 
+  it('keep the chat list when a chat opens from its link', async () => {
+    signIn('alice', true)
+    const listed = [summary('cloud-a', 'First'), summary('cloud-b', 'Second')]
+    let releaseList!: () => void
+    const listing = new Promise<void>((resolve) => {
+      releaseList = resolve
+    })
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list') {
+        await listing
+        return { threads: listed, nextCursor: null }
+      }
+      if (path === '/v1/threads/get')
+        return { ...listed[0], messages: [], hasOlder: false }
+      throw new Error(`Unexpected ${path}`)
+    })
+    const { result } = renderHook(() => useThread('cloud-a'))
+    await waitFor(() => expect(result.current.chat.id).toBe('cloud-a'))
+
+    await act(async () => {
+      releaseList()
+      await listing
+    })
+
+    await waitFor(() =>
+      expect(result.current.chats.map((chat) => chat.id)).toEqual([
+        'cloud-a',
+        'cloud-b',
+      ]),
+    )
+  })
+
   it('list the open chat as active while its run streams', async () => {
     signIn('alice', true)
     const stored = summary('cloud-thread', 'Stored')
