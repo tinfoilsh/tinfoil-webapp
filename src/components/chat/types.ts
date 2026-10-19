@@ -190,14 +190,10 @@ export type Chat = {
   // key for the sidebar. Absent for chats that have never been
   // stored (blank chats kept purely in component state).
   updatedAt?: string
-  // Sync metadata - optional for backward compatibility
-  syncedAt?: number
-  locallyModified?: boolean
   // Blank chat flag - true for new chats that haven't been used yet
   isBlankChat?: boolean
   // Local-only flag - true for chats that should never sync to cloud
   isLocalOnly?: boolean
-  syncUserId?: string
   // Temporary flag - true for ephemeral chats that are never persisted anywhere
   isTemporary?: boolean
   // Pending save flag - true while initial save is in progress

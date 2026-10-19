@@ -9,22 +9,42 @@ import {
 import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-function storedChat(
-  id: string,
-  overrides: Partial<StoredChat> = {},
-): StoredChat {
+// A row as an earlier version stored it, with the sync fields it kept.
+type EarlierRow = StoredChat & Record<string, unknown>
+
+function storedChat(id: string, overrides: Partial<EarlierRow> = {}) {
   return {
     id,
     title: id,
     messages: [],
     createdAt: '2026-08-12T00:00:00.000Z',
     updatedAt: '2026-08-12T00:00:00.000Z',
-    lastAccessedAt: Date.now(),
     ...overrides,
-  }
+  } as EarlierRow
 }
 
-async function openVersionThree(chats: StoredChat[]): Promise<IDBDatabase> {
+function openDatabase(version?: number): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, version)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+  })
+}
+
+function put(
+  db: IDBDatabase,
+  rows: Record<string, Record<string, unknown>[]>,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(Object.keys(rows), 'readwrite')
+    for (const [store, values] of Object.entries(rows))
+      for (const value of values) transaction.objectStore(store).put(value)
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error)
+  })
+}
+
+async function openVersionThree(chats: EarlierRow[]): Promise<IDBDatabase> {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 3)
     request.onerror = () => reject(request.error)
@@ -45,18 +65,52 @@ async function openVersionThree(chats: StoredChat[]): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result)
   })
 
-  await new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction('chats', 'readwrite')
-    const store = transaction.objectStore('chats')
-    for (const chat of chats) store.put(chat)
-    transaction.oncomplete = () => resolve()
-    transaction.onerror = () => reject(transaction.error)
-  })
+  await put(db, { chats })
   return db
 }
 
-async function seedVersionThree(chats: StoredChat[]): Promise<void> {
+async function seedVersionThree(chats: EarlierRow[]): Promise<void> {
   const db = await openVersionThree(chats)
+  db.close()
+}
+
+// The schema version 7 created for a new browser.
+async function seedVersionSeven(
+  rows: Record<string, Record<string, unknown>[]>,
+): Promise<void> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 7)
+    request.onerror = () => reject(request.error)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      const chats = db.createObjectStore('chats', { keyPath: 'id' })
+      for (const index of [
+        'lastAccessedAt',
+        'createdAt',
+        'syncedAt',
+        'syncPending',
+        'projectId',
+      ])
+        chats.createIndex(index, index)
+      chats.createIndex('pendingUploadByUser', ['pendingUpload', 'syncUserId'])
+      db.createObjectStore('projects', { keyPath: 'cacheKey' }).createIndex(
+        'userId',
+        'userId',
+      )
+      db.createObjectStore('sync_state', { keyPath: 'id' })
+      db.createObjectStore('remote_chat_state', { keyPath: 'id' })
+      db.createObjectStore('sync_outbox', {
+        keyPath: ['userId', 'id'],
+      }).createIndex('userId', 'userId')
+      db.createObjectStore('migrations', { keyPath: 'id' })
+      db.createObjectStore('attachmentPayloads', {
+        keyPath: 'id',
+      }).createIndex('chatId', 'chatId')
+      db.createObjectStore('chatSummaries', { keyPath: 'id' })
+    }
+    request.onsuccess = () => resolve(request.result)
+  })
+  await put(db, rows)
   db.close()
 }
 
@@ -113,6 +167,84 @@ describe('IndexedDB pending sync index', () => {
     ])
   })
 
+  it('keeps a chat stored by the previous version and drops what nothing reads', async () => {
+    const thread = {
+      id: 'device-chat',
+      title: 'Device chat',
+      titleState: 'manual',
+      createdAt: '2026-08-12T00:00:00.000Z',
+      updatedAt: '2026-08-12T00:00:00.000Z',
+    }
+    const row = {
+      id: 'device-chat',
+      isLocalOnly: true,
+      threadFormat: 1,
+      title: 'Device chat',
+      createdAt: '2026-08-12T00:00:00.000Z',
+      updatedAt: '2026-08-12T00:00:00.000Z',
+      thread,
+      lastAccessedAt: 1,
+      syncUserId: 'alice',
+      messages: [
+        {
+          id: 'message-1',
+          role: 'user',
+          content: 'Read this',
+          attachments: [
+            {
+              id: 'document-1',
+              kind: 'document',
+              fileName: 'notes.txt',
+              storagePayloadId: 'device-chat:document-1',
+            },
+          ],
+        },
+      ],
+    }
+    await seedVersionSeven({
+      chats: [row],
+      chatSummaries: [{ ...row, messages: [], messageCount: 1 }],
+      attachmentPayloads: [
+        {
+          id: 'device-chat:document-1',
+          chatId: 'device-chat',
+          textContent: 'Document text',
+        },
+      ],
+      migrations: [{ id: 'chat-summaries-v6', completedAt: 1 }],
+      projects: [{ cacheKey: 'project', userId: 'alice' }],
+      sync_outbox: [{ userId: 'alice', id: 'device-chat' }],
+    })
+
+    const storage = new IndexedDBStorage()
+
+    const stored = await storage.getChat('device-chat')
+    expect(stored).toMatchObject({ id: 'device-chat', thread })
+    expect(stored?.messages[0].attachments).toEqual([
+      {
+        id: 'document-1',
+        kind: 'document',
+        fileName: 'notes.txt',
+        storagePayloadId: 'device-chat:document-1',
+        textContent: 'Document text',
+      },
+    ])
+    expect((await storage.getChatSummaries()).map((chat) => chat.id)).toEqual([
+      'device-chat',
+    ])
+    const db = await openDatabase()
+    expect(Array.from(db.objectStoreNames).sort()).toEqual([
+      'attachmentPayloads',
+      'chatSummaries',
+      'chats',
+      'migrations',
+    ])
+    expect(
+      Array.from(db.transaction('chats').objectStore('chats').indexNames),
+    ).toEqual([])
+    db.close()
+  })
+
   it('fails a blocked upgrade promptly and allows a retry', async () => {
     const olderConnection = await openVersionThree([storedChat('cloud-chat')])
     olderConnection.onversionchange = () => undefined
@@ -129,13 +261,7 @@ describe('IndexedDB pending sync index', () => {
   it('stores attachment payloads separately and hydrates them on read', async () => {
     const storage = new IndexedDBStorage()
     await storage.initialize()
-    const initializedDatabase = await new Promise<IDBDatabase>(
-      (resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION)
-        request.onerror = () => reject(request.error)
-        request.onsuccess = () => resolve(request.result)
-      },
-    )
+    const initializedDatabase = await openDatabase(DB_VERSION)
     expect(
       initializedDatabase.objectStoreNames.contains('attachmentPayloads'),
     ).toBe(true)

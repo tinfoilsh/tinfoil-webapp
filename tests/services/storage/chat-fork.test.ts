@@ -72,8 +72,6 @@ describe('buildForkedChat', () => {
     presetId: 'preset-1',
     model: 'gpt-oss-120b',
     webSearchEnabled: false,
-    syncedAt: 123,
-    locallyModified: true,
     codeExecutionAccessToken: 'secret',
     messageCount: 3,
   })
