@@ -206,7 +206,6 @@ describe('usePasskeyBackup', () => {
     const blockedValidation = {
       canWrite: false,
       remoteState: 'exists',
-      probe: 'none',
       message: 'mismatch',
     }
 
@@ -252,7 +251,6 @@ describe('usePasskeyBackup', () => {
       mocks.validateCurrentPrimaryKey.mockResolvedValue({
         canWrite: false,
         remoteState: 'unknown',
-        probe: 'none',
       })
 
       const { result } = renderHook(() =>

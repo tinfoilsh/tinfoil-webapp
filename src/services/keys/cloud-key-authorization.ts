@@ -1,5 +1,5 @@
 import { encryptionService } from '../encryption/encryption-service'
-import { keyCurrent, newIdempotencyKey, registerKey } from '../harness/keys'
+import { newIdempotencyKey, registerKey } from '../harness/keys'
 import { harnessAPI } from '../harness/runtime'
 import { requirePrimaryKeyB64 } from './cek-encoding'
 import {
@@ -15,12 +15,12 @@ export async function getCurrentCloudKeyAuthorizationMode(): Promise<CloudKeyAut
 // Only an explicit Start Fresh calls registerStartFreshKeyIfNeeded.
 export async function authorizeCurrentPrimaryKeyOrThrow(): Promise<void> {
   const validation = await validateCurrentPrimaryKey()
-  if (!validation.canWrite)
+  if (validation.remoteState === 'unknown' || !validation.canWrite)
     throw new CloudKeySetupError(
       validation.message ?? 'Unable to unlock your chats.',
       validation.remoteState,
     )
-  const current = await keyCurrent()
+  const { current } = validation
   if (!current.key_id) {
     if (current.has_data) {
       // Only key candidates cross the connection. The service owns the migration job.
@@ -58,13 +58,10 @@ export async function authorizeCurrentPrimaryKeyOrThrow(): Promise<void> {
   }
 }
 export async function registerStartFreshKeyIfNeeded() {
-  const current = await keyCurrent()
   const validation = await validateCurrentPrimaryKey()
   if (validation.remoteState === 'unknown')
-    throw new CloudKeySetupError(
-      validation.message ?? 'Unable to verify your key.',
-      'unknown',
-    )
+    throw new CloudKeySetupError(validation.message, 'unknown')
+  const { current } = validation
   if (current.key_id && validation.canWrite) return
   await registerKey({
     keyB64: requirePrimaryKeyB64(),
