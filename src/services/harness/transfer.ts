@@ -41,6 +41,17 @@ export function transferInFlight(): HarnessError {
   )
 }
 
+const SERVER_ERROR_STATUS = 500
+
+// A request the harness refused, or that failed before it was sent, changed
+// nothing. A server error may come after the change committed.
+function isRefusal(error: unknown): boolean {
+  return (
+    error instanceof HarnessError &&
+    (error.status === undefined || error.status < SERVER_ERROR_STATUS)
+  )
+}
+
 // The harness could not read every attachment of a stored chat, so it was
 // not moved.
 export function isAttachmentsUnavailable(error: unknown): boolean {
@@ -94,8 +105,9 @@ export async function cloudTranscript(
 // Stores a chat on this device, then deletes its cloud copy. A deletion that
 // was refused, by the harness or before it was sent, leaves the cloud copy,
 // so the device copy is removed again and the chat stays where it was. One
-// that failed in any other way, such as over a dropped connection, may have
-// committed, so the device copy, perhaps the only one left, is kept.
+// that failed in any other way, such as over a dropped connection or with a
+// server error, may have committed, so the device copy, perhaps the only one
+// left, is kept.
 export async function placeOnDevice(
   api: HarnessAPI,
   store: LocalThreadStore,
@@ -113,7 +125,7 @@ export async function placeOnDevice(
   try {
     await api.post('/v1/threads/delete', { id: thread.id })
   } catch (cause) {
-    if (!(cause instanceof HarnessError)) throw cause
+    if (!isRefusal(cause)) throw cause
     await store.delete(thread.id).catch((error) =>
       logError('Failed to remove a chat copied to this device', error, {
         component: 'transfer',

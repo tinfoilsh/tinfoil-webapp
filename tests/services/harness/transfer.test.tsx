@@ -211,8 +211,8 @@ describe('moving a stored chat to this device', () => {
     signIn({ cloud: true })
     const cloud = [summary(CHAT_ID, 'Garden plans')]
     const refusal = new HarnessError(
-      { code: 'UPSTREAM_REFUSED', message: 'Sync is unavailable' },
-      503,
+      { code: 'KEY_MISMATCH', message: 'The chat is sealed with another key' },
+      409,
     )
     let copied: LocalThread | null = null
     client.post.mockImplementation(async (path: string) => {
@@ -238,31 +238,42 @@ describe('moving a stored chat to this device', () => {
     expect(result.current.chats.some((chat) => chat.isLocalOnly)).toBe(false)
   })
 
-  it('keeps the device copy when the deletion of the cloud copy may have committed', async () => {
-    signIn({ cloud: true })
-    const cloud = [summary(CHAT_ID, 'Garden plans')]
-    // The connection drops after the request was sent, so the harness may
-    // have deleted the cloud copy.
-    const dropped = new TypeError('Failed to fetch')
-    client.post.mockImplementation(async (path: string) => {
-      if (path === '/v1/threads/list')
-        return { threads: cloud, nextCursor: null }
-      if (path === '/v1/threads/transcript') return { thread: transcript() }
-      if (path === '/v1/threads/delete') throw dropped
-      throw new Error(`Unexpected ${path}`)
-    })
-    const { result } = await renderThreads(cloud)
+  // The connection drops after the request was sent, or sync's outcome is
+  // unknown, so the harness may have deleted the cloud copy.
+  it.each([
+    ['a dropped connection', new TypeError('Failed to fetch')],
+    [
+      'a server error',
+      new HarnessError(
+        { code: 'SYNC_OUTCOME_UNKNOWN', message: 'Sync did not answer' },
+        503,
+      ),
+    ],
+  ])(
+    'keeps the device copy after %s deleting the cloud copy',
+    async (_, failure) => {
+      signIn({ cloud: true })
+      const cloud = [summary(CHAT_ID, 'Garden plans')]
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/list')
+          return { threads: cloud, nextCursor: null }
+        if (path === '/v1/threads/transcript') return { thread: transcript() }
+        if (path === '/v1/threads/delete') throw failure
+        throw new Error(`Unexpected ${path}`)
+      })
+      const { result } = await renderThreads(cloud)
 
-    await expect(act(() => result.current.moveToDevice(CHAT_ID))).rejects.toBe(
-      dropped,
-    )
+      await expect(
+        act(() => result.current.moveToDevice(CHAT_ID)),
+      ).rejects.toBe(failure)
 
-    expect(transfers()).toEqual([
-      ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
-      ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
-    ])
-    expect(await stored(CHAT_ID)).toEqual(deviceCopy)
-  })
+      expect(transfers()).toEqual([
+        ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
+        ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
+      ])
+      expect(await stored(CHAT_ID)).toEqual(deviceCopy)
+    },
+  )
 
   it('leaves a chat in the cloud when the harness cannot read its attachments', async () => {
     signIn({ cloud: true })
