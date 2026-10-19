@@ -35,8 +35,6 @@ const mocks = vi.hoisted(() => ({
   generateKey: vi.fn(),
   promoteRecoveredCekToEnclave: vi.fn(),
   keyCurrent: vi.fn(),
-  passkeyEventsOn: vi.fn(),
-  passkeyEventsEmit: vi.fn(),
   logError: vi.fn(),
   logInfo: vi.fn(),
 }))
@@ -92,13 +90,6 @@ vi.mock('@/services/encryption/encryption-service', () => ({
   },
 }))
 
-vi.mock('@/services/keys/passkey-events', () => ({
-  passkeyEvents: {
-    on: mocks.passkeyEventsOn,
-    emit: mocks.passkeyEventsEmit,
-  },
-}))
-
 vi.mock('@/services/harness/keys', () => ({
   keyCurrent: mocks.keyCurrent,
 }))
@@ -132,7 +123,6 @@ describe('usePasskeyBackup', () => {
       primary,
       alternatives: [],
     }))
-    mocks.passkeyEventsOn.mockReturnValue(() => {})
   })
 
   it('keeps transient remote-state failures retriable during initialization', async () => {
