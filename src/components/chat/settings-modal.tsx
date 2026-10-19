@@ -34,7 +34,7 @@ import {
   localThreadStore,
   upgradeThreads,
 } from '@/services/harness/local-threads'
-import { useHarness } from '@/services/harness/provider'
+import { useHarness, useProfileSetting } from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
 import {
   useCloudSyncSetting,
@@ -65,7 +65,10 @@ import {
 } from '@/utils/cloud-sync-settings'
 import { logError } from '@/utils/error-handling'
 import { formatFileSize } from '@/utils/format-file-size'
-import { clearPersonalizationDetails } from '@/utils/personalization-settings'
+import {
+  clearPersonalizationDetails,
+  type PersonalizationSettings,
+} from '@/utils/personalization-settings'
 import {
   RESPONSE_LANGUAGES,
   SYSTEM_RESPONSE_LANGUAGE,
@@ -131,6 +134,11 @@ import {
   filterExportableChats,
 } from './settings-project-policy'
 import type { Chat } from './types'
+
+type PersonalizationDetails = Omit<
+  PersonalizationSettings,
+  'language' | 'isEnabled'
+>
 
 const CHARS = '0123456789ABCDEF!@#$%^&*()_+<>?/'
 
@@ -702,26 +710,34 @@ export function SettingsModal({
   const [isSigningOut, setIsSigningOut] = useState(false)
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Structured personalization fields
-  const [nickname, setNickname] = useState<string>('')
-  const [profession, setProfession] = useState<string>('')
-  const [selectedTraits, setSelectedTraits] = useState<string[]>([])
-  const [additionalContext, setAdditionalContext] = useState<string>('')
-  const [isUsingPersonalization, setIsUsingPersonalization] =
-    useState<boolean>(true)
-  // Last persisted personalization values; edits stay local until the user
-  // hits Save, and this baseline is what dirty-checking compares against.
-  const [savedPersonalization, setSavedPersonalization] = useState<{
-    nickname: string
-    profession: string
-    traits: string[]
-    additionalContext: string
-  }>({ nickname: '', profession: '', traits: [], additionalContext: '' })
+  // Structured personalization fields, as the profile holds them. Edits
+  // stay local until the user hits Save.
+  const savedPersonalization: PersonalizationDetails = {
+    nickname: profile.nickname ?? '',
+    profession: profile.profession ?? '',
+    traits: profile.traits ?? [],
+    additionalContext: profile.additionalContext ?? '',
+  }
+  const [personalizationEdits, setPersonalizationEdits] = useState<
+    Partial<PersonalizationDetails>
+  >({})
+  const {
+    nickname,
+    profession,
+    traits: selectedTraits,
+    additionalContext,
+  } = { ...savedPersonalization, ...personalizationEdits }
+  const editPersonalization = (edit: Partial<PersonalizationDetails>) =>
+    setPersonalizationEdits((edits) => ({ ...edits, ...edit }))
+  const isUsingPersonalization: boolean = profile.isUsingPersonalization ?? true
   const [showClearPersonalizationConfirm, setShowClearPersonalizationConfirm] =
     useState(false)
 
   // Language setting (separate from personalization)
-  const [language, setLanguage] = useState<string>(SYSTEM_RESPONSE_LANGUAGE)
+  const [language, setLanguage] = useProfileSetting<string>(
+    'language',
+    SYSTEM_RESPONSE_LANGUAGE,
+  )
 
   // Without cloud sync every chat and setting stays on this device.
   const cloudSyncSetting = useCloudSyncSetting()
@@ -729,23 +745,41 @@ export function SettingsModal({
   const localChatsEnabled = useLocalChatsSetting()
 
   // Web Search PII check setting (defaults to on)
-  const [piiCheckEnabled, setPiiCheckEnabled] = useState<boolean>(true)
+  const [piiCheckEnabled, setPiiCheckEnabled] = useProfileSetting(
+    'piiCheckEnabled',
+    true,
+  )
 
   // Enter inserts newline instead of sending (defaults to off)
-  const [enterToNewlineEnabled, setEnterToNewlineEnabled] =
-    useState<boolean>(false)
+  const [enterToNewlineEnabled, setEnterToNewlineEnabled] = useProfileSetting(
+    'enterToNewlineEnabled',
+    false,
+  )
 
   const [pixelateSidebarChatTitles, setPixelateSidebarChatTitles] =
-    useState<boolean>(false)
-  const [browserTabChatTitle, setBrowserTabChatTitle] = useState<boolean>(true)
+    useProfileSetting('pixelateSidebarChatTitlesEnabled', false)
+  const [browserTabChatTitle, setBrowserTabChatTitle] = useProfileSetting(
+    'browserTabChatTitleEnabled',
+    true,
+  )
 
-  const [webSearchAvailable, setWebSearchAvailable] = useState<boolean>(true)
+  const [webSearchAvailable, setWebSearchAvailable] = useProfileSetting(
+    'webSearchEnabled',
+    true,
+  )
 
   // Generative UI setting (defaults to on)
-  const [genUIEnabled, setGenUIEnabled] = useState<boolean>(true)
+  const [genUIEnabled, setGenUIEnabled] = useProfileSetting(
+    'genUIEnabled',
+    true,
+  )
 
   // Chat font setting
-  const [chatFont, setChatFont] = useState<ChatFont>('system')
+  const [chatFontSetting, setChatFont] = useProfileSetting<ChatFont>(
+    'chatFont',
+    'system',
+  )
+  const chatFont = normalizeChatFont(chatFontSetting)
 
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false)
   const importSectionId = useId()
@@ -858,31 +892,10 @@ export function SettingsModal({
     'optimistic',
   ]
 
-  // Settings live in the encrypted profile held by the chat service.
+  // Closing the settings discards unsaved personalization edits.
   useEffect(() => {
-    if (!isOpen) return
-    setNickname(profile.nickname ?? '')
-    setProfession(profile.profession ?? '')
-    setSelectedTraits(profile.traits ?? [])
-    setAdditionalContext(profile.additionalContext ?? '')
-    setSavedPersonalization({
-      nickname: profile.nickname ?? '',
-      profession: profile.profession ?? '',
-      traits: profile.traits ?? [],
-      additionalContext: profile.additionalContext ?? '',
-    })
-    setIsUsingPersonalization(profile.isUsingPersonalization ?? true)
-    setLanguage(profile.language ?? SYSTEM_RESPONSE_LANGUAGE)
-    setPiiCheckEnabled(profile.piiCheckEnabled ?? true)
-    setEnterToNewlineEnabled(profile.enterToNewlineEnabled ?? false)
-    setPixelateSidebarChatTitles(
-      profile.pixelateSidebarChatTitlesEnabled ?? false,
-    )
-    setBrowserTabChatTitle(profile.browserTabChatTitleEnabled ?? true)
-    setWebSearchAvailable(profile.webSearchEnabled ?? true)
-    setGenUIEnabled(profile.genUIEnabled ?? true)
-    setChatFont(normalizeChatFont(profile.chatFont))
-  }, [isOpen, profile])
+    if (!isOpen) setPersonalizationEdits({})
+  }, [isOpen])
 
   const refreshPasskeyBundles = useCallback(async () => {
     // Latest-wins sequencing: overlapping refreshes (panel-open effect
@@ -937,49 +950,38 @@ export function SettingsModal({
     passkeyAddDeviceAvailable,
   ])
 
-  // Save personalization settings to the profile
-  const savePersonalizationSettings = (values?: {
-    nickname?: string
-    profession?: string
-    traits?: string[]
-    additionalContext?: string
-    isEnabled?: boolean
-  }) => {
+  // Saves personalization details with whether personalization is on. The
+  // edits stay shown until the profile holds them.
+  const savePersonalizationSettings = (
+    details: PersonalizationDetails,
+    isEnabled: boolean,
+  ) => {
     void api
-      .updateProfile({
-        nickname: values?.nickname ?? nickname,
-        profession: values?.profession ?? profession,
-        traits: values?.traits ?? selectedTraits,
-        additionalContext: values?.additionalContext ?? additionalContext,
-        isUsingPersonalization: values?.isEnabled ?? isUsingPersonalization,
-      })
+      .updateProfile({ ...details, isUsingPersonalization: isEnabled })
+      .then(() => setPersonalizationEdits({}))
       .catch(reportHarnessError)
-  }
-
-  // Save language setting separately
-  const saveLanguageSetting = (newLanguage: string) => {
-    void api.updateProfile({ language: newLanguage }).catch(reportHarnessError)
   }
 
   // Handle individual field changes. Edits are buffered locally and only
   // persisted when the user hits Save.
   const handleNicknameChange = (value: string) => {
-    setNickname(value)
+    editPersonalization({ nickname: value })
   }
 
   const handleProfessionChange = (value: string) => {
-    setProfession(value)
+    editPersonalization({ profession: value })
   }
 
   const handleTraitToggle = (trait: string) => {
-    const newTraits = selectedTraits.includes(trait)
-      ? selectedTraits.filter((t) => t !== trait)
-      : [...selectedTraits, trait]
-    setSelectedTraits(newTraits)
+    editPersonalization({
+      traits: selectedTraits.includes(trait)
+        ? selectedTraits.filter((t) => t !== trait)
+        : [...selectedTraits, trait],
+    })
   }
 
   const handleContextChange = (value: string) => {
-    setAdditionalContext(value)
+    editPersonalization({ additionalContext: value })
   }
 
   const hasUnsavedPersonalization =
@@ -991,30 +993,18 @@ export function SettingsModal({
 
   const handleSavePersonalization = () => {
     if (!isClient) return
-    savePersonalizationSettings()
-    setSavedPersonalization({
-      nickname,
-      profession,
-      traits: selectedTraits,
-      additionalContext,
-    })
+    savePersonalizationSettings(
+      { nickname, profession, traits: selectedTraits, additionalContext },
+      isUsingPersonalization,
+    )
   }
 
   const handleLanguageChange = (value: string) => {
-    setLanguage(value)
-    if (isClient) {
-      saveLanguageSetting(value)
-    }
+    if (isClient) setLanguage(value)
   }
 
   const handleTogglePersonalization = (enabled: boolean) => {
-    setIsUsingPersonalization(enabled)
-    if (isClient) {
-      savePersonalizationSettings({
-        ...savedPersonalization,
-        isEnabled: enabled,
-      })
-    }
+    if (isClient) savePersonalizationSettings(savedPersonalization, enabled)
   }
 
   const handleClearPersonalization = () => {
@@ -1026,11 +1016,7 @@ export function SettingsModal({
       language,
       isEnabled: isUsingPersonalization,
     })
-    setNickname(cleared.nickname)
-    setProfession(cleared.profession)
-    setSelectedTraits(cleared.traits)
-    setAdditionalContext(cleared.additionalContext)
-    setSavedPersonalization({
+    editPersonalization({
       nickname: cleared.nickname,
       profession: cleared.profession,
       traits: cleared.traits,
@@ -1039,19 +1025,20 @@ export function SettingsModal({
     setShowClearPersonalizationConfirm(false)
 
     if (isClient) {
-      savePersonalizationSettings({
-        nickname: cleared.nickname,
-        profession: cleared.profession,
-        traits: cleared.traits,
-        additionalContext: cleared.additionalContext,
-        isEnabled: cleared.isEnabled,
-      })
+      savePersonalizationSettings(
+        {
+          nickname: cleared.nickname,
+          profession: cleared.profession,
+          traits: cleared.traits,
+          additionalContext: cleared.additionalContext,
+        },
+        cleared.isEnabled,
+      )
     }
   }
 
   const handleChatFontChange = (font: ChatFont) => {
     setChatFont(font)
-    void api.updateProfile({ chatFont: font }).catch(reportHarnessError)
   }
 
   // Turning cloud sync on needs the encryption key, which a passkey can
@@ -2297,11 +2284,6 @@ ${encryptionKey.replace('key_', '')}
                             onChange={(e) => {
                               const newValue = e.target.checked
                               setPixelateSidebarChatTitles(newValue)
-                              void api
-                                .updateProfile({
-                                  pixelateSidebarChatTitlesEnabled: newValue,
-                                })
-                                .catch(reportHarnessError)
                             }}
                             className="peer sr-only"
                           />
@@ -2333,11 +2315,6 @@ ${encryptionKey.replace('key_', '')}
                             onChange={(e) => {
                               const newValue = e.target.checked
                               setBrowserTabChatTitle(newValue)
-                              void api
-                                .updateProfile({
-                                  browserTabChatTitleEnabled: newValue,
-                                })
-                                .catch(reportHarnessError)
                             }}
                             className="peer sr-only"
                           />
@@ -2485,11 +2462,6 @@ ${encryptionKey.replace('key_', '')}
                             onChange={(e) => {
                               const newValue = e.target.checked
                               setEnterToNewlineEnabled(newValue)
-                              void api
-                                .updateProfile({
-                                  enterToNewlineEnabled: newValue,
-                                })
-                                .catch(reportHarnessError)
                             }}
                             className="peer sr-only"
                           />
@@ -2528,9 +2500,6 @@ ${encryptionKey.replace('key_', '')}
                               onChange={(e) => {
                                 const newValue = e.target.checked
                                 setWebSearchAvailable(newValue)
-                                void api
-                                  .updateProfile({ webSearchEnabled: newValue })
-                                  .catch(reportHarnessError)
                               }}
                               className="peer sr-only"
                             />
@@ -2557,11 +2526,6 @@ ${encryptionKey.replace('key_', '')}
                                 onChange={(e) => {
                                   const newValue = e.target.checked
                                   setPiiCheckEnabled(newValue)
-                                  void api
-                                    .updateProfile({
-                                      piiCheckEnabled: newValue,
-                                    })
-                                    .catch(reportHarnessError)
                                 }}
                                 className="peer sr-only"
                               />
@@ -2596,9 +2560,6 @@ ${encryptionKey.replace('key_', '')}
                               onChange={(e) => {
                                 const newValue = e.target.checked
                                 setGenUIEnabled(newValue)
-                                void api
-                                  .updateProfile({ genUIEnabled: newValue })
-                                  .catch(reportHarnessError)
                               }}
                               className="peer sr-only"
                             />
