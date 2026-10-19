@@ -353,7 +353,6 @@ export function ChatInterface({
   const [activeArtifactToolCallId, setActiveArtifactToolCallId] = useState<
     string | null
   >(null)
-  const [, setVerificationDocument] = useState<unknown>(null)
   const [verificationStatus, setVerificationStatus] = useState<
     'pending' | 'verified' | 'failed'
   >('pending')
@@ -444,7 +443,6 @@ export function ChatInterface({
       )
       .catch(thread.report)
   }
-  const loadChatById = (id: string, _local?: boolean) => thread.open(id)
   const deleteChat = (id: string) => {
     void thread.remove(id).catch(thread.report)
   }
@@ -1718,8 +1716,6 @@ export function ChatInterface({
                 }
                 passkeySetupAvailable={passkeySetupAvailable}
                 onSetupPasskey={setupPasskey}
-                onAddPasskeyToThisDevice={addPasskeyToThisDevice}
-                passkeyAddDeviceAvailable={passkeyAddDeviceAvailable}
                 backupWarningVisible={
                   isSignedIn &&
                   (passkeySetupFailed || manualRecoveryNeeded) &&
@@ -1727,7 +1723,6 @@ export function ChatInterface({
                 }
                 backupWarningNeedsRecovery={manualRecoveryNeeded}
                 onDismissBackupWarning={dismissBackupWarning}
-                onChatsUpdated={reloadChats}
                 isProjectMode={isProjectMode}
                 activeProjectName={activeProject?.name}
                 onEnterProject={async (projectId, projectName) => {
@@ -1771,7 +1766,6 @@ export function ChatInterface({
           onVerificationComplete={(success) =>
             setVerificationStatus(success ? 'verified' : 'failed')
           }
-          onVerificationUpdate={setVerificationDocument}
           isDarkMode={isDarkMode}
           isClient={isClient}
         />

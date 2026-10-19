@@ -53,12 +53,6 @@ interface ChatListProps {
   canPinLocalChats?: boolean
   loadMoreButton?: React.ReactNode
   emptyState?: React.ReactNode
-  /**
-   * Optional indicator rendered directly after the blank "New Chat"
-   * item (and before the chat history). Used to show a "Loading chats"
-   * spinner while the post-unlock decryption runs.
-   */
-  loadingIndicator?: React.ReactNode
 }
 
 export function ChatList({
@@ -92,7 +86,6 @@ export function ChatList({
   canPinLocalChats = false,
   loadMoreButton,
   emptyState,
-  loadingIndicator,
 }: ChatListProps) {
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
@@ -180,22 +173,15 @@ export function ChatList({
   if (visibleChats.length === 0 && emptyState) {
     return (
       <div className="space-y-2 p-2">
-        {loadingIndicator}
         <div className="p-2">{emptyState}</div>
       </div>
     )
   }
 
-  const lastBlankIndex = visibleChats.reduce(
-    (acc, chat, index) => (chat.isBlankChat ? index : acc),
-    -1,
-  )
-
   return (
     <>
       <div role="list" className="chat-title-privacy-region space-y-2 p-2">
-        {lastBlankIndex < 0 && loadingIndicator}
-        {visibleChats.map((chat, index) => (
+        {visibleChats.map((chat) => (
           <Fragment key={getChatKey(chat)}>
             <div role="listitem" className="relative">
               <ChatListItem
@@ -253,7 +239,6 @@ export function ChatList({
                 />
               )}
             </div>
-            {index === lastBlankIndex && loadingIndicator}
           </Fragment>
         ))}
       </div>

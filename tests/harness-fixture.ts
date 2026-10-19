@@ -26,7 +26,6 @@ export const testSession: Session = {
       }),
     ),
   },
-  key: { registered: false, keyId: null, bundles: [] },
   presets: [],
   widgets: [],
   rateLimit: { kind: null, maxRequests: 100, remaining: 100 },
@@ -39,11 +38,6 @@ export const testSession: Session = {
     sandbox: true,
     piiCheck: true,
     memory: true,
-  },
-  upload: {
-    accept: ['.txt', '.png'],
-    maxBytes: 1000000,
-    maxTextBytes: 1000000,
   },
 }
 

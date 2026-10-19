@@ -16,9 +16,7 @@ interface UseUIStateReturn {
   themeMode: ThemeMode
   windowWidth: number
   setIsSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>
-  toggleTheme: () => void
   setThemeMode: (mode: ThemeMode) => void
-  openAndExpandVerifier: () => void
   handleInputFocus: () => void
 }
 
@@ -166,24 +164,6 @@ export function useUIState(): UseUIStateReturn {
     [api],
   )
 
-  // Toggle dark mode (legacy, toggles between light and dark)
-  const toggleTheme = useCallback(() => {
-    const newMode = isDarkMode ? 'light' : 'dark'
-    setThemeMode(newMode)
-  }, [isDarkMode, setThemeMode])
-
-  // Handle verifier expansion
-  const openAndExpandVerifier = useCallback(() => {
-    // Always ensure the sidebar is open
-    setIsSidebarOpen(true)
-
-    // Add a delay to ensure sidebar is opened before expanding verifier
-    setTimeout(() => {
-      const event = new CustomEvent('expand-verifier')
-      window.dispatchEvent(event)
-    }, 300)
-  }, [])
-
   // Handle input focus
   const handleInputFocus = useCallback(() => {
     // Only close sidebar on narrow screens (mobile devices)
@@ -199,9 +179,7 @@ export function useUIState(): UseUIStateReturn {
     themeMode,
     windowWidth,
     setIsSidebarOpen,
-    toggleTheme,
     setThemeMode,
-    openAndExpandVerifier,
     handleInputFocus,
   }
 }

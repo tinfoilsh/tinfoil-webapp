@@ -115,8 +115,6 @@ type ChatSidebarProps = {
   onCloudSyncSetupClick?: () => void
   onSetupPasskey?: () => Promise<boolean>
   passkeySetupAvailable?: boolean
-  onAddPasskeyToThisDevice?: () => Promise<boolean>
-  passkeyAddDeviceAvailable?: boolean
   backupWarningVisible?: boolean
   /**
    * True when remote encrypted data exists but this device can't decrypt it
@@ -125,8 +123,6 @@ type ChatSidebarProps = {
    */
   backupWarningNeedsRecovery?: boolean
   onDismissBackupWarning?: () => void
-  onChatsUpdated?: () => void | Promise<void>
-  isInitialChatPageReady?: boolean
   isProjectMode?: boolean
   activeProjectName?: string
   onEnterProject?: (projectId: string, projectName?: string) => Promise<void>
@@ -143,17 +139,6 @@ type ChatSidebarProps = {
   onRemoveFavorite?: (chatId: string) => void
   onOpenFavorite?: (chat: ChatItemData) => void | Promise<void>
   windowWidth: number
-  /**
-   * Progress of the post-unlock background chat decryption. When
-   * `isDecrypting` is true the sidebar shows a "Loading chats"
-   * indicator so users see work is happening after the recovery modal
-   * dismisses, without the modal blocking the whole UI.
-   */
-  chatDecryptionProgress?: {
-    isDecrypting: boolean
-    current: number
-    total: number
-  } | null
 }
 
 const MOBILE_BREAKPOINT = 1024 // Same as in chat-interface.tsx
@@ -194,13 +179,9 @@ export function ChatSidebar({
   onCloudSyncSetupClick,
   onSetupPasskey,
   passkeySetupAvailable,
-  onAddPasskeyToThisDevice,
-  passkeyAddDeviceAvailable,
   backupWarningVisible = false,
   backupWarningNeedsRecovery = false,
   onDismissBackupWarning,
-  onChatsUpdated,
-  isInitialChatPageReady = false,
   isProjectMode,
   activeProjectName,
   onEnterProject,
@@ -217,7 +198,6 @@ export function ChatSidebar({
   onRemoveFavorite,
   onOpenFavorite,
   windowWidth,
-  chatDecryptionProgress,
 }: ChatSidebarProps) {
   const router = useRouter()
   const authRedirectUrl = postAuthRedirectTarget(router.asPath)
@@ -642,7 +622,7 @@ export function ChatSidebar({
   useEffect(() => {
     setVisibleCloudChatCount(PAGINATION.CHATS_PER_PAGE)
     setHasAttemptedLoadMore(false)
-  }, [user?.id, isInitialChatPageReady])
+  }, [user?.id])
 
   const loadMoreChats = async (): Promise<void> => {
     if (isLoadingMore) return
@@ -2116,19 +2096,6 @@ export function ChatSidebar({
                                 await onMoveChatToProject(chatId, projectId)
                               }
                             : undefined
-                        }
-                        loadingIndicator={
-                          chatDecryptionProgress?.isDecrypting ? (
-                            <div className="flex items-center gap-2 px-4 py-2 text-content-secondary">
-                              <PiSpinner className="h-4 w-4 animate-spin" />
-                              <span className="text-sm">
-                                Loading chats
-                                {chatDecryptionProgress.total > 0
-                                  ? ` (${chatDecryptionProgress.current}/${chatDecryptionProgress.total})`
-                                  : '...'}
-                              </span>
-                            </div>
-                          ) : undefined
                         }
                         onConvertToCloud={onConvertChatToCloud}
                         onConvertToLocal={onConvertChatToLocal}

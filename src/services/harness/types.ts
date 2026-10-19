@@ -150,11 +150,6 @@ export interface RateLimit {
 export interface Session {
   user: { id: string; anonymous: boolean }
   rateLimit: RateLimit
-  key: {
-    registered: boolean
-    keyId: string | null
-    bundles: { credentialId: string; createdAt: string }[]
-  }
   models: {
     id: string
     name: string
@@ -190,7 +185,6 @@ export interface Session {
     builtIn: boolean
   }[]
   features: Record<string, boolean>
-  upload: { accept: string[]; maxBytes: number; maxTextBytes: number }
 }
 
 export interface Turn {

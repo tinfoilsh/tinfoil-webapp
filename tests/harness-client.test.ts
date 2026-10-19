@@ -367,8 +367,8 @@ describe('attested harness transport', () => {
       vi.fn().mockResolvedValueOnce('first').mockResolvedValueOnce('second'),
       () => secure,
     )
-    await client.session()
-    await client.session()
+    await client.post('/v1/session', {})
+    await client.post('/v1/session', {})
     expect(
       secure.fetch.mock.calls.map((call) =>
         new Headers(call[1].headers).get('Authorization'),
@@ -383,7 +383,9 @@ describe('attested harness transport', () => {
       vi.fn().mockResolvedValueOnce('old').mockResolvedValueOnce(null),
       () => secure,
     )
-    await expect(client.session()).rejects.toMatchObject({ status: 401 })
+    await expect(client.post('/v1/session', {})).rejects.toMatchObject({
+      status: 401,
+    })
     expect(secure.fetch).toHaveBeenCalledTimes(1)
   })
   it('uses the same verified connection for multipart, binary, and follow requests', async () => {

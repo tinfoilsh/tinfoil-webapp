@@ -1,7 +1,7 @@
 import { SecureClient } from 'tinfoil'
 import { AnonymousCredentialCache } from './anonymous-credential'
 import { HarnessError, readEvents } from './sse'
-import type { Frame, HarnessErrorBody, Session, Turn } from './types'
+import type { Frame, HarnessErrorBody, Turn } from './types'
 
 const harnessRepo = 'tinfoilsh/confidential-tinfoil-harness'
 // An attestation that has not finished by then is abandoned: the request
@@ -166,9 +166,6 @@ export class HarnessClient {
     return (
       await this.request(path, JSON.stringify(input), signal)
     ).json() as Promise<T>
-  }
-  session(signal?: AbortSignal) {
-    return this.post<Session>('/v1/session', {}, signal)
   }
   async upload<T>(
     path: string,

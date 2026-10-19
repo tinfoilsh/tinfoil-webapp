@@ -79,10 +79,10 @@ describe('anonymous client credentials', () => {
   it('refreshes an expired key and retries a rejected key once with the same turn body', async () => {
     const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now())
     const { client, secure } = setup()
-    await client.session()
+    await client.post('/v1/session', {})
     clock.mockReturnValue(clock() + 3_600_001)
     controlplane.mockImplementationOnce(async () => issuance('free_second'))
-    await client.session()
+    await client.post('/v1/session', {})
     expect(
       new Headers(secure.fetch.mock.calls[1][1].headers).get('Authorization'),
     ).toBe('Bearer free_second')
@@ -113,7 +113,9 @@ describe('anonymous client credentials', () => {
     secure.fetch.mockImplementation(
       async () => new Response('{}', { status: 401 }),
     )
-    await expect(client.session()).rejects.toMatchObject({ status: 401 })
+    await expect(client.post('/v1/session', {})).rejects.toMatchObject({
+      status: 401,
+    })
     expect(secure.fetch).toHaveBeenCalledTimes(2)
     expect(controlplane).toHaveBeenCalledTimes(2)
     secure.fetch.mockResolvedValueOnce(
@@ -166,7 +168,7 @@ describe('anonymous client credentials', () => {
       if (!active) throw new DOMException('Account changed', 'AbortError')
       return null
     })
-    const request = client.session()
+    const request = client.post('/v1/session', {})
     await vi.waitFor(() => expect(controlplane).toHaveBeenCalledTimes(1))
     active = false
     resolve(issuance())
@@ -184,7 +186,7 @@ describe('anonymous client credentials', () => {
         }),
     )
     const { client, secure } = setup()
-    const request = client.session()
+    const request = client.post('/v1/session', {})
     await vi.waitFor(() => expect(controlplane).toHaveBeenCalledTimes(1))
     client.dispose()
     expect(controlplane.mock.calls[0][1]?.signal?.aborted).toBe(true)
@@ -199,7 +201,7 @@ describe('anonymous client credentials', () => {
       Response.json({ key: 'free_forged', expires_at: 'invalid' }),
     )
     const { client, secure } = setup()
-    await expect(client.session()).rejects.toMatchObject({
+    await expect(client.post('/v1/session', {})).rejects.toMatchObject({
       detail: { code: 'UPSTREAM_REFUSED' },
     })
     expect(secure.fetch).not.toHaveBeenCalled()
@@ -220,7 +222,7 @@ describe('anonymous client credentials', () => {
       expect(frame.event.type).toBe('RUN_FINISHED')
     expect(secure.fetch).toHaveBeenCalledTimes(1)
     controlplane.mockImplementationOnce(async () => issuance('free_first', 8))
-    await client.session()
+    await client.post('/v1/session', {})
     expect(controlplane).toHaveBeenCalledTimes(2)
     expect(client.anonymousRateLimit?.remaining).toBe(8)
     expect(secure.fetch.mock.calls[1][0]).toBe(
