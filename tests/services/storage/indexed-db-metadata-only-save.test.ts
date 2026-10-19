@@ -96,11 +96,56 @@ describe('IndexedDB metadata-only chat saves', () => {
     expect(summaryAfter).toMatchObject({
       title: 'Renamed',
       messageCount: 2,
+      // Renaming is not conversation activity, so the list position
+      // still follows the newest message.
+      activityAt: '2026-08-12T00:00:01.000Z',
     })
     const raw = await readRawChatRow('chat-1')
     expect('isMetadataOnly' in raw).toBe(false)
     expect('messageCount' in raw).toBe(false)
+    expect('activityAt' in raw).toBe(false)
     expect((raw.messages as unknown[]).length).toBe(2)
+  })
+
+  it('rebuilds summaries written before they recorded activity', async () => {
+    const storage = new IndexedDBStorage()
+    await storage.saveChat(
+      storedChat('chat-1', { messages: conversationMessages() }),
+    )
+    await storage.getChatSummaries()
+
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+    })
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(
+        ['chatSummaries', 'migrations'],
+        'readwrite',
+      )
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+      const summaries = transaction.objectStore('chatSummaries')
+      const request = summaries.get('chat-1')
+      request.onsuccess = () => {
+        const { activityAt, ...previousSummary } = request.result
+        expect(activityAt).toBe('2026-08-12T00:00:01.000Z')
+        summaries.put(previousSummary)
+      }
+      const migrations = transaction.objectStore('migrations')
+      const markers = migrations.getAllKeys()
+      markers.onsuccess = () => {
+        for (const key of markers.result) {
+          if (String(key).startsWith('chat-summaries-')) migrations.delete(key)
+        }
+        migrations.put({ id: 'chat-summaries-v6', completedAt: Date.now() })
+      }
+    })
+    db.close()
+
+    const [summary] = await new IndexedDBStorage().getChatSummaries()
+    expect(summary.activityAt).toBe('2026-08-12T00:00:01.000Z')
   })
 
   it('recreates an evicted decryption placeholder without marking it dirty', async () => {

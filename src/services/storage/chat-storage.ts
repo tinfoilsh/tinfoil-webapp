@@ -487,7 +487,6 @@ export class ChatStorageService {
       throw new Error('Chat not found')
     }
 
-    await indexedDBStorage.resetChatTimestamps(chatId)
     await indexedDBStorage.updateChatLocalOnly(chatId, false)
 
     try {
@@ -587,7 +586,6 @@ export class ChatStorageService {
     }
 
     await this.detachSyncedImages(chatId)
-    await indexedDBStorage.resetChatTimestamps(chatId)
     await indexedDBStorage.updateChatLocalOnly(chatId, true)
     await indexedDBStorage.updateChatProject(chatId, null)
 
@@ -772,7 +770,6 @@ export class ChatStorageService {
   async removeChatFromProject(chatId: string): Promise<void> {
     await this.initialize()
 
-    await indexedDBStorage.resetChatTimestamps(chatId)
     await indexedDBStorage.updateChatProject(chatId, null)
 
     chatEvents.emit({ reason: 'save', ids: [chatId] })

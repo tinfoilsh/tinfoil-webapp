@@ -206,6 +206,11 @@ export interface RevisionSnapshotItem {
   key_id: string
   project_id: string | null
   updated_at: string
+  /**
+   * The chat's list-ordering time: its last conversation activity, or
+   * `updated_at` when none was recorded. Absent from older servers.
+   */
+  activity_at?: string
 }
 
 export interface RevisionSnapshotResponse {

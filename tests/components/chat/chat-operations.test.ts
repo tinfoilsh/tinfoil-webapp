@@ -5,6 +5,7 @@ import {
   createTemporaryChat,
   loadChats,
   resolveWebSearchEnabled,
+  sortChats,
   upsertChatById,
 } from '@/components/chat/hooks/chat-operations'
 import type { Chat } from '@/components/chat/types'
@@ -219,6 +220,62 @@ describe('upsertChatById', () => {
 
     expect(result).toEqual([replacement, otherChat])
     expect(chats).toEqual(original)
+  })
+})
+
+describe('sortChats', () => {
+  it('orders by last conversation activity, not by write time', () => {
+    const renamedOldChat = createChat({
+      id: 'renamed',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: '2026-03-01T00:00:00Z',
+      messages: [
+        {
+          role: 'user',
+          content: 'old',
+          timestamp: new Date('2026-01-01T00:05:00Z'),
+        },
+      ],
+    })
+    const activeChat = createChat({
+      id: 'active',
+      createdAt: new Date('2026-01-10T00:00:00Z'),
+      updatedAt: '2026-02-01T00:00:00Z',
+      messages: [
+        {
+          role: 'user',
+          content: 'new',
+          timestamp: new Date('2026-02-01T00:00:00Z'),
+        },
+      ],
+    })
+    const summary = createChat({
+      id: 'summary',
+      createdAt: new Date('2026-01-05T00:00:00Z'),
+      updatedAt: '2026-03-02T00:00:00Z',
+      isMetadataOnly: true,
+      activityAt: '2026-01-20T00:00:00Z',
+    })
+    const blank = createChat({ id: '', isBlankChat: true })
+
+    expect(
+      sortChats([renamedOldChat, summary, blank, activeChat]).map(
+        (chat) => chat.id,
+      ),
+    ).toEqual(['', 'active', 'summary', 'renamed'])
+  })
+
+  it('breaks activity ties by id, newest id first, like the server', () => {
+    const at = new Date('2026-01-01T00:00:00Z')
+    const chats = [
+      createChat({ id: '8000000000000_a', createdAt: at }),
+      createChat({ id: '8000000000000_b', createdAt: at }),
+    ]
+
+    expect(sortChats(chats).map((chat) => chat.id)).toEqual([
+      '8000000000000_b',
+      '8000000000000_a',
+    ])
   })
 })
 

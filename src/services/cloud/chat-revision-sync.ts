@@ -292,8 +292,11 @@ async function bootstrapFromSnapshot(
     (await indexedDBStorage.getPendingDeletes(userId)).map((entry) => entry.id),
   )
   ensureCurrent(isCurrent)
-  for (const item of [...items].sort((a, b) =>
-    b.updated_at.localeCompare(a.updated_at),
+  // Download the chats the list shows first: newest activity first.
+  const activityTime = (item: RevisionSnapshotItem) =>
+    Date.parse(item.activity_at ?? item.updated_at)
+  for (const item of [...items].sort(
+    (a, b) => activityTime(b) - activityTime(a),
   )) {
     const local = await indexedDBStorage.getChat(item.id)
     ensureCurrent(isCurrent)

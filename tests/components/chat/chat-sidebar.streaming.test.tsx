@@ -219,3 +219,55 @@ describe('chat sidebar during streaming', () => {
     },
   )
 })
+
+describe('chat sidebar ordering', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    streamingTracker.reset()
+  })
+
+  it('moves a chat to the top as soon as a message lands in it', () => {
+    const older: Chat = {
+      ...activeChat,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      messages: [
+        {
+          role: 'user',
+          content: 'Hello',
+          timestamp: new Date('2026-01-05T00:00:00Z'),
+        },
+      ],
+    }
+    const summary: Chat = {
+      ...otherChat,
+      createdAt: new Date('2026-01-02T00:00:00Z'),
+      activityAt: '2026-01-10T00:00:00.000Z',
+    }
+    const titlesInOrder = () =>
+      screen
+        .getAllByRole('link')
+        .map((link) => link.textContent)
+        .filter((text) => text === older.title || text === summary.title)
+
+    const { rerender } = render(
+      <SidebarHarness currentChat={older} chats={[older, summary]} />,
+    )
+    expect(titlesInOrder()).toEqual([summary.title, older.title])
+
+    const replied: Chat = {
+      ...older,
+      messages: [
+        ...older.messages,
+        {
+          role: 'user',
+          content: 'Following up',
+          timestamp: new Date('2026-01-20T00:00:00Z'),
+        },
+      ],
+    }
+    rerender(
+      <SidebarHarness currentChat={replied} chats={[summary, replied]} />,
+    )
+    expect(titlesInOrder()).toEqual([replied.title, summary.title])
+  })
+})

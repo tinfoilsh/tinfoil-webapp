@@ -3,6 +3,7 @@ import { TEMPORARY_CHAT_TITLE } from '@/constants/chat'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { sessionChatStorage } from '@/services/storage/session-storage'
+import { chatActivityTime } from '@/utils/chat-timestamps'
 import { logError } from '@/utils/error-handling'
 import { generateReverseId } from '@/utils/reverse-id'
 import { readDefaultPresetId, readUserPresets } from '../prompts/default-preset'
@@ -220,21 +221,12 @@ export function ensureAtLeastOneChat(chats: Chat[]): Chat[] {
 }
 
 /**
- * Latest-write-wins ordering: blank chats first, then by
- * `updatedAt` desc (falling back to `createdAt` if the chat has
- * never been stored). Matches the server's `direction=desc`
- * pagination key, so freshly-fetched pages slot in correctly.
+ * Blank chats first, then by last conversation activity, newest first,
+ * with the id as the tie-breaker. This is the order the server pages the
+ * newest-first chat list in, so freshly fetched pages slot in correctly.
  */
-export function chatSortTimestamp(chat: Chat): number {
-  if (chat.updatedAt) {
-    const updated = new Date(chat.updatedAt).getTime()
-    if (!Number.isNaN(updated)) return updated
-  }
-  const created = new Date(chat.createdAt).getTime()
-  return Number.isNaN(created) ? 0 : created
-}
-
 export function sortChats(chats: Chat[]): Chat[] {
+  const activity = new Map(chats.map((chat) => [chat, chatActivityTime(chat)]))
   return [...chats].sort((a, b) => {
     // Both blank chats - cloud blank comes before local-only blank
     if (a.isBlankChat && b.isBlankChat) {
@@ -247,7 +239,9 @@ export function sortChats(chats: Chat[]): Chat[] {
     if (a.isBlankChat && !b.isBlankChat) return -1
     if (!a.isBlankChat && b.isBlankChat) return 1
 
-    return chatSortTimestamp(b) - chatSortTimestamp(a)
+    const byActivity = activity.get(b)! - activity.get(a)!
+    if (byActivity !== 0) return byActivity
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0
   })
 }
 
