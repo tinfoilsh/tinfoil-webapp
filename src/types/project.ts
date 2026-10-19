@@ -11,7 +11,6 @@ export interface Project {
   color?: string
   createdAt: string
   updatedAt: string
-  syncVersion: number
   decryptionFailed?: boolean
 }
 
@@ -21,7 +20,6 @@ export interface ProjectDocument {
   filename: string
   contentType: string
   sizeBytes: number
-  syncVersion: number
   createdAt: string
   updatedAt: string
   content?: string
@@ -29,24 +27,6 @@ export interface ProjectDocument {
   // show a real thumbnail; the full image is never persisted.
   thumbnailBase64?: string
   decryptionFailed?: boolean
-}
-
-export interface ProjectChat {
-  id: string
-  projectId: string
-  messageCount: number
-  syncVersion: number
-  size: number
-  formatVersion: number
-  createdAt: string
-  updatedAt: string
-  content?: string
-}
-
-export interface ProjectChatListResponse {
-  chats: ProjectChat[]
-  hasMore?: boolean
-  nextContinuationToken?: string
 }
 
 export interface CreateProjectData {
@@ -61,42 +41,4 @@ export interface UpdateProjectData {
   description?: string
   systemInstructions?: string
   color?: string
-}
-
-export interface ProjectListResponse {
-  projects: Array<{
-    id: string
-    key: string
-    createdAt: string
-    updatedAt: string
-    syncVersion: number
-    size: number
-    content?: string
-  }>
-  nextContinuationToken?: string
-  hasMore: boolean
-}
-
-export interface ProjectSyncStatus {
-  count: number
-  lastUpdated: string | null
-}
-
-export interface ProjectDocumentListItem {
-  id: string
-  projectId: string
-  sizeBytes: number
-  syncVersion: number
-  createdAt: string
-  updatedAt: string
-  content?: string
-}
-
-export interface ProjectDocumentListResponse {
-  documents: ProjectDocumentListItem[]
-}
-
-export interface ProjectDocumentSyncStatus {
-  count: number
-  lastUpdated: string | null
 }
