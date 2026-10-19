@@ -1,11 +1,7 @@
 import { PROJECTS_CHANGED } from '@/hooks/use-projects'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { useHarness } from '@/services/harness/provider'
-import type {
-  Project,
-  ProjectContextUsage,
-  ProjectDocument,
-} from '@/types/project'
+import type { Project, ProjectDocument } from '@/types/project'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ProjectContext,
@@ -13,14 +9,6 @@ import {
   type ProjectContextValue,
   type UploadingFile,
 } from './project-context'
-const emptyUsage: ProjectContextUsage = {
-  systemInstructions: 0,
-  documents: [],
-  memory: 0,
-  totalUsed: 0,
-  modelLimit: 0,
-  availableForChat: 0,
-}
 export function ProjectProvider({
   children,
   initialProjectId,
@@ -38,7 +26,6 @@ export function ProjectProvider({
   const [projectDocuments, setProjectDocuments] = useState<ProjectDocument[]>(
     [],
   )
-  const [usage, setUsage] = useState(emptyUsage)
   const [loadingProject, setLoadingProject] = useState<LoadingProject | null>(
     null,
   )
@@ -62,10 +49,7 @@ export function ProjectProvider({
       setLoadingProject({ id, name: name ?? 'Loading…' })
       try {
         const project = await api.post<
-          Project & {
-            documents: ProjectDocument[]
-            contextUsage: ProjectContextUsage
-          }
+          Project & { documents: ProjectDocument[] }
         >('/v1/projects/get', { id })
         if (
           version !== generation.current ||
@@ -75,7 +59,6 @@ export function ProjectProvider({
           return false
         setActiveProject(project)
         setProjectDocuments(project.documents)
-        setUsage(project.contextUsage)
         setError(null)
         return true
       } catch (cause) {
@@ -97,7 +80,6 @@ export function ProjectProvider({
     setProjectDocuments([])
     setLoadingProject(null)
     setUploadingFiles([])
-    setUsage(emptyUsage)
   }, [])
   useEffect(() => {
     if (initialProjectId && keyReady && hasPremiumAccess)
@@ -142,13 +124,7 @@ export function ProjectProvider({
     },
     updateProject: async (id, data) => {
       requirePremiumAccess()
-      const { memory, ...patch } = data
-      await api.post('/v1/projects/update', { id, ...patch })
-      if (memory)
-        await api.post('/v1/projects/memory/update', {
-          projectId: id,
-          facts: memory,
-        })
+      await api.post('/v1/projects/update', { id, ...data })
       await reloadProject(id)
       changed()
     },
@@ -181,27 +157,12 @@ export function ProjectProvider({
       await reloadProject(projectId)
     },
     refreshDocuments,
-    updateProjectMemory: async (facts) => {
-      requirePremiumAccess()
-      if (!activeProject) return
-      const projectId = activeProject.id
-      const result = await api.post<{ facts: Project['memory'] }>(
-        '/v1/projects/memory/update',
-        { projectId, facts },
-      )
-      setActiveProject((current) =>
-        current?.id === projectId
-          ? { ...current, memory: result.facts }
-          : current,
-      )
-    },
     addUploadingFile: (file) =>
       setUploadingFiles((previous) => [...previous, file]),
     removeUploadingFile: (id) =>
       setUploadingFiles((previous) =>
         previous.filter((file) => file.id !== id),
       ),
-    getContextUsage: () => (hasPremiumAccess ? usage : emptyUsage),
   }
   return (
     <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>
