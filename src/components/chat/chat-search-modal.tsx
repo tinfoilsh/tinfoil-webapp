@@ -97,14 +97,15 @@ export function ChatSearchModal({
 
   const savedChats = useMemo(() => chats.filter(isSearchableChat), [chats])
 
-  const recentChats = useMemo(
-    () =>
-      [...savedChats]
-        .filter((chat) => !chat.projectId)
-        .sort((a, b) => chatActivityTime(b) - chatActivityTime(a))
-        .slice(0, CONSTANTS.SEARCH_RECENT_CHAT_COUNT),
-    [savedChats],
-  )
+  const recentChats = useMemo(() => {
+    const unassigned = savedChats.filter((chat) => !chat.projectId)
+    const activity = new Map(
+      unassigned.map((chat) => [chat, chatActivityTime(chat)]),
+    )
+    return unassigned
+      .sort((a, b) => activity.get(b)! - activity.get(a)!)
+      .slice(0, CONSTANTS.SEARCH_RECENT_CHAT_COUNT)
+  }, [savedChats])
 
   const matchingChats = useMemo(() => {
     if (!needle) return []
