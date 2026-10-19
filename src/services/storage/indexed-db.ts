@@ -3197,40 +3197,6 @@ export class IndexedDBStorage {
     })
   }
 
-  async resetChatTimestamps(chatId: string): Promise<void> {
-    return this.enqueueSave('resetChatTimestamps', async () => {
-      const db = await this.ensureDB()
-      const chat = await this.getStoredChatInternal(chatId)
-
-      if (chat) {
-        return new Promise<void>((resolve, reject) => {
-          const transaction = db.transaction(
-            [CHATS_STORE, CHAT_SUMMARIES_STORE],
-            'readwrite',
-          )
-          const store = transaction.objectStore(CHATS_STORE)
-          const summaryStore = transaction.objectStore(CHAT_SUMMARIES_STORE)
-
-          transaction.oncomplete = () => resolve()
-          transaction.onerror = () =>
-            reject(new Error('Failed to reset chat timestamps'))
-
-          const now = new Date().toISOString()
-          chat.createdAt = now
-          chat.updatedAt = now
-          chat.locallyModified = true
-          chat.pendingUpload = derivePendingUpload(chat)
-          chat.syncedAt = undefined
-
-          const request = putStoredChat(store, summaryStore, chat)
-
-          request.onerror = () =>
-            reject(new Error('Failed to reset chat timestamps'))
-        })
-      }
-    })
-  }
-
   async updateChatProject(
     chatId: string,
     projectId: string | null,
