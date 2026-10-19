@@ -1,13 +1,11 @@
 import type { Attachment, Chat, Message } from '@/components/chat/types'
-import {
-  localThreadStore,
-  type LocalAttachment,
-  type LocalThread,
-} from '@/services/harness/local-threads'
+import { localThreadStore } from '@/services/harness/local-threads'
 import type { HarnessAPI } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import { cloudTranscript } from '@/services/harness/transfer'
 import type {
+  AttachmentDescriptor,
+  StoredThread,
   Thread,
   ThreadSummary,
   Message as WireMessage,
@@ -77,17 +75,15 @@ function exportedMessage(
 // An attachment as the export reads it. A document's page images are never
 // exported, so they are not held while the export is prepared.
 function exportedAttachment(
-  attachment: LocalAttachment,
+  attachment: AttachmentDescriptor,
   keepImageBytes: boolean,
 ): Attachment {
   return {
     id: attachment.id,
-    type: attachment.type,
+    type: attachment.kind === 'image' ? 'image' : 'document',
     fileName: attachment.fileName,
     ...(attachment.mimeType ? { mimeType: attachment.mimeType } : {}),
-    ...(attachment.fileSize !== undefined
-      ? { fileSize: attachment.fileSize }
-      : {}),
+    ...(attachment.size !== undefined ? { fileSize: attachment.size } : {}),
     ...(keepImageBytes && attachment.base64
       ? { base64: attachment.base64 }
       : {}),
@@ -103,7 +99,7 @@ function exportedAttachment(
 // A chat kept on this device, or a stored chat's transcript, in the shape
 // the export writes.
 function exportedChat(
-  thread: LocalThread,
+  thread: StoredThread,
   fields: Pick<Chat, 'isLocalOnly' | 'projectId'>,
   heldImages?: Map<Attachment, Uint8Array>,
 ): Chat {
@@ -120,7 +116,7 @@ function exportedChat(
           const exported = exportedAttachment(attachment, !heldImages)
           // A transcript's image bytes are decoded once and handed to the
           // archive, rather than kept as text with every other chat's.
-          if (heldImages && attachment.type === 'image' && attachment.base64)
+          if (heldImages && attachment.kind === 'image' && attachment.base64)
             heldImages.set(exported, base64ToUint8Array(attachment.base64))
           return exported
         }),

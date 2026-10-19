@@ -1,5 +1,4 @@
 import type { DocumentPage } from '@/components/chat/types'
-import type { LocalTurnThread } from './local-threads'
 
 export type Json =
   null | boolean | number | string | Json[] | { [key: string]: Json }
@@ -106,6 +105,30 @@ export interface Thread extends ThreadSummary {
   presetId?: string | null
 }
 
+export interface ThreadMessage extends Omit<Message, 'attachments'> {
+  attachments?: AttachmentDescriptor[]
+  annotations?: Json
+}
+
+// A whole chat in the format the harness stores it in sync, a chat on this
+// device is kept in, and a device run's final event returns.
+export interface StoredThread {
+  id: string
+  title: string
+  titleState: ThreadSummary['titleState']
+  createdAt: string
+  updatedAt: string
+  model: string
+  projectId: string | null
+  presetId: string | null
+  pinned: boolean
+  webSearchEnabled: boolean
+  messages: ThreadMessage[]
+  lastRequestId?: string
+  activeRun: ThreadSummary['activeRun']
+  contextUsage?: ThreadSummary['contextUsage']
+}
+
 // One dimension (input or output) of a token budget.
 export interface TokenBudget {
   max: number
@@ -184,7 +207,7 @@ export interface Turn {
     | 'ask'
   ephemeral?: boolean
   local?: boolean
-  thread?: LocalTurnThread
+  thread?: StoredThread
   profile?: RecordValue
   projectId?: string | null
   presetId?: string | null

@@ -10,27 +10,25 @@ import { generateReverseId } from '@/utils/reverse-id'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { turnProfile } from './local-profile'
 import {
-  committedReplies,
-  localAttachment,
+  heldImages,
+  holdImages,
+  isThread,
   localDocumentText,
   localSummary,
   localThreadStore,
   localThreadView,
   memoryThreadStore,
-  mergeLocalThread,
-  newLocalThread,
+  newThread,
   now,
-  readLocalThread,
   replaceReplyText,
   shareThread,
   turnThread,
-  wireMessage,
-  type LocalAttachment,
-  type LocalThread,
+  withHeldImages,
+  type ImagesById,
   type LocalThreadStore,
 } from './local-threads'
 import { useHarness } from './provider'
-import { initialChat, reduceEvent, type ChatState } from './reducer'
+import { initialChat, reduceEvent } from './reducer'
 import type { RunSpend } from './runtime'
 import { MAX_SHARE_REQUEST_BYTES, requestBytes, shareTooLarge } from './shares'
 import { HarnessError } from './sse'
@@ -45,8 +43,11 @@ import type {
   AttachmentDescriptor,
   Frame,
   HarnessErrorBody,
+  HarnessEvent,
   RateLimit,
+  StoredThread,
   Thread,
+  ThreadMessage,
   ThreadSummary,
   Turn,
 } from './types'
@@ -59,13 +60,12 @@ export interface ThreadRoute {
   newChatLocal?: boolean
 }
 
-// A run of a thread the browser stores. It keeps the transcript it sent, so
-// the run's window can be merged back, and the descriptors of new uploads.
+// A run of a thread the browser stores. Its final event returns the whole
+// thread, without the image bytes the browser holds for it.
 interface LocalRun {
   threadId: string
-  base: LocalThread
   store: LocalThreadStore
-  uploads: ReadonlyMap<string, LocalAttachment>
+  images: ImagesById
   runId?: string
 }
 
@@ -104,6 +104,13 @@ function exhaustedQuota({
   }
 }
 
+// The attachments of a turn that are new uploads, rather than ones the chat
+// stores already.
+const uploaded = (attachments: Turn['attachments'] = []) =>
+  attachments.filter(
+    (attachment): attachment is AttachmentDescriptor => 'kind' in attachment,
+  )
+
 function runSpend(value: unknown): RunSpend | undefined {
   if (!value || typeof value !== 'object') return undefined
   const { prompt_tokens: prompt, completion_tokens: completion } =
@@ -111,22 +118,6 @@ function runSpend(value: unknown): RunSpend | undefined {
   return typeof prompt === 'number' && typeof completion === 'number'
     ? { prompt, completion }
     : undefined
-}
-
-function withStoredPrefix(state: ChatState, base: LocalThread): ChatState {
-  if (!state.hasOlder) return state
-  const index = base.messages.findIndex(
-    (message) => message.id === state.messages[0]?.id,
-  )
-  if (index <= 0) return state
-  return {
-    ...state,
-    messages: [
-      ...base.messages.slice(0, index).map(wireMessage),
-      ...state.messages,
-    ],
-    hasOlder: false,
-  }
 }
 
 export function useThread(
@@ -218,7 +209,7 @@ export function useThread(
   // only once it has.
   const moving = useRef(new Map<string, Promise<unknown>>())
   const pending = useRef<{ input: Turn; run?: LocalRun } | null>(null)
-  const uploads = useRef(new Map<string, LocalAttachment>())
+  const uploads = useRef(new Map<string, AttachmentDescriptor>())
   const images = useRef(
     new Map<string, { base64: string; mimeType?: string }>(),
   )
@@ -294,14 +285,17 @@ export function useThread(
     },
     [api, cloud, keyReady, projectId],
   )
-  const rememberImages = (thread: LocalThread) => {
+  const rememberImages = (attachments: readonly AttachmentDescriptor[]) => {
+    for (const attachment of attachments)
+      if (attachment.base64)
+        images.current.set(attachment.id, {
+          base64: attachment.base64,
+          mimeType: attachment.mimeType,
+        })
+  }
+  const rememberThreadImages = (thread: StoredThread) => {
     for (const message of thread.messages)
-      for (const attachment of message.attachments ?? [])
-        if (attachment.base64)
-          images.current.set(attachment.id, {
-            base64: attachment.base64,
-            mimeType: attachment.mimeType,
-          })
+      rememberImages(message.attachments ?? [])
   }
   const reset = useCallback(() => {
     generation.current++
@@ -326,68 +320,35 @@ export function useThread(
     setWebSearch(undefined)
     setBlankChats((count) => count + 1)
   }, [])
-  // The stored transcript with what the view knows of the current run, which
-  // may not be saved yet. A new chat starts from an empty thread.
+  // The chat as this device stores it. A new chat starts from an empty
+  // thread.
   async function localTranscript(
     threadId: string,
     target: LocalThreadStore,
-  ): Promise<LocalThread> {
-    const stored =
+  ): Promise<StoredThread> {
+    return (
       (await target.get(threadId)) ??
-      newLocalThread(threadId, {
+      newThread(threadId, {
         model,
-        presetId: presetId ?? undefined,
+        presetId,
         webSearchEnabled: webSearch,
       })
-    if (idRef.current !== threadId) return stored
-    return mergeLocalThread(
-      stored,
-      {
-        messages: current.current.messages,
-        hasOlder: current.current.hasOlder,
-      },
-      {
-        uploads: uploads.current,
-        summary: current.current.snapshot.thread,
-        updatedAt: stored.updatedAt,
-      },
     )
   }
-  async function persist(run: LocalRun, view: ChatState, frame: Frame) {
-    const terminal =
-      frame.event.type === 'RUN_FINISHED' || frame.event.type === 'RUN_ERROR'
-    const saved = await run.store.update(run.threadId, (stored) =>
-      mergeLocalThread(
-        stored ?? run.base,
-        { messages: view.messages, hasOlder: view.hasOlder },
-        {
-          uploads: run.uploads,
-          replies: terminal ? committedReplies(frame.event.metadata) : [],
-          summary: view.snapshot.thread,
-        },
-      ),
-    )
-    if (saved) markSaved(saved.id)
-    if (saved && idRef.current === run.threadId) {
-      rememberImages(saved)
-      // A title the user set during the run outranks the run's title.
-      if (terminal && saved.titleState === 'manual')
-        setState((previous) =>
-          previous.snapshot.thread
-            ? {
-                ...previous,
-                snapshot: {
-                  ...previous.snapshot,
-                  thread: {
-                    ...previous.snapshot.thread,
-                    title: saved.title,
-                    titleState: saved.titleState,
-                  },
-                },
-              }
-            : previous,
-        )
-    }
+  // A device run's final event carries the whole thread, which this device
+  // stores as it is, with the images it holds where the harness left them
+  // out.
+  async function saveRun(run: LocalRun, event: HarnessEvent) {
+    const thread: unknown = event.metadata?.thread
+    if (!isThread(thread)) return
+    const saved = await run.store.update(run.threadId, () => ({
+      ...thread,
+      id: run.threadId,
+      messages: withHeldImages(thread.messages, run.images),
+    }))
+    if (!saved) return
+    markSaved(saved.id)
+    if (idRef.current === saved.id) rememberThreadImages(saved)
   }
   async function stream(
     path: '/v1/threads/turn' | '/v1/threads/follow',
@@ -404,7 +365,6 @@ export function useThread(
     const version = generation.current
     let runId = 'runId' in input ? input.runId : undefined
     let succeeded = false
-    let windowed = false
     let view = current.current
     try {
       for await (const frame of api.client.events(
@@ -416,7 +376,7 @@ export function useThread(
         if (!attached && !run) break
         runId = frame.event.runId ?? runId
         const base = attached ? current.current : view
-        let next = reduceEvent(base, frame, runId)
+        const next = reduceEvent(base, frame, runId)
         const event = frame.event
         // A replayed frame leaves the view as it was.
         if (next !== base) {
@@ -424,8 +384,6 @@ export function useThread(
           if (event.type === 'RUN_ERROR' && attached)
             errorAt.current = Date.now()
         }
-        if (run && event.type === 'MESSAGES_SNAPSHOT')
-          next = withStoredPrefix(next, run.base)
         view = next
         if (attached) {
           current.current = next
@@ -435,7 +393,6 @@ export function useThread(
           event.type === 'RUN_FINISHED' || event.type === 'RUN_ERROR'
         if (event.type === 'RUN_FINISHED')
           succeeded = event.metadata?.cancelled !== true
-        if (event.type === 'MESSAGES_SNAPSHOT') windowed = true
         if (event.type === 'RUN_STARTED') {
           if (run) {
             run.runId = event.runId
@@ -465,14 +422,13 @@ export function useThread(
               }
           }
         }
-        // A run has committed nothing until its first window arrives.
-        if (run && windowed && (event.type === 'MESSAGES_SNAPSHOT' || terminal))
-          await persist(run, next, frame).catch((cause) => {
+        if (run && terminal)
+          await saveRun(run, event).catch((cause) => {
             logError('Failed to save a local chat', cause, {
               component: 'useThread',
-              action: 'persist',
+              action: 'saveRun',
             })
-            if (attached)
+            if (version === generation.current)
               setFailure({
                 message: 'This chat could not be saved on this device.',
               })
@@ -541,7 +497,7 @@ export function useThread(
     if (localRef.current) {
       const stored = await storeFor(temporaryRef.current).get(threadId)
       if (stored) {
-        rememberImages(stored)
+        rememberThreadImages(stored)
         thread = localThreadView(stored)
       }
     } else if (!temporaryRef.current)
@@ -578,7 +534,7 @@ export function useThread(
   }
   // Rejoins a run of a stored chat: one this page started, or one a
   // reloaded page left behind, so its reply is still saved.
-  function resumeLocalRun(thread: LocalThread) {
+  function resumeLocalRun(thread: StoredThread) {
     let runId = localRuns.current.get(thread.id)?.runId
     if (!runId)
       try {
@@ -592,7 +548,7 @@ export function useThread(
     void stream(
       '/v1/threads/follow',
       { threadId: thread.id, runId },
-      { threadId: thread.id, base: thread, store, uploads: new Map() },
+      { threadId: thread.id, store, images: heldImages(thread.messages) },
       true,
     )
   }
@@ -605,7 +561,7 @@ export function useThread(
       setNotFound(true)
       return
     }
-    rememberImages(thread)
+    rememberThreadImages(thread)
     const next = initialChat(localThreadView(thread))
     current.current = next
     setState(next)
@@ -766,7 +722,7 @@ export function useThread(
     const version = generation.current
     const target = storeFor(temporaryRef.current)
     const threadId = startChat()
-    let base: LocalThread
+    let base: StoredThread
     try {
       base = await localTranscript(threadId, target)
     } catch (cause) {
@@ -784,9 +740,11 @@ export function useThread(
     }
     const run: LocalRun = {
       threadId,
-      base,
       store: target,
-      uploads: new Map(uploads.current),
+      images: holdImages(
+        uploaded(fields.attachments),
+        heldImages(base.messages),
+      ),
     }
     pending.current = { input, run }
     showSent(input)
@@ -832,11 +790,9 @@ export function useThread(
           ...(input.quote ? { quote: input.quote } : {}),
           ...(input.attachments?.length
             ? {
-                attachments: input.attachments.flatMap((attachment) => {
-                  if (!('kind' in attachment)) return []
-                  const { base64: _, pages: __, ...shown } = attachment
-                  return [shown]
-                }),
+                attachments: uploaded(input.attachments).map(
+                  ({ base64: _, pages: __, ...shown }) => shown,
+                ),
               }
             : {}),
         },
@@ -934,7 +890,7 @@ export function useThread(
               : {}),
             ...(typeof patch.model === 'string' ? { model: patch.model } : {}),
             ...('presetId' in patch
-              ? { presetId: (patch.presetId as string | null) || undefined }
+              ? { presetId: (patch.presetId as string | null) || null }
               : {}),
             ...(typeof patch.webSearchEnabled === 'boolean'
               ? { webSearchEnabled: patch.webSearchEnabled }
@@ -953,10 +909,8 @@ export function useThread(
                     ...previous.snapshot.thread,
                     title: saved.title,
                     titleState: saved.titleState,
-                    model: saved.model ?? previous.snapshot.thread.model,
-                    webSearchEnabled:
-                      saved.webSearchEnabled ??
-                      previous.snapshot.thread.webSearchEnabled,
+                    model: saved.model,
+                    webSearchEnabled: saved.webSearchEnabled,
                     updatedAt: saved.updatedAt,
                   },
                 },
@@ -1001,7 +955,7 @@ export function useThread(
   // Moves a stored chat to this device under the same id. A chat the
   // harness stored a moment ago is put back as it was on the device, so a
   // move that is undone keeps its original attachments.
-  async function moveToDevice(threadId: string, original?: LocalThread) {
+  async function moveToDevice(threadId: string, original?: StoredThread) {
     return whileMoving(threadId, async () => {
       const moved = original
         ? await placeOnDevice(api, store, original)
@@ -1085,23 +1039,10 @@ export function useThread(
   // The attachments a turn sends stay readable in the view until the chat
   // stores them: a document's text, and an image's bytes, which a chat on
   // this device keeps.
-  function rememberSent(attachments: Turn['attachments'] = []) {
-    for (const attachment of attachments) {
-      if (!('kind' in attachment)) continue
-      uploads.current.set(
-        attachment.id,
-        localAttachment({
-          ...attachment,
-          fileSize: attachment.size,
-          thumbnailBase64: attachment.thumbnail,
-        }),
-      )
-      if (attachment.base64)
-        images.current.set(attachment.id, {
-          base64: attachment.base64,
-          mimeType: attachment.mimeType,
-        })
-    }
+  function rememberSent(attachments: Turn['attachments']) {
+    for (const attachment of uploaded(attachments))
+      uploads.current.set(attachment.id, attachment)
+    rememberImages(uploaded(attachments))
   }
   // An attachment of the open chat. The harness finds a stored chat's
   // attachments under the chat; only a fresh upload resolves without it.
@@ -1184,24 +1125,29 @@ export function useThread(
       return forked.id
     }
     const source = await localTranscript(threadId, store)
+    const messageId = current.current.messages[messageIndex]?.id
+    const count =
+      source.messages.findIndex((message) => message.id === messageId) + 1
+    if (!count) return null
     const forkId = generateReverseId().id
     const forked = buildForkedChat(
       {
         ...source,
         createdAt: new Date(source.createdAt),
-        presetId: source.presetId,
+        presetId: source.presetId ?? undefined,
+        projectId: undefined,
         isLocalOnly: true,
         messages: source.messages as unknown as Chat['messages'],
       },
-      messageIndex + 1,
+      count,
       forkId,
     )
-    const thread = readLocalThread({
-      ...newLocalThread(forkId, source),
+    const thread: StoredThread = {
+      ...newThread(forkId, source),
       title: forked.title,
-      titleState: forked.titleState,
-      messages: forked.messages,
-    })
+      titleState: 'manual',
+      messages: forked.messages as unknown as ThreadMessage[],
+    }
     await store.update(forkId, () => thread)
     await open(forkId, { local: true })
     return forkId
@@ -1212,7 +1158,7 @@ export function useThread(
   async function changeMessage(
     index: number,
     stored: { path: string; fields: Record<string, unknown> },
-    change: (thread: LocalThread, messageId: string) => LocalThread | null,
+    change: (thread: StoredThread, messageId: string) => StoredThread | null,
   ) {
     const threadId = idRef.current
     const messageId = current.current.messages[index]?.id
@@ -1439,9 +1385,11 @@ export function useThread(
       const target = storeFor(temporaryRef.current)
       const run = localRuns.current.get(threadId) ?? {
         threadId,
-        base: await localTranscript(threadId, target),
         store: target,
-        uploads: new Map(uploads.current),
+        images: holdImages(
+          [...uploads.current.values()],
+          heldImages((await localTranscript(threadId, target)).messages),
+        ),
       }
       return stream('/v1/threads/follow', { threadId, runId }, run)
     }
@@ -1471,13 +1419,22 @@ export function useThread(
     if (index < 0) return reconnect()
     return regenerate(index, fields)
   }
+  // Messages before those shown. A run's window of a chat on this device
+  // starts later than the device's copy, which holds the rest.
   async function older() {
-    if (!id || local) return
+    if (!id) return
     const version = generation.current
-    const thread = await api.post<Thread>('/v1/threads/get', {
-      id,
-      before: state.messages[0]?.id,
-    })
+    const before = state.messages[0]?.id
+    let thread: Pick<Thread, 'messages' | 'hasOlder'>
+    if (local) {
+      const stored = await storeFor(temporary).get(id)
+      const messages = stored ? localThreadView(stored).messages : []
+      const index = messages.findIndex((message) => message.id === before)
+      thread = {
+        messages: messages.slice(0, Math.max(index, 0)),
+        hasOlder: false,
+      }
+    } else thread = await api.post<Thread>('/v1/threads/get', { id, before })
     if (version === generation.current)
       setState((previous) => ({
         ...previous,

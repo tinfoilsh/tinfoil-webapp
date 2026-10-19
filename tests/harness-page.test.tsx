@@ -57,10 +57,21 @@ beforeEach(() => {
   })
 })
 it('runs a signed-out first turn as a local thread with its preset and keeps it in the tab', async () => {
-  client.events.mockImplementation(async function* () {
+  client.events.mockImplementation(async function* (
+    _path: string,
+    input: Turn,
+  ) {
     yield started
     yield messages
-    yield finished
+    yield {
+      ...finished,
+      event: {
+        ...finished.event,
+        metadata: {
+          thread: { ...input.thread, messages: messages.event.messages },
+        } as unknown as Frame['event']['metadata'],
+      },
+    }
   })
   const { result } = renderHook(() => useThread(null, 'project-1'))
   act(() => result.current.setPresetId('builtin:tutor'))
@@ -85,11 +96,8 @@ it('runs a signed-out first turn as a local thread with its preset and keeps it 
   )
   expect(saved).toMatchObject({
     id: input.threadId,
-    presetId: 'builtin:tutor',
-    messages: [
-      { id: 'u', content: 'private question' },
-      { id: 'a', content: 'private answer' },
-    ],
+    thread: { presetId: 'builtin:tutor' },
+    messages: messages.event.messages,
   })
   expect(localStorage.length).toBe(0)
 })

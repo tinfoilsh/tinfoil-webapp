@@ -6,6 +6,10 @@ import { HarnessError } from './sse'
 // can exceed it.
 export const MAX_SHARE_REQUEST_BYTES = 8 * 1024 * 1024
 
+// The harness reads a turn, and the other requests that carry whole chats,
+// up to 64 MiB; the key and field names take a little of it.
+export const MAX_TURN_REQUEST_BYTES = 64 * 1024 * 1024 - 1024
+
 export const SHARE_TOO_LARGE_MESSAGE =
   'This chat is too large to share. Fork the part you want to share from one of its messages, then share the fork.'
 

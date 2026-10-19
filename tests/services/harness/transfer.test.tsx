@@ -1,16 +1,13 @@
-import {
-  localThreadStore,
-  type LocalThread,
-} from '@/services/harness/local-threads'
+import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
-import type { ThreadSummary } from '@/services/harness/types'
+import type { StoredThread, ThreadSummary } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from './thread-fixture'
+import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/utils/error-handling', () => ({
@@ -39,78 +36,14 @@ function summary(id: string, title: string): ThreadSummary {
   }
 }
 
-// The harness's transcript of a stored chat: attachments carry their
-// content and no keys, and server bookkeeping is gone.
-function transcript() {
-  return {
-    id: CHAT_ID,
-    title: 'Garden plans',
-    titleState: 'manual',
-    createdAt: '2026-04-01T09:00:00Z',
-    updatedAt: '2026-04-01T09:05:00Z',
-    model: 'test-model',
-    pinned: true,
-    presetId: null,
-    webSearchEnabled: false,
-    codeExecutionAccessToken: 'c'.repeat(64),
-    messages: [
-      {
-        id: 'u1',
-        role: 'user',
-        createdAt: '2026-04-01T09:00:00Z',
-        timestamp: '2026-04-01T09:00:00Z',
-        content: 'Look at these',
-        attachments: [
-          {
-            id: 'a'.repeat(36),
-            type: 'image',
-            fileName: 'bed.png',
-            mimeType: 'image/png',
-            thumbnailBase64: 'dGh1bWI=',
-            base64: 'aW1hZ2U=',
-          },
-          {
-            id: 'b'.repeat(36),
-            type: 'document',
-            fileName: 'plan.pdf',
-            mimeType: 'application/pdf',
-            textContent: 'Plant tomatoes',
-            pages: [
-              {
-                page: 1,
-                text: 'Plant tomatoes',
-                image: 'cGFnZQ==',
-                is_scanned: false,
-              },
-            ],
-          },
-        ],
-      },
-      {
-        id: 'r1',
-        role: 'assistant',
-        createdAt: '2026-04-01T09:00:02Z',
-        content: 'Nice beds',
-        thoughts: 'Looking',
-        model: 'test-model',
-        timeline: [
-          { id: 'r1_thinking_0', type: 'thinking', content: 'Looking' },
-          { id: 'r1_content_1', type: 'content', content: 'Nice beds' },
-        ],
-      },
-    ],
-  }
-}
-
-const deviceCopy: LocalThread = {
-  id: CHAT_ID,
+// The harness's transcript of a stored chat: the thread, with every
+// attachment's content inline.
+const deviceCopy: StoredThread = storedThread(CHAT_ID, {
   title: 'Garden plans',
   titleState: 'manual',
-  createdAt: '2026-04-01T09:00:00Z',
   updatedAt: '2026-04-01T09:05:00Z',
-  model: 'test-model',
   webSearchEnabled: false,
-  codeExecutionAccessToken: 'c'.repeat(64),
+  lastRequestId: 'request-1',
   messages: [
     {
       id: 'u1',
@@ -120,17 +53,19 @@ const deviceCopy: LocalThread = {
       attachments: [
         {
           id: 'a'.repeat(36),
-          type: 'image',
+          kind: 'image',
           fileName: 'bed.png',
           mimeType: 'image/png',
-          thumbnailBase64: 'dGh1bWI=',
+          size: 5,
+          thumbnail: 'dGh1bWI=',
           base64: 'aW1hZ2U=',
         },
         {
           id: 'b'.repeat(36),
-          type: 'document',
+          kind: 'document',
           fileName: 'plan.pdf',
           mimeType: 'application/pdf',
+          size: 14,
           textContent: 'Plant tomatoes',
           pages: [
             {
@@ -147,7 +82,6 @@ const deviceCopy: LocalThread = {
       id: 'r1',
       role: 'assistant',
       createdAt: '2026-04-01T09:00:02Z',
-      content: 'Nice beds',
       model: 'test-model',
       timeline: [
         { id: 'r1_thinking_0', type: 'thinking', content: 'Looking' },
@@ -155,7 +89,8 @@ const deviceCopy: LocalThread = {
       ],
     },
   ],
-}
+})
+const transcript = () => structuredClone(deviceCopy)
 
 const stored = (id: string) => localThreadStore('device').get(id)
 const posted = () =>
@@ -214,7 +149,7 @@ describe('moving a stored chat to this device', () => {
       { code: 'KEY_MISMATCH', message: 'The chat is sealed with another key' },
       409,
     )
-    let copied: LocalThread | null = null
+    let copied: StoredThread | null = null
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
@@ -437,7 +372,7 @@ describe('moving a chat from this device to the cloud', () => {
       expect(result.current.chats.map((chat) => chat.id)).toEqual([CHAT_ID]),
     )
 
-    let original: LocalThread | undefined
+    let original: StoredThread | undefined
     await act(async () => {
       original = await result.current.moveToCloud(CHAT_ID)
     })
@@ -448,16 +383,7 @@ describe('moving a chat from this device to the cloud', () => {
         {
           key: KEY,
           threadId: CHAT_ID,
-          thread: {
-            title: 'Garden plans',
-            titleState: 'manual',
-            createdAt: '2026-04-01T09:00:00Z',
-            model: 'test-model',
-            presetId: null,
-            webSearchEnabled: false,
-            codeExecutionAccessToken: 'c'.repeat(64),
-            messages: deviceCopy.messages,
-          },
+          thread: deviceCopy,
         },
       ],
     ])
@@ -719,7 +645,7 @@ describe('moving a chat from this device to the cloud', () => {
       throw new Error(`Unexpected ${path}`)
     })
     const { result } = await renderThreads([])
-    let original: LocalThread | undefined
+    let original: StoredThread | undefined
     await act(async () => {
       original = await result.current.moveToCloud(CHAT_ID)
     })

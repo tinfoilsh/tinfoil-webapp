@@ -1,4 +1,4 @@
-import type { Chat, DocumentPage, Message } from '@/components/chat/types'
+import type { Chat } from '@/components/chat/types'
 import { chatEvents } from '@/services/storage/chat-events'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import {
@@ -7,82 +7,37 @@ import {
   type Chat as StoredChatRow,
 } from '@/services/storage/indexed-db'
 import { sessionChatStorage } from '@/services/storage/session-storage'
-import { isoTime, upgradeMessages } from './legacy'
+import { logError } from '@/utils/error-handling'
+import { harnessAPI } from './runtime'
+import { MAX_TURN_REQUEST_BYTES, requestBytes } from './shares'
+import { HarnessError } from './sse'
 import type {
-  Json,
+  AttachmentDescriptor,
+  Message,
+  StoredThread,
   Thread,
+  ThreadMessage,
   ThreadSummary,
-  TimelineBlock,
-  Attachment as WireAttachment,
-  Message as WireMessage,
 } from './types'
 
-// A chat kept on this device. Messages use the harness's stored format, so a
-// turn can send them back as the thread's transcript. Attachments keep their
-// full descriptors, including image bytes, which the harness never stores for
-// a local thread.
-export interface LocalAttachment {
-  id: string
-  type: 'image' | 'document'
-  kind?: string
-  fileName: string
-  mimeType?: string
-  fileSize?: number
-  thumbnailBase64?: string
-  textContent?: string
-  description?: string
-  pages?: DocumentPage[]
-  base64?: string
-}
-
-export interface LocalMessage {
-  id: string
-  role: 'user' | 'assistant'
-  createdAt: string
-  content: string
-  quote?: string
-  model?: string
-  modelDisplayName?: string
-  usage?: Json
-  timeline?: TimelineBlock[]
-  attachments?: LocalAttachment[]
-  isError?: boolean
-  isInterrupted?: boolean
-}
-
-export interface LocalThread {
-  id: string
-  title: string
-  titleState: ThreadSummary['titleState']
-  createdAt: string
-  updatedAt: string
-  model?: string
-  presetId?: string
-  webSearchEnabled?: boolean
-  codeExecutionAccessToken?: string
-  contextUsage?: ThreadSummary['contextUsage']
-  messages: LocalMessage[]
-}
-
-export type LocalTurnThread = Omit<
-  LocalThread,
-  'id' | 'updatedAt' | 'contextUsage' | 'presetId'
-> & { presetId: string | null }
+// A chat kept on this device is a thread in the harness's format. A turn
+// sends it back as the thread, and the run's final event returns the
+// updated thread, which replaces it.
 
 export interface LocalThreadStore {
   list(): Promise<ThreadSummary[]>
-  get(id: string): Promise<LocalThread | null>
+  get(id: string): Promise<StoredThread | null>
   // Reads, changes, and writes one thread at a time, so concurrent runs of
   // the same chat cannot lose each other's messages. Returning null skips
   // the write, as does a chat deleted in the meantime.
   update(
     id: string,
-    change: (current: LocalThread | null) => LocalThread | null,
-  ): Promise<LocalThread | null>
+    change: (current: StoredThread | null) => StoredThread | null,
+  ): Promise<StoredThread | null>
   // Stores a chat that arrives from elsewhere, such as the cloud, under its
   // own id, even one deleted from this device before. A chat already stored
   // under the id is kept, and null is returned.
-  add(thread: LocalThread): Promise<LocalThread | null>
+  add(thread: StoredThread): Promise<StoredThread | null>
   delete(id: string): Promise<void>
   deleteAll(): Promise<number>
 }
@@ -91,6 +46,13 @@ export interface LocalThreadStore {
 // harness reads older images through their descriptions instead.
 export const RECENT_IMAGE_MESSAGES = 3
 
+// Rows the browser writes hold a thread under this marker, which tells them
+// from rows the previous client wrote.
+const THREAD_FORMAT = 1
+// Statuses with which the harness refuses an old row itself, rather than
+// the request that carried it.
+const REFUSED_ROW_STATUSES = new Set([400, 413])
+
 type Value = Record<string, unknown>
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
 const arr = (value: unknown): unknown[] => (Array.isArray(value) ? value : [])
@@ -98,120 +60,46 @@ const obj = (value: unknown): Value =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Value)
     : {}
-const isTitleState = (value: unknown): value is LocalThread['titleState'] =>
-  value === 'placeholder' || value === 'generated' || value === 'manual'
+const defined = <T extends object>(value: T): T =>
+  Object.fromEntries(
+    Object.entries(value).filter(([, field]) => field !== undefined),
+  ) as T
 
-function contextUsage(value: unknown): LocalThread['contextUsage'] {
-  const usage = obj(value)
-  return typeof usage.usedTokens === 'number' &&
-    typeof usage.limitTokens === 'number' &&
-    typeof usage.percentage === 'number'
-    ? {
-        usedTokens: usage.usedTokens,
-        limitTokens: usage.limitTokens,
-        percentage: usage.percentage,
-      }
-    : undefined
-}
+export const now = () => new Date().toISOString()
 
-function readAttachment(value: Value): LocalAttachment {
-  const kind = str(value.kind)
-  return {
-    id: str(value.id),
-    type: (kind || str(value.type)) === 'image' ? 'image' : 'document',
-    ...(kind ? { kind } : {}),
-    fileName: str(value.fileName) || 'Attachment',
-    ...(str(value.mimeType) ? { mimeType: str(value.mimeType) } : {}),
-    ...(typeof value.fileSize === 'number' ? { fileSize: value.fileSize } : {}),
-    ...(str(value.thumbnailBase64)
-      ? { thumbnailBase64: str(value.thumbnailBase64) }
-      : {}),
-    ...(typeof value.textContent === 'string'
-      ? { textContent: value.textContent }
-      : {}),
-    ...(str(value.description) ? { description: str(value.description) } : {}),
-    ...(Array.isArray(value.pages)
-      ? { pages: value.pages as DocumentPage[] }
-      : {}),
-    ...(str(value.base64) ? { base64: str(value.base64) } : {}),
-  }
-}
-
-// An upload's stored descriptor, with the image bytes the browser keeps.
-export function localAttachment(
-  descriptor: unknown,
-  base64?: string,
-): LocalAttachment {
-  return { ...readAttachment(obj(descriptor)), ...(base64 ? { base64 } : {}) }
-}
-
-function readMessage(value: Value): LocalMessage {
-  const role = value.role === 'assistant' ? 'assistant' : 'user'
-  const attachments = arr(value.attachments).map((item) =>
-    readAttachment(obj(item)),
-  )
-  return {
-    id: str(value.id),
-    role,
-    createdAt: str(value.createdAt),
-    content: str(value.content),
-    ...(str(value.quote) ? { quote: str(value.quote) } : {}),
-    ...(str(value.model) ? { model: str(value.model) } : {}),
-    ...(str(value.modelDisplayName)
-      ? { modelDisplayName: str(value.modelDisplayName) }
-      : {}),
-    ...(value.usage !== undefined && value.usage !== null
-      ? { usage: value.usage as Json }
-      : {}),
-    ...(role === 'assistant'
-      ? { timeline: arr(value.timeline) as TimelineBlock[] }
-      : {}),
-    ...(attachments.length > 0 ? { attachments } : {}),
-    ...(value.isError === true ? { isError: true } : {}),
-    ...(value.isInterrupted === true ? { isInterrupted: true } : {}),
-  }
-}
-
-// Rows written by the previous client use its message format; they are
-// upgraded the way the harness upgrades a local transcript.
-export function readLocalThread(row: Value): LocalThread {
-  const id = str(row.id)
-  const createdAt = isoTime(row.createdAt) || isoTime(row.updatedAt) || now()
-  const title = str(row.title) || 'New Chat'
-  const usage = contextUsage(row.contextUsage)
+export function newThread(
+  id: string,
+  fields: Pick<StoredThread, 'model' | 'presetId'> & {
+    webSearchEnabled?: boolean
+  },
+): StoredThread {
+  const createdAt = now()
   return {
     id,
-    title,
-    titleState: isTitleState(row.titleState)
-      ? row.titleState
-      : title === 'New Chat'
-        ? 'placeholder'
-        : 'generated',
+    title: 'New Chat',
+    titleState: 'placeholder',
     createdAt,
-    updatedAt: isoTime(row.updatedAt) || createdAt,
-    ...(str(row.model) ? { model: str(row.model) } : {}),
-    ...(str(row.presetId) ? { presetId: str(row.presetId) } : {}),
-    ...(typeof row.webSearchEnabled === 'boolean'
-      ? { webSearchEnabled: row.webSearchEnabled }
-      : {}),
-    ...(str(row.codeExecutionAccessToken)
-      ? { codeExecutionAccessToken: str(row.codeExecutionAccessToken) }
-      : {}),
-    ...(usage ? { contextUsage: usage } : {}),
-    messages: upgradeMessages(id, row.createdAt, arr(row.messages))
-      .filter(
-        (message) => message.role === 'user' || message.role === 'assistant',
-      )
-      .map(readMessage),
+    updatedAt: createdAt,
+    model: fields.model,
+    projectId: null,
+    presetId: fields.presetId,
+    pinned: false,
+    webSearchEnabled: fields.webSearchEnabled ?? true,
+    messages: [],
+    activeRun: null,
   }
 }
 
-function summaryOf(row: Value, messageCount: number): ThreadSummary {
-  const thread = readLocalThread({ ...row, messages: [] })
-  return { ...localSummary(thread), messageCount }
+// A chat on this device belongs to no project, is no favorite, and has no
+// run the harness could report.
+export function localSummary(thread: StoredThread): ThreadSummary {
+  return summaryOf(thread, thread.messages.length)
 }
 
-export function localSummary(thread: LocalThread): ThreadSummary {
+function summaryOf(
+  thread: Omit<StoredThread, 'messages'>,
+  messageCount: number,
+): ThreadSummary {
   return {
     id: thread.id,
     title: thread.title,
@@ -222,9 +110,29 @@ export function localSummary(thread: LocalThread): ThreadSummary {
     projectId: null,
     pinned: false,
     webSearchEnabled: thread.webSearchEnabled ?? true,
-    messageCount: thread.messages.length,
+    messageCount,
     activeRun: null,
     contextUsage: thread.contextUsage ?? null,
+  }
+}
+
+// The chat as the view shows it, without the image bytes and page images
+// its attachments hold.
+export function localThreadView(thread: StoredThread): Thread {
+  return {
+    ...localSummary(thread),
+    presetId: thread.presetId ?? null,
+    messages: thread.messages.map(({ attachments, ...message }): Message =>
+      attachments
+        ? {
+            ...message,
+            attachments: attachments.map(
+              ({ base64: _, pages: __, ...shown }) => shown,
+            ),
+          }
+        : message,
+    ),
+    hasOlder: false,
   }
 }
 
@@ -232,18 +140,18 @@ export function localSummary(thread: LocalThread): ThreadSummary {
 // blocks collapse into one holding the new text, where the first was, and
 // its reasoning, search and tool blocks stay.
 export function replaceReplyText(
-  message: LocalMessage,
+  message: ThreadMessage,
   text: string,
-): LocalMessage {
+): ThreadMessage {
   const timeline = message.timeline ?? []
   let first = timeline.findIndex((block) => block.type === 'content')
-  const edited: TimelineBlock = {
+  const edited = {
     id: first < 0 ? 'edited-content' : timeline[first].id,
-    type: 'content',
+    type: 'content' as const,
     content: text,
   }
   if (first < 0) first = timeline.length
-  const blocks: TimelineBlock[] = []
+  const blocks: typeof timeline = []
   for (let i = 0; i <= timeline.length; i++) {
     if (i === first && text !== '') blocks.push(edited)
     if (i < timeline.length && timeline[i].type !== 'content')
@@ -254,7 +162,7 @@ export function replaceReplyText(
 
 // A document's text as the harness reads a stored one: its extracted text,
 // or else the text of its pages.
-export function localDocumentText(attachment: LocalAttachment): string {
+export function localDocumentText(attachment: AttachmentDescriptor): string {
   if (attachment.textContent) return attachment.textContent
   return (attachment.pages ?? [])
     .map((page) => page.text)
@@ -262,105 +170,19 @@ export function localDocumentText(attachment: LocalAttachment): string {
     .join('\n\n')
 }
 
-// The harness's publicAttachment: what a client sees of a stored descriptor.
-export function wireAttachment(attachment: LocalAttachment): WireAttachment {
-  return {
-    id: attachment.id,
-    kind: attachment.kind || attachment.type,
-    fileName: attachment.fileName,
-    mimeType: attachment.mimeType ?? '',
-    size: attachment.fileSize ?? 0,
-    thumbnail: attachment.thumbnailBase64 ?? null,
-    pages: attachment.pages?.length ? attachment.pages.length : null,
-    status: 'ready',
-    ...(attachment.textContent ? { textContent: attachment.textContent } : {}),
-    ...(attachment.description ? { description: attachment.description } : {}),
-  }
+// The images of an attachment the harness may leave out of a thread: an
+// image's bytes, and a document's page images by page.
+interface HeldImages {
+  base64?: string
+  pageImages?: string[]
 }
 
-// The harness's publicMessage.
-export function wireMessage(message: LocalMessage): WireMessage {
-  return {
-    id: message.id,
-    role: message.role,
-    createdAt: message.createdAt,
-    ...(message.quote !== undefined ? { quote: message.quote } : {}),
-    ...(message.model !== undefined ? { model: message.model } : {}),
-    ...(message.modelDisplayName !== undefined
-      ? { modelDisplayName: message.modelDisplayName }
-      : {}),
-    ...(message.isError !== undefined ? { isError: message.isError } : {}),
-    ...(message.isInterrupted !== undefined
-      ? { isInterrupted: message.isInterrupted }
-      : {}),
-    ...(message.usage !== undefined ? { usage: message.usage } : {}),
-    ...(message.role === 'assistant'
-      ? { timeline: message.timeline ?? [] }
-      : { content: message.content }),
-    ...(message.attachments?.length
-      ? { attachments: message.attachments.map(wireAttachment) }
-      : {}),
-  }
-}
+export type ImagesById = Map<string, HeldImages>
 
-export function localThreadView(thread: LocalThread): Thread {
-  return {
-    ...localSummary(thread),
-    presetId: thread.presetId ?? null,
-    messages: thread.messages.map(wireMessage),
-    hasOlder: false,
-  }
-}
-
-// Timestamps take the form the harness gives them, so a stored thread reads
-// back unchanged.
-export const now = () => isoTime(new Date())
-
-function codeExecutionAccessToken(): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('')
-}
-
-export function newLocalThread(
-  id: string,
-  fields: Pick<LocalThread, 'model' | 'presetId' | 'webSearchEnabled'>,
-  createdAt = now(),
-): LocalThread {
-  return {
-    id,
-    title: 'New Chat',
-    titleState: 'placeholder',
-    createdAt,
-    updatedAt: createdAt,
-    ...(fields.model ? { model: fields.model } : {}),
-    ...(fields.presetId ? { presetId: fields.presetId } : {}),
-    ...(fields.webSearchEnabled !== undefined
-      ? { webSearchEnabled: fields.webSearchEnabled }
-      : {}),
-    codeExecutionAccessToken: codeExecutionAccessToken(),
-    messages: [],
-  }
-}
-
-// A chat parsed from an export, as a local chat. Its messages use the
-// previous client's format, which is upgraded as that client's rows are; it
-// is dated by its import, as the previous client dated a saved chat.
-export function importedLocalThread(chat: Chat): LocalThread {
-  const createdAt = isoTime(chat.createdAt) || now()
-  return readLocalThread({
-    ...newLocalThread(chat.id, {}, createdAt),
-    title: chat.title,
-    titleState: chat.titleState,
-    updatedAt: now(),
-    messages: chat.messages,
-  })
-}
-
-const carriesBytes = (attachment: LocalAttachment) =>
+const carriesBytes = (attachment: AttachmentDescriptor) =>
   !!attachment.base64 || !!attachment.pages?.some((page) => page.image)
 
-function withoutBytes(attachment: LocalAttachment): LocalAttachment {
+function withoutBytes(attachment: AttachmentDescriptor): AttachmentDescriptor {
   const { base64: _, ...rest } = attachment
   return attachment.pages
     ? {
@@ -370,12 +192,67 @@ function withoutBytes(attachment: LocalAttachment): LocalAttachment {
     : rest
 }
 
+// Records the images of attachments, by attachment id.
+export function holdImages(
+  attachments: readonly AttachmentDescriptor[],
+  held: ImagesById = new Map(),
+): ImagesById {
+  for (const attachment of attachments) {
+    if (!carriesBytes(attachment)) continue
+    held.set(attachment.id, {
+      ...(attachment.base64 ? { base64: attachment.base64 } : {}),
+      ...(attachment.pages?.some((page) => page.image)
+        ? { pageImages: attachment.pages.map((page) => page.image) }
+        : {}),
+    })
+  }
+  return held
+}
+
+export function heldImages(messages: readonly ThreadMessage[]): ImagesById {
+  const held: ImagesById = new Map()
+  for (const message of messages) holdImages(message.attachments ?? [], held)
+  return held
+}
+
+// Puts back the images the browser holds where a thread lacks them.
+export function withHeldImages(
+  messages: readonly ThreadMessage[],
+  held: ReadonlyMap<string, HeldImages>,
+): ThreadMessage[] {
+  return messages.map((message) =>
+    message.attachments?.some((attachment) => held.has(attachment.id))
+      ? {
+          ...message,
+          attachments: message.attachments.map((attachment) => {
+            const kept = held.get(attachment.id)
+            if (!kept) return attachment
+            const { base64, pageImages } = kept
+            return {
+              ...attachment,
+              ...(base64 && !attachment.base64 ? { base64 } : {}),
+              ...(pageImages && attachment.pages
+                ? {
+                    pages: attachment.pages.map((page, index) =>
+                      pageImages[index] && !page.image
+                        ? { ...page, image: pageImages[index] }
+                        : page,
+                    ),
+                  }
+                : {}),
+            }
+          }),
+        }
+      : message,
+  )
+}
+
 // The copy of a thread a local turn carries. An idle local thread needs it
-// on every turn, since the harness releases the thread after each run.
+// on every turn, since the harness keeps nothing once a run ends.
 export function turnThread(
-  thread: LocalThread,
+  thread: StoredThread,
   recentImageMessages = RECENT_IMAGE_MESSAGES,
-): LocalTurnThread {
+): StoredThread {
   const keep = new Set(
     thread.messages
       .flatMap((message, index) =>
@@ -386,17 +263,7 @@ export function turnThread(
       .slice(-recentImageMessages),
   )
   return {
-    title: thread.title,
-    titleState: thread.titleState,
-    createdAt: thread.createdAt,
-    ...(thread.model ? { model: thread.model } : {}),
-    presetId: thread.presetId ?? null,
-    ...(thread.webSearchEnabled !== undefined
-      ? { webSearchEnabled: thread.webSearchEnabled }
-      : {}),
-    ...(thread.codeExecutionAccessToken
-      ? { codeExecutionAccessToken: thread.codeExecutionAccessToken }
-      : {}),
+    ...thread,
     messages: thread.messages.map((message, index) =>
       message.attachments && !keep.has(index)
         ? { ...message, attachments: message.attachments.map(withoutBytes) }
@@ -408,9 +275,9 @@ export function turnThread(
 // The copy of a thread a share carries. A share holds image thumbnails and
 // document text, never image bytes or page images; a document whose text is
 // only in its pages keeps that text.
-export function shareThread(thread: LocalThread): LocalTurnThread {
+export function shareThread(thread: StoredThread): StoredThread {
   return {
-    ...turnThread(thread),
+    ...thread,
     messages: thread.messages.map((message) =>
       message.attachments
         ? {
@@ -426,211 +293,164 @@ export function shareThread(thread: LocalThread): LocalTurnThread {
   }
 }
 
-export interface CommittedReply {
-  id: string
-  model?: string
-  modelDisplayName?: string
-  usage?: Json
-  isError?: boolean
-  isInterrupted?: boolean
-}
-
-// RUN_FINISHED and RUN_ERROR describe what a run committed to each reply.
-export function committedReplies(metadata: unknown): CommittedReply[] {
-  return arr(obj(metadata).messages).flatMap((item) => {
-    const reply = obj(item)
-    if (!str(reply.id)) return []
-    return [
-      {
-        id: str(reply.id),
-        ...(typeof reply.model === 'string' ? { model: reply.model } : {}),
-        ...(typeof reply.modelDisplayName === 'string'
-          ? { modelDisplayName: reply.modelDisplayName }
-          : {}),
-        ...(reply.usage !== undefined && reply.usage !== null
-          ? { usage: reply.usage as Json }
-          : {}),
-        ...(typeof reply.isError === 'boolean'
-          ? { isError: reply.isError }
-          : {}),
-        ...(typeof reply.isInterrupted === 'boolean'
-          ? { isInterrupted: reply.isInterrupted }
-          : {}),
-      },
-    ]
-  })
-}
-
-function descriptorOf(view: WireAttachment): LocalAttachment {
-  const type = view.kind === 'image' ? 'image' : 'document'
-  return {
-    id: view.id,
-    type,
-    ...(view.kind && view.kind !== type ? { kind: view.kind } : {}),
-    fileName: view.fileName,
-    ...(view.mimeType ? { mimeType: view.mimeType } : {}),
-    ...(typeof view.size === 'number' ? { fileSize: view.size } : {}),
-    ...(view.thumbnail ? { thumbnailBase64: view.thumbnail } : {}),
-    ...(view.textContent ? { textContent: view.textContent } : {}),
-  }
-}
-
-function contentOf(timeline: TimelineBlock[] | undefined): string {
-  return (timeline ?? [])
-    .filter((block) => block.type === 'content')
-    .map((block) => block.content ?? '')
-    .join('')
-}
-
-function storedMessage(
-  message: WireMessage,
-  previous: LocalMessage | undefined,
-  descriptors: ReadonlyMap<string, LocalAttachment>,
-  reply: CommittedReply | undefined,
-  updatedAt: string,
-): LocalMessage {
-  const timeline = message.timeline ?? previous?.timeline
-  const quote = message.quote !== undefined ? message.quote : previous?.quote
-  const attachments = message.attachments?.map((view) => ({
-    ...(descriptors.get(view.id) ?? descriptorOf(view)),
-    ...(view.description ? { description: view.description } : {}),
-  }))
-  const pick = <K extends keyof CommittedReply>(key: K) =>
-    reply?.[key] ?? message[key as keyof WireMessage] ?? previous?.[key]
-  const model = pick('model')
-  const modelDisplayName = pick('modelDisplayName')
-  const usage = pick('usage')
-  const isError = pick('isError')
-  const isInterrupted = pick('isInterrupted')
-  return {
-    id: message.id,
-    role: message.role,
-    createdAt: message.createdAt || previous?.createdAt || updatedAt,
-    content:
-      message.role === 'assistant'
-        ? contentOf(timeline) || previous?.content || ''
-        : (message.content ?? previous?.content ?? ''),
-    ...(typeof quote === 'string' && quote ? { quote } : {}),
-    ...(typeof model === 'string' ? { model } : {}),
-    ...(typeof modelDisplayName === 'string' ? { modelDisplayName } : {}),
-    ...(usage !== undefined ? { usage: usage as Json } : {}),
-    ...(message.role === 'assistant' ? { timeline: timeline ?? [] } : {}),
-    ...(attachments?.length ? { attachments } : {}),
-    ...(isError === true ? { isError } : {}),
-    ...(isInterrupted === true ? { isInterrupted } : {}),
-  }
-}
-
-export interface RunWindow {
-  messages: WireMessage[]
-  hasOlder: boolean
-}
-
-// Merges what the harness reports for a run into the stored transcript:
-// stored messages before the first message of the window are kept, the
-// window replaces the rest, and attachment views map back to the stored
-// descriptors (or the descriptors of this run's uploads).
-export function mergeLocalThread(
-  stored: LocalThread,
-  window: RunWindow,
-  {
-    uploads = new Map(),
-    replies = [],
-    summary,
-    updatedAt = now(),
-  }: {
-    uploads?: ReadonlyMap<string, LocalAttachment>
-    replies?: CommittedReply[]
-    summary?: ThreadSummary | null
-    updatedAt?: string
-  } = {},
-): LocalThread {
-  const first = window.messages[0]?.id
-  const index =
-    first === undefined
-      ? stored.messages.length
-      : stored.messages.findIndex((message) => message.id === first)
-  const windowIds = new Set(window.messages.map((message) => message.id))
-  const prefix =
-    index >= 0
-      ? stored.messages.slice(0, index)
-      : window.hasOlder
-        ? stored.messages.filter((message) => !windowIds.has(message.id))
-        : []
-  const previous = new Map(
-    stored.messages.map((message) => [message.id, message]),
+export function isThread(value: unknown): value is StoredThread {
+  return (
+    !!value && typeof value === 'object' && Array.isArray(obj(value).messages)
   )
-  const descriptors = new Map<string, LocalAttachment>()
-  for (const message of stored.messages)
-    for (const attachment of message.attachments ?? [])
-      descriptors.set(attachment.id, attachment)
-  for (const [id, attachment] of uploads) descriptors.set(id, attachment)
-  const committed = new Map(replies.map((reply) => [reply.id, reply]))
-  // A title the user set while the run streamed outranks the run's title.
-  const title =
-    summary && stored.titleState !== 'manual'
-      ? { title: summary.title, titleState: summary.titleState }
-      : {}
-  const usage = summary
-    ? contextUsage(summary.contextUsage)
-    : stored.contextUsage
-  const { contextUsage: _, ...rest } = stored
+}
+
+async function requestUpgrade(rows: readonly Value[]): Promise<StoredThread[]> {
+  const result = await harnessAPI().post<{ threads?: unknown }>(
+    '/v1/threads/upgrade',
+    { threads: rows },
+    undefined,
+    false,
+  )
+  const threads = arr(result?.threads)
+  if (threads.length !== rows.length || !threads.every(isThread))
+    throw new HarnessError({
+      code: 'UPSTREAM_REFUSED',
+      message: 'The chat service returned invalid chats.',
+    })
+  return threads.map((thread, index) => ({
+    ...(thread as StoredThread),
+    id: str(rows[index].id) || (thread as StoredThread).id,
+  }))
+}
+
+// Upgrades a batch of rows in one request. A batch the harness refuses for a
+// row in it is split, so that only the rows it refuses alone are left out.
+async function upgradeBatch(
+  rows: readonly Value[],
+): Promise<(StoredThread | null)[]> {
+  try {
+    return await requestUpgrade(rows)
+  } catch (cause) {
+    if (
+      !(cause instanceof HarnessError) ||
+      !REFUSED_ROW_STATUSES.has(cause.status ?? 0)
+    )
+      throw cause
+    if (rows.length === 1) return [null]
+    const threads: (StoredThread | null)[] = []
+    for (const row of rows) threads.push(...(await upgradeBatch([row])))
+    return threads
+  }
+}
+
+// Upgrades chats in the previous client's format, from this device or an
+// export or backup, into threads through the harness's reader of old chats,
+// in requests no larger than the harness reads. A row it cannot upgrade, as
+// one too large to send, is handed back as null.
+async function upgradeInBatches(
+  rows: AsyncIterable<Value> | Iterable<Value>,
+  upgraded: (row: Value, thread: StoredThread | null) => Promise<void>,
+) {
+  let batch: Value[] = []
+  let bytes = 0
+  const flush = async () => {
+    const sent = batch
+    batch = []
+    bytes = 0
+    if (!sent.length) return
+    const threads = await upgradeBatch(sent)
+    for (const [index, row] of sent.entries())
+      await upgraded(row, threads[index])
+  }
+  for await (const row of rows) {
+    // Each row also takes the comma that separates it from the next.
+    const size = requestBytes(row) + 1
+    if (size > MAX_TURN_REQUEST_BYTES) {
+      await upgraded(row, null)
+      continue
+    }
+    if (bytes + size > MAX_TURN_REQUEST_BYTES) await flush()
+    batch.push(row)
+    bytes += size
+  }
+  await flush()
+}
+
+export async function upgradeThreads(
+  rows: readonly object[],
+): Promise<(StoredThread | null)[]> {
+  const threads = new Map<Value, StoredThread | null>()
+  await upgradeInBatches(rows as Value[], async (row, thread) => {
+    threads.set(row, thread)
+  })
+  return (rows as Value[]).map((row) => threads.get(row) ?? null)
+}
+
+// A chat as a row the previous client's storage reads: its messages stay on
+// the row, so IndexedDB keeps their attachments' content apart, and the
+// rest of the thread is kept with it as it is.
+interface ThreadRow {
+  id: string
+  isLocalOnly: true
+  threadFormat: typeof THREAD_FORMAT
+  title: string
+  createdAt: string
+  updatedAt: string
+  messages: ThreadMessage[]
+  thread: Omit<StoredThread, 'messages'>
+}
+
+function rowOf({ messages, ...thread }: StoredThread): ThreadRow {
   return {
-    ...rest,
-    ...title,
-    ...(summary?.model ? { model: summary.model } : {}),
-    ...(summary && typeof summary.webSearchEnabled === 'boolean'
-      ? { webSearchEnabled: summary.webSearchEnabled }
-      : {}),
-    ...(usage ? { contextUsage: usage } : {}),
-    updatedAt,
-    messages: [
-      ...prefix,
-      ...window.messages.map((message) =>
-        storedMessage(
-          message,
-          previous.get(message.id),
-          descriptors,
-          committed.get(message.id),
-          updatedAt,
-        ),
-      ),
-    ],
+    id: thread.id,
+    isLocalOnly: true,
+    threadFormat: THREAD_FORMAT,
+    title: thread.title,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+    messages,
+    thread,
+  }
+}
+
+const isThreadRow = (row: Value) => row.threadFormat === THREAD_FORMAT
+
+// A row read back, without what storage added to its messages.
+function threadOf(row: Value): StoredThread {
+  return {
+    ...(obj(row.thread) as Omit<StoredThread, 'messages'>),
+    id: str(row.id),
+    messages: arr(row.messages).map((item) => {
+      const { timestamp: _, attachments, ...message } = obj(item)
+      return defined({
+        ...message,
+        ...(Array.isArray(attachments)
+          ? {
+              attachments: attachments.map((value) => {
+                const { storagePayloadId: __, ...attachment } = obj(value)
+                // An image's payload placeholder.
+                if (
+                  attachment.kind === 'image' &&
+                  attachment.textContent === ''
+                )
+                  delete attachment.textContent
+                return defined(attachment)
+              }),
+            }
+          : {}),
+      }) as unknown as ThreadMessage
+    }),
   }
 }
 
 interface Backend {
   summaries(): Promise<{ row: Value; messageCount: number }[]>
   read(id: string): Promise<Value | null>
-  write(thread: LocalThread): Promise<boolean>
+  write(thread: StoredThread): Promise<boolean>
   remove(id: string): Promise<void>
   ids(): Promise<string[]>
   removeAll(): Promise<void>
 }
 
-const hasPayload = (attachment: LocalAttachment) =>
+const hasPayload = (attachment: AttachmentDescriptor) =>
   attachment.base64 !== undefined ||
-  attachment.thumbnailBase64 !== undefined ||
   attachment.textContent !== undefined ||
   attachment.pages !== undefined
-
-// The row shape the previous client wrote, so it can still read local chats.
-function chatRow(thread: LocalThread): Omit<StoredChatRow, 'createdAt'> {
-  return {
-    ...thread,
-    isLocalOnly: true,
-    messages: thread.messages.map((message) => ({
-      ...message,
-      timestamp: message.createdAt,
-      // Every stored attachment needs some payload for the payload store.
-      attachments: message.attachments?.map((attachment) =>
-        hasPayload(attachment)
-          ? attachment
-          : { ...attachment, textContent: '' },
-      ),
-    })) as unknown as Message[],
-  }
-}
 
 function indexedDBBackend(storage: IndexedDBStorage): Backend {
   return {
@@ -647,10 +467,23 @@ function indexedDBBackend(storage: IndexedDBStorage): Backend {
       return row?.isLocalOnly ? (row as unknown as Value) : null
     },
     async write(thread) {
+      const row = rowOf(thread)
       const result = await storage.saveChat({
-        ...chatRow(thread),
-        createdAt: thread.createdAt,
-      })
+        ...row,
+        // Every stored attachment needs some payload for the payload store.
+        messages: row.messages.map((message) =>
+          message.attachments
+            ? {
+                ...message,
+                attachments: message.attachments.map((attachment) =>
+                  hasPayload(attachment)
+                    ? attachment
+                    : { ...attachment, textContent: '' },
+                ),
+              }
+            : message,
+        ),
+      } as unknown as StoredChatRow)
       return result.saved
     },
     remove: (id) => storage.deleteChat(id),
@@ -661,54 +494,13 @@ function indexedDBBackend(storage: IndexedDBStorage): Backend {
   }
 }
 
-// The images session storage leaves out of an attachment: an image's bytes,
-// and a document's page images by page.
-interface HeldImages {
-  base64?: string
-  pageImages?: string[]
-}
-
 // A signed-out visitor's chats last as long as the browser tab. Session
 // storage cannot hold large images, so an image's bytes and a document's
 // page images stay in this page's memory only, by chat and attachment id;
 // after a reload the chat keeps the image's thumbnail and the document's
 // text.
 function sessionBackend(): Backend {
-  const images = new Map<string, Map<string, HeldImages>>()
-  const withImages = (
-    row: Value,
-    kept: ReadonlyMap<string, HeldImages>,
-  ): Value => ({
-    ...row,
-    messages: arr(row.messages).map((item) => {
-      const message = obj(item)
-      return Array.isArray(message.attachments)
-        ? {
-            ...message,
-            attachments: message.attachments.map((value) => {
-              const attachment = obj(value)
-              const held = kept.get(str(attachment.id))
-              if (!held) return attachment
-              const { base64, pageImages } = held
-              return {
-                ...attachment,
-                ...(base64 && !attachment.base64 ? { base64 } : {}),
-                ...(pageImages && Array.isArray(attachment.pages)
-                  ? {
-                      pages: attachment.pages.map((page, index) => {
-                        const image = pageImages[index]
-                        return image && !obj(page).image
-                          ? { ...obj(page), image }
-                          : page
-                      }),
-                    }
-                  : {}),
-              }
-            }),
-          }
-        : message
-    }),
-  })
+  const images = new Map<string, ImagesById>()
   return {
     async summaries() {
       return sessionChatStorage.getAllChats().map((chat) => ({
@@ -720,42 +512,31 @@ function sessionBackend(): Backend {
       const row = sessionChatStorage.getChat(id) as unknown as Value | null
       const kept = images.get(id)
       if (!row) images.delete(id)
-      return row && kept ? withImages(row, kept) : row
+      if (!row || !kept || !isThreadRow(row)) return row
+      return {
+        ...row,
+        messages: withHeldImages(arr(row.messages) as ThreadMessage[], kept),
+      }
     },
     async write(thread) {
-      const kept = new Map<string, HeldImages>()
-      const messages = thread.messages.map((message) =>
-        message.attachments
-          ? {
-              ...message,
-              attachments: message.attachments.map((attachment) => {
-                const base64 =
-                  attachment.type === 'image' ? attachment.base64 : undefined
-                const pages = attachment.pages?.some((page) => page.image)
-                  ? attachment.pages
-                  : undefined
-                if (!base64 && !pages) return attachment
-                kept.set(attachment.id, {
-                  ...(base64 ? { base64 } : {}),
-                  ...(pages
-                    ? { pageImages: pages.map((page) => page.image) }
-                    : {}),
-                })
-                const { base64: _, ...rest } = attachment
-                return {
-                  ...(base64 ? rest : attachment),
-                  ...(pages
-                    ? { pages: pages.map((page) => ({ ...page, image: '' })) }
-                    : {}),
+      const kept = heldImages(thread.messages)
+      sessionChatStorage.saveChat(
+        rowOf({
+          ...thread,
+          messages: thread.messages.map((message) =>
+            message.attachments
+              ? {
+                  ...message,
+                  attachments: message.attachments.map((attachment) =>
+                    kept.has(attachment.id)
+                      ? withoutBytes(attachment)
+                      : attachment,
+                  ),
                 }
-              }),
-            }
-          : message,
+              : message,
+          ),
+        }) as unknown as Chat,
       )
-      sessionChatStorage.saveChat({
-        ...chatRow({ ...thread, messages }),
-        createdAt: new Date(thread.createdAt),
-      } as Chat)
       if (kept.size) images.set(thread.id, kept)
       else images.delete(thread.id)
       return true
@@ -801,23 +582,88 @@ function createStore(
       if (deleted) deletedChatsTracker.markAsDeleted(id)
       else deletedChatsTracker.removeLocalDeletion(id)
   }
+  // Rows the previous client wrote are rewritten as threads once, before
+  // anything reads them. A row the harness cannot upgrade stays as it was
+  // and is left out until a later attempt upgrades it.
+  let upgrading: Promise<void> | null = null
+  const upgradeOldRows = () => {
+    upgrading ??= (async () => {
+      const ids = (await backend.summaries())
+        .filter(({ row }) => !isThreadRow(row))
+        .map(({ row }) => str(row.id))
+      async function* rows() {
+        for (const id of ids) {
+          const row = await backend.read(id)
+          if (row && !isThreadRow(row)) yield row
+        }
+      }
+      const written: string[] = []
+      await upgradeInBatches(rows(), async (row, thread) => {
+        const id = str(row.id)
+        if (!thread) {
+          logError(
+            'Failed to upgrade a chat stored on this device',
+            undefined,
+            {
+              component: 'localThreads',
+              action: 'upgradeOldRows',
+              metadata: { chatId: id },
+            },
+          )
+          return
+        }
+        const saved = await serialize(id, async () => {
+          const current = await backend.read(id)
+          if (!current || isThreadRow(current) || isDeleted(id)) return false
+          return backend.write({ ...thread, id })
+        })
+        if (saved) written.push(id)
+      })
+      if (written.length) emit({ reason: 'save', ids: written })
+    })().finally(() => {
+      upgrading = null
+    })
+    return upgrading
+  }
+  const readThread = async (id: string): Promise<StoredThread | null> => {
+    let row = await backend.read(id)
+    if (row && !isThreadRow(row)) {
+      await upgradeOldRows()
+      row = await backend.read(id)
+    }
+    return row && isThreadRow(row) ? threadOf(row) : null
+  }
   return {
     async list() {
-      return (await backend.summaries())
-        .filter(({ row }) => !isDeleted(str(row.id)))
-        .map(({ row, messageCount }) => summaryOf(row, messageCount))
+      let rows = await backend.summaries()
+      if (rows.some(({ row }) => !isThreadRow(row))) {
+        await upgradeOldRows()
+        rows = await backend.summaries()
+      }
+      return rows
+        .filter(({ row }) => isThreadRow(row) && !isDeleted(str(row.id)))
+        .map(({ row, messageCount }) =>
+          summaryOf(
+            {
+              ...(obj(row.thread) as unknown as StoredThread),
+              id: str(row.id),
+            },
+            messageCount,
+          ),
+        )
         .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
     },
     async get(id) {
       if (isDeleted(id)) return null
-      const row = await backend.read(id)
-      return row ? readLocalThread(row) : null
+      return readThread(id)
     },
-    update(id, change) {
+    async update(id, change) {
+      // An old row is upgraded before the change reads it.
+      if (!isDeleted(id)) await readThread(id)
       return serialize(id, async () => {
         if (isDeleted(id)) return null
         const row = await backend.read(id)
-        const next = change(row ? readLocalThread(row) : null)
+        const next = change(row && isThreadRow(row) ? threadOf(row) : null)
         if (!next || isDeleted(id)) return null
         if (!(await backend.write(next))) return null
         emit({ reason: 'save', ids: [id] })
@@ -881,18 +727,18 @@ export function localThreadStore(scope: 'device' | 'tab'): LocalThreadStore {
 // A temporary chat that runs as a local thread keeps its transcript in memory
 // only, for as long as it stays open.
 export function memoryThreadStore(): LocalThreadStore {
-  const threads = new Map<string, LocalThread>()
+  const threads = new Map<string, ThreadRow>()
   return createStore(
     {
       async summaries() {
         return []
       },
       async read(id) {
-        const thread = threads.get(id)
-        return thread ? (structuredClone(thread) as unknown as Value) : null
+        const row = threads.get(id)
+        return row ? (structuredClone(row) as unknown as Value) : null
       },
       async write(thread) {
-        threads.set(thread.id, structuredClone(thread))
+        threads.set(thread.id, structuredClone(rowOf(thread)))
         return true
       },
       async remove(id) {

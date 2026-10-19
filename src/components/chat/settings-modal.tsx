@@ -31,8 +31,8 @@ import {
   type ImportStatusResponse,
 } from '@/services/harness/archives'
 import {
-  importedLocalThread,
   localThreadStore,
+  upgradeThreads,
 } from '@/services/harness/local-threads'
 import { useHarness } from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
@@ -1306,6 +1306,14 @@ export function SettingsModal({
   ): Promise<{ imported: number; errors: string[] }> => {
     setImportProgress({ current: 0, total: chats.length, type: 'chats' })
     const store = localThreadStore(api.userId ? 'device' : 'tab')
+    // An imported chat is in the previous client's format, which the harness
+    // upgrades the way it upgrades that client's rows. It is dated by its
+    // import, as that client dated a saved chat.
+    const updatedAt = new Date().toISOString()
+    const threads = await upgradeThreads(
+      chats.map((chat) => ({ ...chat, updatedAt, isLocalOnly: true })),
+    )
+    signal.throwIfAborted()
 
     let imported = 0
     const errors: string[] = []
@@ -1313,8 +1321,8 @@ export function SettingsModal({
     for (let i = 0; i < chats.length; i++) {
       signal.throwIfAborted()
       try {
-        const chat = chats[i]
-        if (!(await store.update(chat.id, () => importedLocalThread(chat))))
+        const thread = threads[i]
+        if (!thread || !(await store.update(thread.id, () => thread)))
           throw new Error('The chat was not saved')
         imported++
       } catch {
