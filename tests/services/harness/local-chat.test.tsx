@@ -78,13 +78,13 @@ function summary(threadId: string, title = 'New Chat') {
 }
 
 // A device run's final event, which returns the whole thread.
-function finished(threadId: string, thread: StoredThread): Frame['event'] {
+function finished(threadId: string, thread: StoredThread) {
   return {
     type: 'RUN_FINISHED',
     threadId,
     runId: 'run-1',
-    metadata: { thread } as unknown as Frame['event']['metadata'],
-  }
+    metadata: { thread },
+  } satisfies Frame['event']
 }
 
 // A device run that shows its window and returns the thread.

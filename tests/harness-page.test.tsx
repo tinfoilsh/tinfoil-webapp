@@ -1,4 +1,4 @@
-import type { Frame, Thread, Turn } from '@/services/harness/types'
+import type { Frame, Message, Thread, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -26,30 +26,32 @@ const started: Frame = {
   id: 0,
   event: { type: 'RUN_STARTED', threadId: thread.id, runId: 'run-1' },
 }
+const answered: Message[] = [
+  {
+    id: 'u',
+    role: 'user',
+    content: 'private question',
+    createdAt: thread.createdAt,
+  },
+  {
+    id: 'a',
+    role: 'assistant',
+    createdAt: thread.createdAt,
+    timeline: [{ id: 'text', type: 'content', content: 'private answer' }],
+  },
+]
 const messages: Frame = {
   id: 1,
-  event: {
-    type: 'MESSAGES_SNAPSHOT',
-    messages: [
-      {
-        id: 'u',
-        role: 'user',
-        content: 'private question',
-        createdAt: thread.createdAt,
-      },
-      {
-        id: 'a',
-        role: 'assistant',
-        createdAt: thread.createdAt,
-        timeline: [{ id: 'text', type: 'content', content: 'private answer' }],
-      },
-    ],
-  },
+  event: { type: 'MESSAGES_SNAPSHOT', messages: answered },
 }
-const finished: Frame = {
+const finished = {
   id: 2,
-  event: { type: 'RUN_FINISHED', threadId: thread.id, runId: 'run-1' },
-}
+  event: {
+    type: 'RUN_FINISHED',
+    threadId: thread.id,
+    runId: 'run-1',
+  },
+} satisfies Frame
 beforeEach(() => {
   signIn({
     userId: null,
@@ -67,9 +69,7 @@ it('runs a signed-out first turn as a local thread with its preset and keeps it 
       ...finished,
       event: {
         ...finished.event,
-        metadata: {
-          thread: { ...input.thread, messages: messages.event.messages },
-        } as unknown as Frame['event']['metadata'],
+        metadata: { thread: { ...input.thread, messages: answered } },
       },
     }
   })
@@ -97,7 +97,7 @@ it('runs a signed-out first turn as a local thread with its preset and keeps it 
   expect(saved).toMatchObject({
     id: input.threadId,
     thread: { presetId: 'builtin:tutor' },
-    messages: messages.event.messages,
+    messages: answered,
   })
   expect(localStorage.length).toBe(0)
 })

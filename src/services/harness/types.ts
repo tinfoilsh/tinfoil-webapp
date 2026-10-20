@@ -57,7 +57,7 @@ export interface TimelineBlock {
   result?: Json
   metadata?: Json
   progress?: Json[]
-  activity?: Json
+  activity?: ToolActivity
   resolvedAt?: string | number | null
   resolution?: { text: string; data?: Json } | null
 }
@@ -236,35 +236,119 @@ export interface Snapshot {
   queue: QueueItem[]
   rateLimit?: RateLimit
 }
-export interface Patch {
-  op: 'add' | 'replace' | 'remove' | 'test' | 'move' | 'copy'
-  path: string
-  value?: Json
-  from?: string
+
+// The state changes a run sends: its queue, and the title the harness
+// names a new chat with.
+export type StatePatch =
+  | { op: 'add'; path: '/queue/-'; value: QueueItem }
+  | { op: 'replace'; path: '/queue'; value: QueueItem[] }
+  | { op: 'replace'; path: '/thread/title'; value: string }
+  | {
+      op: 'replace'
+      path: '/thread/titleState'
+      value: ThreadSummary['titleState']
+    }
+
+// A tool's output as it runs: its progress, and the lines it printed.
+export interface ToolActivity {
+  toolCallId?: string
+  tool?: string
+  progress?: number
+  output: Json[]
+}
+export type ActivityPatch =
+  | { op: 'replace'; path: '/progress'; value: number }
+  | { op: 'add'; path: '/output/-'; value: Json }
+
+// What a run's final event reports. A device chat's run returns the whole
+// thread.
+export interface RunMetadata {
+  cancelled?: boolean
+  rateLimit?: RateLimit
+  usage?: Json
+  thread?: unknown
 }
 
-export interface HarnessEvent {
-  type: string
-  timestamp?: string
-  threadId?: string
-  runId?: string
-  messageId?: string
-  parentMessageId?: string
-  toolCallId?: string
-  toolCallName?: string
-  delta?: string | Patch[]
-  snapshot?: Snapshot
-  messages?: Message[]
-  hasOlder?: boolean
-  content?: Json
-  metadata?: RecordValue
-  patch?: Patch[]
+interface RunError {
   code?: string
   message?: string
   kind?: string
   resetsAt?: string
   retryAfter?: number
 }
+
+// The events of a run's stream, as the harness emits them.
+export type HarnessEvent = { timestamp?: string } & (
+  | {
+      type: 'RUN_STARTED'
+      threadId?: string
+      runId: string
+      // The reply a continuation streams into.
+      messageId?: string
+      queued?: boolean
+    }
+  | { type: 'MESSAGES_SNAPSHOT'; messages: Message[]; hasOlder?: boolean }
+  | { type: 'STATE_SNAPSHOT'; snapshot: Snapshot }
+  | {
+      type: 'STATE_DELTA'
+      threadId?: string
+      // Set for a turn queued behind the running reply.
+      runId?: string
+      delta: StatePatch[]
+    }
+  | {
+      type: 'TEXT_MESSAGE_CHUNK'
+      messageId: string
+      role?: 'assistant'
+      delta: string
+    }
+  | { type: 'REASONING_MESSAGE_CHUNK'; messageId: string; delta: string }
+  | {
+      type: 'TOOL_CALL_START'
+      toolCallId: string
+      toolCallName: string
+      parentMessageId?: string
+    }
+  | { type: 'TOOL_CALL_ARGS'; toolCallId: string; delta: string }
+  | { type: 'TOOL_CALL_END'; toolCallId: string }
+  | {
+      type: 'TOOL_CALL_RESULT'
+      toolCallId: string
+      messageId?: string
+      role?: 'tool'
+      content?: Json
+      metadata?: RecordValue
+    }
+  | {
+      type: 'ACTIVITY_SNAPSHOT'
+      messageId: string
+      activityType?: string
+      content: ToolActivity
+    }
+  | {
+      type: 'ACTIVITY_DELTA'
+      messageId: string
+      activityType?: string
+      patch: ActivityPatch[]
+    }
+  | {
+      type: 'RUN_FINISHED'
+      threadId?: string
+      runId?: string
+      metadata?: RunMetadata
+    }
+  | ({
+      type: 'RUN_ERROR'
+      threadId?: string
+      runId?: string
+      metadata?: RunMetadata
+    } & RunError)
+)
+
+export type TerminalEvent = Extract<
+  HarnessEvent,
+  { type: 'RUN_FINISHED' | 'RUN_ERROR' }
+>
 
 export interface Frame {
   event: HarnessEvent

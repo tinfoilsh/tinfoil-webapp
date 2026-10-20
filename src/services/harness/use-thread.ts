@@ -28,7 +28,7 @@ import {
   type LocalThreadStore,
 } from './local-threads'
 import { useHarness } from './provider'
-import { initialChat, reduceEvent } from './reducer'
+import { initialChat, isTerminal, reduceEvent, runOf } from './reducer'
 import type { RunSpend } from './runtime'
 import { MAX_SHARE_REQUEST_BYTES, requestBytes, shareTooLarge } from './shares'
 import { HarnessError } from './sse'
@@ -43,9 +43,9 @@ import type {
   AttachmentDescriptor,
   Frame,
   HarnessErrorBody,
-  HarnessEvent,
   RateLimit,
   StoredThread,
+  TerminalEvent,
   Thread,
   ThreadMessage,
   ThreadSummary,
@@ -344,7 +344,7 @@ export function useThread(
   // A device run's final event carries the whole thread, which this device
   // stores as it is, with the images it holds where the harness left them
   // out.
-  async function saveRun(run: LocalRun, event: HarnessEvent) {
+  async function saveRun(run: LocalRun, event: TerminalEvent) {
     const thread: unknown = event.metadata?.thread
     if (!isThread(thread)) return
     const saved = await run.store.update(run.threadId, (stored) => ({
@@ -401,7 +401,7 @@ export function useThread(
       )) {
         const attached = version === generation.current
         if (!attached && !run) break
-        runId = frame.event.runId ?? runId
+        runId = runOf(frame.event) ?? runId
         const base = attached ? current.current : view
         const next = reduceEvent(base, frame, runId)
         const event = frame.event
@@ -416,8 +416,6 @@ export function useThread(
           current.current = next
           setState(next)
         }
-        const terminal =
-          event.type === 'RUN_FINISHED' || event.type === 'RUN_ERROR'
         if (event.type === 'RUN_FINISHED')
           succeeded = event.metadata?.cancelled !== true
         if (event.type === 'RUN_STARTED') {
@@ -449,7 +447,7 @@ export function useThread(
               }
           }
         }
-        if (run && terminal)
+        if (run && isTerminal(event))
           await saveRun(run, event).catch((cause) => {
             logError('Failed to save a local chat', cause, {
               component: 'useThread',
@@ -460,7 +458,7 @@ export function useThread(
                 message: 'This chat could not be saved on this device.',
               })
           })
-        if (terminal) {
+        if (isTerminal(event)) {
           forgetReceipt(runId)
           void (api.userId ? refresh() : api.refresh()).catch(report)
         }

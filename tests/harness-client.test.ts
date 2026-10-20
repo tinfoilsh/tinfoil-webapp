@@ -1,9 +1,5 @@
 import { HarnessClient } from '@/services/harness/client'
-import {
-  applyPatch,
-  initialChat,
-  reduceEvent,
-} from '@/services/harness/reducer'
+import { initialChat, reduceEvent } from '@/services/harness/reducer'
 import { HarnessError, readEvents } from '@/services/harness/sse'
 import type { Frame, Message, TimelineBlock } from '@/services/harness/types'
 import { describe, expect, it, vi } from 'vitest'
@@ -177,7 +173,7 @@ describe('harness reducer', () => {
   })
   it('keeps thinking, text, tools and progress in order and marks cancelled partial output', () => {
     let state = initialChat()
-    for (const event of [
+    const events: Frame['event'][] = [
       {
         type: 'REASONING_MESSAGE_CHUNK',
         messageId: 'm-reasoning',
@@ -201,8 +197,8 @@ describe('harness reducer', () => {
         patch: [{ op: 'add' as const, path: '/output/-', value: '1' }],
       },
       { type: 'RUN_FINISHED', metadata: { cancelled: true } },
-    ])
-      state = reduceEvent(state, { event })
+    ]
+    for (const event of events) state = reduceEvent(state, { event })
     expect(state.messages[0].timeline?.map((b) => b.type)).toEqual([
       'thinking',
       'content',
@@ -211,27 +207,101 @@ describe('harness reducer', () => {
     expect(state.messages[0].timeline?.[2].progress).toEqual(['1'])
     expect(state.messages[0].isInterrupted).toBe(true)
   })
-  it('applies queue patches atomically with JSON pointer escaping', () => {
-    const original = { queue: [{ id: 'a' }], 'a/b': { '~': 1 } }
-    expect(
-      applyPatch(original, [
-        { op: 'test', path: '/a~1b/~0', value: 1 },
-        { op: 'copy', from: '/queue/0', path: '/queue/-' },
-        { op: 'replace', path: '/queue/1/id', value: 'b' },
-        { op: 'move', from: '/queue/0', path: '/queue/1' },
-        { op: 'remove', path: '/a~1b' },
-      ]),
-    ).toEqual({ queue: [{ id: 'b' }, { id: 'a' }] })
+  it('applies the queue and title changes a run sends, and refuses others', () => {
+    const summary = {
+      id: 't',
+      title: 'New Chat',
+      titleState: 'placeholder',
+      createdAt: 't0',
+      updatedAt: 't0',
+      model: 'test-model',
+      projectId: null,
+      pinned: false,
+      webSearchEnabled: true,
+      messageCount: 1,
+      activeRun: null,
+    } as const
+    let state = reduceEvent(initialChat(), {
+      id: 0,
+      event: { type: 'RUN_STARTED', runId: 'r', threadId: 't' },
+    })
+    state = reduceEvent(state, {
+      id: 1,
+      event: {
+        type: 'STATE_SNAPSHOT',
+        snapshot: {
+          thread: summary,
+          queue: [{ queueId: 'q1', content: 'first' }],
+        },
+      },
+    })
+    const before = state
+    state = reduceEvent(state, {
+      id: 2,
+      event: {
+        type: 'STATE_DELTA',
+        delta: [
+          {
+            op: 'add',
+            path: '/queue/-',
+            value: { queueId: 'q2', content: 'second' },
+          },
+          { op: 'replace', path: '/thread/title', value: 'Named' },
+          { op: 'replace', path: '/thread/titleState', value: 'generated' },
+        ],
+      },
+    })
+    expect(state.snapshot).toEqual({
+      thread: { ...summary, title: 'Named', titleState: 'generated' },
+      queue: [
+        { queueId: 'q1', content: 'first' },
+        { queueId: 'q2', content: 'second' },
+      ],
+    })
+    expect(before.snapshot).toEqual({
+      thread: summary,
+      queue: [{ queueId: 'q1', content: 'first' }],
+    })
+    state = reduceEvent(state, {
+      id: 3,
+      event: {
+        type: 'STATE_DELTA',
+        delta: [{ op: 'replace', path: '/queue', value: [] }],
+      },
+    })
+    expect(state.snapshot.queue).toEqual([])
     expect(() =>
-      applyPatch(original, [
-        { op: 'remove', path: '/queue/0' },
-        { op: 'remove', path: '/missing' },
-      ]),
+      reduceEvent(state, {
+        id: 4,
+        event: {
+          type: 'STATE_DELTA',
+          delta: [{ op: 'remove', path: '/queue/0' }] as never,
+        },
+      }),
     ).toThrow(HarnessError)
-    expect(original.queue).toEqual([{ id: 'a' }])
-    expect(() =>
-      applyPatch({}, [{ op: 'add', path: '/__proto__/polluted', value: true }]),
-    ).toThrow(HarnessError)
+  })
+  it('leaves the state a frame was applied to as it was', () => {
+    const started = reduceEvent(initialChat(), {
+      id: 0,
+      event: { type: 'RUN_STARTED', runId: 'r', threadId: 't' },
+    })
+    const first = reduceEvent(started, {
+      id: 1,
+      event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'm', delta: 'Hello' },
+    })
+    const second = reduceEvent(first, {
+      id: 2,
+      event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'm', delta: ' there' },
+    })
+
+    expect(first.messages[0].timeline).toEqual([
+      { id: 'm_content_0', type: 'content', content: 'Hello' },
+    ])
+    expect(second.messages[0].timeline).toEqual([
+      { id: 'm_content_0', type: 'content', content: 'Hello there' },
+    ])
+    expect(started.messages).toEqual([])
+    expect(first.cursors).toEqual({ r: 1 })
   })
 })
 

@@ -127,9 +127,7 @@ function regenerated(window: Message[], thread?: StoredThread) {
         type: 'RUN_FINISHED',
         threadId: THREAD_ID,
         runId: 'run-regen',
-        ...(thread
-          ? { metadata: { thread } as unknown as Frame['event']['metadata'] }
-          : {}),
+        ...(thread ? { metadata: { thread } } : {}),
       },
     ]
     for (const [id, event] of events.entries()) yield { id, event }
@@ -698,9 +696,7 @@ describe('changing messages of a local chat', () => {
           type: 'RUN_FINISHED',
           threadId: THREAD_ID,
           runId: 'run-continue',
-          metadata: {
-            thread: returned,
-          } as unknown as Frame['event']['metadata'],
+          metadata: { thread: returned },
         },
       ]
       for (const [id, event] of events.entries()) yield { id, event }
