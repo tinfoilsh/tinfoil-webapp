@@ -36,34 +36,12 @@ import {
 import { FileText } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
+import type { RenderArtifactPreviewArgs } from '../widget-args'
 
 export const OPEN_ARTIFACT_PREVIEW_EVENT = 'openArtifactPreviewSidebar'
 
-const sourceSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('url'),
-    url: z.string(),
-  }),
-  z.object({
-    type: z.literal('html'),
-    html: z.string(),
-  }),
-  z.object({
-    type: z.literal('markdown'),
-    markdown: z.string(),
-  }),
-])
-
-export type ArtifactSource = z.infer<typeof sourceSchema>
-
-const schema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
-  source: sourceSchema,
-  footer: z.string().optional(),
-})
+export type ArtifactSource = RenderArtifactPreviewArgs['source']
 
 export interface ArtifactPreviewSidebarDetail {
   title?: string
@@ -524,7 +502,7 @@ function ArtifactPreviewInlineCard({
   isSelected = false,
   shouldAutoOpen,
   toolCallId,
-}: z.infer<typeof schema> & {
+}: RenderArtifactPreviewArgs & {
   isSelected?: boolean
   shouldAutoOpen?: boolean
   toolCallId?: string
@@ -597,7 +575,6 @@ function ArtifactPreviewInlineCard({
 
 export const widget = defineGenUIWidget({
   name: 'render_artifact_preview',
-  schema,
   render: (args, { isActive, isStreaming, toolCallId }) => (
     <ArtifactPreviewInlineCard
       {...args}

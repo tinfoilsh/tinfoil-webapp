@@ -1,23 +1,9 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { TrendingDown, TrendingUp } from 'lucide-react'
-import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
-
-const schema = z.object({
-  stats: z
-    .array(
-      z.object({
-        label: z.string(),
-        value: z.union([z.string(), z.number()]),
-        trend: z.enum(['up', 'down']).optional(),
-      }),
-    )
-    .min(1),
-})
 
 export const widget = defineGenUIWidget({
   name: 'render_stat_cards',
-  schema,
   render: ({ stats }) => (
     <div className="my-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
       {stats.map((stat, i) => (

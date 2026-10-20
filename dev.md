@@ -16,9 +16,9 @@ npm run lint
 npm run build
 ```
 
-With the harness repository checked out next to this one, also check the
-widget schemas against the harness's tool declarations:
-`node ../confidential-tinfoil-harness/scripts/check-widgets.cjs .`
+With the harness repository checked out next to this one, `npm test` also
+checks the widget argument types against the harness's tool declarations;
+`npm run generate:widgets` regenerates them.
 
 To reproduce a shuffled failure, pass the seed printed by Vitest:
 `npm run test:shuffle -- --sequence.seed=42`. Keep the workstation's timezone

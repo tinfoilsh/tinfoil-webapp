@@ -95,7 +95,7 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
       {toolCalls.map((tc) => {
         const widget = getGenUIWidget(tc.name)
 
-        // The schema is unavailable on this client, so waiting for more
+        // The widget is unavailable on this client, so waiting for more
         // argument bytes cannot make this component renderable.
         if (!widget) {
           return (
@@ -121,10 +121,7 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
         }
 
         const input = parseInput(tc)
-        const parsedInput = input.ok
-          ? widget.schema.safeParse(input.data)
-          : null
-        if (parsedInput?.success && widget.render) {
+        if (input.ok && widget.render) {
           return (
             <GenUIWidgetErrorBoundary
               key={tc.id}
@@ -140,7 +137,7 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
                   result={tc.result}
                   toolCallId={tc.id}
                   toolName={tc.name}
-                  input={parsedInput.data}
+                  input={input.data}
                   isActive={activeArtifactToolCallId === tc.id}
                   isDarkMode={isDarkMode}
                   isStreaming={isStreaming}
@@ -154,23 +151,12 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
           return <StreamingToolCallTracer key={tc.id} toolCall={tc} />
         }
 
-        // Registered widget but schema validation failed. The model
-        // produced something the widget couldn't accept — offer a retry.
+        // Registered widget whose arguments are not JSON — offer a retry.
         return (
           <ParseFailureCard
             key={tc.id}
             toolName={tc.name}
-            failure={
-              parsedInput && !parsedInput.success
-                ? {
-                    type: 'schema_invalid',
-                    issues: parsedInput.error.issues.map((issue) => ({
-                      code: issue.code,
-                      path: issue.path,
-                    })),
-                  }
-                : { type: 'invalid_json' }
-            }
+            failure={{ type: 'invalid_json' }}
             onRetry={onRetry}
             onRetryToolCall={
               onRetryToolCall ? () => onRetryToolCall(tc.id) : undefined
@@ -266,13 +252,7 @@ function StreamingToolCallTracer({ toolCall }: { toolCall: GenUIToolCall }) {
   )
 }
 
-type ParseFailure =
-  | { type: 'invalid_json' }
-  | { type: 'render_exception' }
-  | {
-      type: 'schema_invalid'
-      issues?: Array<{ code: string; path: Array<string | number> }>
-    }
+type ParseFailure = { type: 'invalid_json' } | { type: 'render_exception' }
 
 function ParseFailureCard({
   toolName,
@@ -292,11 +272,6 @@ function ParseFailureCard({
   const [isRetrying, setIsRetrying] = useState(false)
   const [retryFailure, setRetryFailure] =
     useState<ArtifactRetryErrorCode | null>(null)
-  const primaryIssue =
-    failure.type === 'schema_invalid' ? failure.issues?.[0] : undefined
-  const issueSummary = primaryIssue
-    ? `${primaryIssue.path.join('.') || 'root'} (${primaryIssue.code})`
-    : undefined
 
   // Logging is a side effect — kept out of render so React's render-twice
   // strict mode and re-renders from parent state changes don't produce
@@ -309,10 +284,9 @@ function ParseFailureCard({
       metadata: {
         toolName,
         failure: failure.type,
-        issues: issueSummary,
       },
     })
-  }, [toolName, failure.type, issueSummary, logFailure])
+  }, [toolName, failure.type, logFailure])
 
   const handleRetryToolCall = async () => {
     if (isRetrying) return
@@ -349,11 +323,7 @@ function ParseFailureCard({
     ? retryFailureDescriptions[retryFailure]
     : failure.type === 'invalid_json'
       ? 'The component data is not valid JSON.'
-      : failure.type === 'render_exception'
-        ? `The ${prettyWidgetName(toolName)} component ran into a problem while rendering.`
-        : issueSummary
-          ? `The component data failed schema validation at ${issueSummary}.`
-          : `The response didn't match the ${toolName} widget's expected shape.`
+      : `The ${prettyWidgetName(toolName)} component ran into a problem while rendering.`
 
   return (
     <div className="my-4 flex flex-col items-stretch gap-3 rounded-lg border border-border-subtle bg-surface-card px-4 py-3 text-sm md:flex-row md:items-center md:justify-between">
