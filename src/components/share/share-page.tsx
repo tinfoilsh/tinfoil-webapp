@@ -4,6 +4,7 @@ import { initializeRenderers } from '@/components/chat/renderers/client'
 import { SharedChatView } from '@/components/chat/shared-chat-view'
 import { displayModels, type BaseModel } from '@/config/models'
 import { useHarness } from '@/services/harness/provider'
+import { openShare } from '@/services/harness/shares'
 import { HarnessError } from '@/services/harness/sse'
 import type { SharedThread } from '@/services/harness/types'
 import Head from 'next/head'
@@ -21,7 +22,7 @@ const UNSUPPORTED_SHARE_LINK_MESSAGE =
   'This share link uses an unsupported format. Ask the sender to create a new link.'
 
 export default function SharePage({ chatId }: { chatId?: string }) {
-  const { api, session } = useHarness()
+  const { session } = useHarness()
   const [loadingState, setLoadingState] = useState<LoadingState>('loading')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [chatData, setChatData] = useState<SharedThread | null>(null)
@@ -81,12 +82,7 @@ export default function SharePage({ chatId }: { chatId?: string }) {
       const shareKeyHex = fragmentMatch[1]
 
       try {
-        const parsed = await api.post<SharedThread>(
-          '/v1/shares/open',
-          { shareId: chatId, fragment: `v2:${shareKeyHex}` },
-          undefined,
-          false,
-        )
+        const parsed = await openShare(chatId, shareKeyHex)
         const chatModel = displayModels(session)[0] ?? {
           modelName: '',
           name: 'Shared chat',
@@ -110,7 +106,7 @@ export default function SharePage({ chatId }: { chatId?: string }) {
     }
 
     loadData()
-  }, [api, session, chatId])
+  }, [session, chatId])
 
   const formatDate = (timestamp: string) => {
     return new Date(timestamp).toLocaleDateString(undefined, {

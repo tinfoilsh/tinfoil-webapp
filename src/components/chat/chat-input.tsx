@@ -2,6 +2,7 @@ import { useProject } from '@/components/project'
 import { cn } from '@/components/ui/utils'
 import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
+import { ROUTES } from '@/services/harness/protocol'
 import { useHarness } from '@/services/harness/provider'
 import { logError } from '@/utils/error-handling'
 import {
@@ -494,11 +495,10 @@ export function ChatInput({
         // The harness transcribes without the content key, so a chat kept
         // on the device can be dictated to while the key is locked.
         const { text } = await api.upload<{ text: string }>(
-          '/v1/transcriptions',
+          ROUTES.transcriptions,
           file,
           {},
-          undefined,
-          false,
+          { keyless: true },
         )
 
         if (text) {

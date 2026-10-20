@@ -1,4 +1,5 @@
 import { HarnessClient } from '@/services/harness/client'
+import type { HarnessRoute } from '@/services/harness/protocol'
 import { initialChat, reduceEvent } from '@/services/harness/reducer'
 import { HarnessError, readEvents } from '@/services/harness/sse'
 import type { Frame, Message, TimelineBlock } from '@/services/harness/types'
@@ -540,9 +541,9 @@ describe('attested harness transport', () => {
       '/v1/../session',
       '/v1/session?key=secret',
     ])
-      await expect(client.post(path, { key: 'cek' })).rejects.toBeInstanceOf(
-        HarnessError,
-      )
+      await expect(
+        client.post(path as HarnessRoute, { key: 'cek' }),
+      ).rejects.toBeInstanceOf(HarnessError)
     expect(secure.fetch).not.toHaveBeenCalled()
     expect(
       () =>

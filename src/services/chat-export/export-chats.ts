@@ -163,7 +163,7 @@ async function cloudSummaries(
     const page = await api.post<{
       threads: ThreadSummary[]
       nextCursor: string | null
-    }>('/v1/threads/list', { cursor, limit: 100 }, signal)
+    }>('/v1/threads/list', { cursor, limit: 100 }, { signal })
     summaries.push(...page.threads)
     cursor = page.nextCursor ?? undefined
   } while (cursor)
@@ -181,7 +181,7 @@ async function storedMessages(
     const page = await api.post<Thread>(
       '/v1/threads/get',
       { id: threadId, ...(before ? { before } : {}), limit: 200 },
-      signal,
+      { signal },
     )
     messages.unshift(...page.messages)
     if (!page.hasOlder || page.messages.length === 0) return messages
@@ -281,7 +281,7 @@ export async function collectChatExport(
         const blob = await api.download(
           '/v1/attachments/get',
           { id: attachment.id, threadId: chat.id },
-          signal,
+          { signal },
         )
         return new Uint8Array(await blob.arrayBuffer())
       } catch (error) {

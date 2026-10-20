@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '@/config'
+import { ERROR_CODES } from './protocol'
 import { HarnessError } from './sse'
 import type { RateLimit } from './types'
 
@@ -74,7 +75,7 @@ export class AnonymousCredentialCache {
       base.hash
     )
       throw new HarnessError({
-        code: 'CONFIGURATION',
+        code: ERROR_CODES.configuration,
         message: 'Configure an HTTPS origin for the controlplane.',
       })
     // Controlplane is public HTTPS, not an enclave. Calling it from the
@@ -93,7 +94,9 @@ export class AnonymousCredentialCache {
       throw new HarnessError(
         {
           code:
-            response.status === 429 ? 'QUOTA_EXHAUSTED' : 'UPSTREAM_REFUSED',
+            response.status === 429
+              ? ERROR_CODES.quotaExhausted
+              : ERROR_CODES.upstreamRefused,
           message: 'Unable to obtain anonymous chat access. Please try again.',
         },
         response.status,
@@ -119,7 +122,7 @@ export class AnonymousCredentialCache {
       !Number.isFinite(Date.parse(rate.resets_at))
     )
       throw new HarnessError({
-        code: 'UPSTREAM_REFUSED',
+        code: ERROR_CODES.upstreamRefused,
         message: 'Controlplane returned invalid anonymous chat access.',
       })
     this.lifetime.signal.throwIfAborted()

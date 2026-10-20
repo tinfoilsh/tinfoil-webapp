@@ -1,3 +1,4 @@
+import { ROUTES } from '@/services/harness/protocol'
 import { harnessAPI } from '@/services/harness/runtime'
 import { SPEECH } from './constants'
 import { SpeechError } from './errors'
@@ -75,9 +76,9 @@ export const streamSpeech: SpeechStream = async function* (text, signal) {
     // previous client asked the speech model for, over the attested
     // connection, and streams the audio back as it is generated.
     const response = await harnessAPI().stream(
-      '/v1/speech',
+      ROUTES.speech,
       { text },
-      controller.signal,
+      { signal: controller.signal },
     )
     controller.signal.throwIfAborted()
     const mediaType = response.headers.get('content-type')?.split(';')[0].trim()

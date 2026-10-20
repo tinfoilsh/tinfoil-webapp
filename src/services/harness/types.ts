@@ -226,6 +226,13 @@ export interface Turn {
   }
 }
 
+// Re-attaches to a live run, which replays it from its first frame.
+export interface FollowInput {
+  key?: string
+  threadId: string
+  runId: string
+}
+
 export interface QueueItem {
   queueId: string
   content: string

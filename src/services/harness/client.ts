@@ -1,7 +1,8 @@
 import { SecureClient } from 'tinfoil'
 import { AnonymousCredentialCache } from './anonymous-credential'
+import { ERROR_CODES, type HarnessRoute, type RunRoute } from './protocol'
 import { HarnessError, readEvents } from './sse'
-import type { Frame, HarnessErrorBody, Turn } from './types'
+import type { FollowInput, Frame, HarnessErrorBody, Turn } from './types'
 
 const harnessRepo = 'tinfoilsh/confidential-tinfoil-harness'
 // An attestation that has not finished by then is abandoned: the request
@@ -42,7 +43,7 @@ export class HarnessClient {
       parsed.hash
     ) {
       throw new HarnessError({
-        code: 'CONFIGURATION',
+        code: ERROR_CODES.configuration,
         message: 'Configure an HTTPS origin for the chat service.',
       })
     }
@@ -61,7 +62,7 @@ export class HarnessClient {
             if (this.secure === secure) this.secure = this.createTransport()
             reject(
               new HarnessError({
-                code: 'CONNECTION',
+                code: ERROR_CODES.connection,
                 message:
                   'The chat service could not be verified in time. Check your connection and try again.',
               }),
@@ -78,13 +79,13 @@ export class HarnessClient {
   }
 
   private async request(
-    path: string,
+    path: HarnessRoute,
     body: string | FormData,
     signal?: AbortSignal,
   ): Promise<Response> {
     if (!/^\/v1\/(?:[a-z-]+\/)*[a-z-]+$/.test(path)) {
       throw new HarnessError({
-        code: 'BAD_REQUEST',
+        code: ERROR_CODES.badRequest,
         message: 'Invalid chat service path.',
       })
     }
@@ -123,14 +124,17 @@ export class HarnessClient {
         } else token = await this.getToken({ skipCache: true })
         if (!token)
           throw new HarnessError(
-            { code: 'UNAUTHENTICATED', message: 'Sign in again to continue.' },
+            {
+              code: ERROR_CODES.unauthenticated,
+              message: 'Sign in again to continue.',
+            },
             401,
           )
         continue
       }
       if (!response.ok) {
         let detail: HarnessErrorBody = {
-          code: 'UPSTREAM_REFUSED',
+          code: ERROR_CODES.upstreamRefused,
           message: 'The chat service could not complete the request.',
         }
         const value: unknown = await response.json().catch(() => null)
@@ -153,13 +157,16 @@ export class HarnessClient {
       return response
     }
     throw new HarnessError(
-      { code: 'UNAUTHENTICATED', message: 'Sign in again to continue.' },
+      {
+        code: ERROR_CODES.unauthenticated,
+        message: 'Sign in again to continue.',
+      },
       401,
     )
   }
 
   async post<T>(
-    path: string,
+    path: HarnessRoute,
     input: unknown,
     signal?: AbortSignal,
   ): Promise<T> {
@@ -168,7 +175,7 @@ export class HarnessClient {
     ).json() as Promise<T>
   }
   async upload<T>(
-    path: string,
+    path: HarnessRoute,
     file: File,
     fields: Record<string, string>,
     signal?: AbortSignal,
@@ -179,7 +186,7 @@ export class HarnessClient {
     return (await this.request(path, form, signal)).json() as Promise<T>
   }
   async download(
-    path: string,
+    path: HarnessRoute,
     input: unknown,
     signal?: AbortSignal,
   ): Promise<Blob> {
@@ -189,7 +196,7 @@ export class HarnessClient {
   // audio. Aborting the signal ends the body; the caller cancels it when it
   // stops reading early.
   async stream(
-    path: string,
+    path: HarnessRoute,
     input: unknown,
     signal?: AbortSignal,
   ): Promise<Response> {
@@ -197,8 +204,8 @@ export class HarnessClient {
   }
   // A run's events. Following a run replays it from its first frame.
   async *events(
-    path: '/v1/threads/turn' | '/v1/threads/follow',
-    input: Turn | { key?: string; threadId: string; runId: string },
+    path: RunRoute,
+    input: Turn | FollowInput,
     signal?: AbortSignal,
   ): AsyncGenerator<Frame> {
     const response = await this.request(path, JSON.stringify(input), signal)
@@ -210,7 +217,7 @@ export class HarnessClient {
       !response.body
     ) {
       throw new HarnessError({
-        code: 'INVALID_STREAM',
+        code: ERROR_CODES.invalidStream,
         message: 'The chat service did not return an event stream.',
       })
     }

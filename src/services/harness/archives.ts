@@ -34,7 +34,7 @@ export async function exportClaudeProjects(signal?: AbortSignal) {
   const blob = await harnessAPI().download(
     '/v1/export',
     { format: 'claude-projects' },
-    signal,
+    { signal },
   )
   signal?.throwIfAborted()
   saveDownload(blob, 'projects.json')
@@ -49,13 +49,12 @@ export async function startImport(
     '/v1/import',
     file,
     { source },
-    signal,
+    { signal },
   )
   const status = await api.post<ImportStatusResponse>(
     '/v1/import/status',
     { jobId },
-    signal,
-    false,
+    { signal, keyless: true },
   )
   return { ...status, jobId }
 }
@@ -63,8 +62,7 @@ export async function importStatus(jobId: string, signal?: AbortSignal) {
   const status = await harnessAPI().post<ImportStatusResponse>(
     '/v1/import/status',
     { jobId },
-    signal,
-    false,
+    { signal, keyless: true },
   )
   return { ...status, jobId }
 }

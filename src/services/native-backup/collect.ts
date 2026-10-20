@@ -55,7 +55,11 @@ async function localThreads(): Promise<StoredThread[]> {
 
 const defaults: NativeBackupCollectionDependencies = {
   downloadCloudBackup: (signal) =>
-    harnessAPI().download('/v1/export', { format: 'tinfoil-backup' }, signal),
+    harnessAPI().download(
+      '/v1/export',
+      { format: 'tinfoil-backup' },
+      { signal },
+    ),
   readBackup: (file, signal) => readNativeBackup(file, { signal }),
   localThreads,
 }

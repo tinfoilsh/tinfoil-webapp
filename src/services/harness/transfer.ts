@@ -1,5 +1,6 @@
 import { logError } from '@/utils/error-handling'
 import type { LocalThreadStore } from './local-threads'
+import { ERROR_CODES, ROUTES } from './protocol'
 import type { HarnessAPI } from './runtime'
 import { MAX_TURN_REQUEST_BYTES, requestBytes } from './shares'
 import { HarnessError } from './sse'
@@ -13,7 +14,7 @@ import type { StoredThread, ThreadSummary } from './types'
 function transferTooLarge(): HarnessError {
   return new HarnessError(
     {
-      code: 'THREAD_TOO_LARGE',
+      code: ERROR_CODES.threadTooLarge,
       message: 'This chat is too large to move to the cloud.',
     },
     413,
@@ -25,7 +26,7 @@ function transferTooLarge(): HarnessError {
 export function transferInFlight(): HarnessError {
   return new HarnessError(
     {
-      code: 'RUN_IN_FLIGHT',
+      code: ERROR_CODES.runInFlight,
       message: 'Wait for the reply to finish before moving this chat.',
     },
     409,
@@ -47,7 +48,8 @@ function isRefusal(error: unknown): boolean {
 // not moved.
 export function isAttachmentsUnavailable(error: unknown): boolean {
   return (
-    error instanceof HarnessError && error.code === 'ATTACHMENTS_UNAVAILABLE'
+    error instanceof HarnessError &&
+    error.code === ERROR_CODES.attachmentsUnavailable
   )
 }
 
@@ -59,9 +61,9 @@ export async function cloudTranscript(
   signal?: AbortSignal,
 ): Promise<StoredThread> {
   const result = await api.post<{ thread?: unknown }>(
-    '/v1/threads/transcript',
+    ROUTES.transcript,
     { threadId },
-    signal,
+    { signal },
   )
   const thread = result?.thread
   if (
@@ -71,7 +73,7 @@ export async function cloudTranscript(
     !Array.isArray((thread as { messages?: unknown }).messages)
   )
     throw new HarnessError({
-      code: 'UPSTREAM_REFUSED',
+      code: ERROR_CODES.upstreamRefused,
       message: 'The chat service returned an invalid chat.',
     })
   return { ...(thread as StoredThread), id: threadId }
@@ -92,13 +94,13 @@ export async function placeOnDevice(
   if (!saved)
     throw new HarnessError(
       {
-        code: 'THREAD_EXISTS',
+        code: ERROR_CODES.threadExists,
         message: 'This chat is already stored on this device.',
       },
       409,
     )
   try {
-    await api.post('/v1/threads/delete', { id: thread.id })
+    await api.post(ROUTES.delete, { id: thread.id })
   } catch (cause) {
     if (!isRefusal(cause)) throw cause
     await store.delete(thread.id).catch((error) =>
@@ -134,18 +136,18 @@ export async function moveThreadToCloud(
   if (!original)
     throw new HarnessError(
       {
-        code: 'THREAD_NOT_FOUND',
+        code: ERROR_CODES.threadNotFound,
         message: 'This chat is no longer stored on this device.',
       },
       404,
     )
   const input = { threadId, thread: original }
   if (requestBytes(input) > MAX_TURN_REQUEST_BYTES) throw transferTooLarge()
-  const summary = await api.post<ThreadSummary>('/v1/threads/import', input)
+  const summary = await api.post<ThreadSummary>(ROUTES.threadImport, input)
   try {
     await store.delete(threadId)
   } catch (cause) {
-    await api.post('/v1/threads/delete', { id: threadId }).catch((error) =>
+    await api.post(ROUTES.delete, { id: threadId }).catch((error) =>
       logError('Failed to remove a chat copied to the cloud', error, {
         component: 'transfer',
         action: 'moveThreadToCloud',

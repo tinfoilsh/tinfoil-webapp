@@ -1,5 +1,7 @@
+import { ERROR_CODES, ROUTES } from './protocol'
 import { harnessAPI } from './runtime'
 import { HarnessError } from './sse'
+import type { SharedThread } from './types'
 
 // The harness reads JSON requests of up to 8 MiB. A local chat's share
 // carries its transcript, so a long chat with many thumbnails or documents
@@ -15,7 +17,7 @@ export const SHARE_TOO_LARGE_MESSAGE =
 
 export function shareTooLarge(): HarnessError {
   return new HarnessError(
-    { code: 'THREAD_TOO_LARGE', message: SHARE_TOO_LARGE_MESSAGE },
+    { code: ERROR_CODES.threadTooLarge, message: SHARE_TOO_LARGE_MESSAGE },
     413,
   )
 }
@@ -26,7 +28,7 @@ export function isShareTooLarge(error: unknown): boolean {
     error instanceof HarnessError &&
     (error.status === 413 ||
       error.detail.status === 413 ||
-      error.code === 'THREAD_TOO_LARGE')
+      error.code === ERROR_CODES.threadTooLarge)
   )
 }
 
@@ -38,24 +40,44 @@ export function requestBytes(input: unknown): number {
 // one without its link, for stored and local chats alike.
 export async function shareStatus(threadId: string): Promise<boolean> {
   const status = await harnessAPI().post<{ shared?: unknown }>(
-    '/v1/threads/share/status',
+    ROUTES.shareStatus,
     { threadId },
-    undefined,
-    false,
+    { keyless: true },
   )
   if (typeof status?.shared !== 'boolean')
     throw new HarnessError({
-      code: 'UPSTREAM_REFUSED',
+      code: ERROR_CODES.upstreamRefused,
       message: 'The share status could not be read.',
     })
   return status.shared
 }
 
 export async function revokeShare(threadId: string): Promise<void> {
-  await harnessAPI().post(
-    '/v1/threads/share/revoke',
-    { threadId },
-    undefined,
-    false,
+  await harnessAPI().post(ROUTES.shareRevoke, { threadId }, { keyless: true })
+}
+
+// Opens a share with the key its link carries, which the harness reads it
+// with.
+export function openShare(
+  shareId: string,
+  shareKeyHex: string,
+): Promise<SharedThread> {
+  return harnessAPI().post<SharedThread>(
+    ROUTES.shareOpen,
+    { shareId, fragment: `v2:${shareKeyHex}` },
+    { keyless: true },
+  )
+}
+
+// An attachment of a share, read with the key the share gives it.
+export function sharedAttachment(
+  id: string,
+  attKey: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  return harnessAPI().download(
+    ROUTES.attachmentGetPublic,
+    { id, attKey },
+    { signal, keyless: true },
   )
 }

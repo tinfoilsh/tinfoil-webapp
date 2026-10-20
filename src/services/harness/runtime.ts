@@ -3,6 +3,7 @@ import { encryptionService } from '@/services/encryption/encryption-service'
 import { isCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { HarnessClient } from './client'
 import { loadLocalProfile, saveLocalProfile } from './local-profile'
+import { ERROR_CODES, ROUTES, type HarnessRoute } from './protocol'
 import { HarnessError } from './sse'
 import type { RateLimit, Session, TokenBudget } from './types'
 
@@ -34,6 +35,13 @@ export const getServerView = () => empty
 export function publish(patch: Partial<View>) {
   view = { ...view, ...patch }
   for (const listener of listeners) listener()
+}
+
+export interface RequestOptions {
+  signal?: AbortSignal
+  // The route reads no content key, as for the session, the account's key
+  // and chats on this device. It outlives a change of the content key.
+  keyless?: boolean
 }
 
 // Tokens a run spent, as its final event reports them.
@@ -173,13 +181,13 @@ export class HarnessAPI {
     if (!this.userId) return undefined
     if (localStorage.getItem(AUTH_ACTIVE_USER_ID) !== this.userId)
       throw new HarnessError({
-        code: 'KEY_REQUIRED',
+        code: ERROR_CODES.keyRequired,
         message: 'Wait for your account to finish unlocking.',
       })
     const bytes = encryptionService.getCurrentKeyBytes()
     if (!bytes)
       throw new HarnessError({
-        code: 'KEY_REQUIRED',
+        code: ERROR_CODES.keyRequired,
         message: 'Unlock your encryption key in Settings to continue.',
       })
     try {
@@ -188,41 +196,46 @@ export class HarnessAPI {
       bytes.fill(0)
     }
   }
-  async post<T = any>(
-    path: string,
-    input: Record<string, unknown> = {},
-    signal?: AbortSignal,
-    withKey = true,
+  // The content key a request carries, unless the route reads none.
+  private keyed(keyless: boolean): Record<string, string> {
+    const key = keyless ? undefined : this.key()
+    return key ? { key } : {}
+  }
+  async post<T>(
+    path: HarnessRoute,
+    input: object = {},
+    { signal, keyless = false }: RequestOptions = {},
   ): Promise<T> {
-    const requestSignal = this.signal(signal, withKey)
+    const requestSignal = this.signal({ signal, keyless })
     const result = await this.client.post<T>(
       path,
-      { ...(withKey ? { key: this.key() } : {}), ...input },
+      { ...this.keyed(keyless), ...input },
       requestSignal,
     )
     requestSignal.throwIfAborted()
     return result
   }
-  signal(signal?: AbortSignal, withKey = true) {
+  // Ends with this API, and with the content key unless the request reads
+  // none.
+  signal({ signal, keyless = false }: RequestOptions = {}) {
     return AbortSignal.any([
       this.lifetime.signal,
-      ...(withKey ? [this.contentLifetime.signal] : []),
+      ...(keyless ? [] : [this.contentLifetime.signal]),
       ...(signal ? [signal] : []),
     ])
   }
-  async upload<T = any>(
-    path: string,
+  async upload<T>(
+    path: HarnessRoute,
     file: File,
     fields: Record<string, string> = {},
-    signal?: AbortSignal,
-    withKey = true,
+    { signal, keyless = false }: RequestOptions = {},
   ): Promise<T> {
-    const key = withKey ? this.key() : undefined
-    const requestSignal = this.signal(signal, withKey)
+    const key = this.keyed(keyless)
+    const requestSignal = this.signal({ signal, keyless })
     const result = await this.client.upload<T>(
       path,
       file,
-      { ...(key ? { key } : {}), ...fields },
+      { ...key, ...fields },
       requestSignal,
     )
     requestSignal.throwIfAborted()
@@ -230,24 +243,24 @@ export class HarnessAPI {
   }
   // A keyless request whose response body streams, such as speech.
   async stream(
-    path: string,
-    input: Record<string, unknown>,
-    signal?: AbortSignal,
+    path: HarnessRoute,
+    input: object,
+    { signal }: Pick<RequestOptions, 'signal'> = {},
   ): Promise<Response> {
-    const requestSignal = this.signal(signal, false)
+    const requestSignal = this.signal({ signal, keyless: true })
     const response = await this.client.stream(path, input, requestSignal)
     requestSignal.throwIfAborted()
     return response
   }
   async download(
-    path: string,
-    input: Record<string, unknown> = {},
-    signal?: AbortSignal,
+    path: HarnessRoute,
+    input: object = {},
+    { signal, keyless = false }: RequestOptions = {},
   ) {
-    const requestSignal = this.signal(signal)
+    const requestSignal = this.signal({ signal, keyless })
     const result = await this.client.download(
       path,
-      { key: this.key(), ...input },
+      { ...this.keyed(keyless), ...input },
       requestSignal,
     )
     requestSignal.throwIfAborted()
@@ -268,10 +281,9 @@ export class HarnessAPI {
 
   async refresh() {
     const session = await this.post<Session>(
-      '/v1/session',
+      ROUTES.session,
       {},
-      undefined,
-      false,
+      { keyless: true },
     )
     if (
       session.user.anonymous &&
@@ -307,7 +319,7 @@ export class HarnessAPI {
       return
     }
     try {
-      const profile = await this.post<Profile>('/v1/profile/get')
+      const profile = await this.post<Profile>(ROUTES.profileGet)
       if (version === this.profileVersion) {
         this.profileSource = 'cloud'
         publish({
@@ -344,7 +356,7 @@ export class HarnessAPI {
     change: Profile | ((current: Profile) => Profile),
   ): Promise<Profile> {
     const cloud = this.cloud
-    const signal = this.signal(undefined, cloud)
+    const signal = this.signal({ keyless: !cloud })
     const update = this.profileWrites
       .catch(() => {})
       .then(async () => {
@@ -353,7 +365,11 @@ export class HarnessAPI {
         const patch =
           typeof change === 'function' ? change(view.profile) : change
         const profile = cloud
-          ? await this.post<Profile>('/v1/profile/update', { patch }, signal)
+          ? await this.post<Profile>(
+              ROUTES.profileUpdate,
+              { patch },
+              { signal },
+            )
           : saveLocalProfile(patch)
         signal.throwIfAborted()
         if (version === this.profileVersion) publish({ profile })
@@ -382,7 +398,7 @@ export function activateAPI(api: HarnessAPI) {
 export function harnessAPI(): HarnessAPI {
   if (!active)
     throw new HarnessError({
-      code: 'UNAUTHENTICATED',
+      code: ERROR_CODES.unauthenticated,
       message: 'Wait for your session to load.',
     })
   return active

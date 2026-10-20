@@ -1,3 +1,4 @@
+import { ROUTES } from '@/services/harness/protocol'
 import { useHarness } from '@/services/harness/provider'
 import { initialChat, reduceEvent } from '@/services/harness/reducer'
 import type { Turn } from '@/services/harness/types'
@@ -66,9 +67,9 @@ export function useSidebarChat({
           options,
         }
         for await (const frame of api.client.events(
-          '/v1/threads/turn',
+          ROUTES.turn,
           input,
-          api.signal(abort.signal, !thread.local),
+          api.signal({ signal: abort.signal, keyless: !!thread.local }),
         )) {
           if (abort.signal.aborted) return
           if (frame.event.type === 'RUN_STARTED')
@@ -130,12 +131,9 @@ export function useSidebarChat({
     reset,
     cancel: () => {
       if (run.current)
-        void api.post(
-          '/v1/threads/cancel',
-          run.current,
-          undefined,
-          !local.current,
-        )
+        void api.post(ROUTES.cancel, run.current, {
+          keyless: local.current,
+        })
       controller.current?.abort()
       // The aborted stream reports nothing more, so the ask stops here and
       // keeps what it received.

@@ -27,6 +27,7 @@ import {
   type ImagesById,
   type LocalThreadStore,
 } from './local-threads'
+import { ROUTES, type RunRoute } from './protocol'
 import { useHarness } from './provider'
 import { initialChat, isTerminal, reduceEvent, runOf } from './reducer'
 import type { RunSpend } from './runtime'
@@ -41,6 +42,7 @@ import {
 } from './transfer'
 import type {
   AttachmentDescriptor,
+  FollowInput,
   Frame,
   HarnessErrorBody,
   RateLimit,
@@ -68,8 +70,6 @@ interface LocalRun {
   images: ImagesById
   runId?: string
 }
-
-type FollowInput = { key?: string; threadId: string; runId: string }
 
 // A stream that broke without a reason from the harness, as when the
 // connection dropped. Its run may go on.
@@ -275,7 +275,7 @@ export function useThread(
       const result = await api.post<{
         threads: ThreadSummary[]
         nextCursor: string | null
-      }>('/v1/threads/list', { cursor: next, projectId, limit: 100 })
+      }>(ROUTES.list, { cursor: next, projectId, limit: 100 })
       if (version !== listing.current) return
       setThreads((previous) =>
         next
@@ -378,7 +378,7 @@ export function useThread(
     }
   }
   async function stream(
-    path: '/v1/threads/turn' | '/v1/threads/follow',
+    path: RunRoute,
     input: Turn | FollowInput,
     run?: LocalRun,
     quiet = false,
@@ -397,7 +397,7 @@ export function useThread(
       for await (const frame of api.client.events(
         path,
         input,
-        api.signal(controller.signal, !run),
+        api.signal({ signal: controller.signal, keyless: !!run }),
       )) {
         const attached = version === generation.current
         if (!attached && !run) break
@@ -480,7 +480,7 @@ export function useThread(
           if (version === generation.current) failRun(refusal)
           return false
         }
-        return await stream('/v1/threads/follow', follow, run, quiet, true)
+        return await stream(ROUTES.follow, follow, run, quiet, true)
       }
       if (version === generation.current) {
         // A turn sent again after the harness applied it changed the chat
@@ -528,7 +528,7 @@ export function useThread(
         thread = localThreadView(stored)
       }
     } else if (!temporaryRef.current)
-      thread = await api.post<Thread>('/v1/threads/get', { id: threadId })
+      thread = await api.post<Thread>(ROUTES.get, { id: threadId })
     if (version !== generation.current) return
     if (thread) markSaved(threadId)
     const next = thread
@@ -573,7 +573,7 @@ export function useThread(
       }
     if (typeof runId !== 'string') return
     void stream(
-      '/v1/threads/follow',
+      ROUTES.follow,
       { threadId: thread.id, runId },
       { threadId: thread.id, store, images: heldImages(thread.messages) },
       true,
@@ -607,7 +607,7 @@ export function useThread(
     setLoading(true)
     try {
       if (openLocally) return await openLocal(threadId, version)
-      const thread = await api.post<Thread>('/v1/threads/get', { id: threadId })
+      const thread = await api.post<Thread>(ROUTES.get, { id: threadId })
       if (version !== generation.current) return
       const next = initialChat(thread)
       current.current = next
@@ -620,7 +620,7 @@ export function useThread(
       choosePreset(thread.presetId ?? null)
       setWebSearch(undefined)
       if (thread.activeRun)
-        void stream('/v1/threads/follow', {
+        void stream(ROUTES.follow, {
           key: api.key(),
           threadId,
           runId: thread.activeRun.runId,
@@ -716,7 +716,7 @@ export function useThread(
       if (receipt.temporary && !receipt.local) {
         setTemporary(true)
         setId(receipt.threadId)
-        void stream('/v1/threads/follow', {
+        void stream(ROUTES.follow, {
           key: api.key(),
           threadId: receipt.threadId,
           runId: receipt.runId,
@@ -789,7 +789,7 @@ export function useThread(
             action: 'sendLocal',
           }),
         )
-    return stream('/v1/threads/turn', input, run)
+    return stream(ROUTES.turn, input, run)
   }
   // A new chat takes its id with its first turn. Until the harness accepts a
   // turn of a stored chat, or a chat on this device is first saved, the chat
@@ -877,11 +877,11 @@ export function useThread(
     })
     pending.current = { input: { ...input, key: undefined } }
     showSent(input)
-    return stream('/v1/threads/turn', input)
+    return stream(ROUTES.turn, input)
   }
   function cancel() {
     return api.post(
-      '/v1/threads/cancel',
+      ROUTES.cancel,
       {
         ...runKey(),
         threadId: idRef.current,
@@ -889,8 +889,7 @@ export function useThread(
           current.current.snapshot.thread?.activeRun?.runId ??
           current.current.runId,
       },
-      undefined,
-      false,
+      { keyless: true },
     )
   }
   // The harness regenerates the reply it is named. The message actions name
@@ -969,7 +968,7 @@ export function useThread(
         )
       return
     }
-    const summary = await api.post<ThreadSummary>('/v1/threads/update', {
+    const summary = await api.post<ThreadSummary>(ROUTES.update, {
       id: threadId,
       ...patch,
     })
@@ -990,7 +989,7 @@ export function useThread(
       const runId = localRuns.current.get(threadId)?.runId
       if (runId)
         void api
-          .post('/v1/threads/cancel', { threadId, runId }, undefined, false)
+          .post(ROUTES.cancel, { threadId, runId }, { keyless: true })
           .catch(() => {})
       await store.delete(threadId)
       localRuns.current.delete(threadId)
@@ -998,7 +997,7 @@ export function useThread(
       if (idRef.current === threadId) reset()
       return
     }
-    await api.post('/v1/threads/delete', { id: threadId })
+    await api.post(ROUTES.delete, { id: threadId })
     setThreads((previous) => previous.filter((t) => t.id !== threadId))
     if (idRef.current === threadId) reset()
   }
@@ -1064,7 +1063,7 @@ export function useThread(
     await Promise.allSettled(moving.current.values())
     let cloudDeletionCompleted = false
     if (cloudRef.current) {
-      await api.post('/v1/threads/delete-all')
+      await api.post(ROUTES.deleteAll)
       cloudDeletionCompleted = true
     }
     await store.deleteAll()
@@ -1079,7 +1078,7 @@ export function useThread(
   async function upload(file: File): Promise<AttachmentDescriptor> {
     const { attachment } = await api.upload<{
       attachment: AttachmentDescriptor
-    }>('/v1/attachments/upload', file, {}, undefined, false)
+    }>(ROUTES.attachmentUpload, file, {}, { keyless: true })
     if (attachment.kind !== 'image') return attachment
     return {
       ...attachment,
@@ -1099,9 +1098,9 @@ export function useThread(
   function download(attachment: UIAttachment, signal?: AbortSignal) {
     const threadId = idRef.current
     return api.download(
-      '/v1/attachments/get',
+      ROUTES.attachmentGet,
       { id: attachment.id, ...(threadId ? { threadId } : {}) },
-      signal,
+      { signal },
     )
   }
   async function loadImage(
@@ -1162,7 +1161,7 @@ export function useThread(
       const messageId = current.current.messages[messageIndex]?.id
       if (!messageId) return null
       const version = generation.current
-      const forked = await api.post<ThreadSummary>('/v1/threads/fork', {
+      const forked = await api.post<ThreadSummary>(ROUTES.fork, {
         threadId,
         messageId,
       })
@@ -1207,7 +1206,10 @@ export function useThread(
   // changes its own copy, which its next turn sends.
   async function changeMessage(
     index: number,
-    stored: { path: string; fields: Record<string, unknown> },
+    stored: {
+      path: typeof ROUTES.messageDelete | typeof ROUTES.messageUpdate
+      fields: Record<string, unknown>
+    },
     change: (thread: StoredThread, messageId: string) => StoredThread | null,
   ) {
     const threadId = idRef.current
@@ -1270,7 +1272,7 @@ export function useThread(
     if (current.current.messages.length <= 1) return Promise.resolve()
     return changeMessage(
       index,
-      { path: '/v1/threads/messages/delete', fields: {} },
+      { path: ROUTES.messageDelete, fields: {} },
       (thread, messageId) =>
         thread.messages.length > 1 &&
         thread.messages.some((message) => message.id === messageId)
@@ -1290,7 +1292,7 @@ export function useThread(
       return Promise.resolve()
     return changeMessage(
       index,
-      { path: '/v1/threads/messages/update', fields: { content } },
+      { path: ROUTES.messageUpdate, fields: { content } },
       (thread, messageId) =>
         thread.messages.some(
           (message) => message.id === messageId && message.role === 'assistant',
@@ -1323,7 +1325,7 @@ export function useThread(
   // copy, which the harness seals without storing it.
   async function share(threadId: string): Promise<string> {
     if (!isLocalThread(threadId)) {
-      const { url } = await api.post<{ url: string }>('/v1/threads/share', {
+      const { url } = await api.post<{ url: string }>(ROUTES.share, {
         threadId,
       })
       return url
@@ -1336,12 +1338,9 @@ export function useThread(
     )
     const input = { local: true, threadId, thread }
     if (requestBytes(input) > MAX_SHARE_REQUEST_BYTES) throw shareTooLarge()
-    const { url } = await api.post<{ url: string }>(
-      '/v1/threads/share',
-      input,
-      undefined,
-      false,
-    )
+    const { url } = await api.post<{ url: string }>(ROUTES.share, input, {
+      keyless: true,
+    })
     return url
   }
   // The model and web search setting a saved prompt applies when it is
@@ -1418,7 +1417,7 @@ export function useThread(
       const { input, run } = pending.current
       if (run) starting.current = run
       return stream(
-        '/v1/threads/turn',
+        ROUTES.turn,
         run ? input : { ...input, key: contentKey() },
         run,
       )
@@ -1428,7 +1427,7 @@ export function useThread(
     const threadId = idRef.current
     if (threadId && runId) {
       if (!runsLocally())
-        return stream('/v1/threads/follow', {
+        return stream(ROUTES.follow, {
           key: contentKey(),
           threadId,
           runId,
@@ -1442,7 +1441,7 @@ export function useThread(
           heldImages((await localTranscript(threadId, target)).messages),
         ),
       }
-      return stream('/v1/threads/follow', { threadId, runId }, run)
+      return stream(ROUTES.follow, { threadId, runId }, run)
     }
     if (initialId) return open(initialId, { local: !!route.local })
   }
@@ -1485,7 +1484,7 @@ export function useThread(
         messages: messages.slice(0, Math.max(index, 0)),
         hasOlder: false,
       }
-    } else thread = await api.post<Thread>('/v1/threads/get', { id, before })
+    } else thread = await api.post<Thread>(ROUTES.get, { id, before })
     if (version === generation.current)
       setState((previous) => ({
         ...previous,
@@ -1614,17 +1613,15 @@ export function useThread(
     regenerate,
     sendQueued: (queueId: string) =>
       api.post(
-        '/v1/threads/queue/send',
+        ROUTES.queueSend,
         { ...runKey(), threadId: id, queueId },
-        undefined,
-        false,
+        { keyless: true },
       ),
     removeQueued: (queueId: string) =>
       api.post(
-        '/v1/threads/queue/remove',
+        ROUTES.queueRemove,
         { ...runKey(), threadId: id, queueId },
-        undefined,
-        false,
+        { keyless: true },
       ),
     dismissError: () => {
       setFailure(null)

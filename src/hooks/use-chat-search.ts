@@ -1,3 +1,4 @@
+import { ROUTES } from '@/services/harness/protocol'
 import { useHarness } from '@/services/harness/provider'
 import type { ThreadSummary } from '@/services/harness/types'
 import { useEffect, useState } from 'react'
@@ -31,7 +32,7 @@ export function useChatSearch(
         .post<{
           results: (ThreadSummary & { score?: number })[]
           indexing: boolean
-        }>('/v1/threads/search', { query, limit: 20 }, controller.signal)
+        }>(ROUTES.search, { query, limit: 20 }, { signal: controller.signal })
         .then((page) => {
           if (controller.signal.aborted) return
           setIsIndexing(page.indexing)

@@ -8,6 +8,7 @@ import {
 } from '@/services/storage/indexed-db'
 import { sessionChatStorage } from '@/services/storage/session-storage'
 import { logError } from '@/utils/error-handling'
+import { ERROR_CODES, ROUTES } from './protocol'
 import { harnessAPI } from './runtime'
 import { MAX_TURN_REQUEST_BYTES, requestBytes } from './shares'
 import { HarnessError } from './sse'
@@ -301,15 +302,14 @@ export function isThread(value: unknown): value is StoredThread {
 
 async function requestUpgrade(rows: readonly Value[]): Promise<StoredThread[]> {
   const result = await harnessAPI().post<{ threads?: unknown }>(
-    '/v1/threads/upgrade',
+    ROUTES.upgrade,
     { threads: rows },
-    undefined,
-    false,
+    { keyless: true },
   )
   const threads = arr(result?.threads)
   if (threads.length !== rows.length || !threads.every(isThread))
     throw new HarnessError({
-      code: 'UPSTREAM_REFUSED',
+      code: ERROR_CODES.upstreamRefused,
       message: 'The chat service returned invalid chats.',
     })
   return threads.map((thread, index) => ({
