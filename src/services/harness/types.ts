@@ -231,7 +231,6 @@ export interface Turn {
     | 'regenerate'
     | 'continue'
     | 'retry'
-    | 'resolve'
     | 'retryToolCall'
     | 'ask'
   ephemeral?: boolean
@@ -244,7 +243,6 @@ export interface Turn {
   quote?: string
   messageId?: string
   toolCallId?: string
-  resolution?: { text: string; data?: Json }
   // New uploads, or an attachment the stored chat has, by id.
   attachments?: (AttachmentDescriptor | { id: string })[]
   widgets?: string[]
