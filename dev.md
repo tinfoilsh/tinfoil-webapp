@@ -1,6 +1,6 @@
 # Local development
 
-Copy `.env.example` to `.env.local` and configure Clerk, the controlplane URL, and `NEXT_PUBLIC_HARNESS_ENCLAVE_URL` (default `https://chat-api.tinfoil.sh`). The harness URL must be a deployed, attested HTTPS origin.
+Copy `.env.example` to `.env.local` and configure Clerk, the Tinfoil API URL (`NEXT_PUBLIC_API_BASE_URL`), and `NEXT_PUBLIC_HARNESS_ENCLAVE_URL` (default `https://chat-api.tinfoil.sh`). The harness URL must be a deployed, attested HTTPS origin.
 
 Use `npm run dev` to run the UI against that harness. It uses real services and the signed-in account, so use a test account.
 
