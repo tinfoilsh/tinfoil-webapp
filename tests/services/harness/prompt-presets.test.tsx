@@ -166,6 +166,20 @@ describe('the default prompt of a new stored chat', () => {
     expect(result.current.chat.webSearchEnabled).toBe(true)
   })
 
+  it("keeps showing the session's default prompt after the first turn", async () => {
+    signIn({
+      cloud: true,
+      profileDefaults: { defaultPromptPresetId: RESEARCH.id },
+    })
+    finishEachTurn()
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('deep-model'))
+
+    await act(() => result.current.send({ content: 'Hi' }))
+
+    expect(result.current.presetId).toBe(RESEARCH.id)
+  })
+
   it("sends a model chosen over the prompt's", async () => {
     signIn({ cloud: true, profile: { defaultPromptPresetId: RESEARCH.id } })
     finishEachTurn()

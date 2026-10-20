@@ -6,7 +6,7 @@ import { uploaded } from './open-attachments'
 import { presetIdOf, type OpenChat, type PresetChoice } from './open-chat'
 import { ROUTES } from './protocol'
 import type { RunController } from './run-controller'
-import { getView, type HarnessAPI } from './runtime'
+import { getView, type HarnessAPI, type Profile } from './runtime'
 import type { Store } from './store'
 import type { ThreadStore, TurnSettings } from './thread-store'
 import type { Session, ThreadMessage, Turn } from './types'
@@ -17,6 +17,8 @@ export interface TurnContext {
   open: Store<OpenChat>
   attachments: OpenAttachments
   session?: Session
+  // The profile with the session's defaults, which decides the default prompt.
+  profile: Profile
   projectId?: string | null
   // Chats moving between the cloud and this device take no turns.
   moving: Map<string, Promise<unknown>>
@@ -39,6 +41,7 @@ export function chatTurns({
   open,
   attachments,
   session,
+  profile,
   projectId,
   moving,
   openStore,
@@ -73,7 +76,7 @@ export function chatTurns({
         ? {}
         : {
             presetChosen: true,
-            chosenPresetId: presetIdOf(current, getView().profile),
+            chosenPresetId: presetIdOf(current, profile),
           }),
       ...(choice.model ? { model: choice.model } : {}),
       ...(choice.webSearchEnabled !== undefined
@@ -144,13 +147,12 @@ export function chatTurns({
       report(cause)
       return
     }
-    const currentProfile = getView().profile
     const settings: TurnSettings = {
       first: !current.id || current.unsaved === current.id,
-      presetId: presetIdOf(current, currentProfile),
+      presetId: presetIdOf(current, profile),
       presetChosen: current.presetChosen,
       projectId,
-      profile: currentProfile,
+      profile: getView().profile,
     }
     const choice = presetChoice()
     const threadId = startChat(choice)

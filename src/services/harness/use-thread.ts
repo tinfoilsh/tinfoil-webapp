@@ -302,6 +302,7 @@ export function useThread(
     open,
     attachments,
     session: session ?? undefined,
+    profile,
     projectId,
     moving,
     openStore,
