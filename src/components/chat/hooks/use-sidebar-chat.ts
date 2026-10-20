@@ -1,6 +1,8 @@
 import { ROUTES } from '@/services/harness/protocol'
 import { useHarness } from '@/services/harness/provider'
-import { initialChat, reduceEvent } from '@/services/harness/reducer'
+import { RunController } from '@/services/harness/run-controller'
+import { useStore } from '@/services/harness/store'
+import type { AskContext } from '@/services/harness/thread-store'
 import type { Turn } from '@/services/harness/types'
 import { messageView } from '@/services/harness/view-model'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -9,15 +11,10 @@ export interface SidebarChatState {
   messages: Message[]
   quote: string | null
   loadingState: LoadingState
-  isThinking: boolean
   isWaitingForResponse: boolean
   isStreaming: boolean
   retryInfo: null
 }
-type AskContext = Pick<
-  Turn,
-  'key' | 'threadId' | 'local' | 'thread' | 'profile'
->
 export function useSidebarChat({
   context,
   options,
@@ -28,77 +25,47 @@ export function useSidebarChat({
   options: Turn['options']
 }) {
   const { api } = useHarness()
-  const [state, setState] = useState(initialChat)
+  const [controller] = useState(() => new RunController(api))
+  const state = useStore(controller.view)
   const [quote, setQuote] = useState<string | null>(null)
-  // A local ask's run starts from the whole transcript; only the quote and
-  // its answer belong in the sidebar.
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
-  const controller = useRef<AbortController | null>(null)
-  const run = useRef<{ threadId: string; runId: string } | null>(null)
-  const local = useRef(false)
-  const reset = () => {
-    controller.current?.abort()
-    run.current = null
-    setState(initialChat())
-    setQuote(null)
-    setHidden(new Set())
+  // The ask's run, which the harness runs as a thread of its own, and the
+  // key it carries.
+  const asked = useRef<{ key?: string; threadId?: string; runId?: string }>({})
+  controller.hooks = {
+    started: (run) => Object.assign(asked.current, run),
   }
-  useEffect(() => () => controller.current?.abort(), [])
+  const reset = () => {
+    controller.reset()
+    asked.current = {}
+    setQuote(null)
+  }
+  useEffect(() => () => controller.reset(), [controller])
   const askQuote = (text: string) => {
     reset()
     setQuote(text)
-    const abort = new AbortController()
-    controller.current = abort
+    const shown = controller.track()
     void (async () => {
+      let thread: AskContext
       try {
-        const thread = await context()
-        if (abort.signal.aborted) return
-        local.current = !!thread.local
-        setHidden(
-          new Set(thread.thread?.messages.map((message) => message.id) ?? []),
-        )
-        const input: Turn = {
-          ...thread,
-          kind: 'ask',
-          ...(thread.local ? {} : { ephemeral: true }),
-          clientRequestId: crypto.randomUUID(),
-          content: text,
-          quote: text,
-          options,
-        }
-        for await (const frame of api.client.events(
-          ROUTES.turn,
-          input,
-          api.signal({ signal: abort.signal, keyless: !!thread.local }),
-        )) {
-          if (abort.signal.aborted) return
-          if (frame.event.type === 'RUN_STARTED')
-            run.current = {
-              threadId: frame.event.threadId!,
-              runId: frame.event.runId!,
-            }
-          setState((previous) =>
-            reduceEvent(previous, frame, run.current?.runId),
-          )
-        }
+        thread = await context()
       } catch (cause) {
-        if (!abort.signal.aborted)
-          setState((previous) => ({
-            ...previous,
-            status: 'error',
-            error: {
-              code: 'CONNECTION',
-              message:
-                cause instanceof Error
-                  ? cause.message
-                  : 'Unable to open this conversation.',
-            },
-          }))
+        if (shown()) controller.fail(cause)
+        return
       }
+      if (!shown()) return
+      asked.current = { key: thread.key }
+      await controller.run(ROUTES.turn, {
+        ...thread,
+        kind: 'ask',
+        ...(thread.local ? {} : { ephemeral: true }),
+        clientRequestId: crypto.randomUUID(),
+        content: text,
+        quote: text,
+        options,
+      })
     })()
   }
   const isStreaming = state.status === 'streaming'
-  const shown = state.messages.filter((message) => !hidden.has(message.id))
   // A failed ask shows why as an error reply, also when it failed before the
   // harness sent any message.
   const failure = useMemo<Message | null>(
@@ -115,32 +82,30 @@ export function useSidebarChat({
   )
   return {
     messages: [
-      ...shown.map((m, index) =>
-        messageView(m, isStreaming && index === shown.length - 1),
+      ...state.messages.map((m, index) =>
+        messageView(m, isStreaming && index === state.messages.length - 1),
       ),
       ...(failure ? [failure] : []),
     ],
     quote,
     loadingState: (isStreaming ? 'streaming' : 'idle') as LoadingState,
-    isThinking: false,
     isWaitingForResponse:
-      isStreaming && !shown.some((m) => m.role === 'assistant'),
+      isStreaming && !state.messages.some((m) => m.role === 'assistant'),
     isStreaming,
     retryInfo: null,
     askQuote,
     reset,
     cancel: () => {
-      if (run.current)
-        void api.post(ROUTES.cancel, run.current, {
-          keyless: local.current,
-        })
-      controller.current?.abort()
-      // The aborted stream reports nothing more, so the ask stops here and
+      const { key, threadId, runId } = asked.current
+      if (threadId && runId)
+        void controller.cancel({ key, threadId, runId }).catch(() => {})
+      // The stopped stream reports nothing more, so the ask stops here and
       // keeps what it received.
-      setState((previous) =>
-        previous.status === 'streaming' || previous.status === 'queued'
-          ? { ...previous, status: 'idle' }
-          : previous,
+      const shown = controller.view.get()
+      controller.reset(
+        shown.status === 'streaming' || shown.status === 'queued'
+          ? { ...shown, status: 'idle' }
+          : shown,
       )
     },
   }

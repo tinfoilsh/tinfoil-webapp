@@ -381,7 +381,6 @@ describe.each(['custom', 'default'])(
               ],
               quote: null,
               loadingState: 'idle',
-              isThinking: false,
               isWaitingForResponse: false,
               isStreaming: false,
               retryInfo: null,

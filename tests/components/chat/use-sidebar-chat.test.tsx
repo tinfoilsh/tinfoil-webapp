@@ -1,5 +1,5 @@
 import { useSidebarChat } from '@/components/chat/hooks/use-sidebar-chat'
-import { harnessAPI } from '@/services/harness/runtime'
+import { getView, harnessAPI } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
@@ -66,10 +66,15 @@ it('stops streaming a cancelled ask and keeps its partial answer', async () => {
   )
 })
 
-it('shows why an ask failed before the harness sent any message', async () => {
+it('shows why an ask failed before the harness sent any message, and records the quota it used up', async () => {
   vi.mocked(harnessAPI().client.events).mockImplementation(async function* () {
     throw new HarnessError(
-      { code: 'QUOTA_EXHAUSTED', message: 'The daily limit is reached' },
+      {
+        code: 'QUOTA_EXHAUSTED',
+        message: 'The daily limit is reached',
+        kind: 'free_daily',
+        resetsAt: '2026-05-02T00:00:00Z',
+      },
       429,
     )
   })
@@ -93,6 +98,12 @@ it('shows why an ask failed before the harness sent any message', async () => {
     ]),
   )
   expect(result.current.isStreaming).toBe(false)
+  expect(getView().rateLimit).toEqual({
+    kind: 'free_daily',
+    maxRequests: 0,
+    remaining: 0,
+    resetsAt: '2026-05-02T00:00:00Z',
+  })
   expect(vi.mocked(harnessAPI().client.events)).toHaveBeenCalledWith(
     '/v1/threads/turn',
     expect.objectContaining({

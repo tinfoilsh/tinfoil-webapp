@@ -65,6 +65,8 @@ export interface RunOptions {
 
 // What the chat around a run does as the run goes.
 export interface RunHooks {
+  // The run the view shows started, under the thread the harness names.
+  started?(run: { threadId?: string; runId: string }): void
   // The harness accepted a stored chat's turn, which stored a new chat.
   accepted?(threadId: string): void
   // A device run's final event returns the thread to store.
@@ -178,8 +180,14 @@ export class RunController {
         if (shown) this.view.set(next)
         if (event.type === 'RUN_FINISHED')
           succeeded = event.metadata?.cancelled !== true
-        if (event.type === 'RUN_STARTED')
+        if (event.type === 'RUN_STARTED') {
           this.started(event.runId, input.threadId!, options, shown)
+          if (shown)
+            this.hooks.started?.({
+              threadId: event.threadId,
+              runId: event.runId,
+            })
+        }
         if (!isTerminal(event)) continue
         if (device) await this.hooks.saved?.(device, event, attached())
         this.forgetReceipt(runId)
