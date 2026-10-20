@@ -241,40 +241,33 @@ describe('local chats of a signed-in account without cloud sync', () => {
     )
   })
 
-  it('keeps a new local chat pending until its run saves it', async () => {
+  it('lists a new chat with its message as soon as it is sent', async () => {
     signIn('alice')
     let release!: () => void
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
-    const question = {
-      id: 'msg_user',
-      role: 'user' as const,
-      createdAt: 't1',
-      content: 'Hi',
-    }
+    let returned!: StoredThread
     client.events.mockImplementation(async function* (
       _path: string,
       input: Turn,
     ) {
       const threadId = input.threadId!
+      const question = {
+        id: input.clientRequestId,
+        role: 'user' as const,
+        createdAt: 't1',
+        content: 'Hi',
+      }
+      returned = storedThread(threadId, {
+        title: 'Greeting',
+        titleState: 'generated',
+        lastRequestId: input.clientRequestId,
+        messages: [question],
+      })
       yield { id: 0, event: { type: 'RUN_STARTED', threadId, runId: 'run-1' } }
-      yield {
-        id: 1,
-        event: {
-          type: 'MESSAGES_SNAPSHOT',
-          messages: [question],
-          hasOlder: false,
-        },
-      }
       await held
-      yield {
-        id: 2,
-        event: finished(
-          threadId,
-          storedThread(threadId, { messages: [question] }),
-        ),
-      }
+      yield { id: 1, event: finished(threadId, returned) }
     })
     const { result } = renderHook(() => useThread())
     await waitFor(() => expect(result.current.model).toBe('test-model'))
@@ -283,23 +276,32 @@ describe('local chats of a signed-in account without cloud sync', () => {
       sending = result.current.send({ content: 'Hi' })
     })
 
-    await waitFor(() =>
-      expect(result.current.chat.messages.map((m) => m.id)).toEqual([
-        'msg_user',
-      ]),
-    )
-    const threadId = result.current.chat.id
-    expect(threadId).toMatch(REVERSE_ID)
-    expect(result.current.chat.pendingSave).toBe(true)
-    expect(await stored(threadId)).toBeNull()
+    await waitFor(() => expect(result.current.chats).toHaveLength(1))
+    const threadId = turn().threadId!
+    expect(result.current.chats[0]).toMatchObject({
+      id: threadId,
+      title: 'New Chat',
+      isLocalOnly: true,
+      messageCount: 1,
+    })
+    expect(result.current.chat.pendingSave).toBe(false)
+    expect((await stored(threadId))?.messages).toEqual([
+      {
+        id: turn().clientRequestId,
+        role: 'user',
+        createdAt: expect.any(String),
+        content: 'Hi',
+      },
+    ])
+    // The turn carries the thread as it was before the message.
+    expect(turn().thread?.messages).toEqual([])
 
     await act(async () => {
       release()
       await sending
     })
 
-    expect(result.current.chat.pendingSave).toBe(false)
-    expect((await stored(threadId))?.messages).toEqual([question])
+    expect(await stored(threadId)).toEqual(returned)
   })
 
   const QUESTION = {

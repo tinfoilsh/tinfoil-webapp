@@ -752,7 +752,24 @@ export function useThread(
       heldImages(base.messages),
     )
     pending.current = { input, run }
+    const message = sentMessage(input)
     showSent(input)
+    // The chat keeps the message until the run returns the thread, so a new
+    // chat is listed from its first message.
+    if (message)
+      await target
+        .update(threadId, () => ({
+          ...base,
+          messages: [...base.messages, message],
+          updatedAt: message.createdAt,
+        }))
+        .then((saved) => saved && markSaved(threadId))
+        .catch((cause) =>
+          logError('Failed to keep a sent message on this device', cause, {
+            component: 'useThread',
+            action: 'sendLocal',
+          }),
+        )
     return stream('/v1/threads/turn', input, run)
   }
   // A new chat takes its id with its first turn. Until the harness accepts a
@@ -776,31 +793,40 @@ export function useThread(
     unsavedRef.current = null
     setUnsaved(null)
   }
-  // A message the user sends shows at once, under the id the harness stores
-  // it with, until the run's first window replaces the messages. A message
-  // queued behind a running reply shows in the queue instead.
-  function showSent(input: Turn) {
-    const { status, messages } = current.current
+  // The message a turn adds, under the id the harness stores it with. A
+  // message queued behind a running reply shows in the queue instead.
+  function sentMessage(input: Turn): ThreadMessage | null {
+    const { status } = current.current
     if (input.kind !== 'send' || status === 'streaming' || status === 'queued')
-      return
+      return null
+    const attachments = uploaded(input.attachments)
+    return {
+      id: input.clientRequestId,
+      role: 'user',
+      createdAt: now(),
+      content: input.content ?? '',
+      ...(input.quote ? { quote: input.quote } : {}),
+      ...(attachments.length ? { attachments } : {}),
+    }
+  }
+  // A message the user sends shows at once, until the run's first window
+  // replaces the messages.
+  function showSent(input: Turn) {
+    const message = sentMessage(input)
+    if (!message) return
+    const { attachments, ...shown } = message
     const next = {
       ...current.current,
       messages: [
-        ...messages,
-        {
-          id: input.clientRequestId,
-          role: 'user' as const,
-          createdAt: new Date().toISOString(),
-          content: input.content ?? '',
-          ...(input.quote ? { quote: input.quote } : {}),
-          ...(input.attachments?.length
-            ? {
-                attachments: uploaded(input.attachments).map(
-                  ({ base64: _, pages: __, ...shown }) => shown,
-                ),
-              }
-            : {}),
-        },
+        ...current.current.messages,
+        attachments
+          ? {
+              ...shown,
+              attachments: attachments.map(
+                ({ base64: _, pages: __, ...view }) => view,
+              ),
+            }
+          : shown,
       ],
     }
     current.current = next
