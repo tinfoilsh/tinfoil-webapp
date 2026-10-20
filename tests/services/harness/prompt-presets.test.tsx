@@ -59,13 +59,15 @@ const session: Session = {
 function signIn({
   cloud,
   profile = {},
+  profileDefaults = {},
 }: {
   cloud: boolean
   profile?: Record<string, unknown>
+  profileDefaults?: Session['profileDefaults']
 }) {
   const api = signInTo({
     cloud,
-    session,
+    session: { ...session, profileDefaults },
     profile: { customPromptPresets: [RESEARCH, QUIET], ...profile },
   })
   client.post.mockImplementation(
@@ -150,6 +152,18 @@ describe('the default prompt of a new stored chat', () => {
 
     expect(turn().options).toEqual({ thinking: true })
     expect(result.current.model).toBe('deep-model')
+    expect(result.current.chat.webSearchEnabled).toBe(true)
+  })
+
+  it("shows the settings of the session's default prompt when the profile names none", async () => {
+    signIn({
+      cloud: true,
+      profileDefaults: { defaultPromptPresetId: RESEARCH.id },
+    })
+    const { result } = renderHook(() => useThread())
+
+    await waitFor(() => expect(result.current.model).toBe('deep-model'))
+    expect(result.current.presetId).toBe(RESEARCH.id)
     expect(result.current.chat.webSearchEnabled).toBe(true)
   })
 

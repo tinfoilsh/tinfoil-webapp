@@ -167,12 +167,12 @@ export function useThread(
   const presetChoice = (): PresetChoice => {
     const current = open.get()
     if (current.id) return {}
-    const { customPromptPresets } = getView().profile
+    const { customPromptPresets } = profile
     const saved: Record<string, unknown>[] = Array.isArray(customPromptPresets)
       ? customPromptPresets
       : []
     const preset = saved.find(
-      (candidate) => candidate?.id === presetIdOf(current, getView().profile),
+      (candidate) => candidate?.id === presetIdOf(current, profile),
     )
     if (!preset) return {}
     return {
