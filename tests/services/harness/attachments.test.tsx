@@ -42,9 +42,6 @@ const thread: Thread = {
           fileName: 'report.pdf',
           mimeType: 'application/pdf',
           size: 2048,
-          thumbnail: null,
-          pages: 3,
-          status: 'ready',
         },
         {
           id: 'att_chart',
@@ -53,7 +50,6 @@ const thread: Thread = {
           mimeType: 'image/png',
           size: 512,
           thumbnail: 'dGh1bWI=',
-          status: 'ready',
         },
       ],
     },

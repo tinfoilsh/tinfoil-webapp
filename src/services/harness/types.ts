@@ -19,29 +19,16 @@ export interface HarnessErrorBody {
   rateLimit?: RateLimit
 }
 
-export interface Attachment {
-  id: string
-  kind: string
-  fileName: string
-  mimeType: string
-  size: number
-  thumbnail?: string | null
-  textContent?: string
-  description?: string
-  attKey?: string
-  pages?: number | null
-  status?: string
-}
-
-// An attachment as an upload returns it and a turn sends it. The harness
-// keeps nothing of an upload, so a turn carries an image's bytes.
+// An attachment, in the one shape an upload returns, a turn sends, a thread
+// stores and a view lists. The harness keeps nothing of an upload, so a turn
+// carries an image's bytes; a view leaves out image bytes and page images.
 export interface AttachmentDescriptor {
   id: string
-  kind: string
+  kind: 'image' | 'document' | 'audio'
   fileName: string
   mimeType: string
   size: number
-  thumbnail?: string | null
+  thumbnail?: string
   textContent?: string
   description?: string
   pages?: DocumentPage[]
@@ -93,7 +80,7 @@ export interface Message {
   model?: string
   modelDisplayName?: string
   timeline?: TimelineBlock[]
-  attachments?: Attachment[]
+  attachments?: AttachmentDescriptor[]
   isError?: boolean
   isInterrupted?: boolean
   usage?: Json
@@ -130,9 +117,7 @@ export interface Thread extends ThreadSummary {
   presetId?: string | null
 }
 
-export interface ThreadMessage extends Omit<Message, 'attachments'> {
-  attachments?: AttachmentDescriptor[]
-}
+export type ThreadMessage = Message
 
 // A whole chat in the format the harness stores it in sync, a chat on this
 // device is kept in, and a device run's final event returns.
@@ -421,8 +406,11 @@ export interface Frame {
   id?: number
 }
 
+// A shared chat, whose attachments name the key that reads each blob.
 export interface SharedThread {
   title: string
   createdAt: string
-  messages: Message[]
+  messages: (Omit<Message, 'attachments'> & {
+    attachments?: (AttachmentDescriptor & { attKey: string | null })[]
+  })[]
 }

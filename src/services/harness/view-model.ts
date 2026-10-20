@@ -6,7 +6,7 @@ import type {
 } from '@/components/chat/types'
 import type {
   ThreadSummary,
-  Attachment as WireAttachment,
+  AttachmentDescriptor as WireAttachment,
   TimelineBlock as WireBlock,
   Message as WireMessage,
 } from './types'
