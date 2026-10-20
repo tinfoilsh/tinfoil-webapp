@@ -1,5 +1,5 @@
 import type { Attachment as UIAttachment } from '@/components/chat/types'
-import type { OpenAttachments } from './open-attachments'
+import { imageBlob, type OpenAttachments } from './open-attachments'
 import { ROUTES } from './protocol'
 import type { DeviceRun } from './run-controller'
 import type { HarnessAPI, Profile } from './runtime'
@@ -200,6 +200,13 @@ export function cloudThreads(
       attachments.text(attachment.id, async () =>
         (await download(threadId, attachment)).text(),
       ),
-    image: download,
+    // The file the user picked while this page holds it, or else the copy
+    // the harness stored.
+    async image(threadId, attachment, signal) {
+      const original = attachments.originals.get(attachment.id)
+      return original
+        ? imageBlob(original)
+        : download(threadId, attachment, signal)
+    },
   }
 }

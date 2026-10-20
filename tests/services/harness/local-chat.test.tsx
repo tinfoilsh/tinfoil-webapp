@@ -688,19 +688,22 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(await stored(SEEDED_ID)).toEqual(returned)
   })
 
-  it('keeps the bytes of an image the harness leaves out, and sends them with later turns', async () => {
+  it("sends an image's model copy, and keeps the picked file apart to show", async () => {
     signIn('alice')
     const bytes = new Uint8Array([137, 80, 78, 71])
-    const base64 = btoa(String.fromCharCode(...bytes))
+    const original = btoa(String.fromCharCode(...bytes))
+    const modelCopy = 'bW9kZWwtY29weQ=='
     const view: AttachmentDescriptor = {
       id: 'att_door',
       kind: 'image',
       fileName: 'door.png',
-      mimeType: 'image/png',
+      mimeType: 'image/jpeg',
       size: 4,
       thumbnail: 'dGh1bWI=',
     }
-    client.upload.mockResolvedValue({ attachment: view })
+    client.upload.mockResolvedValue({
+      attachment: { ...view, base64: modelCopy },
+    })
     client.events.mockImplementation((_path: string, input: Turn) =>
       deviceRun(
         input.threadId!,
@@ -732,7 +735,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
         new File([bytes], 'door.png', { type: 'image/png' }),
       )
     })
-    expect(uploaded).toEqual({ ...view, base64 })
+    expect(uploaded).toEqual({ ...view, base64: modelCopy })
     expect(client.upload).toHaveBeenCalledExactlyOnceWith(
       '/v1/attachments/upload',
       expect.any(File),
@@ -746,11 +749,16 @@ describe('local chats of a signed-in account without cloud sync', () => {
       }),
     )
     const threadId = turn().threadId!
-    expect(turn().attachments).toEqual([{ ...view, base64 }])
-    const kept = { ...view, description: 'A red door', base64 }
+    expect(turn().attachments).toEqual([{ ...view, base64: modelCopy }])
+    const kept = { ...view, description: 'A red door', base64: modelCopy }
     expect((await stored(threadId))?.messages[0].attachments).toEqual([kept])
-    expect(await rawRows('attachmentPayloads')).toEqual([
-      { id: `${threadId}:att_door`, chatId: threadId, base64 },
+    expect(await rawRows('attachmentOriginals')).toEqual([
+      {
+        chatId: threadId,
+        attachmentId: 'att_door',
+        base64: original,
+        mimeType: 'image/png',
+      },
     ])
     first.unmount()
 
@@ -766,11 +774,90 @@ describe('local chats of a signed-in account without cloud sync', () => {
     const image = await reloaded.result.current.loadImage(
       reloaded.result.current.chat.messages[0].attachments![0],
     )
+    expect(image.type).toBe('image/png')
     expect(new Uint8Array(await image.arrayBuffer())).toEqual(bytes)
 
     await act(() => reloaded.result.current.send({ content: 'And now?' }))
 
     expect(turn(1).thread?.messages[0].attachments).toEqual([kept])
+  })
+
+  it('sends the stored chat with every image it holds', async () => {
+    signIn('alice')
+    const photos = ['p1', 'p2', 'p3', 'p4'].map((id): ThreadMessage => ({
+      id,
+      role: 'user',
+      createdAt: 't1',
+      content: 'Look',
+      attachments: [
+        {
+          id: `att_${id}`,
+          kind: 'image',
+          fileName: `${id}.jpg`,
+          mimeType: 'image/jpeg',
+          size: 5,
+          base64: btoa(id),
+        },
+      ],
+    }))
+    await localThreadStore('device').update(SEEDED_ID, () =>
+      seeded({ messages: photos }),
+    )
+    client.events.mockImplementation(
+      deviceRun(SEEDED_ID, seeded({ messages: photos })),
+    )
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+    await act(() => result.current.send({ content: 'Which is best?' }))
+
+    expect(turn().thread).toEqual(seeded({ messages: photos }))
+  })
+
+  it("shows an image's model copy when this device has no original, and deletes an original with its message", async () => {
+    signIn('alice')
+    const photo: AttachmentDescriptor = {
+      id: 'att_photo',
+      kind: 'image',
+      fileName: 'photo.png',
+      mimeType: 'image/jpeg',
+      size: 5,
+      thumbnail: 'dGh1bWI=',
+      base64: 'bW9kZWw=',
+    }
+    const messages = SEEDED_MESSAGES.map((message) =>
+      message.id === 'u2' ? { ...message, attachments: [photo] } : message,
+    )
+    await localThreadStore('device').update(SEEDED_ID, () =>
+      seeded({ messages }),
+    )
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+    const image = await result.current.loadImage(
+      result.current.chat.messages[2].attachments![0],
+    )
+    expect(image.type).toBe('image/jpeg')
+    expect(await image.text()).toBe('model')
+
+    await localThreadStore('device').update(
+      SEEDED_ID,
+      (thread) => thread,
+      new Map([
+        ['att_photo', { base64: 'b3JpZ2luYWw=', mimeType: 'image/png' }],
+      ]),
+    )
+    expect(await rawRows('attachmentOriginals')).toHaveLength(1)
+    client.post.mockResolvedValueOnce({
+      thread: seeded({ messages: messages.filter((m) => m.id !== 'u2') }),
+    })
+    await act(() => result.current.deleteMessage(2))
+
+    expect(await rawRows('attachmentOriginals')).toEqual([])
   })
 
   it('upgrades a chat the previous client stored through the harness, and sends it upgraded', async () => {

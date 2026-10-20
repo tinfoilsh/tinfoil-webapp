@@ -10,7 +10,9 @@ import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeAll, beforeEach } from 'vitest'
 
 // The rows of a chat database store, read with their own transaction.
-export async function rawRows(store: 'chats' | 'attachmentPayloads') {
+export async function rawRows(
+  store: 'chats' | 'attachmentPayloads' | 'attachmentOriginals',
+) {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
     request.onerror = () => reject(request.error)

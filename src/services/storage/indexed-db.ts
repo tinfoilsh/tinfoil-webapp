@@ -41,6 +41,18 @@ type StoredAttachmentReference = Attachment & {
   storagePayloadId?: string
 }
 
+// The file a user picked for an image attachment, kept for display apart
+// from the copy a chat sends models.
+export interface AttachmentOriginal {
+  base64: string
+  mimeType: string
+}
+
+interface StoredAttachmentOriginal extends AttachmentOriginal {
+  chatId: string
+  attachmentId: string
+}
+
 export class AttachmentPayloadIdUnavailableError extends Error {
   readonly code = 'ATTACHMENT_PAYLOAD_ID_UNAVAILABLE'
 
@@ -60,10 +72,12 @@ export class AttachmentPayloadMissingError extends Error {
 }
 
 export const DB_NAME = 'tinfoil-chat'
-export const DB_VERSION = 8
+export const DB_VERSION = 9
 const CHATS_STORE = 'chats'
 const MIGRATIONS_STORE = 'migrations'
 const ATTACHMENT_PAYLOADS_STORE = 'attachmentPayloads'
+const ATTACHMENT_ORIGINALS_STORE = 'attachmentOriginals'
+// The chat a payload or an original belongs to, in either store.
 const ATTACHMENT_PAYLOADS_CHAT_INDEX = 'chatId'
 const GENERATED_ATTACHMENT_PAYLOAD_PREFIX = 'attachment-payload:'
 const CHAT_SUMMARIES_STORE = 'chatSummaries'
@@ -330,10 +344,7 @@ function hydrateAttachmentPayloads(
   }
 }
 
-function deleteAttachmentPayloadsForChat(
-  store: IDBObjectStore,
-  chatId: string,
-): void {
+function deleteAttachmentsForChat(store: IDBObjectStore, chatId: string): void {
   const request = store
     .index(ATTACHMENT_PAYLOADS_CHAT_INDEX)
     .openKeyCursor(IDBKeyRange.only(chatId))
@@ -442,6 +453,16 @@ export class IndexedDBStorage {
           }
           if (!db.objectStoreNames.contains(CHAT_SUMMARIES_STORE)) {
             db.createObjectStore(CHAT_SUMMARIES_STORE, { keyPath: 'id' })
+          }
+          if (!db.objectStoreNames.contains(ATTACHMENT_ORIGINALS_STORE)) {
+            const store = db.createObjectStore(ATTACHMENT_ORIGINALS_STORE, {
+              keyPath: ['chatId', 'attachmentId'],
+            })
+            store.createIndex(
+              ATTACHMENT_PAYLOADS_CHAT_INDEX,
+              ATTACHMENT_PAYLOADS_CHAT_INDEX,
+              { unique: false },
+            )
           }
           if ((event as IDBVersionChangeEvent).oldVersion === 0) {
             request.transaction?.objectStore(MIGRATIONS_STORE).put({
@@ -636,14 +657,22 @@ export class IndexedDBStorage {
     return trackedReset
   }
 
-  async saveChat(chat: Chat): Promise<SaveChatResult> {
+  // Saves a chat with the originals of its image attachments, by attachment
+  // id. Originals of attachments the chat no longer has are deleted.
+  async saveChat(
+    chat: Chat,
+    originals: ReadonlyMap<string, AttachmentOriginal> = new Map(),
+  ): Promise<SaveChatResult> {
     const chatSnapshot = snapshotChatForStorage(chat)
     return this.enqueueSave('saveChat', () =>
-      this.saveChatInternal(chatSnapshot),
+      this.saveChatInternal(chatSnapshot, originals),
     )
   }
 
-  private async saveChatInternal(chat: Chat): Promise<SaveChatResult> {
+  private async saveChatInternal(
+    chat: Chat,
+    originals: ReadonlyMap<string, AttachmentOriginal>,
+  ): Promise<SaveChatResult> {
     this.assertActiveSaveGeneration()
     const db = await this.ensureDB()
     this.assertActiveSaveGeneration()
@@ -658,12 +687,18 @@ export class IndexedDBStorage {
 
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(
-        [CHATS_STORE, ATTACHMENT_PAYLOADS_STORE, CHAT_SUMMARIES_STORE],
+        [
+          CHATS_STORE,
+          ATTACHMENT_PAYLOADS_STORE,
+          CHAT_SUMMARIES_STORE,
+          ATTACHMENT_ORIGINALS_STORE,
+        ],
         'readwrite',
       )
       const store = transaction.objectStore(CHATS_STORE)
       const payloadStore = transaction.objectStore(ATTACHMENT_PAYLOADS_STORE)
       const summaryStore = transaction.objectStore(CHAT_SUMMARIES_STORE)
+      const originalStore = transaction.objectStore(ATTACHMENT_ORIGINALS_STORE)
       let result: SaveChatResult = {
         saved: false,
         isLocalOnly: (chat as StoredChat).isLocalOnly === true,
@@ -732,6 +767,40 @@ export class IndexedDBStorage {
           isLocalOnly,
         }
         result = { saved: true, isLocalOnly }
+
+        const attachmentIds = new Set(
+          chat.messages.flatMap((message) =>
+            (message.attachments ?? []).map((attachment) => attachment.id),
+          ),
+        )
+        const originalCursor = originalStore
+          .index(ATTACHMENT_PAYLOADS_CHAT_INDEX)
+          .openKeyCursor(IDBKeyRange.only(chat.id))
+        originalCursor.onerror = () =>
+          reject(new Error('Failed to reconcile attachment originals'))
+        originalCursor.onsuccess = () => {
+          const cursor = originalCursor.result
+          if (!cursor) return
+          const [, attachmentId] = cursor.primaryKey as [string, string]
+          if (!attachmentIds.has(attachmentId))
+            originalStore.delete(cursor.primaryKey)
+          cursor.continue()
+        }
+        for (const [attachmentId, original] of originals) {
+          if (!attachmentIds.has(attachmentId)) continue
+          const stored: StoredAttachmentOriginal = {
+            chatId: chat.id,
+            attachmentId,
+            base64: original.base64,
+            mimeType: original.mimeType,
+          }
+          const originalRequest = originalStore.put(stored)
+          originalRequest.onerror = () =>
+            reject(
+              originalRequest.error ??
+                new Error('Failed to save attachment original'),
+            )
+        }
 
         const writeChatAndPayloads = () => {
           for (const payload of normalizedAttachments.payloads) {
@@ -818,6 +887,38 @@ export class IndexedDBStorage {
     return this.protectRead(this.getChatInternal(id))
   }
 
+  async getAttachmentOriginals(
+    chatId: string,
+    attachmentIds: readonly string[],
+  ): Promise<Map<string, AttachmentOriginal>> {
+    if (!attachmentIds.length) return new Map()
+    await this.waitForSaveQueue()
+    const db = await this.ensureDB()
+    return this.protectRead(
+      new Promise((resolve, reject) => {
+        const store = db
+          .transaction([ATTACHMENT_ORIGINALS_STORE], 'readonly')
+          .objectStore(ATTACHMENT_ORIGINALS_STORE)
+        const originals = new Map<string, AttachmentOriginal>()
+        for (const attachmentId of attachmentIds) {
+          const request = store.get([chatId, attachmentId])
+          request.onsuccess = () => {
+            const stored = request.result as
+              StoredAttachmentOriginal | undefined
+            if (stored)
+              originals.set(attachmentId, {
+                base64: stored.base64,
+                mimeType: stored.mimeType,
+              })
+          }
+          request.onerror = () =>
+            reject(new Error('Failed to get attachment originals'))
+        }
+        store.transaction.oncomplete = () => resolve(originals)
+      }),
+    )
+  }
+
   async deleteChat(id: string): Promise<void> {
     // Serialize through saveQueue so a deletion can't race with an in-flight
     // saveChatInternal that would resurrect the row after the delete.
@@ -825,14 +926,23 @@ export class IndexedDBStorage {
       const db = await this.ensureDB()
       return new Promise<void>((resolve, reject) => {
         const transaction = db.transaction(
-          [CHATS_STORE, ATTACHMENT_PAYLOADS_STORE, CHAT_SUMMARIES_STORE],
+          [
+            CHATS_STORE,
+            ATTACHMENT_PAYLOADS_STORE,
+            CHAT_SUMMARIES_STORE,
+            ATTACHMENT_ORIGINALS_STORE,
+          ],
           'readwrite',
         )
         const store = transaction.objectStore(CHATS_STORE)
         const request = store.delete(id)
         transaction.objectStore(CHAT_SUMMARIES_STORE).delete(id)
-        deleteAttachmentPayloadsForChat(
+        deleteAttachmentsForChat(
           transaction.objectStore(ATTACHMENT_PAYLOADS_STORE),
+          id,
+        )
+        deleteAttachmentsForChat(
+          transaction.objectStore(ATTACHMENT_ORIGINALS_STORE),
           id,
         )
 
@@ -868,7 +978,12 @@ export class IndexedDBStorage {
       const db = await this.ensureDB()
       return new Promise<number>((resolve, reject) => {
         const transaction = db.transaction(
-          [CHATS_STORE, ATTACHMENT_PAYLOADS_STORE, CHAT_SUMMARIES_STORE],
+          [
+            CHATS_STORE,
+            ATTACHMENT_PAYLOADS_STORE,
+            CHAT_SUMMARIES_STORE,
+            ATTACHMENT_ORIGINALS_STORE,
+          ],
           'readwrite',
         )
         const store = transaction.objectStore(CHATS_STORE)
@@ -880,6 +995,7 @@ export class IndexedDBStorage {
           store.clear()
           transaction.objectStore(ATTACHMENT_PAYLOADS_STORE).clear()
           transaction.objectStore(CHAT_SUMMARIES_STORE).clear()
+          transaction.objectStore(ATTACHMENT_ORIGINALS_STORE).clear()
         }
 
         transaction.oncomplete = () => resolve(count)

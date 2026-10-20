@@ -330,17 +330,19 @@ export function useThread(
       reset()
     }
   }, [reset, clearCloud, open, controller])
-  // Converts a file into the descriptor the turn that uses it sends. The
-  // harness keeps nothing of an upload, so an image keeps its bytes.
+  // Converts a file into the descriptor the turn that uses it sends. An
+  // image's descriptor carries the copy the harness gives models; the file
+  // itself is kept apart, to show and download.
   async function upload(file: File): Promise<AttachmentDescriptor> {
     const { attachment } = await api.upload<{
       attachment: AttachmentDescriptor
     }>(ROUTES.attachmentUpload, file, {}, { keyless: true })
-    if (attachment.kind !== 'image') return attachment
-    return {
-      ...attachment,
-      base64: uint8ArrayToBase64(new Uint8Array(await file.arrayBuffer())),
-    }
+    if (attachment.kind === 'image')
+      attachments.originals.set(attachment.id, {
+        base64: uint8ArrayToBase64(new Uint8Array(await file.arrayBuffer())),
+        mimeType: file.type || attachment.mimeType,
+      })
+    return attachment
   }
   // The model and web search setting a saved prompt applies when it is
   // chosen. Built-in prompts carry none, and a model the catalog no longer

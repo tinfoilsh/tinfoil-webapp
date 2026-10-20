@@ -1,4 +1,4 @@
-import { localThreadStore, turnThread } from '@/services/harness/local-threads'
+import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
 import type {
   AttachmentDescriptor,
@@ -384,84 +384,5 @@ describe('tab store', () => {
     } finally {
       await store.deleteAll()
     }
-  })
-})
-
-describe('turnThread', () => {
-  it('sends image bytes only with the most recent image messages', () => {
-    const image = (id: string): AttachmentDescriptor => ({
-      ...IMAGE,
-      id,
-      base64: `bytes-${id}`,
-    })
-    const document: AttachmentDescriptor = {
-      id: 'doc',
-      kind: 'document',
-      fileName: 'scan.pdf',
-      mimeType: 'application/pdf',
-      size: 8,
-      textContent: 'scanned',
-      pages: [
-        { page: 1, text: 'scanned', image: 'page-bytes', is_scanned: true },
-      ],
-    }
-    const messages = [
-      ['m1', [image('a')]],
-      ['m2', [document]],
-      ['m3', [image('b')]],
-      ['m4', []],
-      ['m5', [image('c')]],
-    ].map(([id, attachments]) => ({
-      id: id as string,
-      role: 'user' as const,
-      createdAt: 't',
-      content: 'look',
-      ...((attachments as AttachmentDescriptor[]).length
-        ? { attachments: attachments as AttachmentDescriptor[] }
-        : {}),
-    }))
-    const saved = thread({ messages, lastRequestId: 'request-1' })
-
-    const sent = turnThread(saved)
-
-    const { base64: _, ...withoutBytes } = image('a')
-    expect(sent).toEqual({
-      ...saved,
-      messages: messages.map((message, index) =>
-        index === 0 ? { ...message, attachments: [withoutBytes] } : message,
-      ),
-    })
-  })
-
-  it('blanks page images of older documents but keeps their text', () => {
-    const scan = (id: string): AttachmentDescriptor => ({
-      id,
-      kind: 'document',
-      fileName: `${id}.pdf`,
-      mimeType: 'application/pdf',
-      size: 8,
-      pages: [
-        { page: 1, text: `text ${id}`, image: `img-${id}`, is_scanned: false },
-      ],
-    })
-    const sent = turnThread(
-      thread({
-        messages: ['d1', 'd2'].map((id) => ({
-          id,
-          role: 'user' as const,
-          createdAt: 't',
-          content: '',
-          attachments: [scan(id)],
-        })),
-      }),
-      1,
-    )
-    expect(sent.messages[0].attachments).toEqual([
-      {
-        ...scan('d1'),
-        pages: [{ page: 1, text: 'text d1', image: '', is_scanned: false }],
-      },
-    ])
-    expect(sent.messages[1].attachments).toEqual([scan('d2')])
   })
 })

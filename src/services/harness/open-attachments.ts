@@ -1,4 +1,11 @@
+import type { AttachmentOriginal } from '@/services/storage/indexed-db'
+import { base64ToUint8Array } from '@/utils/binary-codec'
 import type { AttachmentDescriptor, StoredThread, Turn } from './types'
+
+export const imageBlob = (image: { base64: string; mimeType?: string }) =>
+  new Blob([base64ToUint8Array(image.base64)], {
+    type: image.mimeType || 'image/jpeg',
+  })
 
 // The attachments of a turn that are new uploads, rather than ones the chat
 // stores already.
@@ -8,12 +15,24 @@ export const uploaded = (attachments: Turn['attachments'] = []) =>
   )
 
 // What the open chat's view reads of its attachments: the image bytes a
-// chat on this device holds, uploads the chat does not store yet, and the
-// document texts read so far. Clearing it moves the view to another chat.
+// chat on this device holds, uploads the chat does not store yet, the files
+// the user picked for them, and the document texts read so far. Clearing it
+// moves the view to another chat.
 export class OpenAttachments {
   readonly images = new Map<string, { base64: string; mimeType?: string }>()
   readonly uploads = new Map<string, AttachmentDescriptor>()
+  readonly originals = new Map<string, AttachmentOriginal>()
   private readonly texts = new Map<string, Promise<string>>()
+
+  // The originals of the images of a turn, by attachment id.
+  originalsOf(attachments: readonly AttachmentDescriptor[]) {
+    const found = new Map<string, AttachmentOriginal>()
+    for (const { id } of attachments) {
+      const original = this.originals.get(id)
+      if (original) found.set(id, original)
+    }
+    return found
+  }
 
   remember(attachments: readonly AttachmentDescriptor[]) {
     for (const attachment of attachments)
@@ -51,6 +70,7 @@ export class OpenAttachments {
   clear() {
     this.images.clear()
     this.uploads.clear()
+    this.originals.clear()
     this.texts.clear()
   }
 }

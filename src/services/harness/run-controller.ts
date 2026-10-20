@@ -1,4 +1,4 @@
-import type { ImagesById, LocalThreadStore } from './local-threads'
+import type { ImagesById, LocalThreadStore, Originals } from './local-threads'
 import { ERROR_CODES, ROUTES, type RunRoute } from './protocol'
 import {
   initialChat,
@@ -48,6 +48,8 @@ export interface DeviceRun {
   threadId: string
   store: LocalThreadStore
   images: ImagesById
+  // The originals of the images the turn sent, stored with the thread.
+  originals?: Originals
   runId?: string
 }
 

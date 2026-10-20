@@ -1,5 +1,4 @@
 import type { Attachment as UIAttachment } from '@/components/chat/types'
-import { base64ToUint8Array } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { turnProfile } from './local-profile'
 import {
@@ -11,11 +10,10 @@ import {
   localThreadView,
   newThread,
   shareThread,
-  turnThread,
   withHeldImages,
   type LocalThreadStore,
 } from './local-threads'
-import { uploaded, type OpenAttachments } from './open-attachments'
+import { imageBlob, uploaded, type OpenAttachments } from './open-attachments'
 import { ERROR_CODES, ROUTES } from './protocol'
 import type { DeviceRun, RunController } from './run-controller'
 import type { HarnessAPI } from './runtime'
@@ -44,21 +42,26 @@ type ChangeRoute =
 
 // A device run's final event carries the whole thread, which this device
 // stores as it is, with the images it holds where the harness left them
-// out. A title the user set on this device during the run stays.
+// out, and the originals of the images the turn sent. A title the user set
+// on this device during the run stays.
 export function storeRun(
   run: DeviceRun,
   event: TerminalEvent,
 ): Promise<StoredThread | null> {
   const thread = event.metadata?.thread
   if (!isThread(thread)) return Promise.resolve(null)
-  return run.store.update(run.threadId, (stored) => ({
-    ...thread,
-    id: run.threadId,
-    messages: withHeldImages(thread.messages, run.images),
-    ...(stored?.titleState === 'manual'
-      ? { title: stored.title, titleState: stored.titleState }
-      : {}),
-  }))
+  return run.store.update(
+    run.threadId,
+    (stored) => ({
+      ...thread,
+      id: run.threadId,
+      messages: withHeldImages(thread.messages, run.images),
+      ...(stored?.titleState === 'manual'
+        ? { title: stored.title, titleState: stored.titleState }
+        : {}),
+    }),
+    run.originals,
+  )
 }
 
 // The chats a browser keeps: in IndexedDB for an account, in the tab for a
@@ -176,7 +179,13 @@ export function deviceThreads({
         threadId,
         messageId,
       })
-      return (await store.add(forked)) && forked.id
+      const originals = await store.originals(
+        threadId,
+        forked.messages.flatMap((message) =>
+          (message.attachments ?? []).map((attachment) => attachment.id),
+        ),
+      )
+      return (await store.add(forked, originals)) && forked.id
     },
     async deleteMessage(threadId, messageId) {
       const changed = await change(threadId, ROUTES.messageDelete, {
@@ -227,13 +236,12 @@ export function deviceThreads({
         ...fields,
         threadId,
         local: true,
-        thread: turnThread(base),
+        thread: base,
         profile: turnProfile(settings.profile),
       }
-      run.images = holdImages(
-        uploaded(fields.attachments),
-        heldImages(base.messages),
-      )
+      const sent = uploaded(fields.attachments)
+      run.images = holdImages(sent, heldImages(base.messages))
+      run.originals = attachments.originalsOf(sent)
       return {
         input,
         resend: input,
@@ -242,11 +250,15 @@ export function deviceThreads({
         // new chat is listed from its first message.
         keep: (message) =>
           store
-            .update(threadId, () => ({
-              ...base,
-              messages: [...base.messages, message],
-              updatedAt: message.createdAt,
-            }))
+            .update(
+              threadId,
+              () => ({
+                ...base,
+                messages: [...base.messages, message],
+                updatedAt: message.createdAt,
+              }),
+              run.originals,
+            )
             .then((kept) => {
               if (kept) saved(threadId)
             })
@@ -283,7 +295,7 @@ export function deviceThreads({
       return {
         threadId,
         local: true,
-        thread: turnThread(await transcript(threadId)),
+        thread: await transcript(threadId),
         profile: turnProfile(profile),
       }
     },
@@ -298,12 +310,19 @@ export function deviceThreads({
         if (!descriptor) throw notOnDevice('document')
         return localDocumentText(descriptor)
       }),
-    async image(_threadId, attachment: UIAttachment) {
-      const image = attachments.images.get(attachment.id)
+    // The file the user picked when this device keeps it, or else the copy
+    // the chat sends models.
+    async image(threadId, attachment: UIAttachment) {
+      const image =
+        attachments.originals.get(attachment.id) ??
+        (threadId
+          ? (await store.originals(threadId, [attachment.id])).get(
+              attachment.id,
+            )
+          : undefined) ??
+        attachments.images.get(attachment.id)
       if (!image) throw notOnDevice('image')
-      return new Blob([base64ToUint8Array(image.base64)], {
-        type: image.mimeType || 'image/jpeg',
-      })
+      return imageBlob(image)
     },
   }
 }

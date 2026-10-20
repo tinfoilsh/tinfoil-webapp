@@ -234,6 +234,7 @@ describe('IndexedDB pending sync index', () => {
     ])
     const db = await openDatabase()
     expect(Array.from(db.objectStoreNames).sort()).toEqual([
+      'attachmentOriginals',
       'attachmentPayloads',
       'chatSummaries',
       'chats',

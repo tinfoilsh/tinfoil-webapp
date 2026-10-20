@@ -3,6 +3,7 @@ import { chatEvents } from '@/services/storage/chat-events'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import {
   indexedDBStorage,
+  type AttachmentOriginal,
   type IndexedDBStorage,
   type Chat as StoredChatRow,
 } from '@/services/storage/indexed-db'
@@ -25,27 +26,31 @@ import type {
 // sends it back as the thread, and the run's final event returns the
 // updated thread, which replaces it.
 
+// The files a user picked for image attachments, by attachment id. A thread
+// holds the copy models read; the originals are only shown and downloaded,
+// and never sent with a turn.
+export type Originals = ReadonlyMap<string, AttachmentOriginal>
+
 export interface LocalThreadStore {
   list(): Promise<ThreadSummary[]>
   get(id: string): Promise<StoredThread | null>
   // Reads, changes, and writes one thread at a time, so concurrent runs of
   // the same chat cannot lose each other's messages. Returning null skips
-  // the write, as does a chat deleted in the meantime.
+  // the write, as does a chat deleted in the meantime. Originals of the
+  // written thread's attachments are kept with it.
   update(
     id: string,
     change: (current: StoredThread | null) => StoredThread | null,
+    originals?: Originals,
   ): Promise<StoredThread | null>
   // Stores a chat that arrives from elsewhere, such as the cloud, under its
   // own id, even one deleted from this device before. A chat already stored
   // under the id is kept, and null is returned.
-  add(thread: StoredThread): Promise<StoredThread | null>
+  add(thread: StoredThread, originals?: Originals): Promise<StoredThread | null>
+  originals(id: string, attachmentIds: readonly string[]): Promise<Originals>
   delete(id: string): Promise<void>
   deleteAll(): Promise<number>
 }
-
-// Image bytes travel with the last few user messages that carry them. The
-// harness reads older images through their descriptions instead.
-export const RECENT_IMAGE_MESSAGES = 3
 
 // Rows the browser writes hold a thread under this marker, which tells them
 // from rows the previous client wrote.
@@ -224,31 +229,6 @@ export function withHeldImages(
   )
 }
 
-// The copy of a thread a local turn carries. An idle local thread needs it
-// on every turn, since the harness keeps nothing once a run ends.
-export function turnThread(
-  thread: StoredThread,
-  recentImageMessages = RECENT_IMAGE_MESSAGES,
-): StoredThread {
-  const keep = new Set(
-    thread.messages
-      .flatMap((message, index) =>
-        message.role === 'user' && message.attachments?.some(carriesBytes)
-          ? [index]
-          : [],
-      )
-      .slice(-recentImageMessages),
-  )
-  return {
-    ...thread,
-    messages: thread.messages.map((message, index) =>
-      message.attachments && !keep.has(index)
-        ? { ...message, attachments: message.attachments.map(withoutBytes) }
-        : message,
-    ),
-  }
-}
-
 // The copy of a thread a share carries. A share holds image thumbnails and
 // document text, never image bytes or page images; a document whose text is
 // only in its pages keeps that text.
@@ -417,10 +397,44 @@ function threadOf(row: Value): StoredThread {
 interface Backend {
   summaries(): Promise<{ row: Value; messageCount: number }[]>
   read(id: string): Promise<Value | null>
-  write(thread: StoredThread): Promise<boolean>
+  write(thread: StoredThread, originals: Originals): Promise<boolean>
+  originals(id: string, attachmentIds: readonly string[]): Promise<Originals>
   remove(id: string): Promise<void>
   ids(): Promise<string[]>
   removeAll(): Promise<void>
+}
+
+const attachmentIdsOf = (thread: StoredThread) =>
+  thread.messages.flatMap((message) =>
+    (message.attachments ?? []).map((attachment) => attachment.id),
+  )
+
+// Originals kept in this page's memory only, by chat and attachment id.
+function pageOriginals() {
+  const chats = new Map<string, Map<string, AttachmentOriginal>>()
+  return {
+    write(thread: StoredThread, originals: Originals) {
+      const previous = chats.get(thread.id)
+      const kept = new Map<string, AttachmentOriginal>()
+      for (const id of attachmentIdsOf(thread)) {
+        const original = originals.get(id) ?? previous?.get(id)
+        if (original) kept.set(id, original)
+      }
+      if (kept.size) chats.set(thread.id, kept)
+      else chats.delete(thread.id)
+    },
+    async get(id: string, attachmentIds: readonly string[]) {
+      const kept = chats.get(id)
+      const found = new Map<string, AttachmentOriginal>()
+      for (const attachmentId of attachmentIds) {
+        const original = kept?.get(attachmentId)
+        if (original) found.set(attachmentId, original)
+      }
+      return found
+    },
+    remove: (id: string) => chats.delete(id),
+    clear: () => chats.clear(),
+  }
 }
 
 const hasPayload = (attachment: AttachmentDescriptor) =>
@@ -442,26 +456,31 @@ function indexedDBBackend(storage: IndexedDBStorage): Backend {
       const row = await storage.getChat(id)
       return row?.isLocalOnly ? obj(row) : null
     },
-    async write(thread) {
+    async write(thread, originals) {
       const row = rowOf(thread)
-      const result = await storage.saveChat({
-        ...row,
-        // Every stored attachment needs some payload for the payload store.
-        messages: row.messages.map((message) =>
-          message.attachments
-            ? {
-                ...message,
-                attachments: message.attachments.map((attachment) =>
-                  hasPayload(attachment)
-                    ? attachment
-                    : { ...attachment, textContent: '' },
-                ),
-              }
-            : message,
-        ),
-      } as unknown as StoredChatRow)
+      const result = await storage.saveChat(
+        {
+          ...row,
+          // Every stored attachment needs some payload for the payload store.
+          messages: row.messages.map((message) =>
+            message.attachments
+              ? {
+                  ...message,
+                  attachments: message.attachments.map((attachment) =>
+                    hasPayload(attachment)
+                      ? attachment
+                      : { ...attachment, textContent: '' },
+                  ),
+                }
+              : message,
+          ),
+        } as unknown as StoredChatRow,
+        originals,
+      )
       return result.saved
     },
+    originals: (id, attachmentIds) =>
+      storage.getAttachmentOriginals(id, attachmentIds),
     remove: (id) => storage.deleteChat(id),
     ids: () => storage.getAllChatIds(),
     async removeAll() {
@@ -471,12 +490,13 @@ function indexedDBBackend(storage: IndexedDBStorage): Backend {
 }
 
 // A signed-out visitor's chats last as long as the browser tab. Session
-// storage cannot hold large images, so an image's bytes and a document's
-// page images stay in this page's memory only, by chat and attachment id;
-// after a reload the chat keeps the image's thumbnail and the document's
-// text.
+// storage cannot hold large images, so an image's bytes, its original and a
+// document's page images stay in this page's memory only, by chat and
+// attachment id; after a reload the chat keeps the image's thumbnail and the
+// document's text.
 function sessionBackend(): Backend {
   const images = new Map<string, ImagesById>()
+  const originals = pageOriginals()
   return {
     async summaries() {
       return sessionChatStorage.getAllChats().map((chat) => ({
@@ -495,7 +515,7 @@ function sessionBackend(): Backend {
         messages: withHeldImages(arr(row.messages) as ThreadMessage[], kept),
       }
     },
-    async write(thread) {
+    async write(thread, picked) {
       const kept = heldImages(thread.messages)
       sessionChatStorage.saveChat(
         rowOf({
@@ -516,11 +536,14 @@ function sessionBackend(): Backend {
       )
       if (kept.size) images.set(thread.id, kept)
       else images.delete(thread.id)
+      originals.write(thread, picked)
       return true
     },
+    originals: originals.get,
     async remove(id) {
       sessionChatStorage.deleteChat(id)
       images.delete(id)
+      originals.remove(id)
     },
     async ids() {
       return sessionChatStorage.getAllChats().map((chat) => chat.id)
@@ -528,6 +551,7 @@ function sessionBackend(): Backend {
     async removeAll() {
       sessionChatStorage.clearAll()
       images.clear()
+      originals.clear()
     },
   }
 }
@@ -592,7 +616,7 @@ function createStore(
         const saved = await serialize(id, async () => {
           const current = await backend.read(id)
           if (!current || isThreadRow(current) || isDeleted(id)) return false
-          return backend.write({ ...thread, id })
+          return backend.write({ ...thread, id }, new Map())
         })
         if (saved) written.push(id)
       })
@@ -634,7 +658,7 @@ function createStore(
       if (isDeleted(id)) return null
       return readThread(id)
     },
-    async update(id, change) {
+    async update(id, change, originals = new Map()) {
       // An old row is upgraded before the change reads it.
       if (!isDeleted(id)) await readThread(id)
       return serialize(id, async () => {
@@ -642,19 +666,23 @@ function createStore(
         const row = await backend.read(id)
         const next = change(row && isThreadRow(row) ? threadOf(row) : null)
         if (!next || isDeleted(id)) return null
-        if (!(await backend.write(next))) return null
+        if (!(await backend.write(next, originals))) return null
         emit({ reason: 'save', ids: [id] })
         return next
       })
     },
-    add(thread) {
+    add(thread, originals = new Map()) {
       return serialize(thread.id, async () => {
         if (await backend.read(thread.id)) return null
         markDeleted([thread.id], false)
-        if (!(await backend.write(thread))) return null
+        if (!(await backend.write(thread, originals))) return null
         emit({ reason: 'save', ids: [thread.id] })
         return thread
       })
+    },
+    async originals(id, attachmentIds) {
+      if (isDeleted(id)) return new Map()
+      return backend.originals(id, attachmentIds)
     },
     delete(id) {
       return serialize(id, async () => {
@@ -705,6 +733,7 @@ export function localThreadStore(scope: 'device' | 'tab'): LocalThreadStore {
 // only, for as long as it stays open.
 export function memoryThreadStore(): LocalThreadStore {
   const threads = new Map<string, ThreadRow>()
+  const originals = pageOriginals()
   return createStore(
     {
       async summaries() {
@@ -714,18 +743,22 @@ export function memoryThreadStore(): LocalThreadStore {
         const row = threads.get(id)
         return row ? obj(structuredClone(row)) : null
       },
-      async write(thread) {
+      async write(thread, picked) {
         threads.set(thread.id, structuredClone(rowOf(thread)))
+        originals.write(thread, picked)
         return true
       },
+      originals: originals.get,
       async remove(id) {
         threads.delete(id)
+        originals.remove(id)
       },
       async ids() {
         return [...threads.keys()]
       },
       async removeAll() {
         threads.clear()
+        originals.clear()
       },
     },
     { durable: false },
