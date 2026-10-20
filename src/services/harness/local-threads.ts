@@ -116,6 +116,7 @@ function summaryOf(
     messageCount,
     activeRun: null,
     contextUsage: thread.contextUsage ?? null,
+    ...(thread.flagged ? { flagged: true } : {}),
   }
 }
 

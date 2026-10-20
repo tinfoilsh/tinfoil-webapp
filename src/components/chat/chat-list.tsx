@@ -1,6 +1,5 @@
 'use client'
 
-import { useFlaggedChatIds } from '@/hooks/use-safeguards'
 import { Fragment, useEffect, useState } from 'react'
 import { cn } from '../ui/utils'
 import {
@@ -90,7 +89,6 @@ export function ChatList({
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null)
-  const flaggedChatIds = useFlaggedChatIds()
   // Track chat IDs that were manually edited - skip animation for these
   const [manuallyEditedChatId, setManuallyEditedChatId] = useState<
     string | null
@@ -192,7 +190,7 @@ export function ChatList({
                 isDarkMode={isDarkMode}
                 pixelateSidebarChatTitles={pixelateSidebarChatTitles}
                 isStreaming={!chat.isBlankChat && !!chat.activeRun}
-                isFlagged={Boolean(flaggedChatIds[chat.id])}
+                isFlagged={!!chat.flagged}
                 enableTitleAnimation={
                   enableTitleAnimation && manuallyEditedChatId !== chat.id
                 }

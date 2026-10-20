@@ -33,6 +33,8 @@ export interface ChatState {
   cursors: Record<string, number>
   // The latest summary of each thinking block of the run, by block id.
   summaries?: Record<string, string>
+  // The harness refused a turn because the safeguards flagged the chat.
+  flagged?: boolean
 }
 
 export function initialChat(thread?: Thread): ChatState {
@@ -385,6 +387,9 @@ export function reduceEvent(
                 ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
               },
               ...(runId ? { failedRun: runId } : {}),
+              ...(event.code === ERROR_CODES.chatFlagged
+                ? { flagged: true }
+                : {}),
             }
           : {}),
         messages:

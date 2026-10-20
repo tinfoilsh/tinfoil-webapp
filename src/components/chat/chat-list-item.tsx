@@ -26,6 +26,7 @@ import { TypingAnimation } from './typing-animation'
 
 export interface ChatItemData {
   activeRun?: { runId: string } | null
+  flagged?: boolean
   id: string
   title: string
   isBlankChat?: boolean

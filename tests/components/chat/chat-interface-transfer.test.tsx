@@ -13,7 +13,7 @@ import {
   resetChatStoresAroundEachTest,
   storedThread,
 } from '../../services/harness/thread-fixture'
-import { stubSafeguardFlags } from './chat-interface-fixture'
+import { refuseFetch } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
 type SidebarProps = ComponentProps<typeof ChatSidebar>
@@ -132,7 +132,7 @@ beforeEach(async () => {
   page.toast.mockReset()
   chatPage.premium = false
   authTokenManager.initialize(async () => 'clerk-jwt')
-  stubSafeguardFlags()
+  refuseFetch()
   await localThreadStore('device').update(CHAT_ID, () => deviceChat)
 })
 

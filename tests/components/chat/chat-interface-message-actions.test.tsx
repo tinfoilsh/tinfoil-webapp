@@ -11,7 +11,7 @@ import {
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
-import { stubSafeguardFlags } from './chat-interface-fixture'
+import { refuseFetch } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
@@ -105,7 +105,7 @@ async function moreActions() {
 
 beforeEach(() => {
   authTokenManager.initialize(async () => 'clerk-jwt')
-  stubSafeguardFlags()
+  refuseFetch()
   chatPage.router.replace.mockClear()
 })
 

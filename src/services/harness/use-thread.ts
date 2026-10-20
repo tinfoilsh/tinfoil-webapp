@@ -437,6 +437,7 @@ export function useThread(
   const chat: Chat = summary
     ? {
         ...threadView(summary, messages),
+        ...(state.flagged ? { flagged: true } : {}),
         ...(webSearch !== undefined ? { webSearchEnabled: webSearch } : {}),
         isTemporary: temporary,
         isLocalOnly: isLocalChat,
@@ -456,6 +457,7 @@ export function useThread(
         projectId: onDevice(openState) ? undefined : (projectId ?? undefined),
         presetId: presetId ?? undefined,
         webSearchEnabled: webSearch,
+        ...(state.flagged ? { flagged: true } : {}),
       }
   const queue: QueuedMessage[] = state.snapshot.queue.map((item) => ({
     id: item.queueId,

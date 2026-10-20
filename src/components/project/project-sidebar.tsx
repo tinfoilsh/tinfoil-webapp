@@ -79,6 +79,7 @@ interface ProjectChat {
   projectId?: string
   isBlankChat?: boolean
   isTemporary?: boolean
+  flagged?: boolean
 }
 
 interface ProjectOption {
@@ -558,6 +559,7 @@ export function ProjectSidebar({
       messageCount: c.messageCount,
       projectId: c.projectId,
       isTemporary: c.isTemporary,
+      flagged: c.flagged,
     }))
 
   const resolvedFavoriteChats = favoriteChats.filter(isResolvedFavoriteChat)

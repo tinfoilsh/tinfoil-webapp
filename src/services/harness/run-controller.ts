@@ -263,7 +263,12 @@ export class RunController {
     const detail =
       cause instanceof HarnessError ? cause.detail : CONNECTION_LOST
     this.errorAt = Date.now()
-    this.view.update((state) => ({ ...state, error: detail, status: 'error' }))
+    this.view.update((state) => ({
+      ...state,
+      error: detail,
+      status: 'error',
+      ...(detail.code === ERROR_CODES.chatFlagged ? { flagged: true } : {}),
+    }))
     this.api.reportRateLimit(detail.rateLimit)
   }
 

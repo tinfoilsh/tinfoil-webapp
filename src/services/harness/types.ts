@@ -119,6 +119,8 @@ export interface ThreadSummary {
   // A hint that a run may be live, set when it starts and cleared when it
   // commits. It never blocks an action.
   activeRun: { runId: string; expiresAt: string } | null
+  // The safeguards flagged the chat: it is read-only.
+  flagged?: boolean
 }
 
 export interface Thread extends ThreadSummary {
@@ -149,6 +151,7 @@ export interface StoredThread {
   lastRequestId?: string
   activeRun: ThreadSummary['activeRun']
   contextUsage?: ThreadSummary['contextUsage']
+  flagged?: boolean
 }
 
 // One dimension (input or output) of a token budget.

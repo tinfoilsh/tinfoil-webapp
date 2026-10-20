@@ -152,5 +152,6 @@ export function threadView(
     isMetadataOnly: messages.length === 0,
     pinned: thread.pinned,
     activeRun: thread.activeRun,
+    ...(thread.flagged ? { flagged: true } : {}),
   }
 }

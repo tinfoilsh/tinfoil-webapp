@@ -3,12 +3,7 @@ import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
-import {
-  useFlaggedChatIds,
-  useSafeguardsLoaded,
-  useSafeguardsLoader,
-  useSafeguardStatusNotification,
-} from '@/hooks/use-safeguards'
+import { useSafeguardsReset } from '@/hooks/use-safeguards'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { toast } from '@/hooks/use-toast'
 import { logError } from '@/utils/error-handling'
@@ -258,19 +253,10 @@ export function ChatInterface({
   const isWaitingForResponse =
     isStreaming && currentChat.messages.at(-1)?.role !== 'assistant'
   const isTemporaryMode = thread.temporary
-  useSafeguardsLoader()
-  useSafeguardStatusNotification()
-  const safeguardsLoaded = useSafeguardsLoaded()
-  const flaggedChatIds = useFlaggedChatIds()
-  // A chat the safeguards flagged is read-only, by its chat id, which the
-  // harness gives the safeguards as the conversation id.
-  const currentChatIsFlagged = Boolean(
-    currentChat.id && flaggedChatIds[currentChat.id],
-  )
-  const waitingForSafeguards =
-    !isAuthLoaded || (!!isSignedIn && !safeguardsLoaded)
-  const generationBlocked = currentChatIsFlagged || waitingForSafeguards
-  const submitAfterSafeguards = useRef(false)
+  useSafeguardsReset()
+  // A chat the safeguards flagged is read-only, as the harness reports it.
+  const currentChatIsFlagged = !!currentChat.flagged
+  const generationBlocked = currentChatIsFlagged
   const rateLimit = useRateLimit()
   const retryInfo = null
   const failure = thread.errorDetail
@@ -461,12 +447,6 @@ export function ChatInterface({
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault()
     if (currentChatIsFlagged) return
-    // A send waits for the account's safeguard flags, so a flagged chat
-    // cannot be continued before its flag is known.
-    if (waitingForSafeguards) {
-      submitAfterSafeguards.current = true
-      return
-    }
     submitComposer()
   }
   const submitComposer = () => {
@@ -816,13 +796,6 @@ export function ChatInterface({
     // Only a newly flagged chat is stopped.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChatIsFlagged, currentChat.id])
-  useEffect(() => {
-    if (waitingForSafeguards || !submitAfterSafeguards.current) return
-    submitAfterSafeguards.current = false
-    if (!currentChatIsFlagged) submitComposer()
-    // The send the user made while the flags loaded goes out once.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waitingForSafeguards])
   async function processFileForChat(file: File) {
     const localId = crypto.randomUUID()
     setProcessedDocuments((previous) => [
@@ -1471,6 +1444,7 @@ export function ChatInterface({
         isBlankChat: c.isBlankChat,
         isTemporary: c.isTemporary,
         activeRun: c.activeRun,
+        flagged: c.flagged,
       }))
 
   return (
@@ -2178,7 +2152,7 @@ export function ChatInterface({
                   )}
                   <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 @3xl/conversation:px-8">
                     <SafeguardFlagBanner
-                      chatId={currentChat.id}
+                      flagged={currentChatIsFlagged}
                       isDarkMode={isDarkMode}
                       onOpenSettings={
                         isSignedIn ? handleOpenSafeguardsSettings : undefined

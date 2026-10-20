@@ -479,6 +479,24 @@ describe('local chats of a signed-in account without cloud sync', () => {
     await waitFor(() => expect(listed()?.activeRun).toBeNull())
   })
 
+  it('shows a chat the harness returned flagged as flagged, open and listed', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () =>
+      seeded({ flagged: true }),
+    )
+
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+
+    await waitFor(() => expect(result.current.chat.flagged).toBe(true))
+    await waitFor(() =>
+      expect(result.current.chats).toEqual([
+        expect.objectContaining({ id: SEEDED_ID, flagged: true }),
+      ]),
+    )
+  })
+
   it('rejoins a run when its chat is reopened', async () => {
     signIn('alice')
     await localThreadStore('device').update(SEEDED_ID, () => seeded())

@@ -180,6 +180,8 @@ export type TitleState = 'placeholder' | 'generated' | 'manual'
 
 export type Chat = {
   activeRun?: { runId: string } | null
+  // The safeguards flagged the chat: it is read-only.
+  flagged?: boolean
   pinned?: boolean
   id: string
   title: string
