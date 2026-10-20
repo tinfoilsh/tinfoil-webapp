@@ -78,6 +78,7 @@ export const ERROR_CODES = {
   threadExists: 'THREAD_EXISTS',
   threadTooLarge: 'THREAD_TOO_LARGE',
   attachmentsUnavailable: 'ATTACHMENTS_UNAVAILABLE',
+  attachmentTooLarge: 'ATTACHMENT_TOO_LARGE',
   // The safeguards flagged the chat, which takes no more turns.
   chatFlagged: 'CHAT_FLAGGED',
 } as const

@@ -139,4 +139,30 @@ describe('ProjectProvider', () => {
 
     expect(loads()).toEqual(['alpha', 'alpha'])
   })
+
+  it("refuses a document over the session's limit before uploading it", async () => {
+    render(
+      <ProjectProvider>
+        <Projects />
+      </ProjectProvider>,
+    )
+    await act(() => context.enterProjectMode('alpha'))
+    // The session takes project documents up to 500 bytes.
+    const document = (size: number) =>
+      new File([new Uint8Array(size)], 'notes.md')
+
+    await expect(
+      context.uploadDocument(document(501), ''),
+    ).rejects.toMatchObject({ status: 413, code: 'ATTACHMENT_TOO_LARGE' })
+    expect(client().upload).not.toHaveBeenCalled()
+
+    const allowed = document(500)
+    await act(() => context.uploadDocument(allowed, ''))
+    expect(client().upload).toHaveBeenCalledExactlyOnceWith(
+      '/v1/projects/documents/upload',
+      allowed,
+      { projectId: 'alpha' },
+      expect.any(AbortSignal),
+    )
+  })
 })

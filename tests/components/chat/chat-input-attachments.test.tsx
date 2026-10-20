@@ -1,8 +1,8 @@
 import { ChatInput } from '@/components/chat/chat-input'
-import { CONSTANTS } from '@/components/chat/constants'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef, type ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { signIn, testSession } from '../../harness-fixture'
 
 vi.mock('@/components/project', () => ({
   ProjectModeBanner: () => null,
@@ -41,22 +41,51 @@ function renderChatInput(
   )
 }
 
+// A session whose composer turns a paste longer than 12 characters into a
+// file, and whose picker offers two kinds of file.
+function signInWithComposer() {
+  signIn({
+    session: {
+      ...testSession,
+      composer: {
+        ...testSession.composer,
+        attachments: {
+          ...testSession.composer.attachments,
+          accept: ['.pdf', 'image/*'],
+        },
+        pasteAsFileChars: 12,
+      },
+    },
+  })
+}
+
+const paste = (text: string) =>
+  fireEvent.paste(screen.getByRole('textbox'), {
+    clipboardData: { items: [], getData: () => text },
+  })
+
 describe('ChatInput attachments', () => {
-  it('uploads long pasted text as an attachment', async () => {
+  it('uploads pasted text longer than the session allows as an attachment', async () => {
+    signInWithComposer()
     const handleDocumentUpload = vi.fn().mockResolvedValue(undefined)
     renderChatInput({ handleDocumentUpload })
-    const pastedText = 'a'.repeat(CONSTANTS.LONG_PASTE_THRESHOLD + 1)
 
-    fireEvent.paste(screen.getByRole('textbox'), {
-      clipboardData: {
-        items: [],
-        getData: () => pastedText,
-      },
-    })
+    expect(paste('a'.repeat(12))).toBe(true)
+    expect(handleDocumentUpload).not.toHaveBeenCalled()
+    const pastedText = 'b'.repeat(13)
+    expect(paste(pastedText)).toBe(false)
 
     await waitFor(() => expect(handleDocumentUpload).toHaveBeenCalledOnce())
     const file = handleDocumentUpload.mock.calls[0][0] as File
     expect(file.name).toMatch(/^pasted-text-.*\.txt$/)
     expect(await file.text()).toBe(pastedText)
+  })
+
+  it('offers the files the session accepts', () => {
+    signInWithComposer()
+    const { container } = renderChatInput({ handleDocumentUpload: vi.fn() })
+    expect(
+      container.querySelector('input[type="file"]')?.getAttribute('accept'),
+    ).toBe('.pdf,image/*')
   })
 })

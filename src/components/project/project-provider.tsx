@@ -1,5 +1,6 @@
 import { PROJECTS_CHANGED } from '@/hooks/use-projects'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
+import { checkUploadSize } from '@/services/harness/composer'
 import * as projects from '@/services/harness/projects'
 import { useHarness } from '@/services/harness/provider'
 import type { Project, ProjectDocument } from '@/types/project'
@@ -17,7 +18,7 @@ export function ProjectProvider({
   children: ReactNode
   initialProjectId?: string | null
 }) {
-  const { api, keyReady } = useHarness()
+  const { api, keyReady, session } = useHarness()
   const { isLoading: isSubscriptionLoading, chat_subscription_active } =
     useSubscriptionStatus()
   const hasPremiumAccess = !isSubscriptionLoading && chat_subscription_active
@@ -133,6 +134,8 @@ export function ProjectProvider({
     uploadDocument: async (file) => {
       requirePremiumAccess()
       if (!activeProject) throw new Error('Select a project first.')
+      if (session)
+        checkUploadSize(file, session.composer.projectDocuments.maxBytes)
       const projectId = activeProject.id
       const doc = await projects.uploadProjectDocument(api, projectId, file)
       await reloadProject(projectId)

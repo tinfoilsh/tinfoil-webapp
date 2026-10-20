@@ -30,6 +30,16 @@ export const testSession: Session = {
   widgets: [],
   profileDefaults: {},
   rateLimit: { kind: null, maxRequests: 100, remaining: 100 },
+  composer: {
+    attachments: {
+      accept: ['.pdf', '.txt', '.png'],
+      maxBytes: 1000,
+      maxTextBytes: 2000,
+    },
+    projectDocuments: { accept: ['.pdf', '.md'], maxBytes: 500 },
+    pasteAsFileChars: 40,
+    dictationMaxSeconds: 30,
+  },
   features: {
     webSearch: true,
     codeExecution: true,

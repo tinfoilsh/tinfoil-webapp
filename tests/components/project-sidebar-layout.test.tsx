@@ -96,3 +96,12 @@ describe('project sidebar layout', () => {
     expect(chats.map((chat) => chat.id)).toEqual(['old', 'updated', 'created'])
   })
 })
+
+describe('project documents picker', () => {
+  it('offers the files the session takes as project documents', () => {
+    renderSidebar()
+    expect(
+      document.querySelector('input[type="file"]')?.getAttribute('accept'),
+    ).toBe('.pdf,.md')
+  })
+})

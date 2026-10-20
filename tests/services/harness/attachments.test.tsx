@@ -172,3 +172,49 @@ describe('attachments of a local chat', () => {
     expect(client.download).not.toHaveBeenCalled()
   })
 })
+
+describe('picking a file to attach', () => {
+  // The session takes images up to 1000 bytes and other files up to 2000.
+  const file = (size: number, type: string) =>
+    new File([new Uint8Array(size)], `file-${size}`, { type })
+
+  it.each([
+    { size: 1000, type: 'image/png', uploads: true },
+    { size: 1001, type: 'image/png', uploads: false },
+    { size: 2000, type: 'text/plain', uploads: true },
+    { size: 2001, type: 'application/pdf', uploads: false },
+  ])(
+    'uploads a $size-byte $type file only within the session limit ($uploads)',
+    async ({ size, type, uploads }) => {
+      signIn({ cloud: true })
+      const descriptor = {
+        id: 'att_1',
+        kind: 'document',
+        fileName: `file-${size}`,
+        mimeType: type,
+        size,
+      }
+      client.upload.mockResolvedValue({ attachment: descriptor })
+      const { result } = renderHook(() => useThread())
+      const picked = file(size, type)
+
+      const upload = result.current.upload(picked)
+
+      if (uploads) {
+        await expect(upload).resolves.toEqual(descriptor)
+        expect(client.upload).toHaveBeenCalledExactlyOnceWith(
+          '/v1/attachments/upload',
+          picked,
+          {},
+          expect.any(AbortSignal),
+        )
+      } else {
+        await expect(upload).rejects.toMatchObject({
+          status: 413,
+          code: 'ATTACHMENT_TOO_LARGE',
+        })
+        expect(client.upload).not.toHaveBeenCalled()
+      }
+    },
+  )
+})

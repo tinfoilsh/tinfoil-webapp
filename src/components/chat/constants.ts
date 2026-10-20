@@ -18,15 +18,7 @@ export const CONSTANTS = {
   SINGLE_SIDEBAR_BREAKPOINT: 1024, // Below this width, only one sidebar can be open at a time
   MAX_MESSAGES: 100,
   MAX_MESSAGE_LENGTH: 4000,
-  MAX_DOCUMENT_SIZE_MB: 32, // Display value for error messages
-  MAX_DOCUMENT_SIZE_BYTES: 33 * 1024 * 1024, // Actual limit: 33MB to tolerate ~32.5MB files
-  // Generous safety cap for plain-text files, which are validated against the
-  // model's context window by token estimate rather than by byte size
-  MAX_TEXT_DOCUMENT_SIZE_MB: 50,
-  MAX_TEXT_DOCUMENT_SIZE_BYTES: 50 * 1024 * 1024,
   MAX_IMAGE_DIMENSION_PX: 1536,
-  // Voice recording timeout in milliseconds (10 minutes)
-  RECORDING_TIMEOUT_MS: 600000,
   // Default audio model for voice transcription
   DEFAULT_AUDIO_MODEL: 'voxtral-small-24b',
   // Live recording waveform: a new amplitude bar is appended at this rate
@@ -97,8 +89,6 @@ export const CONSTANTS = {
   ARTIFACT_SIDEBAR_MIN_WIDTH_PX: 360,
   ARTIFACT_SIDEBAR_MAX_WIDTH_PX: 840,
   ARTIFACT_SIDEBAR_RESIZE_STEP_PX: 40,
-  // Long text paste threshold (characters) - texts longer than this will be converted to .txt file
-  LONG_PASTE_THRESHOLD: 3000,
   // Title generation settings
   TITLE_GENERATION_WORD_THRESHOLD: 100, // Words needed to trigger early title generation during streaming
   // Document processing timeout in milliseconds (10 minutes), counted from

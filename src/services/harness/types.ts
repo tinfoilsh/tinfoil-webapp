@@ -212,6 +212,14 @@ export interface Session {
     builtIn: boolean
   }[]
   features: Record<string, boolean>
+  // What the composer takes: the files a picker offers and their sizes, the
+  // paste that becomes a text file, and how long dictation records.
+  composer: {
+    attachments: { accept: string[]; maxBytes: number; maxTextBytes: number }
+    projectDocuments: { accept: string[]; maxBytes: number }
+    pasteAsFileChars: number
+    dictationMaxSeconds: number
+  }
 }
 
 export interface Turn {

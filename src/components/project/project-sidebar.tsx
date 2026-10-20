@@ -234,7 +234,7 @@ export function ProjectSidebar({
   onLoadMore,
 }: ProjectSidebarProps) {
   const { isSignedIn } = useAuth()
-  const { cloud: cloudSyncEnabled } = useHarness()
+  const { cloud: cloudSyncEnabled, session } = useHarness()
   const {
     draggingChatId,
     draggingChatSource,
@@ -1227,7 +1227,7 @@ export function ProjectSidebar({
               className="hidden"
               onChange={handleFileUpload}
               disabled={contextLoading}
-              accept=".pdf,.docx,.xlsx,.pptx,.md,.html,.xhtml,.csv,.png,.jpg,.jpeg,.tiff,.bmp,.webp,.txt"
+              accept={session?.composer.projectDocuments.accept.join(',')}
             />
 
             <AnimatePresence initial={false}>
