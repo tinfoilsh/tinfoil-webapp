@@ -48,6 +48,8 @@ export type TimelineThinkingBlock = TimelineTiming & {
   content: string
   isThinking: boolean
   duration?: number
+  // The chat service's live summary of the thinking while it goes on.
+  summary?: string
 }
 
 export type TimelineWebSearchBlock = TimelineTiming & {

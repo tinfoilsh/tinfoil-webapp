@@ -406,7 +406,11 @@ export function useThread(
   const running = state.status === 'streaming' || state.status === 'queued'
   const isLocalChat = local && !temporary
   const messages = state.messages.map((m, index) => {
-    const view = messageView(m, running && index === state.messages.length - 1)
+    const view = messageView(
+      m,
+      running && index === state.messages.length - 1,
+      state.summaries,
+    )
     if (!onDevice(openState) || !view.attachments?.length) return view
     // An image the previous client stored without a thumbnail shows its
     // bytes; others load them when opened in the gallery.

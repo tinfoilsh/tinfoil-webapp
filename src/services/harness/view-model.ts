@@ -92,7 +92,13 @@ export function attachmentView(
     thumbnailBase64: a.thumbnail ?? undefined,
   }
 }
-export function messageView(message: WireMessage, streaming = false): Message {
+// A message as the view shows it, with the latest summary of each thinking
+// block's reasoning.
+export function messageView(
+  message: WireMessage,
+  streaming = false,
+  summaries: Readonly<Record<string, string>> = {},
+): Message {
   const blocks = message.timeline ?? []
   const timeline: TimelineBlock[] = blocks.map((block, index) => {
     // A reply thinks only in its last block: reasoning ends once the reply
@@ -103,6 +109,7 @@ export function messageView(message: WireMessage, streaming = false): Message {
         type: 'thinking',
         content: block.content ?? '',
         isThinking: streaming && index === blocks.length - 1 && !block.complete,
+        ...(summaries[block.id] ? { summary: summaries[block.id] } : {}),
       }
     if (block.type === 'content')
       return { ...block, type: 'content', content: block.content ?? '' }

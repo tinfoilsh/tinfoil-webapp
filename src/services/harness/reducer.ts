@@ -31,6 +31,8 @@ export interface ChatState {
   // The last frame applied of each run, so a replayed run skips the frames
   // it applied already.
   cursors: Record<string, number>
+  // The latest summary of each thinking block of the run, by block id.
+  summaries?: Record<string, string>
 }
 
 export function initialChat(thread?: Thread): ChatState {
@@ -210,6 +212,7 @@ export function reduceEvent(
         failedRun: _failedRun,
         sealed: _sealed,
         continued: _continued,
+        summaries: _summaries,
         ...rest
       } = next
       return {
@@ -270,6 +273,11 @@ export function reduceEvent(
         }),
       }
     }
+    case 'REASONING_SUMMARY':
+      return {
+        ...next,
+        summaries: { ...next.summaries, [event.blockId]: event.content },
+      }
     case 'TOOL_CALL_START': {
       const { toolCallId, toolCallName: name } = event
       const restarted = withToolCall(next.messages, toolCallId, (block) => ({

@@ -83,7 +83,11 @@ export function useSidebarChat({
   return {
     messages: [
       ...state.messages.map((m, index) =>
-        messageView(m, isStreaming && index === state.messages.length - 1),
+        messageView(
+          m,
+          isStreaming && index === state.messages.length - 1,
+          state.summaries,
+        ),
       ),
       ...(failure ? [failure] : []),
     ],

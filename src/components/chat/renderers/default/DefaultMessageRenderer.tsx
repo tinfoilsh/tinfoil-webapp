@@ -418,6 +418,7 @@ const DefaultMessageComponent = ({
                     isDarkMode={isDarkMode}
                     isThinking={block.isThinking}
                     thinkingDuration={block.duration}
+                    summary={block.summary}
                   />
                 </div>
               )

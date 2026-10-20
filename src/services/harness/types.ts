@@ -334,6 +334,14 @@ export type HarnessEvent = { timestamp?: string } & (
       delta: string
     }
   | { type: 'REASONING_MESSAGE_CHUNK'; messageId: string; delta: string }
+  // A short summary of a reply's reasoning while it goes on. It is not
+  // stored with the chat.
+  | {
+      type: 'REASONING_SUMMARY'
+      messageId: string
+      blockId: string
+      content: string
+    }
   | {
       type: 'TOOL_CALL_START'
       toolCallId: string
