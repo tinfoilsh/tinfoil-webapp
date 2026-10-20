@@ -1,4 +1,6 @@
 import type { ImportFailureReason } from './archives'
+import { ERROR_CODES } from './protocol'
+import { HarnessError } from './sse'
 
 /** Which user flow drove the enclave import job; picks matching wording. */
 export type ImportSurface = 'chat_import' | 'backup_restore'
@@ -47,6 +49,35 @@ const INVALID_ARCHIVE_DETAIL_COPY: Record<string, string> = {
     'This file is not a chat export. Select the ZIP file you downloaded, or the conversations JSON files from inside it.',
   unexpected_json:
     'This file is from the export but does not contain conversations. Select the conversations JSON files, such as conversations.json or conversations-000.json, not files like user.json.',
+}
+
+// Copy for the chat service's refusals of an import, export, or restore.
+const ARCHIVE_ERROR_COPY: Record<string, string> = {
+  [ERROR_CODES.archiveTooLarge]:
+    'This archive is too large for the chat service to process.',
+  [ERROR_CODES.tempSpaceBusy]:
+    'The chat service is busy with other archives. Try again shortly.',
+  [ERROR_CODES.projectsRequireCloud]:
+    'This file includes projects, which are kept in the cloud. Turn on cloud sync, then try again.',
+  [ERROR_CODES.importInvalid]:
+    'This file could not be read. Select a Tinfoil backup or a ChatGPT, Claude, or Tinfoil export as you downloaded it.',
+  [ERROR_CODES.importTooLarge]:
+    'This file is larger than the import limits allow. Try a smaller export or backup.',
+  [ERROR_CODES.payloadTooLarge]:
+    'This is more than the chat service accepts. Remove some large images or documents, or choose a smaller file, then try again.',
+}
+
+/**
+ * User-facing explanation for an error the chat service refused an import,
+ * export, or restore with, or undefined when the error has no copy of its
+ * own.
+ */
+export function describeArchiveError(error: unknown): string | undefined {
+  if (
+    error instanceof HarnessError &&
+    Object.hasOwn(ARCHIVE_ERROR_COPY, error.code)
+  )
+    return ARCHIVE_ERROR_COPY[error.code]
 }
 
 /**

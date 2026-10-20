@@ -1,5 +1,8 @@
 import { restoreBackup, type RestoreResult } from '@/services/harness/archives'
-import { describeImportFailure } from '@/services/harness/import-failure-copy'
+import {
+  describeArchiveError,
+  describeImportFailure,
+} from '@/services/harness/import-failure-copy'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 const INITIAL_RESTORE_PHASE = 'uploading'
@@ -111,7 +114,10 @@ export function NativeBackupRestore({
       }
     } catch (cause) {
       if (isCurrent())
-        setMessage(cause instanceof Error ? cause.message : 'Restore failed')
+        setMessage(
+          describeArchiveError(cause) ??
+            (cause instanceof Error ? cause.message : 'Restore failed'),
+        )
     } finally {
       if (controller.current === current) {
         controller.current = null

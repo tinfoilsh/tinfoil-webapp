@@ -160,6 +160,28 @@ describe('NativeBackupExport', () => {
     expect(screen.getByRole('status')).not.toHaveTextContent('private-chat-id')
   })
 
+  it('explains a backup refused for holding more than the chat service can process', async () => {
+    client.multipart.mockRejectedValue(
+      new HarnessError(
+        {
+          code: 'ARCHIVE_TOO_LARGE',
+          message: 'The backup holds too many items',
+        },
+        413,
+      ),
+    )
+    render(<NativeBackupExport available />)
+
+    startBackup()
+
+    expect(
+      await screen.findByText(
+        'This archive is too large for the chat service to process.',
+      ),
+    ).toBeVisible()
+    expect(downloads).toEqual([])
+  })
+
   it('cancels an active export when availability is lost', async () => {
     holdBackup()
     const view = render(<NativeBackupExport available />)

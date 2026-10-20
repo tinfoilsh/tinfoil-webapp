@@ -21,7 +21,10 @@ import {
   type ImportStatusResponse,
   type ImportTarget,
 } from '@/services/harness/archives'
-import { describeImportFailure } from '@/services/harness/import-failure-copy'
+import {
+  describeArchiveError,
+  describeImportFailure,
+} from '@/services/harness/import-failure-copy'
 import { deleteAllProjects } from '@/services/harness/projects'
 import { useHarness, useProfileSetting } from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
@@ -218,7 +221,10 @@ export function describeImportError(
   err: unknown,
   fileNames: readonly string[],
 ): ImportResult {
-  const message = err instanceof Error ? err.message : 'Failed to start import'
+  const message =
+    describeArchiveError(
+      err instanceof ImportSequenceError ? err.cause : err,
+    ) ?? (err instanceof Error ? err.message : 'Failed to start import')
   if (!(err instanceof ImportSequenceError) || fileNames.length < 2) {
     return {
       success: false,
@@ -1565,7 +1571,9 @@ export function SettingsModal({
       })
       toast({
         title: 'Export failed',
-        description: 'Failed to export chats. Please try again.',
+        description:
+          describeArchiveError(error) ??
+          'Failed to export chats. Please try again.',
         variant: 'destructive',
       })
     } finally {
@@ -1653,7 +1661,10 @@ export function SettingsModal({
     } catch (cause) {
       setProjectExportResult({
         error:
-          cause instanceof Error ? cause.message : 'Unable to export projects.',
+          describeArchiveError(cause) ??
+          (cause instanceof Error
+            ? cause.message
+            : 'Unable to export projects.'),
       })
     } finally {
       setIsExporting(false)

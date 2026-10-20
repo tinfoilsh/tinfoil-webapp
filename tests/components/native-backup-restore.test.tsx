@@ -1,5 +1,6 @@
 import { NativeBackupRestore } from '@/components/chat/native-backup-restore'
 import { localThreadStore } from '@/services/harness/local-threads'
+import { HarnessError } from '@/services/harness/sse'
 import type { StoredThread } from '@/services/harness/types'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -235,6 +236,31 @@ describe('NativeBackupRestore', () => {
     expect(await localThreadStore('device').get(deviceChat.id)).toEqual(
       deviceChat,
     )
+  })
+
+  it('explains a restore of projects refused without cloud sync', async () => {
+    signIn()
+    client.multipart.mockRejectedValue(
+      new HarnessError(
+        {
+          code: 'PROJECTS_REQUIRE_CLOUD',
+          message: 'Projects are kept in the cloud',
+        },
+        400,
+      ),
+    )
+    const { container } = render(
+      <NativeBackupRestore available ownerId="alice" />,
+    )
+
+    selectArchive(container)
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /^This file includes projects, which are kept in the cloud\. Turn on cloud sync, then try again\.$/,
+      ),
+    )
+    expect((await sentOptions()).options).toEqual({ target: 'device' })
   })
 
   it('cancels a restore that is still uploading', async () => {

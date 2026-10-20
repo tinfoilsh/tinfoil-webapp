@@ -270,6 +270,54 @@ describe('exporting chats from the Data tab', () => {
     })
     expect(downloads).toEqual([])
   })
+
+  it('explains an export refused while other archives fill the temporary space', async () => {
+    connect({ cloud: true })
+    client.multipart.mockRejectedValue(
+      new HarnessError(
+        { code: 'TEMP_SPACE_BUSY', message: 'retry shortly', retryAfter: 30 },
+        503,
+      ),
+    )
+    renderData()
+
+    await exportChats()
+
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Export failed',
+      description:
+        'The chat service is busy with other archives. Try again shortly.',
+      variant: 'destructive',
+    })
+    expect(downloads).toEqual([])
+  })
+
+  it('explains a Claude projects export refused while other archives fill the temporary space', async () => {
+    connect({ cloud: true })
+    client.multipart.mockRejectedValue(
+      new HarnessError(
+        { code: 'TEMP_SPACE_BUSY', message: 'retry shortly', retryAfter: 30 },
+        503,
+      ),
+    )
+    renderData({ isPremium: true })
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Export Projects for Claude' }),
+    )
+
+    expect(
+      await screen.findByText(
+        'The chat service is busy with other archives. Try again shortly.',
+      ),
+    ).toBeVisible()
+    const [path, form] = client.multipart.mock.calls[0] as [string, FormData]
+    expect([path, JSON.parse(form.get('options') as string)]).toEqual([
+      '/v1/export',
+      { format: 'claude-projects', key: KEY },
+    ])
+    expect(downloads).toEqual([])
+  })
 })
 
 // Picks files in a source's import panel, as its file picker would.
@@ -495,16 +543,41 @@ describe('importing chats from the Data tab', () => {
     )
   })
 
-  it('reports an export the chat service cannot read', async () => {
+  it.each([
+    [
+      'ARCHIVE_TOO_LARGE',
+      413,
+      'This archive is too large for the chat service to process.',
+    ],
+    [
+      'TEMP_SPACE_BUSY',
+      503,
+      'The chat service is busy with other archives. Try again shortly.',
+    ],
+    [
+      'PROJECTS_REQUIRE_CLOUD',
+      400,
+      'This file includes projects, which are kept in the cloud. Turn on cloud sync, then try again.',
+    ],
+    [
+      'IMPORT_INVALID',
+      400,
+      'This file could not be read. Select a Tinfoil backup or a ChatGPT, Claude, or Tinfoil export as you downloaded it.',
+    ],
+    [
+      'IMPORT_TOO_LARGE',
+      413,
+      'This file is larger than the import limits allow. Try a smaller export or backup.',
+    ],
+    [
+      'PAYLOAD_TOO_LARGE',
+      413,
+      'This is more than the chat service accepts. Remove some large images or documents, or choose a smaller file, then try again.',
+    ],
+  ])('explains an import refused with %s', async (code, status, copy) => {
     connect()
     client.multipart.mockRejectedValue(
-      new HarnessError(
-        {
-          code: 'IMPORT_INVALID',
-          message: 'This file is not a supported export.',
-        },
-        400,
-      ),
+      new HarnessError({ code, message: `harness says ${code}` }, status),
     )
     renderData()
 
@@ -516,9 +589,8 @@ describe('importing chats from the Data tab', () => {
       description: 'Could not start the ChatGPT import',
       variant: 'destructive',
     })
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'This file is not a supported export.',
-    )
+    expect(within(screen.getByRole('status')).getByText(copy)).toBeVisible()
+    expect(screen.queryByText(`harness says ${code}`)).toBeNull()
     expect(await localThreadStore('device').list()).toEqual([])
   })
 })

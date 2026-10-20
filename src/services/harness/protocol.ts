@@ -85,4 +85,12 @@ export const ERROR_CODES = {
   // The chat already holds the most turns it queues behind a running reply.
   // It is not the caller's quota.
   queueFull: 'QUEUE_FULL',
+  // An archive holds more than the harness can process.
+  archiveTooLarge: 'ARCHIVE_TOO_LARGE',
+  // Other archives hold the harness's temporary space for now.
+  tempSpaceBusy: 'TEMP_SPACE_BUSY',
+  projectsRequireCloud: 'PROJECTS_REQUIRE_CLOUD',
+  importInvalid: 'IMPORT_INVALID',
+  importTooLarge: 'IMPORT_TOO_LARGE',
+  payloadTooLarge: 'PAYLOAD_TOO_LARGE',
 } as const

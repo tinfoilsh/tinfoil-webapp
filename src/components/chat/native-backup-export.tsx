@@ -1,5 +1,6 @@
 import { AuthTokenUnavailableError } from '@/services/auth'
 import { exportArchive } from '@/services/harness/archives'
+import { describeArchiveError } from '@/services/harness/import-failure-copy'
 import { ERROR_CODES } from '@/services/harness/protocol'
 import { HarnessError } from '@/services/harness/sse'
 import { formatFileSize } from '@/utils/format-file-size'
@@ -13,6 +14,8 @@ const UNAUTHORIZED_STATUS = 401
 function nativeBackupExportError(error: unknown): string {
   if (error instanceof DOMException && error.name === 'AbortError')
     return 'Backup canceled. No backup file was saved.'
+  const refusal = describeArchiveError(error)
+  if (refusal) return refusal
   if (
     error instanceof HarnessError &&
     error.status === PAYLOAD_TOO_LARGE_STATUS
@@ -25,7 +28,7 @@ function nativeBackupExportError(error: unknown): string {
     (error instanceof HarnessError && error.status === UNAUTHORIZED_STATUS)
   )
     return 'Your account session is unavailable. Sign in again, then retry the backup.'
-  // The chat service describes its own refusals, such as a busy archive slot.
+  // The chat service describes its other refusals.
   if (error instanceof HarnessError) return error.message
   return 'The backup could not be created. Check your connection and try again.'
 }
