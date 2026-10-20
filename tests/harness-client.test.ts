@@ -495,6 +495,7 @@ describe('attested harness transport', () => {
     getVerificationDocument: vi.fn(),
   })
   it('refreshes an expired Clerk JWT once while retaining the same turn nonce and body', async () => {
+    vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['fr-FR', 'fr'])
     const secure = transport()
     secure.fetch
       .mockResolvedValueOnce(new Response('{}', { status: 401 }))
@@ -518,6 +519,11 @@ describe('attested harness transport', () => {
         new Headers(call[1].headers).get('Authorization'),
       ),
     ).toEqual(['Bearer old', 'Bearer fresh'])
+    expect(
+      secure.fetch.mock.calls.map((call) =>
+        new Headers(call[1].headers).get('Accept-Language'),
+      ),
+    ).toEqual(['fr-FR,fr', 'fr-FR,fr'])
     expect(
       secure.fetch.mock.calls.every(
         (call) =>
