@@ -282,12 +282,16 @@ export function reduceEvent(
       }
     case 'TOOL_CALL_START': {
       const { toolCallId, toolCallName: name } = event
-      const restarted = withToolCall(next.messages, toolCallId, (block) => ({
-        ...block,
-        arguments: '',
-        name,
-        complete: false,
-      }))
+      const restarted = withToolCall(
+        next.messages,
+        toolCallId,
+        ({ invalidArguments: _invalid, ...block }) => ({
+          ...block,
+          arguments: '',
+          name,
+          complete: false,
+        }),
+      )
       return {
         ...next,
         messages:
@@ -368,8 +372,8 @@ export function reduceEvent(
     case 'RUN_FINISHED':
     case 'RUN_ERROR': {
       const failed = event.type === 'RUN_ERROR'
-      const last = next.messages.findLastIndex(
-        (message) => message.role === 'assistant',
+      const committed = new Map(
+        event.metadata?.messages?.map((message) => [message.id, message]),
       )
       return {
         ...next,
@@ -390,14 +394,10 @@ export function reduceEvent(
                 : {}),
             }
           : {}),
-        messages:
-          last < 0
-            ? next.messages
-            : replaceAt(next.messages, last, {
-                ...next.messages[last],
-                isError: failed,
-                isInterrupted: event.metadata?.cancelled === true,
-              }),
+        messages: next.messages.map((message) => {
+          const metadata = committed.get(message.id)
+          return metadata ? { ...message, ...metadata } : message
+        }),
       }
     }
   }

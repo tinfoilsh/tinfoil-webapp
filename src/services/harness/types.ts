@@ -98,6 +98,7 @@ export interface ThreadSummary {
   titleState: 'placeholder' | 'generated' | 'manual'
   createdAt: string
   updatedAt: string
+  activityAt?: string
   model: string
   projectId: string | null
   pinned: boolean
@@ -215,6 +216,7 @@ export interface Session {
 
 // Files the composer takes by extension, and the largest each may be.
 export interface FileGroup {
+  imageMaxSide?: number
   accept: string[]
   maxBytes: number
 }
@@ -300,6 +302,16 @@ export type ActivityPatch =
 // What a run's final event reports. A device chat's run returns the whole
 // thread.
 export interface RunMetadata {
+  messages?: Pick<
+    Message,
+    | 'id'
+    | 'model'
+    | 'modelDisplayName'
+    | 'usage'
+    | 'annotations'
+    | 'isError'
+    | 'isInterrupted'
+  >[]
   cancelled?: boolean
   rateLimit?: RateLimit
   usage?: Json

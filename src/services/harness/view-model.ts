@@ -139,6 +139,7 @@ export function threadView(
     titleState: thread.titleState,
     createdAt: new Date(thread.createdAt),
     updatedAt: thread.updatedAt,
+    activityAt: thread.activityAt ?? thread.createdAt,
     model: thread.model,
     projectId: thread.projectId ?? undefined,
     webSearchEnabled: thread.webSearchEnabled,

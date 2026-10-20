@@ -52,6 +52,55 @@ describe('harness SSE', () => {
 })
 
 describe('harness reducer', () => {
+  it('applies committed metadata to each reply without changing earlier replies', () => {
+    let state = initialChat()
+    state.messages = [
+      {
+        id: 'old',
+        role: 'assistant',
+        createdAt: '',
+        content: 'Earlier answer',
+      },
+    ]
+    state = reduceEvent(state, {
+      id: 0,
+      event: { type: 'RUN_STARTED', runId: 'run' },
+    })
+    state = reduceEvent(state, {
+      id: 1,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'answer',
+        delta: 'A sourced answer.',
+      },
+    })
+    const metadata = {
+      id: 'answer',
+      model: 'gpt-oss-120b',
+      modelDisplayName: 'GPT-OSS',
+      annotations: [
+        {
+          type: 'url_citation' as const,
+          url_citation: { url: 'https://example.org', title: 'Source' },
+        },
+      ],
+      usage: { promptTokens: 17, completionTokens: 4 },
+      isError: true,
+      isInterrupted: false,
+    }
+    const finished = reduceEvent(state, {
+      id: 2,
+      event: {
+        type: 'RUN_ERROR',
+        runId: 'run',
+        metadata: { messages: [metadata] },
+      },
+    })
+    expect(finished.messages[0]).toBe(state.messages[0])
+    expect(finished.messages[1]).toMatchObject(metadata)
+    expect(finished.messages[1].timeline).toEqual(state.messages[1].timeline)
+    expect(state.messages[1]).not.toHaveProperty('annotations')
+  })
   it('keeps the active run when a separately streamed queued turn is removed', () => {
     let state = reduceEvent(initialChat(), {
       id: 0,
@@ -136,6 +185,7 @@ describe('harness reducer', () => {
     state = reduceEvent(state, {
       event: { type: 'MESSAGES_SNAPSHOT', messages: state.messages },
     })
+    state.messages[0].timeline![1].invalidArguments = true
     state = reduceEvent(state, {
       id: 0,
       event: { type: 'RUN_STARTED', runId: 'retry', threadId: 't' },
@@ -162,6 +212,7 @@ describe('harness reducer', () => {
       event: { type: 'TOOL_CALL_END', toolCallId: 'call' },
     })
     expect(state.messages).toHaveLength(1)
+    expect(state.messages[0].timeline![1].invalidArguments).not.toBe(true)
     expect(state.messages[0].timeline).toEqual([
       { id: 'm_content_0', type: 'content', content: 'Keep this' },
       expect.objectContaining({
@@ -197,7 +248,13 @@ describe('harness reducer', () => {
         messageId: 'act_c',
         patch: [{ op: 'add' as const, path: '/output/-', value: '1' }],
       },
-      { type: 'RUN_FINISHED', metadata: { cancelled: true } },
+      {
+        type: 'RUN_FINISHED',
+        metadata: {
+          cancelled: true,
+          messages: [{ id: 'm', isInterrupted: true }],
+        },
+      },
     ]
     for (const event of events) state = reduceEvent(state, { event })
     expect(state.messages[0].timeline?.map((b) => b.type)).toEqual([
@@ -354,7 +411,14 @@ describe('continuing a reply', () => {
       { type: 'RUN_STARTED', threadId: 't', runId: 'run-2', messageId: 'a1' },
       { type: 'MESSAGES_SNAPSHOT', messages: window, hasOlder: false },
       ...events,
-      { type: 'RUN_FINISHED', threadId: 't', runId: 'run-2' },
+      {
+        type: 'RUN_FINISHED',
+        threadId: 't',
+        runId: 'run-2',
+        metadata: {
+          messages: [{ id: 'a1', isError: false, isInterrupted: false }],
+        },
+      },
     ].entries())
       state = reduceEvent(state, { id, event: event as Frame['event'] })
     return state
