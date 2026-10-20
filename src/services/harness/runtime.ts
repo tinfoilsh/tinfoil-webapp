@@ -190,12 +190,6 @@ export class HarnessAPI {
       {},
       { keyless: true },
     )
-    if (
-      session.user.anonymous &&
-      !session.rateLimit?.kind &&
-      this.client.anonymousRateLimit
-    )
-      session.rateLimit = this.client.anonymousRateLimit
     publish({ session, error: undefined })
     this.reportRateLimit(session.rateLimit)
     await this.refreshProfile()

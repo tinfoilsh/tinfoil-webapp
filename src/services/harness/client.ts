@@ -19,10 +19,6 @@ export class HarnessClient {
   private readonly anonymous = new AnonymousCredentialCache()
   private secure: Transport
 
-  get anonymousRateLimit() {
-    return this.anonymous.rateLimit
-  }
-
   dispose() {
     this.anonymous.dispose()
   }

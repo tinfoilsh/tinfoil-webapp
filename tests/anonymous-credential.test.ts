@@ -5,16 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
-const issuance = (key = 'free_first', remaining = 9) =>
+// The key and its expiry, the only fields of an issuance the browser reads.
+const issuance = (key = 'free_first') =>
   Response.json({
     key,
     is_free_tier: true,
     expires_at: new Date(Date.now() + 3_600_000).toISOString(),
-    rate_limit: {
-      max_requests: 10,
-      remaining,
-      resets_at: new Date(Date.now() + 3_600_000).toISOString(),
-    },
   })
 
 const controlplane = vi.fn<typeof fetch>()
@@ -68,12 +64,7 @@ describe('anonymous client credentials', () => {
         false,
       )
     }
-    expect(client.anonymousRateLimit).toMatchObject({
-      kind: 'free_daily',
-      remaining: 9,
-    })
     client.dispose()
-    expect(client.anonymousRateLimit).toBeUndefined()
   })
 
   it('refreshes an expired key and retries a rejected key once with the same turn body', async () => {
@@ -192,7 +183,6 @@ describe('anonymous client credentials', () => {
     resolve(issuance())
     await expect(request).rejects.toMatchObject({ name: 'AbortError' })
     expect(secure.fetch).not.toHaveBeenCalled()
-    expect(client.anonymousRateLimit).toBeUndefined()
   })
 
   it('rejects malformed issuance before contacting the harness', async () => {

@@ -51,16 +51,12 @@ vi.mock('@/services/harness/client', async (importOriginal) => {
   }
 })
 
+// The key and its expiry: the harness reports the key's quota.
 function issuance() {
   return Response.json({
     key: 'free_guest',
     is_free_tier: true,
     expires_at: new Date(Date.now() + 3_600_000).toISOString(),
-    rate_limit: {
-      max_requests: 10,
-      remaining: 9,
-      resets_at: new Date(Date.now() + 3_600_000).toISOString(),
-    },
   })
 }
 
@@ -94,7 +90,12 @@ beforeEach(() => {
       )
     return Response.json({
       ...testSession,
-      rateLimit: { kind: null, maxRequests: 0, remaining: 0 },
+      rateLimit: {
+        kind: 'free_daily',
+        maxRequests: 10,
+        remaining: 9,
+        resetsAt: new Date(Date.now() + 3_600_000).toISOString(),
+      },
     })
   })
   controlplane.mockReset().mockImplementation(async () => issuance())
