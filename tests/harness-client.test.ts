@@ -281,6 +281,38 @@ describe('harness reducer', () => {
       }),
     ).toThrow(HarnessError)
   })
+  it('leaves the snapshot as it was when a later change of a delta is refused', () => {
+    const state = reduceEvent(initialChat(), {
+      id: 0,
+      event: {
+        type: 'STATE_SNAPSHOT',
+        snapshot: {
+          thread: null,
+          queue: [{ queueId: 'q1', content: 'first' }],
+        },
+      },
+    })
+    const before = structuredClone(state.snapshot)
+
+    expect(() =>
+      reduceEvent(state, {
+        id: 1,
+        event: {
+          type: 'STATE_DELTA',
+          delta: [
+            {
+              op: 'add',
+              path: '/queue/-',
+              value: { queueId: 'q2', content: 'second' },
+            },
+            { op: 'remove', path: '/queue/0' },
+          ] as never,
+        },
+      }),
+    ).toThrow(HarnessError)
+
+    expect(state.snapshot).toEqual(before)
+  })
   it('leaves the state a frame was applied to as it was', () => {
     const started = reduceEvent(initialChat(), {
       id: 0,
