@@ -20,7 +20,6 @@ import { ConfirmDialog } from '../../components/confirm-dialog'
 import { CONSTANTS } from '../../constants'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
 import { isImeComposition } from '../../keyboard-utils'
-import { CodeExecProcess } from '../components/CodeExecProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
 import {
@@ -464,12 +463,6 @@ const DefaultMessageComponent = ({
                 </div>
               )
             }
-            case 'code_exec':
-              return (
-                <div key={block.id} className="no-scroll-anchoring w-full px-4">
-                  <CodeExecProcess calls={block.calls} />
-                </div>
-              )
             case 'content': {
               const isLastContent =
                 displayTimeline.findLastIndex(
