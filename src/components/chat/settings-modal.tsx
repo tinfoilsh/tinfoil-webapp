@@ -11,12 +11,6 @@ import type { SettingsTab } from '@/constants/settings-tabs'
 import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
-import { isZipFile, readExportFiles } from '@/services/chat-import/export-files'
-import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
-import {
-  parseLocalTinfoilExportForAccess,
-  PremiumProjectImportRequiredError,
-} from '@/services/chat-import/local-tinfoil-import'
 import {
   exportArchive,
   exportClaudeProjects,
@@ -25,11 +19,9 @@ import {
   runImports,
   type ImportSequenceResult,
   type ImportStatusResponse,
+  type ImportTarget,
 } from '@/services/harness/archives'
-import {
-  localThreadStore,
-  upgradeThreads,
-} from '@/services/harness/local-threads'
+import { describeImportFailure } from '@/services/harness/import-failure-copy'
 import { deleteAllProjects } from '@/services/harness/projects'
 import { useHarness, useProfileSetting } from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
@@ -48,12 +40,6 @@ import {
   requestExplicitSignout,
 } from '@/utils/auth-signout-intent'
 import {
-  parseChatGPTConversations,
-  parseClaudeConversations,
-  type ChatGPTConversation,
-  type ClaudeConversation,
-} from '@/utils/chat-import-parsers'
-import {
   recordCloudSyncPreference,
   setLocalOnlyModeEnabled,
 } from '@/utils/cloud-sync-settings'
@@ -67,7 +53,6 @@ import {
   RESPONSE_LANGUAGES,
   SYSTEM_RESPONSE_LANGUAGE,
 } from '@/utils/response-language'
-import { generateReverseId } from '@/utils/reverse-id'
 import {
   hideSignoutProgress,
   showSignoutProgress,
@@ -136,6 +121,8 @@ const CHARS = '0123456789ABCDEF!@#$%^&*()_+<>?/'
 
 const DELETE_ALL_CHATS_CONFIRM_PHRASE = 'delete all chats'
 const DELETE_ALL_PROJECTS_CONFIRM_PHRASE = 'delete all projects'
+const ZIP_MIME_TYPE = 'application/zip'
+const MAX_LISTED_IMPORT_WARNINGS = 3
 
 interface ImportResult {
   jobId?: string
@@ -143,6 +130,8 @@ interface ImportResult {
   chatsImported: number
   projectsImported: number
   errors: string[]
+  // What the chat service could not import as it was.
+  warnings?: string[]
   pending?: boolean
   /** The enclave job ended without completing (distinct from per-chat errors). */
   failed?: boolean
@@ -155,7 +144,7 @@ interface ImportResult {
  * device, but a job that has already failed must not be announced as
  * started.
  */
-export function describeOffDeviceImportKickoff(
+export function describeImportKickoff(
   status: ImportStatusResponse,
   sourceLabel: string,
 ): ImportResult {
@@ -187,15 +176,24 @@ export function describeOffDeviceImportKickoff(
  * counted, and a failure names its file and how many files were never
  * started.
  */
-export function describeOffDeviceImportOutcome(
+export function describeImportOutcome(
   outcome: ImportSequenceResult,
   fileNames: readonly string[],
   sourceLabel: string,
 ): ImportResult {
-  const kickoff = describeOffDeviceImportKickoff(outcome.status, sourceLabel)
-  const chatsImported = outcome.importedBefore + kickoff.chatsImported
+  const { warnings } = outcome
+  if (!outcome.status)
+    return {
+      success: true,
+      chatsImported: outcome.imported,
+      projectsImported: 0,
+      errors: [],
+      warnings,
+    }
+  const kickoff = describeImportKickoff(outcome.status, sourceLabel)
+  const chatsImported = outcome.imported + kickoff.chatsImported
   if (!outcome.interrupted && !kickoff.failed) {
-    return { ...kickoff, chatsImported }
+    return { ...kickoff, chatsImported, warnings }
   }
   const explanation = outcome.interrupted
     ? 'The import stopped before it finished. Chats already imported were kept; select this file again to continue.'
@@ -207,6 +205,7 @@ export function describeOffDeviceImportOutcome(
     chatsImported,
     projectsImported: 0,
     errors: fileFailureErrors(fileNames, outcome.fileIndex, explanation),
+    warnings,
   }
 }
 
@@ -215,7 +214,7 @@ export function describeOffDeviceImportOutcome(
  * export fails, the chats earlier files imported are still counted and
  * the failing file is named.
  */
-export function describeOffDeviceImportError(
+export function describeImportError(
   err: unknown,
   fileNames: readonly string[],
 ): ImportResult {
@@ -230,7 +229,7 @@ export function describeOffDeviceImportError(
   }
   return {
     success: false,
-    chatsImported: err.importedBefore,
+    chatsImported: err.imported,
     projectsImported: 0,
     errors: fileFailureErrors(fileNames, err.fileIndex, message),
   }
@@ -252,10 +251,8 @@ function fileFailureErrors(
 }
 
 // The chat service receives each file of an export in one request, so an
-// upload advances a file at a time. An import on this device counts the
-// chats it stores.
+// upload advances a file at a time.
 export type ImportProgress =
-  | { type: 'chats'; current: number; total: number }
   | {
       type: 'upload'
       file: number
@@ -282,14 +279,6 @@ export function describeImportProgress(progress: ImportProgress): {
       title: `Importing file ${file} of ${files}...`,
       detail: `${total > 0 ? `${imported} of ${total} chats` : 'Reading export'}. Keep this page open until every file has started.`,
       percent: total > 0 ? (imported / total) * 100 : 0,
-    }
-  }
-  if (progress.type === 'chats') {
-    return {
-      title: `Importing ${progress.type}...`,
-      detail: `${progress.current} of ${progress.total}`,
-      percent:
-        progress.total > 0 ? (progress.current / progress.total) * 100 : 0,
     }
   }
   const { file, files, uploadedBytes, totalBytes } = progress
@@ -839,9 +828,7 @@ export function SettingsModal({
   const claudeConversationsFileInputRef = useRef<HTMLInputElement>(null)
   const claudeProjectsFileInputRef = useRef<HTMLInputElement>(null)
   const tinfoilFileInputRef = useRef<HTMLInputElement>(null)
-  const localTinfoilImportAbortControllerRef = useRef<AbortController | null>(
-    null,
-  )
+  const importAbortControllerRef = useRef<AbortController | null>(null)
 
   // Export state
   const [isExporting, setIsExporting] = useState(false)
@@ -1154,14 +1141,22 @@ export function SettingsModal({
     }
   }, [signOut])
 
+  // Chats imported without cloud sync, or signed out, are kept on this
+  // device (in this tab when signed out). Claude's project files always go to
+  // the cloud, which keeps projects.
+  const importsOnDevice = !cloudSyncEnabled
+  const importTarget: ImportTarget = importsOnDevice ? 'device' : 'cloud'
+
   // Imports upload the original export to the chat service, which converts
-  // and stores it off device and emails the user when a long job finishes.
-  // An export split across files runs as a sequence of jobs, each finishing
-  // before the next file is uploaded.
+  // it. Chats for this device come back and are stored here; cloud data is
+  // stored off device, and the user is emailed when a long job finishes. An
+  // export split across files is uploaded a file at a time, each cloud job
+  // finishing before the next file is uploaded.
   const importFiles = async (
     source: ImportSection,
     files: readonly File[],
     sourceLabel: string,
+    target: ImportTarget = importTarget,
   ) => {
     if (files.length === 0) return
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
@@ -1172,11 +1167,11 @@ export function SettingsModal({
     setIsImporting(true)
     setImportSource(source)
     setImportResult(null)
-    localTinfoilImportAbortControllerRef.current?.abort()
+    importAbortControllerRef.current?.abort()
     const controller = new AbortController()
-    localTinfoilImportAbortControllerRef.current = controller
+    importAbortControllerRef.current = controller
     try {
-      const outcome = await runImports(source, files, {
+      const outcome = await runImports(target, files, {
         signal: controller.signal,
         onUpload: (fileIndex) =>
           setImportProgress({
@@ -1195,11 +1190,7 @@ export function SettingsModal({
             total: status.total,
           }),
       })
-      const result = describeOffDeviceImportOutcome(
-        outcome,
-        fileNames,
-        sourceLabel,
-      )
+      const result = describeImportOutcome(outcome, fileNames, sourceLabel)
       setImportResult(result)
       if (result.failed) {
         toast({
@@ -1209,14 +1200,20 @@ export function SettingsModal({
         })
       } else if (result.pending) {
         toast({ title: 'Import started', description: result.message })
+      } else {
+        toast({
+          title: 'Import complete',
+          description: `Imported ${result.chatsImported} chat${result.chatsImported !== 1 ? 's' : ''} from ${sourceLabel}`,
+        })
       }
       if (!result.pending || result.chatsImported > 0) {
         await onChatsUpdated?.()
-        await refreshProjects()
+        if (target === 'cloud') await refreshProjects()
       }
     } catch (cause) {
-      if (controller.signal.aborted) return
-      const result = describeOffDeviceImportError(cause, fileNames)
+      // An account change ends the import.
+      if (controller.signal.aborted || api.lifetime.signal.aborted) return
+      const result = describeImportError(cause, fileNames)
       setImportResult(result)
       toast({
         title: 'Import failed',
@@ -1225,8 +1222,8 @@ export function SettingsModal({
       })
       if (result.chatsImported > 0) await onChatsUpdated?.()
     } finally {
-      if (localTinfoilImportAbortControllerRef.current === controller) {
-        localTinfoilImportAbortControllerRef.current = null
+      if (importAbortControllerRef.current === controller) {
+        importAbortControllerRef.current = null
         setIsImporting(false)
         setImportProgress(null)
       }
@@ -1236,7 +1233,7 @@ export function SettingsModal({
   const checkImportProgress = async (jobId: string) => {
     try {
       const status = await importStatus(jobId)
-      setImportResult(describeOffDeviceImportKickoff(status, 'archive'))
+      setImportResult(describeImportKickoff(status, 'archive'))
       if (status.status === 'completed' || status.status === 'partial') {
         await onChatsUpdated?.()
         await refreshProjects()
@@ -1246,244 +1243,13 @@ export function SettingsModal({
     }
   }
 
-  // Chats kept on this device are imported in the browser, as on main: an
-  // export is parsed here and its chats are stored on this device (in this
-  // tab when signed out). With cloud sync the chat service imports it.
-  const importsOnDevice = !cloudSyncEnabled
-
-  const generateChatId = (createdAt?: Date) => {
-    const timestampMs = createdAt?.getTime() || Date.now()
-    return generateReverseId(timestampMs).id
-  }
-
-  const getParseOptions = () => ({
-    generateChatId,
-  })
-
-  // An import on this device ends with the modal or the account.
-  const startDeviceImport = (source: ImportSection) => {
-    setImportSource(source)
-    setIsImporting(true)
-    setImportResult(null)
-    localTinfoilImportAbortControllerRef.current?.abort()
-    const controller = new AbortController()
-    localTinfoilImportAbortControllerRef.current = controller
-    return {
-      controller,
-      signal: AbortSignal.any([controller.signal, api.lifetime.signal]),
-    }
-  }
-
-  const finishDeviceImport = (controller: AbortController) => {
-    if (localTinfoilImportAbortControllerRef.current !== controller) return
-    localTinfoilImportAbortControllerRef.current = null
-    setIsImporting(false)
-    setImportProgress(null)
-  }
-
-  const saveImportedChats = async (
-    chats: Chat[],
-    signal: AbortSignal,
-  ): Promise<{ imported: number; errors: string[] }> => {
-    setImportProgress({ current: 0, total: chats.length, type: 'chats' })
-    const store = localThreadStore(api.userId ? 'device' : 'tab')
-    // An imported chat is in the previous client's format, which the harness
-    // upgrades the way it upgrades that client's rows. It is dated by its
-    // import, as that client dated a saved chat.
-    const updatedAt = new Date().toISOString()
-    const threads = await upgradeThreads(
-      chats.map((chat) => ({ ...chat, updatedAt, isLocalOnly: true })),
-    )
-    signal.throwIfAborted()
-
-    let imported = 0
-    const errors: string[] = []
-
-    for (let i = 0; i < chats.length; i++) {
-      signal.throwIfAborted()
-      try {
-        const thread = threads[i]
-        if (!thread || !(await store.update(thread.id, () => thread)))
-          throw new Error('The chat was not saved')
-        imported++
-      } catch {
-        signal.throwIfAborted()
-        errors.push(`Failed to save "${chats[i].title}" locally`)
-      }
-      setImportProgress({
-        current: i + 1,
-        total: chats.length,
-        type: 'chats',
-      })
-    }
-
-    return { imported, errors }
-  }
-
-  const importChatGPT = async (files: File[]) => {
-    if (!importsOnDevice) {
-      await importFiles('chatgpt', files, 'ChatGPT')
-      return
-    }
-    const { controller, signal } = startDeviceImport('chatgpt')
-
-    try {
-      const data = await readExportFiles<ChatGPTConversation>(
-        files,
-        'ChatGPT conversations',
-      )
-
-      const chats = parseChatGPTConversations(data, getParseOptions())
-      const { imported, errors } = await saveImportedChats(chats, signal)
-
-      setImportResult({
-        success: errors.length === 0,
-        chatsImported: imported,
-        projectsImported: 0,
-        errors,
-      })
-
-      void onChatsUpdated?.()
-
-      toast({
-        title: 'Import complete',
-        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from ChatGPT`,
-      })
-    } catch (err) {
-      if (signal.aborted) return
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: 'Import failed',
-        description: 'Could not parse the ChatGPT export file',
-        variant: 'destructive',
-      })
-    } finally {
-      finishDeviceImport(controller)
-    }
-  }
-
-  const importClaudeConversations = async (files: File[]) => {
-    if (!importsOnDevice) {
-      await importFiles('claude', files, 'Claude')
-      return
-    }
-    const { controller, signal } = startDeviceImport('claude')
-
-    try {
-      const data = await readExportFiles<ClaudeConversation>(
-        files,
-        'Claude conversations',
-      )
-
-      const chats = parseClaudeConversations(data, getParseOptions())
-      const { imported, errors } = await saveImportedChats(chats, signal)
-
-      setImportResult({
-        success: errors.length === 0,
-        chatsImported: imported,
-        projectsImported: 0,
-        errors,
-      })
-
-      void onChatsUpdated?.()
-
-      toast({
-        title: 'Import complete',
-        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from Claude`,
-      })
-    } catch (err) {
-      if (signal.aborted) return
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: 'Import failed',
-        description: 'Could not parse the Claude export file',
-        variant: 'destructive',
-      })
-    } finally {
-      finishDeviceImport(controller)
-    }
-  }
-
   const handleImportTinfoil = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
-
-    if (!importsOnDevice) {
-      await importFiles('tinfoil', [file], 'Tinfoil')
-      return
-    }
-    const { controller, signal } = startDeviceImport('tinfoil')
-
-    try {
-      const { chats, skippedProjectChats } =
-        await parseLocalTinfoilExportForAccess(
-          file,
-          {
-            ...getParseOptions(),
-            signal,
-          },
-          Boolean(isPremium),
-        )
-      const { imported, errors } = await saveImportedChats(chats, signal)
-      const projectErrors =
-        skippedProjectChats > 0
-          ? [
-              `Skipped ${skippedProjectChats} project chat${skippedProjectChats === 1 ? '' : 's'}. Premium is required to import project chats.`,
-            ]
-          : []
-      const importErrors = [...errors, ...projectErrors]
-
-      setImportResult({
-        success: importErrors.length === 0,
-        chatsImported: imported,
-        projectsImported: 0,
-        errors: importErrors,
-      })
-
-      void onChatsUpdated?.()
-
-      toast({
-        title:
-          skippedProjectChats > 0
-            ? 'Chats imported; project chats skipped'
-            : 'Import complete',
-        description:
-          skippedProjectChats > 0
-            ? `Imported ${imported} chat${imported !== 1 ? 's' : ''}. Premium is required to import the ${skippedProjectChats} project chat${skippedProjectChats === 1 ? '' : 's'}.`
-            : `Imported ${imported} chat${imported !== 1 ? 's' : ''} from Tinfoil`,
-      })
-    } catch (err) {
-      if (signal.aborted) return
-      const projectOnly = err instanceof PremiumProjectImportRequiredError
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: projectOnly ? 'Premium required' : 'Import failed',
-        description: projectOnly
-          ? err.message
-          : 'Could not parse the Tinfoil export file',
-        variant: 'destructive',
-      })
-    } finally {
-      finishDeviceImport(controller)
-    }
+    await importFiles('tinfoil', [file], 'Tinfoil')
   }
 
   // File pickers only stage the selection; the import runs once the user
@@ -1498,7 +1264,11 @@ export function SettingsModal({
     if (
       kind === 'claude-conversations' &&
       !isPremium &&
-      selected.some((file) => isZipFile(file))
+      selected.some(
+        (file) =>
+          file.name.toLowerCase().endsWith('.zip') ||
+          file.type === ZIP_MIME_TYPE,
+      )
     ) {
       toast({
         title: 'Premium required',
@@ -1552,8 +1322,6 @@ export function SettingsModal({
     })
   }
 
-  // Claude's project files are always imported by the chat service, which
-  // keeps projects; it reads them as a Claude export.
   const runStagedImport = async (source: ImportSourceKey) => {
     const staged = stagedImports[source]
     if (!staged) return
@@ -1561,13 +1329,13 @@ export function SettingsModal({
     clearStagedImport(source)
     switch (kind) {
       case 'chatgpt':
-        await importChatGPT(files)
+        await importFiles('chatgpt', files, 'ChatGPT')
         break
       case 'claude-projects':
-        await importFiles('claude', files, 'Claude')
+        await importFiles('claude', files, 'Claude', 'cloud')
         break
       case 'claude-conversations':
-        await importClaudeConversations(files)
+        await importFiles('claude', files, 'Claude')
         break
     }
   }
@@ -1610,8 +1378,6 @@ export function SettingsModal({
   // outcome appear inside the box the user is importing from.
   const renderImportStatus = (source: ImportSection) => {
     if (importSource !== source) return null
-    // An import on this device shows its progress once it stores chats.
-    if (isImporting && !importProgress && importsOnDevice) return null
     if (isImporting) {
       const { title, detail, percent } = describeImportProgress(
         importProgress ?? {
@@ -1724,6 +1490,24 @@ export function SettingsModal({
                   ))}
                   {importResult.errors.length > 3 && (
                     <div>+{importResult.errors.length - 3} more errors</div>
+                  )}
+                </div>
+              )}
+              {importResult.warnings && importResult.warnings.length > 0 && (
+                <div className="mt-2 font-aeonik-fono text-xs text-content-muted">
+                  {importResult.warnings
+                    .slice(0, MAX_LISTED_IMPORT_WARNINGS)
+                    .map((warning, i) => (
+                      <div key={i}>{warning}</div>
+                    ))}
+                  {importResult.warnings.length >
+                    MAX_LISTED_IMPORT_WARNINGS && (
+                    <div>
+                      +
+                      {importResult.warnings.length -
+                        MAX_LISTED_IMPORT_WARNINGS}{' '}
+                      more warnings
+                    </div>
                   )}
                 </div>
               )}
@@ -1888,8 +1672,8 @@ export function SettingsModal({
 
   useEffect(() => {
     return () => {
-      const abortController = localTinfoilImportAbortControllerRef.current
-      localTinfoilImportAbortControllerRef.current = null
+      const abortController = importAbortControllerRef.current
+      importAbortControllerRef.current = null
       abortController?.abort()
     }
   }, [])

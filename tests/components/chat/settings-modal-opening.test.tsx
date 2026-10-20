@@ -485,13 +485,16 @@ describe('settings imports', () => {
 
   const exportFile = (name: string, size: number) =>
     new File([new Uint8Array(size)], name, { type: 'application/json' })
+  // The chat service's answer to an import that started a cloud job.
+  const jobStarted = (jobId: string) =>
+    new Response(`${JSON.stringify({ done: { jobId, warnings: [] } })}\n`)
 
   it('imports the files of a split export one after another from a reviewed list', async () => {
     const client = harnessAPI().client
     const uploaded: string[] = []
-    vi.mocked(client.upload).mockImplementation(async (_path, file) => {
-      uploaded.push(file.name)
-      return { jobId: `job-${uploaded.length}` }
+    vi.mocked(client.multipart).mockImplementation(async (_path, form) => {
+      uploaded.push((form.get('file') as File).name)
+      return jobStarted(`job-${uploaded.length}`)
     })
     const statuses: Record<string, object> = {
       'job-1': { status: 'completed', imported: 3, failed: 0, total: 3 },
@@ -551,7 +554,9 @@ describe('settings imports', () => {
 
   it('names the file that failed and the files never started', async () => {
     const client = harnessAPI().client
-    vi.mocked(client.upload).mockResolvedValue({ jobId: 'job-1' })
+    vi.mocked(client.multipart).mockImplementation(async () =>
+      jobStarted('job-1'),
+    )
     vi.mocked(client.post).mockImplementation(async (path) => {
       if (path === '/v1/import/status')
         return {
@@ -595,6 +600,6 @@ describe('settings imports', () => {
     expect(
       screen.getByText('1 remaining file was not imported.'),
     ).toBeInTheDocument()
-    expect(client.upload).toHaveBeenCalledOnce()
+    expect(client.multipart).toHaveBeenCalledOnce()
   })
 })

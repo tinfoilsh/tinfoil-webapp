@@ -1,4 +1,4 @@
-import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
+import { describeImportFailure } from '@/services/harness/import-failure-copy'
 import { describe, expect, it } from 'vitest'
 
 describe('describeImportFailure', () => {

@@ -1,9 +1,36 @@
-import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
-// prettier-ignore
-import { NATIVE_RESTORE_KINDS,restoreNativeBackup,type NativeRestoreResult } from '@/services/native-backup/orchestrate'
+import { restoreBackup, type RestoreResult } from '@/services/harness/archives'
+import { describeImportFailure } from '@/services/harness/import-failure-copy'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 const INITIAL_RESTORE_PHASE = 'uploading'
+// The kinds of cloud data a restore's job counts, as the user reads them.
+const RESTORED_KIND_LABELS = new Map([
+  ['project', 'projects'],
+  ['document', 'project documents'],
+  ['chat', 'cloud chats'],
+])
+
+function restoreMessage(result: RestoreResult, refreshFailed: boolean) {
+  if (refreshFailed)
+    return result.state === 'partial'
+      ? 'Backup restored with warnings, but chats could not be refreshed. Reload to see restored chats.'
+      : 'Backup restored successfully, but chats could not be refreshed. Reload to see restored chats.'
+  switch (result.state) {
+    case 'pending':
+      return "The cloud restore is still running. We'll email you when it finishes."
+    case 'interrupted':
+      return "The cloud restore was interrupted before we could confirm the result. We'll email you whether it finished or failed."
+    case 'failed':
+      return `The cloud restore failed. ${describeImportFailure(
+        result.status?.failureReason ?? result.status?.failure_reason,
+        'backup_restore',
+      )}`
+    case 'partial':
+      return 'Backup restored with warnings.'
+    case 'completed':
+      return 'Backup restored successfully.'
+  }
+}
 
 export function NativeBackupRestore({
   available,
@@ -24,7 +51,7 @@ export function NativeBackupRestore({
   const guard = useRef({ available, ownerId })
   const [busy, setBusy] = useState(false)
   const [phase, setPhase] = useState(INITIAL_RESTORE_PHASE)
-  const [result, setResult] = useState<NativeRestoreResult | null>(null)
+  const [result, setResult] = useState<RestoreResult | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
   // prettier-ignore
@@ -58,7 +85,7 @@ export function NativeBackupRestore({
     setResult(null)
     setMessage(null)
     try {
-      const next = await restoreNativeBackup(file, ownerId, current.signal, {
+      const next = await restoreBackup(file, current.signal, {
         onStarted: (status) => {
           if (!isCurrent()) return
           started.current = true
@@ -78,23 +105,10 @@ export function NativeBackupRestore({
         }
       }
       if (!isCurrent()) return
-      if (!dismissed.current || next.state !== 'pending') setResult(next)
-      if (!dismissed.current || next.state !== 'pending')
-        setMessage(
-          refreshFailed
-            ? next.state === 'partial'
-              ? 'Backup restored with warnings, but chats could not be refreshed. Reload to see restored chats.'
-              : 'Backup restored successfully, but chats could not be refreshed. Reload to see restored chats.'
-            : next.state === 'pending'
-              ? "The cloud restore is still running. We'll email you when it finishes. No local chats were restored; reselect this archive afterward to restore them."
-              : next.state === 'interrupted'
-                ? "The cloud restore was interrupted before we could confirm the result. We'll email you whether it finished or failed. No local chats were restored; reselect this archive afterward to restore them."
-                : next.state === 'failed'
-                  ? `The cloud restore failed. ${describeImportFailure(next.failureReason, 'backup_restore')} No local chats were restored.`
-                  : next.state === 'partial'
-                    ? 'Backup restored with warnings.'
-                    : 'Backup restored successfully.',
-        )
+      if (!dismissed.current || next.state !== 'pending') {
+        setResult(next)
+        setMessage(restoreMessage(next, refreshFailed))
+      }
     } catch (cause) {
       if (isCurrent())
         setMessage(cause instanceof Error ? cause.message : 'Restore failed')
@@ -135,7 +149,7 @@ export function NativeBackupRestore({
       {busy && !dismissed.current && (
         <div className="mt-3 flex items-center justify-between text-xs text-content-muted">
           {/* prettier-ignore */}
-          <span>{started.current ? `Enclave restore: ${phase}...` : 'Validating and uploading...'}</span>
+          <span>{started.current ? `Enclave restore: ${phase}...` : 'Uploading backup...'}</span>
           <button
             type="button"
             className="font-medium text-content-primary hover:underline"
@@ -159,20 +173,27 @@ export function NativeBackupRestore({
         result.state !== 'pending' &&
         result.state !== 'interrupted' && (
           <ul className="mt-2 space-y-1 text-xs text-content-muted">
-            {NATIVE_RESTORE_KINDS.map((kind) => {
-              const value = result.report[kind]
-              return (
+            {Object.entries(result.status?.counts ?? {}).map(
+              ([kind, value]) => (
                 <li key={kind}>
-                  {kind.replaceAll('_', ' ')}: {value.imported} imported,{' '}
-                  {value.skipped} skipped, {value.failed} failed,{' '}
+                  {RESTORED_KIND_LABELS.get(kind) ?? kind}: {value.imported}{' '}
+                  imported, {value.skipped} skipped, {value.failed} failed,{' '}
                   {value.blocked} blocked
-                  {value.warnings.length > 0 &&
-                    `, warnings: ${value.warnings.join('; ')}`}
-                  {value.errors.length > 0 &&
-                    `, errors: ${value.errors.join('; ')}`}
                 </li>
-              )
-            })}
+              ),
+            )}
+            <li>
+              chats on this device: {result.stored} imported, {result.skipped}{' '}
+              skipped
+            </li>
+            {[...result.warnings, ...(result.status?.warnings ?? [])].map(
+              (warning, index) => (
+                <li key={`warning-${index}`}>{warning}</li>
+              ),
+            )}
+            {(result.status?.errors ?? []).map((error, index) => (
+              <li key={`error-${index}`}>{error}</li>
+            ))}
           </ul>
         )}
     </div>

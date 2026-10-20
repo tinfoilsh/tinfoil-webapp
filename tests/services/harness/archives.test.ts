@@ -3,13 +3,18 @@ import {
   runImports,
   type ImportStatusResponse,
 } from '@/services/harness/archives'
+import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
+import type { StoredThread } from '@/services/harness/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
+import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
 // The sync service runs one import per account, so the order of uploads and
 // status polls is the contract under test.
 let events: string[]
+// The device chats each upload returns before its last line.
+let deviceChats: Record<string, StoredThread[]>
 let jobs: number
 let statuses: Record<string, (ImportStatusResponse | Error)[]>
 const noWait = async () => {}
@@ -28,15 +33,45 @@ function job(
   return { status, imported, failed: 0, total: imported, errors: [], ...extra }
 }
 
+// An import's response: a line per chat for this device, then the last line.
+function importResponse(threads: StoredThread[], done: object) {
+  return new Response(
+    [...threads.map((thread) => ({ thread })), { done }]
+      .map((line) => `${JSON.stringify(line)}\n`)
+      .join(''),
+  )
+}
+
+// The options and file name of each import request.
+const importRequests = () =>
+  (client.multipart.mock.calls as [string, FormData][]).map(([path, form]) => [
+    path,
+    JSON.parse(form.get('options') as string),
+    (form.get('file') as File).name,
+  ])
+
+resetChatStoresAroundEachTest()
+
 beforeEach(() => {
   events = []
   jobs = 0
   statuses = {}
+  deviceChats = {}
   signIn()
-  client.upload.mockImplementation(async (_path: string, file: File) => {
+  client.multipart.mockImplementation(async (_path: string, form: FormData) => {
+    const file = form.get('file') as File
+    const { target } = JSON.parse(form.get('options') as string)
+    const threads = deviceChats[file.name] ?? []
+    if (target === 'device') {
+      events.push(`upload ${file.name} for this device`)
+      return importResponse(threads, { jobId: null, warnings: [] })
+    }
     jobs++
     events.push(`upload ${file.name} as job-${jobs}`)
-    return { jobId: `job-${jobs}` }
+    return importResponse(threads, {
+      jobId: `job-${jobs}`,
+      warnings: [`${file.name} had a note`],
+    })
   })
   client.post.mockImplementation(
     async (path: string, input: { jobId: string }) => {
@@ -65,7 +100,7 @@ describe('runImports', () => {
     const onUpload = vi.fn()
 
     const result = await runImports(
-      'chatgpt',
+      'cloud',
       [
         namedFile('conversations-000.json'),
         namedFile('conversations-001.json'),
@@ -84,18 +119,21 @@ describe('runImports', () => {
       'upload conversations-002.json as job-3',
       'status job-3 running',
     ])
-    expect(
-      client.upload.mock.calls.map(([path, , fields]) => [path, fields]),
-    ).toEqual([
-      ['/v1/import', { key: KEY, source: 'chatgpt' }],
-      ['/v1/import', { key: KEY, source: 'chatgpt' }],
-      ['/v1/import', { key: KEY, source: 'chatgpt' }],
+    expect(importRequests()).toEqual([
+      ['/v1/import', { target: 'cloud', key: KEY }, 'conversations-000.json'],
+      ['/v1/import', { target: 'cloud', key: KEY }, 'conversations-001.json'],
+      ['/v1/import', { target: 'cloud', key: KEY }, 'conversations-002.json'],
     ])
     expect(result).toEqual({
       status: { ...job('running'), jobId: 'job-3' },
       fileIndex: 2,
-      importedBefore: 7,
+      imported: 7,
       interrupted: false,
+      warnings: [
+        'conversations-000.json had a note',
+        'conversations-001.json had a note',
+        'conversations-002.json had a note',
+      ],
     })
     expect(onUpload.mock.calls).toEqual([[0], [1], [2]])
     expect(
@@ -115,7 +153,7 @@ describe('runImports', () => {
     statuses = { 'job-1': [failed] }
 
     const result = await runImports(
-      'chatgpt',
+      'cloud',
       [namedFile('user.json'), namedFile('conversations-000.json')],
       { wait: noWait },
     )
@@ -124,8 +162,9 @@ describe('runImports', () => {
     expect(result).toEqual({
       status: { ...failed, jobId: 'job-1' },
       fileIndex: 0,
-      importedBefore: 0,
+      imported: 0,
       interrupted: false,
+      warnings: ['user.json had a note'],
     })
   })
 
@@ -141,7 +180,7 @@ describe('runImports', () => {
     }
 
     const result = await runImports(
-      'claude',
+      'cloud',
       [namedFile('conversations.json'), namedFile('projects.json')],
       { wait: noWait },
     )
@@ -154,8 +193,9 @@ describe('runImports', () => {
     expect(result).toEqual({
       status: { ...job('running', 2), jobId: 'job-1' },
       fileIndex: 0,
-      importedBefore: 0,
+      imported: 0,
       interrupted: true,
+      warnings: ['conversations.json had a note'],
     })
   })
 
@@ -169,7 +209,7 @@ describe('runImports', () => {
     }
 
     const result = await runImports(
-      'chatgpt',
+      'cloud',
       [
         namedFile('conversations-000.json'),
         namedFile('conversations-001.json'),
@@ -185,7 +225,7 @@ describe('runImports', () => {
       'upload conversations-001.json as job-2',
       'status job-2 running',
     ])
-    expect(result).toMatchObject({ fileIndex: 1, importedBefore: 5 })
+    expect(result).toMatchObject({ fileIndex: 1, imported: 5 })
   })
 
   it('gives up once the service stays unreachable instead of starting the next file', async () => {
@@ -201,7 +241,7 @@ describe('runImports', () => {
     }
 
     const error = await runImports(
-      'chatgpt',
+      'cloud',
       [
         namedFile('conversations-000.json'),
         namedFile('conversations-001.json'),
@@ -210,9 +250,9 @@ describe('runImports', () => {
     ).catch((cause: unknown) => cause)
 
     expect(error).toBeInstanceOf(ImportSequenceError)
-    expect(error).toMatchObject({ fileIndex: 0, importedBefore: 0 })
+    expect(error).toMatchObject({ fileIndex: 0, imported: 0 })
     expect((error as Error).cause).toBe(unreachable)
-    expect(client.upload).toHaveBeenCalledOnce()
+    expect(client.multipart).toHaveBeenCalledOnce()
   })
 
   it('keeps the chats earlier files imported when a later file cannot start', async () => {
@@ -221,15 +261,15 @@ describe('runImports', () => {
       { code: 'UPSTREAM_REFUSED', message: 'an import is already in progress' },
       409,
     )
-    client.upload
+    client.multipart
       .mockImplementationOnce(async () => {
         jobs++
-        return { jobId: 'job-1' }
+        return importResponse([], { jobId: 'job-1', warnings: [] })
       })
       .mockRejectedValueOnce(busy)
 
     const error = await runImports(
-      'chatgpt',
+      'cloud',
       [
         namedFile('conversations-000.json'),
         namedFile('conversations-001.json'),
@@ -242,8 +282,65 @@ describe('runImports', () => {
     expect(error).toMatchObject({
       message: 'an import is already in progress',
       fileIndex: 1,
-      importedBefore: 4,
+      imported: 4,
     })
     expect((error as Error).cause).toBe(busy)
+  })
+
+  it('stores the chats every file returns for this device without polling a job', async () => {
+    const plants = storedThread('import_plants', { title: 'Plants' })
+    const soup = storedThread('import_soup', { title: 'Soup' })
+    deviceChats = {
+      'conversations-000.json': [plants],
+      'conversations-001.json': [soup],
+    }
+
+    const result = await runImports(
+      'device',
+      [
+        namedFile('conversations-000.json'),
+        namedFile('conversations-001.json'),
+      ],
+      { wait: noWait },
+    )
+
+    expect(events).toEqual([
+      'upload conversations-000.json for this device',
+      'upload conversations-001.json for this device',
+    ])
+    expect(importRequests().map(([, options]) => options)).toEqual([
+      { target: 'device' },
+      { target: 'device' },
+    ])
+    expect(result).toEqual({
+      status: null,
+      fileIndex: 1,
+      imported: 2,
+      interrupted: false,
+      warnings: [],
+    })
+    expect(await localThreadStore('device').get(plants.id)).toEqual(plants)
+    expect(await localThreadStore('device').get(soup.id)).toEqual(soup)
+  })
+
+  it('fails a file whose response ends before its last line, keeping the chats it stored', async () => {
+    const plants = storedThread('import_plants', { title: 'Plants' })
+    client.multipart.mockResolvedValue(
+      new Response(`${JSON.stringify({ thread: plants })}\n`),
+    )
+
+    const error = await runImports(
+      'device',
+      [namedFile('conversations.json')],
+      {
+        wait: noWait,
+      },
+    ).catch((cause: unknown) => cause)
+
+    expect(error).toBeInstanceOf(ImportSequenceError)
+    expect((error as ImportSequenceError).cause).toMatchObject({
+      code: 'STREAM_INTERRUPTED',
+    })
+    expect(await localThreadStore('device').get(plants.id)).toEqual(plants)
   })
 })

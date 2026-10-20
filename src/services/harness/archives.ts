@@ -1,8 +1,10 @@
-import { localThreadStore } from './local-threads'
+import type { AttachmentOriginal } from '@/services/storage/indexed-db'
+import { isThread, localThreadStore, type Originals } from './local-threads'
 import { imageBlob } from './open-attachments'
-import { ROUTES } from './protocol'
+import { ERROR_CODES, ROUTES } from './protocol'
 import { harnessAPI, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
+import type { StoredThread } from './types'
 export type ImportFailureReason =
   'invalid_archive' | 'wrong_key' | 'internal_error' | string
 export interface ImportStatusResponse {
@@ -34,7 +36,7 @@ function saveDownload(blob: Blob, filename: string) {
 
 // A Tinfoil backup, or the chats as conversations, which Tinfoil and other
 // chat apps import.
-export type ExportFormat = 'native' | 'conversations'
+type ExportFormat = 'native' | 'conversations'
 const EXPORT_FILENAMES: Record<ExportFormat, string> = {
   native: 'tinfoil-backup.zip',
   conversations: 'tinfoil-chats.zip',
@@ -65,7 +67,7 @@ async function receive(
   })
 }
 
-export interface ExportOptions {
+interface ExportOptions {
   // Include the account's cloud chats and projects, which the content key
   // opens.
   cloud: boolean
@@ -131,32 +133,150 @@ export async function exportClaudeProjects(signal?: AbortSignal) {
   signal?.throwIfAborted()
   saveDownload(blob, 'projects.json')
 }
-export async function startImport(
+
+export type ImportTarget = 'cloud' | 'device'
+
+// The chat service's last line for an imported file: the cloud job it
+// started, if any, and what it could not import as it was.
+interface ImportDone {
+  jobId: string | null
+  warnings: string[]
+}
+
+interface FileImport extends ImportDone {
+  // Chats stored on this device, and chats it holds already.
+  stored: number
+  skipped: number
+}
+
+const invalidImport = () =>
+  new HarnessError({
+    code: ERROR_CODES.invalidStream,
+    message: 'The chat service returned an invalid import.',
+  })
+
+function importLine(text: string): { thread: StoredThread } | ImportDone {
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    throw invalidImport()
+  }
+  const { thread, done } = (value ?? {}) as { thread?: unknown; done?: unknown }
+  if (isThread(thread)) return { thread }
+  const { jobId, warnings = [] } = (done ?? {}) as Partial<ImportDone>
+  if (
+    done &&
+    (jobId === null || typeof jobId === 'string') &&
+    Array.isArray(warnings) &&
+    warnings.every((warning) => typeof warning === 'string')
+  )
+    return { jobId, warnings }
+  throw invalidImport()
+}
+
+// The lines of an import's response, each a chat for this device, and last
+// the line that ends it.
+async function* importLines(
+  response: Response,
+): AsyncGenerator<{ thread: StoredThread } | ImportDone> {
+  const reader = response.body?.getReader()
+  if (!reader) throw invalidImport()
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  let buffer = ''
+  try {
+    for (;;) {
+      const chunk = await reader.read()
+      buffer += decoder.decode(chunk.value, { stream: !chunk.done })
+      const lines = buffer.split('\n')
+      buffer = chunk.done ? '' : lines.pop()!
+      for (const line of lines) if (line.trim()) yield importLine(line)
+      if (chunk.done) return
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+    reader.releaseLock()
+  }
+}
+
+// An imported chat carries the original of each image. This device keeps
+// the original apart, to show, and the thread keeps its copy for models.
+function importedOriginals(thread: StoredThread): Originals {
+  const originals = new Map<string, AttachmentOriginal>()
+  for (const message of thread.messages)
+    for (const attachment of message.attachments ?? [])
+      if (attachment.kind === 'image' && attachment.base64)
+        originals.set(attachment.id, {
+          base64: attachment.base64,
+          mimeType: attachment.mimeType,
+        })
+  return originals
+}
+
+// The chat service reads an export or backup in any format it knows. It
+// stores cloud data in a job, which the content key opens; the chats for
+// this device come back and are stored here as they arrive. A chat this
+// device holds already is kept as it is.
+async function importFile(
   file: File,
-  source: string,
+  target: ImportTarget,
+  signal?: AbortSignal,
+): Promise<FileImport> {
+  const api = harnessAPI()
+  const key = target === 'cloud' ? api.key() : undefined
+  const form = new FormData()
+  form.append('options', JSON.stringify({ target, ...(key ? { key } : {}) }))
+  form.append('file', file)
+  const response = await api.multipart(ROUTES.import, form, {
+    signal,
+    keyless: !key,
+  })
+  const store = deviceStore(api)
+  let stored = 0
+  let skipped = 0
+  for await (const line of importLines(response)) {
+    if (!('thread' in line)) return { ...line, stored, skipped }
+    signal?.throwIfAborted()
+    if (await store.add(line.thread, importedOriginals(line.thread))) stored++
+    else skipped++
+  }
+  throw new HarnessError({
+    code: ERROR_CODES.streamInterrupted,
+    message: 'The import ended before it finished.',
+  })
+}
+
+async function jobStatus(
+  api: HarnessAPI,
+  jobId: string,
   signal?: AbortSignal,
 ): Promise<ImportStatusResponse> {
-  const api = harnessAPI()
-  const { jobId } = await api.upload<{ jobId: string }>(
-    '/v1/import',
-    file,
-    { source },
-    { signal },
-  )
   const status = await api.post<ImportStatusResponse>(
-    '/v1/import/status',
+    ROUTES.importStatus,
     { jobId },
     { signal, keyless: true },
   )
   return { ...status, jobId }
 }
-export async function importStatus(jobId: string, signal?: AbortSignal) {
-  const status = await harnessAPI().post<ImportStatusResponse>(
-    '/v1/import/status',
-    { jobId },
-    { signal, keyless: true },
-  )
-  return { ...status, jobId }
+
+export function importStatus(jobId: string, signal?: AbortSignal) {
+  return jobStatus(harnessAPI(), jobId, signal)
+}
+
+// Resolves after a delay, or rejects once the signal aborts.
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    signal?.throwIfAborted()
+    const abort = () => {
+      clearTimeout(timer)
+      reject(signal!.reason)
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort)
+      resolve()
+    }, ms)
+    signal?.addEventListener('abort', abort, { once: true })
+  })
 }
 
 const IMPORT_STATUS_POLL_MS = 2000
@@ -189,14 +309,14 @@ export interface ImportSequenceOptions {
 
 /**
  * A file of a split import could not be uploaded, started, or followed to
- * completion. Records which file, and how many chats the earlier files
- * imported, so a partly finished import is not reported as nothing.
+ * completion. Records which file, and how many chats were imported before
+ * it failed, so a partly finished import is not reported as nothing.
  */
 export class ImportSequenceError extends Error {
   constructor(
     cause: unknown,
     readonly fileIndex: number,
-    readonly importedBefore: number,
+    readonly imported: number,
   ) {
     super(cause instanceof Error ? cause.message : 'Failed to start import')
     this.name = 'ImportSequenceError'
@@ -206,69 +326,158 @@ export class ImportSequenceError extends Error {
 
 export interface ImportSequenceResult {
   /**
-   * The last job's status: the one that failed or was interrupted, or the
-   * final file's kickoff snapshot when every earlier file completed.
+   * The last cloud job's status: the one that failed or was interrupted, or
+   * the final file's kickoff snapshot. Null when that file started no job.
    */
-  status: ImportStatusResponse
-  /** Index into the files of the job `status` describes. */
+  status: ImportStatusResponse | null
+  /** Index into the files of the file `status` describes. */
   fileIndex: number
-  /** Chats imported by the files that completed before `fileIndex`. */
-  importedBefore: number
+  /**
+   * Chats imported apart from those `status` counts: by the cloud jobs of
+   * earlier files, and every chat stored on this device.
+   */
+  imported: number
   /** The job at `fileIndex` was lost while it was processing. */
   interrupted: boolean
+  /** What the chat service could not import as it was, from every file. */
+  warnings: string[]
 }
 
 /**
- * Imports an export split across files as one job per file. The sync
- * service runs one import per account and refuses another while a job
- * runs, so each file but the last is processed to completion before the
- * next is uploaded, and the sequence stops at the first file that fails
- * so a later success never hides it. The last file's job is left running;
- * the user is emailed when it finishes. Errors are rethrown as an
+ * Imports an export split across files a file at a time. The sync service
+ * runs one import per account and refuses another while a job runs, so the
+ * cloud job of each file but the last is processed to completion before the
+ * next is uploaded, and the sequence stops at the first job that fails so a
+ * later success never hides it. The last file's job is left running; the
+ * user is emailed when it finishes. Errors are rethrown as an
  * ImportSequenceError.
  */
 export async function runImports(
-  source: string,
+  target: ImportTarget,
   files: readonly File[],
   options: ImportSequenceOptions = {},
 ): Promise<ImportSequenceResult> {
   if (files.length === 0) throw new Error('No export files were selected')
-  const wait =
-    options.wait ??
-    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
-  let importedBefore = 0
+  const api = harnessAPI()
+  const wait = options.wait ?? ((ms: number) => pause(ms, options.signal))
+  let imported = 0
+  const warnings: string[] = []
   for (let fileIndex = 0; ; fileIndex++) {
-    let status: ImportStatusResponse
+    const isLast = fileIndex === files.length - 1
+    let status: ImportStatusResponse | null = null
     try {
       options.onUpload?.(fileIndex)
-      status = await startImport(files[fileIndex], source, options.signal)
-      const isLast = fileIndex === files.length - 1
-      if (!isLast && !isImportJobFinished(status))
-        options.onProcessing?.(fileIndex, status)
-      let consecutiveFailures = 0
-      while (!isLast && !isImportJobFinished(status)) {
-        await wait(IMPORT_STATUS_POLL_MS)
-        options.signal?.throwIfAborted()
-        try {
-          status = await importStatus(status.jobId!, options.signal)
-          consecutiveFailures = 0
-        } catch (cause) {
-          if (isImportJobGone(cause))
-            return { status, fileIndex, importedBefore, interrupted: true }
-          if (
-            options.signal?.aborted ||
-            ++consecutiveFailures >= MAX_CONSECUTIVE_STATUS_FAILURES
-          )
-            throw cause
-          continue
+      const file = await importFile(files[fileIndex], target, options.signal)
+      imported += file.stored
+      warnings.push(...file.warnings)
+      if (file.jobId) {
+        status = await jobStatus(api, file.jobId, options.signal)
+        if (!isLast && !isImportJobFinished(status))
+          options.onProcessing?.(fileIndex, status)
+        let consecutiveFailures = 0
+        while (!isLast && !isImportJobFinished(status)) {
+          await wait(IMPORT_STATUS_POLL_MS)
+          options.signal?.throwIfAborted()
+          try {
+            status = await jobStatus(api, file.jobId, options.signal)
+            consecutiveFailures = 0
+          } catch (cause) {
+            if (isImportJobGone(cause))
+              return {
+                status,
+                fileIndex,
+                imported,
+                interrupted: true,
+                warnings,
+              }
+            if (
+              options.signal?.aborted ||
+              ++consecutiveFailures >= MAX_CONSECUTIVE_STATUS_FAILURES
+            )
+              throw cause
+            continue
+          }
+          options.onProcessing?.(fileIndex, status)
         }
-        options.onProcessing?.(fileIndex, status)
       }
-      if (isLast || status.status === 'failed')
-        return { status, fileIndex, importedBefore, interrupted: false }
+      if (isLast || status?.status === 'failed')
+        return { status, fileIndex, imported, interrupted: false, warnings }
     } catch (cause) {
-      throw new ImportSequenceError(cause, fileIndex, importedBefore)
+      throw new ImportSequenceError(cause, fileIndex, imported)
     }
-    importedBefore += status.imported
+    imported += status?.imported ?? 0
   }
+}
+
+const RESTORE_POLL_MS = 1500
+const MAX_RESTORE_POLLS = 20
+
+export interface RestoreResult {
+  /**
+   * 'pending': the cloud job still runs. 'interrupted': the chat service no
+   * longer knows the job, as it restarted or reaped it, so only the job's
+   * email tells its outcome.
+   */
+  state: 'completed' | 'partial' | 'failed' | 'pending' | 'interrupted'
+  /** The cloud job as last polled, when the backup started one. */
+  status: ImportStatusResponse | null
+  stored: number
+  skipped: number
+  warnings: string[]
+}
+
+interface RestoreEvents {
+  onStarted?(status: ImportStatusResponse): void
+  onPhase?(phase?: string): void
+}
+
+// A backup is restored to the cloud with cloud sync, and its chats kept on a
+// device, or all of it without cloud sync, are stored on this device. The
+// cloud job is followed for a while; a longer one goes on, and the user is
+// emailed when it ends.
+export async function restoreBackup(
+  file: File,
+  signal: AbortSignal,
+  events: RestoreEvents = {},
+): Promise<RestoreResult> {
+  const api = harnessAPI()
+  const { jobId, ...restored } = await importFile(
+    file,
+    api.cloud ? 'cloud' : 'device',
+    signal,
+  )
+  if (!jobId)
+    return {
+      ...restored,
+      status: null,
+      state: restored.warnings.length ? 'partial' : 'completed',
+    }
+  let status = await jobStatus(api, jobId, signal)
+  events.onStarted?.(status)
+  events.onPhase?.(status.phase)
+  for (
+    let poll = 0;
+    !isImportJobFinished(status) && poll < MAX_RESTORE_POLLS;
+    poll++
+  ) {
+    await pause(RESTORE_POLL_MS, api.signal({ signal, keyless: true }))
+    try {
+      status = await jobStatus(api, jobId, signal)
+    } catch (cause) {
+      if (isImportJobGone(cause))
+        return { ...restored, status, state: 'interrupted' }
+      throw cause
+    }
+    events.onPhase?.(status.phase)
+  }
+  if (!isImportJobFinished(status))
+    return { ...restored, status, state: 'pending' }
+  if (status.status === 'failed')
+    return { ...restored, status, state: 'failed' }
+  const partial =
+    status.status === 'partial' ||
+    restored.warnings.length > 0 ||
+    !!status.warnings?.length ||
+    !!status.errors?.length
+  return { ...restored, status, state: partial ? 'partial' : 'completed' }
 }

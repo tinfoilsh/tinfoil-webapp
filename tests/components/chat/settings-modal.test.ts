@@ -1,8 +1,8 @@
 import {
+  describeImportError,
+  describeImportKickoff,
+  describeImportOutcome,
   describeImportProgress,
-  describeOffDeviceImportError,
-  describeOffDeviceImportKickoff,
-  describeOffDeviceImportOutcome,
   getDeleteAllChatsSuccessDescription,
   getDeleteAllChatsSuccessTitle,
   importResultTitle,
@@ -49,9 +49,9 @@ describe('settings chat deletion confirmation', () => {
   )
 })
 
-describe('off-device import kickoff', () => {
+describe('cloud import kickoff', () => {
   it('announces a running job and promises an email', () => {
-    const result = describeOffDeviceImportKickoff(
+    const result = describeImportKickoff(
       { status: 'running', imported: 0, failed: 0, total: 0 },
       'Claude',
     )
@@ -65,7 +65,7 @@ describe('off-device import kickoff', () => {
   })
 
   it('reports a job that already failed instead of announcing a start', () => {
-    const result = describeOffDeviceImportKickoff(
+    const result = describeImportKickoff(
       {
         status: 'failed',
         imported: 0,
@@ -87,7 +87,7 @@ describe('off-device import kickoff', () => {
   })
 
   it('treats a job that completed synchronously as done', () => {
-    const result = describeOffDeviceImportKickoff(
+    const result = describeImportKickoff(
       { status: 'completed', imported: 2, failed: 0, total: 2 },
       'ChatGPT',
     )
@@ -125,12 +125,13 @@ describe('import outcome across split files', () => {
   ]
 
   it('counts chats from finished files while the last one runs', () => {
-    const result = describeOffDeviceImportOutcome(
+    const result = describeImportOutcome(
       {
         status: { status: 'running', imported: 2, failed: 0, total: 9 },
         fileIndex: 2,
-        importedBefore: 7,
+        imported: 7,
         interrupted: false,
+        warnings: [],
       },
       files,
       'ChatGPT',
@@ -145,7 +146,7 @@ describe('import outcome across split files', () => {
   })
 
   it('names the failed file, explains the check, and counts files never started', () => {
-    const result = describeOffDeviceImportOutcome(
+    const result = describeImportOutcome(
       {
         status: {
           status: 'failed',
@@ -157,8 +158,9 @@ describe('import outcome across split files', () => {
           failureDetail: 'unexpected_json',
         },
         fileIndex: 0,
-        importedBefore: 0,
+        imported: 0,
         interrupted: false,
+        warnings: [],
       },
       files,
       'ChatGPT',
@@ -173,16 +175,18 @@ describe('import outcome across split files', () => {
         'conversations-000.json: This file is from the export but does not contain conversations. Select the conversations JSON files, such as conversations.json or conversations-000.json, not files like user.json.',
         '2 remaining files were not imported.',
       ],
+      warnings: [],
     })
   })
 
   it('reports a lost job as a failure on its file, keeping earlier chats', () => {
-    const result = describeOffDeviceImportOutcome(
+    const result = describeImportOutcome(
       {
         status: { status: 'running', imported: 3, failed: 0, total: 8 },
         fileIndex: 1,
-        importedBefore: 4,
+        imported: 4,
         interrupted: true,
+        warnings: [],
       },
       files,
       'ChatGPT',
@@ -200,7 +204,7 @@ describe('import outcome across split files', () => {
   })
 
   it('keeps earlier chats and names the file when a later file throws', () => {
-    const result = describeOffDeviceImportError(
+    const result = describeImportError(
       new ImportSequenceError(
         new Error('an import is already in progress'),
         1,
@@ -221,7 +225,7 @@ describe('import outcome across split files', () => {
 
   it('reports a single file that throws by its message alone', () => {
     expect(
-      describeOffDeviceImportError(
+      describeImportError(
         new ImportSequenceError(new Error('The export file is empty'), 0, 0),
         ['export.zip'],
       ),

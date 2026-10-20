@@ -253,9 +253,8 @@ export function isThread(value: unknown): value is StoredThread {
   )
 }
 
-// Upgrades a chat in the previous client's format, from this device or an
-// export or backup, into a thread through the harness's reader of old chats,
-// one chat per request. A chat the harness refuses, as one too large to
+// Upgrades a chat this device stored in the previous client's format into a
+// thread through the harness's reader of old chats, one chat per request. A chat the harness refuses, as one too large to
 // send, is handed back as null.
 async function upgradeRow(row: Value): Promise<StoredThread | null> {
   let result: { threads?: unknown }
@@ -317,14 +316,6 @@ function legacyOriginals(row: Value, thread: StoredThread): Originals {
       kept.forEach((old, at) => keep(images[at], old))
   })
   return originals
-}
-
-export async function upgradeThreads(
-  rows: readonly object[],
-): Promise<(StoredThread | null)[]> {
-  const threads: (StoredThread | null)[] = []
-  for (const row of rows as Value[]) threads.push(await upgradeRow(row))
-  return threads
 }
 
 // A chat as a row the previous client's storage reads: its messages stay on
