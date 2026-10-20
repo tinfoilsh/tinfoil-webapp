@@ -4,7 +4,7 @@ import { publish } from '@/services/harness/runtime'
 import { speechPlayer } from '@/services/speech/player'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
+import { client, signIn, testSession } from '../../harness-fixture'
 import {
   controlledSpeak,
   FakeAudioContext,
@@ -52,6 +52,29 @@ describe('read aloud button', () => {
       <ReadAloudButton messageId="reply-1" content="Hello." />,
     )
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('reads plain text without a message through a keyless speech request', async () => {
+    signIn()
+    client.stream.mockImplementation(
+      (_path: string, _input: unknown, signal: AbortSignal) =>
+        speech.speak('text', signal),
+    )
+    render(<ReadAloudButton content="Selected words." />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }))
+
+    await waitFor(() => expect(speech.responses).toHaveLength(1))
+    expect(client.stream).toHaveBeenCalledExactlyOnceWith(
+      '/v1/speech',
+      { text: 'Selected words.' },
+      expect.any(AbortSignal),
+    )
+    await act(async () => {
+      speech.responses[0].push(2)
+      speech.responses[0].finish()
+    })
+    await screen.findByRole('button', { name: 'Stop reading aloud' })
   })
 
   it('starts on click, exposes buffering and stop controls, and returns to idle', async () => {
