@@ -5,7 +5,6 @@ import {
   getAutoIntelligenceLevels,
   getAutoModel,
   getSelectableChatModels,
-  isAutoModelId,
   type AutoIntelligenceLevelId,
   type BaseModel,
 } from '@/config/models'
@@ -291,7 +290,8 @@ export function ModelSelector({
   }, [showEffortOptions, isMobileLayout, recalcEffortFlyout])
 
   const autoModel = getAutoModel(models)
-  const isAutoSelected = isAutoModelId(selectedModel)
+  const isAutoSelected =
+    autoModel !== undefined && autoModel.id === selectedModel
   const showIntelligenceSlider =
     isAutoSelected &&
     autoModel !== undefined &&
@@ -339,12 +339,12 @@ export function ModelSelector({
   const otherModels = displayModels.slice(topModelCount)
 
   const getModelIcon = (model: BaseModel) => {
-    if (failedImages[model.modelName]) return '/icon.png'
-    if (model.image === 'openai.png')
+    if (failedImages[model.id]) return '/icon.png'
+    if (model.icon === 'openai.png')
       return `/model-icons/openai-${isDarkMode ? 'dark' : 'light'}.png`
-    if (model.image === 'moonshot.png')
+    if (model.icon === 'moonshot.png')
       return `/model-icons/moonshot-${isDarkMode ? 'dark' : 'light'}.png`
-    return `/model-icons/${model.image}`
+    return `/model-icons/${model.icon}`
   }
 
   const focusTrigger = () => {
@@ -413,51 +413,48 @@ export function ModelSelector({
   )
 
   const renderModelItem = (model: BaseModel) => {
-    const isSelected = model.isAuto
-      ? isAutoSelected
-      : model.modelName === selectedModel
+    const isSelected = model.id === selectedModel
     return (
       <button
         type="button"
-        key={model.modelName}
+        key={model.id}
         role="menuitemradio"
         aria-checked={isSelected}
         className={`relative flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors ${isSelected ? 'text-content-primary' : 'cursor-pointer text-content-secondary hover:bg-surface-card/70'}`}
         {...menuItemHandlers(() => {
-          onSelect(model.modelName as AIModel)
+          onSelect(model.id as AIModel)
           focusTrigger()
         })}
       >
         <div className="relative flex h-5 w-5 flex-none items-center justify-center">
-          {model.isAuto ? (
+          {model.auto ? (
             <TfShuffle
               className="h-5 w-5 text-brand-accent-dark dark:text-brand-accent-light"
               aria-hidden="true"
             />
           ) : (
             <>
-              {!loadedImages[model.modelName] &&
-                !failedImages[model.modelName] && (
-                  <div className="absolute h-5 w-5 rounded-full bg-gray-300 dark:bg-gray-600" />
-                )}
+              {!loadedImages[model.id] && !failedImages[model.id] && (
+                <div className="absolute h-5 w-5 rounded-full bg-gray-300 dark:bg-gray-600" />
+              )}
               <img
                 src={getModelIcon(model)}
                 alt=""
-                className={`h-5 w-5 transition-opacity duration-200 ${!loadedImages[model.modelName] && !failedImages[model.modelName] ? 'opacity-0' : ''}`}
-                onLoad={() => handleImageLoad(model.modelName)}
-                onError={() => handleImageError(model.modelName)}
+                className={`h-5 w-5 transition-opacity duration-200 ${!loadedImages[model.id] && !failedImages[model.id] ? 'opacity-0' : ''}`}
+                onLoad={() => handleImageLoad(model.id)}
+                onError={() => handleImageError(model.id)}
               />
             </>
           )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="font-medium">{model.name}</span>
-          {!model.isAuto && model.chatConfig?.descriptionShort && (
+          <span className="font-medium">{model.label}</span>
+          {!model.auto && model.description && (
             <span className="text-xs text-content-muted">
-              {model.chatConfig.descriptionShort}
+              {model.description}
             </span>
           )}
-          {!model.isAuto && <ModelLifecycleBadges model={model} />}
+          {!model.auto && <ModelLifecycleBadges badges={model.badges} />}
         </div>
         {isSelected && (
           <TfBoxCheckmark
@@ -509,7 +506,7 @@ export function ModelSelector({
                 Intelligence
               </span>
               <span className="text-content-muted">
-                {getAutoIntelligenceLevel(autoIntelligence).label}
+                {getAutoIntelligenceLevel(autoIntelligence)?.label}
               </span>
             </div>
             <SteppedSlider

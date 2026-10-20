@@ -23,19 +23,25 @@ const PRESETS: Session['presets'] = Array.from(
 const PRESET = PRESETS[0]
 const MODELS: BaseModel[] = [
   {
-    modelName: 'auto',
-    name: 'Auto',
-    nameShort: 'Auto',
-    image: '',
+    id: 'auto',
+    label: 'Auto',
+    shortLabel: 'Auto',
+    icon: '',
     description: '',
-    isAuto: true,
+    badges: [],
+    reasoning: null,
+    deprecated: false,
+    auto: true,
   },
   {
-    modelName: 'deep-model',
-    name: 'Deep model',
-    nameShort: 'Deep',
-    image: '',
+    id: 'deep-model',
+    label: 'Deep model',
+    shortLabel: 'Deep',
+    icon: '',
     description: '',
+    badges: [],
+    reasoning: null,
+    deprecated: false,
   },
 ]
 const SAVED = {

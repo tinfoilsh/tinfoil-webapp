@@ -172,32 +172,38 @@ export interface RateLimit {
   outputTokens?: TokenBudget
 }
 
+// A model as the session offers it, ready to display.
+export interface SessionModel {
+  id: string
+  label: string
+  shortLabel: string
+  icon: string
+  description: string
+  // Tags such as Experimental or Deprecated, and what each explains.
+  badges: {
+    kind: 'experimental' | 'deprecated'
+    label: string
+    tooltip: string
+  }[]
+  reasoning: {
+    toggle: boolean
+    effort: boolean
+    defaultEnabled: boolean
+  } | null
+  deprecated: boolean
+  // The entry that has the router choose a model for each turn.
+  auto?: boolean
+}
+
 export interface Session {
   user: { id: string; anonymous: boolean }
   rateLimit: RateLimit
-  models: {
-    id: string
-    name: string
-    nameShort?: string
-    description?: string
-    image?: string
-    paid?: boolean
-    experimental?: boolean
-    deprecationDate?: string
-    descriptionShort?: string
-    attributes?: string[]
-    deprecated?: boolean
-    multimodal: boolean
-    reasoning: {
-      toggle: boolean
-      effort: boolean
-      defaultEnabled: boolean
-    } | null
-  }[]
+  models: SessionModel[]
+  // How hard Auto works: its default level, and each level's labels on the
+  // slider and in the picker.
   auto: {
-    multimodal: boolean
     default: string
-    levels: { id: string; label: string }[]
+    levels: { id: string; label: string; displayLabel: string }[]
   } | null
   defaultModel: string
   widgets: string[]

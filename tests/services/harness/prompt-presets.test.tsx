@@ -45,9 +45,13 @@ const session: Session = {
     ...testSession.models,
     {
       id: 'deep-model',
-      name: 'Deep model',
-      multimodal: false,
+      label: 'Deep model',
+      shortLabel: 'Deep',
+      icon: '',
+      description: '',
+      badges: [],
       reasoning: null,
+      deprecated: false,
     },
   ],
 }

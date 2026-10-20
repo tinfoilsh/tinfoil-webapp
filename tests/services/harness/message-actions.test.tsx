@@ -44,11 +44,14 @@ vi.mock('@/utils/audio-context', () => ({
 const THREAD_ID = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
 const models: BaseModel[] = [
   {
-    modelName: 'test-model',
-    name: 'Test model',
-    nameShort: 'Test',
-    image: '',
+    id: 'test-model',
+    label: 'Test model',
+    shortLabel: 'Test',
+    icon: '',
     description: '',
+    badges: [],
+    reasoning: null,
+    deprecated: false,
   },
 ]
 

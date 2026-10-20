@@ -36,7 +36,7 @@ export const optionToWebSearch = (
 export const isPresetModelAvailable = (
   modelName: string,
   models: BaseModel[],
-): boolean => models.some((model) => model.modelName === modelName)
+): boolean => models.some((model) => model.id === modelName)
 
 /**
  * Models offered in the preset editor: Auto followed by the same chat models
@@ -54,7 +54,7 @@ export const getPresetModelOptions = (
 export const getPresetModelLabel = (
   modelName: string,
   models: BaseModel[],
-): string => findSelectableModel(modelName, models)?.name ?? modelName
+): string => findSelectableModel(modelName, models)?.label ?? modelName
 
 export const PRESET_SETTING_UNSET_LABEL = 'No override set'
 

@@ -6,11 +6,14 @@ import { act, render, screen } from '@testing-library/react'
 import { beforeAll, expect, it, vi } from 'vitest'
 
 const model: BaseModel = {
-  modelName: 'test-model',
-  name: 'Test model',
-  nameShort: 'Test',
-  image: '',
+  id: 'test-model',
+  label: 'Test model',
+  shortLabel: 'Test',
+  icon: '',
   description: '',
+  badges: [],
+  reasoning: null,
+  deprecated: false,
 }
 
 beforeAll(() => initializeRenderers())

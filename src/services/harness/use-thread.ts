@@ -4,7 +4,6 @@ import type {
   QueuedMessage,
   Attachment as UIAttachment,
 } from '@/components/chat/types'
-import { displayModels } from '@/config/models'
 import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
@@ -179,7 +178,7 @@ export function useThread(
     return {
       ...(!current.modelChosen &&
       typeof preset.model === 'string' &&
-      isPresetModelAvailable(preset.model, displayModels(session ?? undefined))
+      isPresetModelAvailable(preset.model, session?.models ?? [])
         ? { model: preset.model }
         : {}),
       ...(current.webSearch === undefined &&

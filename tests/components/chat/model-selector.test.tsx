@@ -1,6 +1,7 @@
 import { ModelSelector } from '@/components/chat/model-selector'
 import { ModelSelectorTriggerLabel } from '@/components/chat/model-selector-trigger-label'
-import { displayModels, type BaseModel } from '@/config/models'
+import type { BaseModel } from '@/config/models'
+import { publish } from '@/services/harness/runtime'
 import {
   act,
   cleanup,
@@ -13,11 +14,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { testSession } from '../../harness-fixture'
 
 const MODEL: BaseModel = {
-  modelName: 'gpt-oss-120b',
-  image: 'openai.png',
-  name: 'GPT-OSS 120B',
-  nameShort: 'GPT-OSS',
+  id: 'gpt-oss-120b',
+  icon: 'openai.png',
+  label: 'GPT-OSS 120B',
+  shortLabel: 'GPT-OSS',
   description: 'Reasoning model',
+  badges: [],
+  reasoning: null,
+  deprecated: false,
+}
+const EXPERIMENTAL = {
+  kind: 'experimental' as const,
+  label: 'Experimental',
+  tooltip: 'Support and availability are not guaranteed.',
+}
+const DEPRECATED = {
+  kind: 'deprecated' as const,
+  label: 'Deprecated',
+  tooltip: 'This model will be taken offline on 2026-10-01.',
 }
 
 afterEach(() => {
@@ -27,41 +41,31 @@ afterEach(() => {
 
 describe('model lifecycle tags', () => {
   it.each([
-    { flags: {}, experimental: false, deprecated: false },
+    { badges: [], experimental: false, deprecated: false },
+    { badges: [EXPERIMENTAL], experimental: true, deprecated: false },
+    { badges: [DEPRECATED], experimental: false, deprecated: true },
     {
-      flags: { deprecationDate: '2026-10-01' },
-      experimental: false,
-      deprecated: false,
-    },
-    {
-      flags: { experimental: false, deprecated: false },
-      experimental: false,
-      deprecated: false,
-    },
-    { flags: { experimental: true }, experimental: true, deprecated: false },
-    { flags: { deprecated: true }, experimental: false, deprecated: true },
-    {
-      flags: { experimental: true, deprecated: true },
+      badges: [EXPERIMENTAL, DEPRECATED],
       experimental: true,
       deprecated: true,
     },
   ])(
-    'renders the flags $flags only in the menu',
-    ({ flags, experimental, deprecated }) => {
-      const model = { ...MODEL, ...flags }
+    'renders the badges $badges only in the menu',
+    ({ badges, experimental, deprecated }) => {
+      const model = { ...MODEL, badges }
       const onSelect = vi.fn()
       render(
         <>
           <button type="button" data-testid="trigger">
             <ModelSelectorTriggerLabel
-              selectedModel={model.modelName}
+              selectedModel={model.id}
               models={[model]}
               autoIntelligence="high"
               isOpen={true}
             />
           </button>
           <ModelSelector
-            selectedModel={model.modelName}
+            selectedModel={model.id}
             models={[model]}
             onSelect={onSelect}
             isDarkMode={false}
@@ -75,47 +79,48 @@ describe('model lifecycle tags', () => {
         within(trigger).queryByText('Experimental'),
       ).not.toBeInTheDocument()
       expect(within(trigger).queryByText('Deprecated')).not.toBeInTheDocument()
-      expect(within(trigger).getByText(model.name)).toBeVisible()
+      expect(within(trigger).getByText(model.label)).toBeVisible()
       expect(within(row).queryByText('Experimental') !== null).toBe(
         experimental,
       )
       expect(within(row).queryByText('Deprecated') !== null).toBe(deprecated)
-      expect(within(row).getByText(model.name)).toBeVisible()
+      expect(within(row).getByText(model.label)).toBeVisible()
       expect(row).toHaveAttribute('aria-checked', 'true')
       fireEvent.click(row)
-      expect(onSelect).toHaveBeenCalledExactlyOnceWith(model.modelName)
+      expect(onSelect).toHaveBeenCalledExactlyOnceWith(model.id)
     },
   )
 
   it('hides deprecated models unless one is the current selection', () => {
     const selectedDeprecated: BaseModel = {
       ...MODEL,
-      modelName: 'old-selected',
-      name: 'Old selected',
+      id: 'old-selected',
+      label: 'Old selected',
       deprecated: true,
+      badges: [DEPRECATED],
     }
     const models: BaseModel[] = [
-      { ...MODEL, modelName: 'old-top', name: 'Old top', deprecated: true },
+      { ...MODEL, id: 'old-top', label: 'Old top', deprecated: true },
       ...Array.from({ length: 20 }, (_, index) => ({
         ...MODEL,
-        modelName: `chat-${index}`,
-        name: `Chat ${index}`,
+        id: `chat-${index}`,
+        label: `Chat ${index}`,
       })),
       selectedDeprecated,
-      { ...MODEL, modelName: 'old-other', name: 'Old other', deprecated: true },
+      { ...MODEL, id: 'old-other', label: 'Old other', deprecated: true },
     ]
     render(
       <>
         <button type="button" data-testid="trigger">
           <ModelSelectorTriggerLabel
-            selectedModel={selectedDeprecated.modelName}
+            selectedModel={selectedDeprecated.id}
             models={models}
             autoIntelligence="high"
             isOpen={true}
           />
         </button>
         <ModelSelector
-          selectedModel={selectedDeprecated.modelName}
+          selectedModel={selectedDeprecated.id}
           models={models}
           onSelect={vi.fn()}
           isDarkMode={false}
@@ -139,34 +144,34 @@ describe('model lifecycle tags', () => {
   it('shows tags with a description under Other models', () => {
     const taggedModel: BaseModel = {
       ...MODEL,
-      experimental: true,
       deprecated: true,
-      chatConfig: { descriptionShort: 'Best for quick reasoning tasks' },
+      badges: [EXPERIMENTAL, DEPRECATED],
+      description: 'Best for quick reasoning tasks',
     }
     const models: BaseModel[] = [
       ...Array.from({ length: 20 }, (_, index) => ({
         ...MODEL,
-        modelName: `chat-${index}`,
-        name: `Chat ${index}`,
+        id: `chat-${index}`,
+        label: `Chat ${index}`,
       })),
       taggedModel,
     ]
     const onSelect = vi.fn()
     render(
       <ModelSelector
-        selectedModel={taggedModel.modelName}
+        selectedModel={taggedModel.id}
         models={models}
         onSelect={onSelect}
         isDarkMode={true}
       />,
     )
 
-    expect(screen.queryByText(taggedModel.name)).not.toBeInTheDocument()
+    expect(screen.queryByText(taggedModel.label)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Other models' }))
     const row = screen.getByRole('menuitemradio', { name: /GPT-OSS 120B/ })
     expect(within(row).getByText('Experimental')).toBeVisible()
     expect(within(row).getByText('Deprecated')).toBeVisible()
-    const name = within(row).getByText(taggedModel.name)
+    const name = within(row).getByText(taggedModel.label)
     const description = within(row).getByText('Best for quick reasoning tasks')
     const badgeRow = within(row).getByText('Experimental').parentElement
     expect(name.nextElementSibling).toBe(description)
@@ -176,70 +181,68 @@ describe('model lifecycle tags', () => {
       within(row).getByText('Best for quick reasoning tasks'),
     ).toBeVisible()
     fireEvent.click(row)
-    expect(onSelect).toHaveBeenCalledExactlyOnceWith(taggedModel.modelName)
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(taggedModel.id)
   })
 
-  it.each(['auto-smart', 'auto-fast'])(
-    "shows the previous design's %s tier as Auto",
-    (legacyId) => {
-      const models = displayModels(testSession)
-      render(
-        <>
-          <ModelSelectorTriggerLabel
-            selectedModel={legacyId}
-            models={models}
-            autoIntelligence="high"
-            isOpen={false}
-          />
-          <ModelSelector
-            selectedModel={legacyId}
-            models={models}
-            onSelect={vi.fn()}
-            isDarkMode={false}
-          />
-        </>,
-      )
-      expect(screen.getByText('Auto · High')).toBeVisible()
-      expect(
-        screen.getByRole('menuitemradio', { name: /^Auto/ }),
-      ).toHaveAttribute('aria-checked', 'true')
-      expect(
-        screen.getByRole('menuitemradio', { name: /Test model/ }),
-      ).toHaveAttribute('aria-checked', 'false')
-    },
-  )
-
-  it.each([
-    {
-      flags: { experimental: true },
-      label: 'Experimental',
-      tooltip:
-        'Support and availability are not guaranteed. This model can be deprecated at any time.',
-    },
-    {
-      flags: { deprecated: true },
-      label: 'Deprecated',
-      tooltip:
-        'This model is deprecated. An offline date has not been announced.',
-    },
-    {
-      flags: {
-        experimental: true,
-        deprecated: true,
-        deprecationDate: '2026-10-01',
+  it('shows Auto as the session labels the chosen level', () => {
+    publish({
+      session: {
+        ...testSession,
+        auto: {
+          default: 'high',
+          levels: [
+            { id: 'low', label: 'Low', displayLabel: 'Auto, quick' },
+            { id: 'high', label: 'High', displayLabel: 'Auto, thorough' },
+          ],
+        },
       },
-      label: 'Deprecated',
-      tooltip: 'This model will be taken offline on 2026-10-01.',
-    },
-  ])(
+    })
+    render(
+      <>
+        <ModelSelectorTriggerLabel
+          selectedModel="auto"
+          models={testSession.models}
+          autoIntelligence="high"
+          isOpen={false}
+        />
+        <ModelSelector
+          selectedModel="auto"
+          models={testSession.models}
+          onSelect={vi.fn()}
+          isDarkMode={false}
+          autoIntelligence="high"
+          onAutoIntelligenceChange={vi.fn()}
+        />
+      </>,
+    )
+    expect(screen.getByText('Auto, thorough')).toHaveAttribute(
+      'aria-hidden',
+      'false',
+    )
+    expect(screen.getByText('Auto, quick')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    )
+    expect(
+      screen.getByRole('menuitemradio', { name: /^Auto/ }),
+    ).toHaveAttribute('aria-checked', 'true')
+    expect(
+      screen.getByRole('menuitemradio', { name: /Test model/ }),
+    ).toHaveAttribute('aria-checked', 'false')
+    expect(
+      screen.getByRole('slider', { name: 'Auto intelligence' }),
+    ).toBeVisible()
+  })
+
+  it.each([EXPERIMENTAL, DEPRECATED])(
     'shows the $label explanation immediately on hover without selecting the model',
-    async ({ flags, label, tooltip }) => {
+    async ({ label, tooltip }) => {
       vi.useFakeTimers()
       const onSelect = vi.fn()
       render(
         <ModelSelector
-          selectedModel={MODEL.modelName}
-          models={[{ ...MODEL, ...flags }]}
+          selectedModel={MODEL.id}
+          models={[{ ...MODEL, badges: [EXPERIMENTAL, DEPRECATED] }]}
           onSelect={onSelect}
           isDarkMode={false}
         />,
@@ -266,14 +269,14 @@ describe('model lifecycle tags', () => {
       fireEvent.keyDown(badge, { key: 'Escape' })
       expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
       fireEvent.click(badge)
-      expect(onSelect).toHaveBeenCalledExactlyOnceWith(MODEL.modelName)
+      expect(onSelect).toHaveBeenCalledExactlyOnceWith(MODEL.id)
     },
   )
 
   it('renders no trigger label for an unavailable model', () => {
     const { container } = render(
       <ModelSelectorTriggerLabel
-        selectedModel={MODEL.modelName}
+        selectedModel={MODEL.id}
         models={[]}
         autoIntelligence="high"
         isOpen={false}

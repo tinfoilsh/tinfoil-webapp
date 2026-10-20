@@ -2,7 +2,7 @@
 
 import { initializeRenderers } from '@/components/chat/renderers/client'
 import { SharedChatView } from '@/components/chat/shared-chat-view'
-import { displayModels, type BaseModel } from '@/config/models'
+import type { BaseModel } from '@/config/models'
 import { useHarness } from '@/services/harness/provider'
 import { openShare } from '@/services/harness/shares'
 import { HarnessError } from '@/services/harness/sse'
@@ -83,12 +83,15 @@ export default function SharePage({ chatId }: { chatId?: string }) {
 
       try {
         const parsed = await openShare(chatId, shareKeyHex)
-        const chatModel = displayModels(session)[0] ?? {
-          modelName: '',
-          name: 'Shared chat',
-          nameShort: 'Shared chat',
+        const chatModel = session?.models[0] ?? {
+          id: '',
+          label: 'Shared chat',
+          shortLabel: 'Shared chat',
           description: '',
-          image: '',
+          icon: '',
+          badges: [],
+          reasoning: null,
+          deprecated: false,
         }
         setChatData(parsed)
         setModel(chatModel)

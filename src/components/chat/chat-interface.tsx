@@ -141,7 +141,6 @@ const OnboardingView = dynamic(
   { ssr: false },
 )
 
-import { displayModels } from '@/config/models'
 import { verifyChatService } from '@/services/harness/attestation'
 import { useHarness } from '@/services/harness/provider'
 import { isAttachmentsUnavailable } from '@/services/harness/transfer'
@@ -246,7 +245,7 @@ export function ChatInterface({
     router,
     thread.report,
   ])
-  const models = useMemo(() => displayModels(session), [session])
+  const models = useMemo(() => session?.models ?? [], [session])
   const isLoadingConfig = !session
   const hasValidatedModel = !!session
   const loadingState = isStreaming ? 'streaming' : 'idle'

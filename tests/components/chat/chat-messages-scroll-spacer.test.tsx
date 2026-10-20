@@ -25,11 +25,14 @@ vi.mock('@/components/chat/PrintableChat', () => ({
 
 const models: BaseModel[] = [
   {
-    modelName: 'gpt-oss-120b',
-    name: 'GPT-OSS',
-    nameShort: 'GPT-OSS',
-    image: '',
+    id: 'gpt-oss-120b',
+    label: 'GPT-OSS',
+    shortLabel: 'GPT-OSS',
+    icon: '',
     description: '',
+    badges: [],
+    reasoning: null,
+    deprecated: false,
   },
 ]
 
@@ -58,7 +61,7 @@ function props(messages: Message[]): ComponentProps<typeof ChatMessages> {
     messages,
     isDarkMode: false,
     models,
-    selectedModel: models[0].modelName,
+    selectedModel: models[0].id,
     autoIntelligence: 'high',
     setAutoIntelligence: () => {
       throw new Error('Unexpected intelligence change while rendering messages')

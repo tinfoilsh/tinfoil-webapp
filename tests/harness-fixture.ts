@@ -13,18 +13,34 @@ export const testSession: Session = {
   user: { id: '', anonymous: true },
   defaultModel: 'test-model',
   models: [
-    { id: 'test-model', name: 'Test model', multimodal: true, reasoning: null },
+    {
+      id: 'auto',
+      label: 'Auto',
+      shortLabel: 'Auto',
+      icon: '',
+      description: '',
+      badges: [],
+      reasoning: null,
+      deprecated: false,
+      auto: true,
+    },
+    {
+      id: 'test-model',
+      label: 'Test model',
+      shortLabel: 'Test',
+      icon: '',
+      description: '',
+      badges: [],
+      reasoning: null,
+      deprecated: false,
+    },
   ],
   auto: {
-    multimodal: false,
     default: 'high',
-    levels: ['instant', 'low', 'medium', 'high', 'extra', 'max'].map(
-      (id, index) => ({
-        id,
-        label: id[0].toUpperCase() + id.slice(1),
-        value: index * 20,
-      }),
-    ),
+    levels: ['instant', 'low', 'medium', 'high', 'extra', 'max'].map((id) => {
+      const label = id[0].toUpperCase() + id.slice(1)
+      return { id, label, displayLabel: `Auto · ${label}` }
+    }),
   },
   presets: [],
   widgets: [],

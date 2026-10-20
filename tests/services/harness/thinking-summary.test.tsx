@@ -17,11 +17,14 @@ vi.mock('@/utils/error-handling', () => ({
 
 const models: BaseModel[] = [
   {
-    modelName: 'test-model',
-    name: 'Test model',
-    nameShort: 'Test',
-    image: '',
+    id: 'test-model',
+    label: 'Test model',
+    shortLabel: 'Test',
+    icon: '',
     description: '',
+    badges: [],
+    reasoning: null,
+    deprecated: false,
   },
 ]
 

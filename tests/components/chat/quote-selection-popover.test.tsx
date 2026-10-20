@@ -15,16 +15,19 @@ const frames = new Map<number, FrameRequestCallback>()
 let nextFrame = 0
 
 const model: BaseModel = {
-  modelName: 'gpt-oss-120b',
-  name: 'GPT-OSS 120B',
-  nameShort: 'GPT-OSS',
-  image: '',
+  id: 'gpt-oss-120b',
+  label: 'GPT-OSS 120B',
+  shortLabel: 'GPT-OSS',
+  icon: '',
   description: '',
+  badges: [],
+  reasoning: null,
+  deprecated: false,
 }
 
 const customRenderer: MessageRenderer = {
   id: 'selection-test',
-  canRender: (_message, candidate) => candidate.modelName === model.modelName,
+  canRender: (_message, candidate) => candidate.id === model.id,
   render: ({ message, messageIndex }) => (
     <>
       <section>
@@ -65,7 +68,7 @@ function Harness({
           chatId="selection-test"
           isDarkMode={false}
           models={[model]}
-          selectedModel={model.modelName}
+          selectedModel={model.id}
           autoIntelligence="high"
           setAutoIntelligence={() => {}}
         />
@@ -321,7 +324,7 @@ describe.each(['custom', 'default'])(
               retryInfo: null,
             }}
             models={[model]}
-            selectedModel={model.modelName}
+            selectedModel={model.id}
             isDarkMode={false}
           />,
         )

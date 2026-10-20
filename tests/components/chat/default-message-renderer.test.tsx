@@ -12,11 +12,14 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 const model = {
-  modelName: 'current-model',
-  name: 'Current Model',
-  nameShort: 'Current',
-  image: '',
+  id: 'current-model',
+  label: 'Current Model',
+  shortLabel: 'Current',
+  icon: '',
   description: '',
+  badges: [],
+  reasoning: null,
+  deprecated: false,
 } satisfies BaseModel
 
 const Renderer = DefaultMessageRenderer.render
