@@ -69,7 +69,10 @@ export function storeRun(
     (stored) => ({
       ...thread,
       id: run.threadId,
-      messages: withHeldImages(thread.messages, run.images),
+      messages: withHeldImages(
+        thread.messages,
+        new Map([...heldImages(stored?.messages ?? []), ...run.images]),
+      ),
       ...(stored ? pick(stored, changedSince) : {}),
     }),
     run.originals,
