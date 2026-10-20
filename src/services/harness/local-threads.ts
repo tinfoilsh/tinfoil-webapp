@@ -433,7 +433,7 @@ function threadOf(row: Value): StoredThread {
               }),
             }
           : {}),
-      }) as unknown as ThreadMessage
+      }) as ThreadMessage
     }),
   }
 }
@@ -458,13 +458,13 @@ function indexedDBBackend(storage: IndexedDBStorage): Backend {
       return (await storage.getChatSummaries())
         .filter((row) => row.isLocalOnly === true)
         .map((row) => ({
-          row: row as unknown as Value,
+          row: obj(row),
           messageCount: row.messageCount ?? 0,
         }))
     },
     async read(id) {
       const row = await storage.getChat(id)
-      return row?.isLocalOnly ? (row as unknown as Value) : null
+      return row?.isLocalOnly ? obj(row) : null
     },
     async write(thread) {
       const row = rowOf(thread)
@@ -504,12 +504,13 @@ function sessionBackend(): Backend {
   return {
     async summaries() {
       return sessionChatStorage.getAllChats().map((chat) => ({
-        row: chat as unknown as Value,
+        row: obj(chat),
         messageCount: chat.messages.length,
       }))
     },
     async read(id) {
-      const row = sessionChatStorage.getChat(id) as unknown as Value | null
+      const chat = sessionChatStorage.getChat(id)
+      const row = chat && obj(chat)
       const kept = images.get(id)
       if (!row) images.delete(id)
       if (!row || !kept || !isThreadRow(row)) return row
@@ -645,7 +646,7 @@ function createStore(
         .map(({ row, messageCount }) =>
           summaryOf(
             {
-              ...(obj(row.thread) as unknown as StoredThread),
+              ...(obj(row.thread) as Omit<StoredThread, 'messages'>),
               id: str(row.id),
             },
             messageCount,
@@ -735,7 +736,7 @@ export function memoryThreadStore(): LocalThreadStore {
       },
       async read(id) {
         const row = threads.get(id)
-        return row ? (structuredClone(row) as unknown as Value) : null
+        return row ? obj(structuredClone(row)) : null
       },
       async write(thread) {
         threads.set(thread.id, structuredClone(rowOf(thread)))
