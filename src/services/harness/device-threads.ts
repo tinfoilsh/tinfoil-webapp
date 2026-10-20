@@ -26,9 +26,24 @@ const notOnDevice = (what: string) =>
     message: `This ${what} is not stored on this device.`,
   })
 
-// A chat that keeps changing while the harness changes it, as when replies
-// finish meanwhile, is sent again this many times.
-const MAX_CHANGE_ATTEMPTS = 3
+// The settings of a chat the user changes through the harness. A setting
+// changed while a run goes keeps the user's value when the run's thread is
+// stored.
+const USER_SETTINGS = [
+  'title',
+  'titleState',
+  'model',
+  'presetId',
+  'webSearchEnabled',
+] as const
+type UserSetting = (typeof USER_SETTINGS)[number]
+
+const pick = (thread: StoredThread, settings: readonly string[]) =>
+  Object.fromEntries(
+    USER_SETTINGS.filter((setting) => settings.includes(setting)).map(
+      (setting) => [setting, thread[setting]],
+    ),
+  ) as Partial<Pick<StoredThread, UserSetting>>
 
 // The routes that change a chat on this device: the browser sends the chat,
 // and the harness answers with it changed.
@@ -39,12 +54,13 @@ type ChangeRoute =
   | typeof ROUTES.fork
 
 // A device run's final event carries the whole thread, which this device
-// stores as it is, with the images it holds where the harness left them
-// out, and the originals of the images the turn sent. A title the user set
-// on this device during the run stays.
+// stores with the images it holds where the harness left them out, and the
+// originals of the images the turn sent. The settings the user changed
+// after the run's turn read the chat keep the user's values.
 export function storeRun(
   run: DeviceRun,
   event: TerminalEvent,
+  changedSince: readonly string[],
 ): Promise<StoredThread | null> {
   const thread = event.metadata?.thread
   if (!isThread(thread)) return Promise.resolve(null)
@@ -54,9 +70,7 @@ export function storeRun(
       ...thread,
       id: run.threadId,
       messages: withHeldImages(thread.messages, run.images),
-      ...(stored?.titleState === 'manual'
-        ? { title: stored.title, titleState: stored.titleState }
-        : {}),
+      ...(stored ? pick(stored, changedSince) : {}),
     }),
     run.originals,
   )
@@ -107,27 +121,30 @@ export function deviceThreads({
       messages: withHeldImages(thread.messages, heldImages(sent.messages)),
     }
   }
-  // Stores the changed chat in place of the copy it was made from. A copy
-  // that changed meanwhile, as when a reply finished, is sent again.
+  // Stores the changed chat in place of the copy it was made from. When a
+  // run stored its thread meanwhile, the run's thread keeps its messages and
+  // takes the settings the change made; a change of messages is dropped.
   const change = async (
     threadId: string,
     path: ChangeRoute,
     fields: Record<string, unknown>,
   ): Promise<StoredThread | null> => {
-    for (let attempt = 0; attempt < MAX_CHANGE_ATTEMPTS; attempt++) {
-      const sent = await store.get(threadId)
-      if (!sent) return null
-      const changed = await request(path, sent, fields)
-      const before = JSON.stringify(sent)
-      let stale = false
-      const saved = await store.update(threadId, (current) => {
-        if (!current) return null
-        stale = JSON.stringify(current) !== before
-        return stale ? null : { ...changed, id: threadId }
-      })
-      if (!stale) return saved
-    }
-    return null
+    const sent = await store.get(threadId)
+    if (!sent) return null
+    const changed = await request(path, sent, fields)
+    const settings = USER_SETTINGS.filter(
+      (setting) => changed[setting] !== sent[setting],
+    )
+    if (settings.length) controller.settingsChanged(threadId, settings)
+    const before = JSON.stringify(sent)
+    return store.update(threadId, (current) => {
+      if (!current) return null
+      if (JSON.stringify(current) === before)
+        return { ...changed, id: threadId }
+      return path === ROUTES.update
+        ? { ...current, ...pick(changed, settings) }
+        : null
+    })
   }
   return {
     local: true,
@@ -219,7 +236,12 @@ export function deviceThreads({
     // content key, which it never uses. The harness makes a new chat from
     // its first turn, as it does a stored one.
     async prepareTurn(threadId, { defaults, fields }, settings) {
-      const run: DeviceRun = { threadId, store, images: new Map() }
+      const run: DeviceRun = {
+        threadId,
+        store,
+        images: new Map(),
+        since: controller.tick(),
+      }
       controller.begin(run)
       const shown = controller.track()
       let stored: StoredThread | null
@@ -290,6 +312,7 @@ export function deviceThreads({
             [...attachments.uploads.values()],
             heldImages((await transcript(threadId)).messages),
           ),
+          since: controller.tick(),
         },
       }
     },

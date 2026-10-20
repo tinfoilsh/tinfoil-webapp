@@ -255,9 +255,13 @@ describe('local chats of a signed-in account without cloud sync', () => {
         createdAt: 't1',
         content: 'Hi',
       }
+      // The harness stamps the profile's default prompt and its settings.
       returned = storedThread(threadId, {
         title: 'Greeting',
         titleState: 'generated',
+        model: 'deep-model',
+        presetId: 'user:quiet',
+        webSearchEnabled: false,
         lastRequestId: input.clientRequestId,
         messages: [question],
       })
@@ -300,9 +304,9 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(await stored(threadId)).toEqual(returned)
   })
 
-  it("keeps a title set on this device while a reply streams over the run's", async () => {
-    signIn('alice')
-    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+  // A run that streams until released, and returns the thread with a third
+  // message and the title it generated.
+  function heldReply(fields: Partial<StoredThread> = {}) {
     let release!: () => void
     const held = new Promise<void>((resolve) => {
       release = resolve
@@ -310,10 +314,12 @@ describe('local chats of a signed-in account without cloud sync', () => {
     const returned = seeded({
       title: 'Generated',
       titleState: 'generated',
+      lastRequestId: 'request-1',
       messages: [
         ...SEEDED_MESSAGES,
         { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
       ],
+      ...fields,
     })
     client.events.mockImplementation(async function* () {
       yield {
@@ -321,18 +327,22 @@ describe('local chats of a signed-in account without cloud sync', () => {
         event: { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-1' },
       }
       await held
-      yield {
-        id: 1,
-        event: {
-          type: 'STATE_SNAPSHOT',
-          snapshot: {
-            thread: { ...summary(SEEDED_ID, 'Generated'), messageCount: 5 },
-            queue: [],
-          },
-        },
-      }
-      yield { id: 2, event: finished(SEEDED_ID, returned) }
+      yield { id: 1, event: finished(SEEDED_ID, returned) }
     })
+    return { returned, release }
+  }
+  // The harness applies a change of settings to the chat it is sent.
+  const applies = (fields: Partial<StoredThread>) =>
+    client.post.mockImplementationOnce(
+      async (_path: string, input: { thread: StoredThread }) => ({
+        thread: { ...input.thread, ...fields },
+      }),
+    )
+
+  it('keeps the settings the user changed while a reply streams over the run’s', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const { returned, release } = heldReply()
     const { result } = renderHook(() =>
       useThread(SEEDED_ID, null, { local: true }),
     )
@@ -342,24 +352,86 @@ describe('local chats of a signed-in account without cloud sync', () => {
       sending = result.current.send({ content: 'third' })
     })
     await waitFor(() => expect(result.current.running).toBe(true))
-    client.post.mockImplementationOnce(
-      async (_path: string, input: { thread: StoredThread }) => ({
-        thread: { ...input.thread, title: 'Mine', titleState: 'manual' },
-      }),
-    )
 
+    applies({ title: 'Mine', titleState: 'manual' })
     await act(() => result.current.update(SEEDED_ID, { title: 'Mine' }))
+    applies({
+      presetId: 'user:research',
+      model: 'deep-model',
+      webSearchEnabled: false,
+    })
+    await act(() => result.current.selectPreset('user:research'))
     await act(async () => {
       release()
       await sending
     })
 
+    // The chat as kept with the message the run answers.
+    const kept = seeded({
+      updatedAt: expect.any(String),
+      messages: [
+        ...SEEDED_MESSAGES,
+        {
+          id: turn().clientRequestId,
+          role: 'user',
+          createdAt: expect.any(String),
+          content: 'third',
+        },
+      ],
+    })
+    expect(
+      client.post.mock.calls.map(([path, input]) => [path, input]),
+    ).toEqual([
+      [
+        '/v1/threads/update',
+        { id: SEEDED_ID, title: 'Mine', local: true, thread: kept },
+      ],
+      [
+        '/v1/threads/update',
+        {
+          id: SEEDED_ID,
+          presetId: 'user:research',
+          local: true,
+          thread: { ...kept, title: 'Mine', titleState: 'manual' },
+        },
+      ],
+    ])
     expect(await stored(SEEDED_ID)).toEqual({
       ...returned,
       title: 'Mine',
       titleState: 'manual',
+      presetId: 'user:research',
+      model: 'deep-model',
+      webSearchEnabled: false,
     })
     expect(result.current.chat.title).toBe('Mine')
+  })
+
+  it('lets a run keep its values over a change made before it started', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    applies({ presetId: 'user:research', model: 'deep-model' })
+    await act(() => result.current.selectPreset('user:research'))
+    expect(result.current.model).toBe('deep-model')
+    // The turn names another model, which the run's thread takes.
+    const { returned, release } = heldReply({
+      presetId: 'user:research',
+      model: 'test-model',
+    })
+    act(() => result.current.setModel('test-model'))
+
+    await act(async () => {
+      const sending = result.current.send({ content: 'third' })
+      release()
+      await sending
+    })
+
+    expect(turn().options?.model).toBe('test-model')
+    expect(await stored(SEEDED_ID)).toEqual(returned)
   })
 
   const QUESTION = {
@@ -1146,23 +1218,22 @@ describe('stored local chat changes', () => {
     expect(result.current.chat.title).toBe('Front doors')
   })
 
-  it('sends a change again when a reply finished while the harness made it', async () => {
+  it('applies a change to the reply that finished while the harness made it', async () => {
     const { result } = await openSeeded()
     const replied = seeded({
+      lastRequestId: 'request-1',
       messages: [
         ...withPhoto().messages,
         { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
       ],
     })
     let answer!: (value: unknown) => void
-    client.post
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            answer = resolve
-          }),
-      )
-      .mockResolvedValueOnce({ thread: { ...replied, title: 'Front doors' } })
+    client.post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve
+        }),
+    )
 
     let renaming!: Promise<unknown>
     act(() => {
@@ -1171,19 +1242,30 @@ describe('stored local chat changes', () => {
     await waitFor(() => expect(client.post).toHaveBeenCalledTimes(1))
     await localThreadStore('device').update(SEEDED_ID, () => replied)
     await act(async () => {
-      answer({ thread: { ...withPhoto(), title: 'Front doors' } })
+      answer({
+        thread: withoutBytes({
+          ...withPhoto(),
+          title: 'Front doors',
+          titleState: 'manual',
+        }),
+      })
       await renaming
     })
 
-    expect(client.post.mock.calls[1][1]).toEqual({
-      id: SEEDED_ID,
-      title: 'Front doors',
-      local: true,
-      thread: replied,
-    })
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/update',
+      {
+        id: SEEDED_ID,
+        title: 'Front doors',
+        local: true,
+        thread: withPhoto(),
+      },
+      expect.any(AbortSignal),
+    )
     expect(await stored(SEEDED_ID)).toEqual({
       ...replied,
       title: 'Front doors',
+      titleState: 'manual',
     })
   })
 

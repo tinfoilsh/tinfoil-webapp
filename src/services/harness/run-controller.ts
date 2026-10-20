@@ -42,6 +42,8 @@ export interface DeviceRun {
   // The originals of the images the turn sent, stored with the thread.
   originals?: Originals
   runId?: string
+  // When the run's turn read the chat, on the controller's clock.
+  since: number
 }
 
 export interface RunOptions {
@@ -95,6 +97,10 @@ export class RunController {
   // device turn until the turn starts or its stream ends, as when it was
   // queued and then removed.
   private starting: DeviceRun | null = null
+  // When each setting of a device chat last changed through the harness,
+  // on a clock that also dates the turns read from the chat.
+  private clock = 0
+  private readonly settingChanges = new Map<string, Map<string, number>>()
 
   constructor(
     private readonly api: HarnessAPI,
@@ -127,6 +133,25 @@ export class RunController {
   // A device turn about to be sent.
   begin(run: DeviceRun) {
     this.starting = run
+  }
+
+  tick() {
+    return ++this.clock
+  }
+
+  // The user changed settings of a device chat through the harness.
+  settingsChanged(threadId: string, settings: readonly string[]) {
+    const at = this.tick()
+    const changes = this.settingChanges.get(threadId) ?? new Map()
+    for (const setting of settings) changes.set(setting, at)
+    this.settingChanges.set(threadId, changes)
+  }
+
+  // The settings of a device chat changed after a run's turn read it.
+  settingsChangedSince({ threadId, since }: DeviceRun): string[] {
+    return [...(this.settingChanges.get(threadId) ?? [])]
+      .filter(([, at]) => at > since)
+      .map(([setting]) => setting)
   }
 
   settle(run: DeviceRun) {
