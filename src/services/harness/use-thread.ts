@@ -277,6 +277,7 @@ export function useThread(
       const runId = store.liveRun(thread)
       if (!runId) return
       const { input, device: run } = await store.follow(threadId, runId)
+      if (!shown()) return
       void controller.run(ROUTES.follow, input, { device: run, quiet: !!run })
     } finally {
       if (shown()) patch({ loading: false })

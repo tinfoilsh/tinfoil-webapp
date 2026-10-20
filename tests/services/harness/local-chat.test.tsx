@@ -699,6 +699,46 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(result.current.chat.messages).toHaveLength(4)
   })
 
+  it('does not rejoin the run of a chat closed while it opened', async () => {
+    signIn('alice')
+    await reloadDuringRun()
+    const device = localThreadStore('device')
+    const read = device.get.bind(device)
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let reads = 0
+    let followRead!: () => void
+    const following = new Promise<void>((resolve) => {
+      followRead = resolve
+    })
+    vi.spyOn(device, 'get').mockImplementation(async (id) => {
+      // The second read is the one following the run reads the chat with.
+      if (++reads === 2) {
+        followRead()
+        await held
+      }
+      return read(id)
+    })
+    const { result } = renderHook(() => useThread())
+    let opening!: Promise<void>
+    act(() => {
+      opening = result.current.open(SEEDED_ID, { local: true })
+    })
+    await act(() => following)
+    expect(result.current.chat.messages).toHaveLength(4)
+
+    act(() => result.current.newChat())
+    await act(async () => {
+      release()
+      await opening
+    })
+
+    expect(result.current.chat.isBlankChat).toBe(true)
+    expect(client.events).not.toHaveBeenCalled()
+  })
+
   it('leaves the next chat its own prompt when a late first send is dropped', async () => {
     signIn('alice')
     const device = localThreadStore('device')
