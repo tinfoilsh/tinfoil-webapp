@@ -82,4 +82,7 @@ export const ERROR_CODES = {
   attachmentUnsupported: 'ATTACHMENT_UNSUPPORTED',
   // The safeguards flagged the chat, which takes no more turns.
   chatFlagged: 'CHAT_FLAGGED',
+  // The chat already holds the most turns it queues behind a running reply.
+  // It is not the caller's quota.
+  queueFull: 'QUEUE_FULL',
 } as const

@@ -36,6 +36,7 @@ type ErrorKind =
   | 'auth'
   | 'rate-limit'
   | 'busy'
+  | 'queue-full'
   | 'context-length'
   | 'too-large'
   | 'model'
@@ -89,6 +90,12 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
     title: 'Too many requests right now',
     suggestion:
       'Wait a moment, then resend your message. Your message was not lost.',
+  },
+  'queue-full': {
+    kind: 'queue-full',
+    title: 'Too many messages are waiting in this chat',
+    suggestion:
+      'Wait for a queued message to be sent, then resend yours. Your message was not lost.',
   },
   'too-large': {
     kind: 'too-large',
@@ -176,6 +183,8 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
       return quotaClassification(error)
     case ERROR_CODES.rateLimited:
       return CLASSIFICATIONS.busy
+    case ERROR_CODES.queueFull:
+      return CLASSIFICATIONS['queue-full']
     case ERROR_CODES.contextTooLarge:
       return CLASSIFICATIONS['context-length']
     case ERROR_CODES.threadTooLarge:
@@ -231,7 +240,7 @@ export function StreamErrorBanner({
   // like it might just reconnect). While offline the resend is gated —
   // it would only burn the automatic in-request retries and fail again.
   const isConnectionError = kind === 'connection'
-  const isResend = isConnectionError || kind === 'busy'
+  const isResend = isConnectionError || kind === 'busy' || kind === 'queue-full'
   // A request refused for an exhausted quota or the chat's size fails
   // identically until that changes, so a retry button is just an invitation
   // to frustration.
