@@ -7,6 +7,7 @@ import type { Turn } from '@/services/harness/types'
 import { messageView } from '@/services/harness/view-model'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LoadingState, Message } from '../types'
+const CONTEXT_UNREADABLE = 'The chat could not be read.'
 export interface SidebarChatState {
   messages: Message[]
   quote: string | null
@@ -28,6 +29,8 @@ export function useSidebarChat({
   const [controller] = useState(() => new RunController(api))
   const state = useStore(controller.view)
   const [quote, setQuote] = useState<string | null>(null)
+  // Why the thread the ask reads could not be read, which no stream reports.
+  const [contextError, setContextError] = useState<string | null>(null)
   // The ask's run, which the harness runs as a thread of its own, and the
   // key it carries.
   const asked = useRef<{ key?: string; threadId?: string; runId?: string }>({})
@@ -38,6 +41,7 @@ export function useSidebarChat({
     controller.reset()
     asked.current = {}
     setQuote(null)
+    setContextError(null)
   }
   useEffect(() => () => controller.reset(), [controller])
   const askQuote = (text: string) => {
@@ -49,7 +53,10 @@ export function useSidebarChat({
       try {
         thread = await context()
       } catch (cause) {
-        if (shown()) controller.fail(cause)
+        if (shown())
+          setContextError(
+            cause instanceof Error ? cause.message : CONTEXT_UNREADABLE,
+          )
         return
       }
       if (!shown()) return
@@ -68,17 +75,19 @@ export function useSidebarChat({
   const isStreaming = state.status === 'streaming'
   // A failed ask shows why as an error reply, also when it failed before the
   // harness sent any message.
+  const failed =
+    state.status === 'error' && state.error ? state.error.message : contextError
   const failure = useMemo<Message | null>(
     () =>
-      state.status === 'error' && state.error
+      failed
         ? {
             role: 'assistant',
-            content: `Error: ${state.error.message}`,
+            content: `Error: ${failed}`,
             timestamp: new Date(),
             isError: true,
           }
         : null,
-    [state.status, state.error],
+    [failed],
   )
   return {
     messages: [

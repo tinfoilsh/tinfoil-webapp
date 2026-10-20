@@ -119,3 +119,33 @@ it('shows why an ask failed before the harness sent any message, and the quota i
     expect.any(AbortSignal),
   )
 })
+
+it('shows why the chat an ask reads could not be read, and sends no turn', async () => {
+  const { result } = renderHook(() =>
+    useSidebarChat({
+      context: async () => {
+        throw new DOMException(
+          'The chat database is unavailable',
+          'UnknownError',
+        )
+      },
+      options: { model: 'test-model' },
+    }),
+  )
+
+  act(() => result.current.askQuote('What does this mean?'))
+
+  await waitFor(() =>
+    expect(result.current.messages).toEqual([
+      {
+        role: 'assistant',
+        content: 'Error: The chat database is unavailable',
+        timestamp: expect.any(Date),
+        isError: true,
+      },
+    ]),
+  )
+  expect(vi.mocked(harnessAPI().client.events)).not.toHaveBeenCalled()
+  act(() => result.current.reset())
+  expect(result.current.messages).toEqual([])
+})
