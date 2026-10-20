@@ -11,7 +11,6 @@ import { sessionChatStorage } from '@/services/storage/session-storage'
 import { logError } from '@/utils/error-handling'
 import { ERROR_CODES, ROUTES } from './protocol'
 import { harnessAPI } from './runtime'
-import { MAX_TURN_REQUEST_BYTES, requestBytes } from './shares'
 import { HarnessError } from './sse'
 import type {
   AttachmentDescriptor,
@@ -254,85 +253,41 @@ export function isThread(value: unknown): value is StoredThread {
   )
 }
 
-async function requestUpgrade(rows: readonly Value[]): Promise<StoredThread[]> {
-  const result = await harnessAPI().post<{ threads?: unknown }>(
-    ROUTES.upgrade,
-    { threads: rows },
-    { keyless: true },
-  )
-  const threads = arr(result?.threads)
-  if (threads.length !== rows.length || !threads.every(isThread))
-    throw new HarnessError({
-      code: ERROR_CODES.upstreamRefused,
-      message: 'The chat service returned invalid chats.',
-    })
-  return threads.map((thread, index) => ({
-    ...(thread as StoredThread),
-    id: str(rows[index].id) || (thread as StoredThread).id,
-  }))
-}
-
-// Upgrades a batch of rows in one request. A batch the harness refuses for a
-// row in it is split, so that only the rows it refuses alone are left out.
-async function upgradeBatch(
-  rows: readonly Value[],
-): Promise<(StoredThread | null)[]> {
+// Upgrades a chat in the previous client's format, from this device or an
+// export or backup, into a thread through the harness's reader of old chats,
+// one chat per request. A chat the harness refuses, as one too large to
+// send, is handed back as null.
+async function upgradeRow(row: Value): Promise<StoredThread | null> {
+  let result: { threads?: unknown }
   try {
-    return await requestUpgrade(rows)
+    result = await harnessAPI().post<{ threads?: unknown }>(
+      ROUTES.upgrade,
+      { threads: [row] },
+      { keyless: true },
+    )
   } catch (cause) {
     if (
-      !(cause instanceof HarnessError) ||
-      !REFUSED_ROW_STATUSES.has(cause.status ?? 0)
+      cause instanceof HarnessError &&
+      REFUSED_ROW_STATUSES.has(cause.status ?? 0)
     )
-      throw cause
-    if (rows.length === 1) return [null]
-    const threads: (StoredThread | null)[] = []
-    for (const row of rows) threads.push(...(await upgradeBatch([row])))
-    return threads
+      return null
+    throw cause
   }
-}
-
-// Upgrades chats in the previous client's format, from this device or an
-// export or backup, into threads through the harness's reader of old chats,
-// in requests no larger than the harness reads. A row it cannot upgrade, as
-// one too large to send, is handed back as null.
-async function upgradeInBatches(
-  rows: AsyncIterable<Value> | Iterable<Value>,
-  upgraded: (row: Value, thread: StoredThread | null) => Promise<void>,
-) {
-  let batch: Value[] = []
-  let bytes = 0
-  const flush = async () => {
-    const sent = batch
-    batch = []
-    bytes = 0
-    if (!sent.length) return
-    const threads = await upgradeBatch(sent)
-    for (const [index, row] of sent.entries())
-      await upgraded(row, threads[index])
-  }
-  for await (const row of rows) {
-    // Each row also takes the comma that separates it from the next.
-    const size = requestBytes(row) + 1
-    if (size > MAX_TURN_REQUEST_BYTES) {
-      await upgraded(row, null)
-      continue
-    }
-    if (bytes + size > MAX_TURN_REQUEST_BYTES) await flush()
-    batch.push(row)
-    bytes += size
-  }
-  await flush()
+  const [thread, ...rest] = arr(result?.threads)
+  if (rest.length || !isThread(thread))
+    throw new HarnessError({
+      code: ERROR_CODES.upstreamRefused,
+      message: 'The chat service returned an invalid chat.',
+    })
+  return { ...thread, id: str(row.id) || thread.id }
 }
 
 export async function upgradeThreads(
   rows: readonly object[],
 ): Promise<(StoredThread | null)[]> {
-  const threads = new Map<Value, StoredThread | null>()
-  await upgradeInBatches(rows as Value[], async (row, thread) => {
-    threads.set(row, thread)
-  })
-  return (rows as Value[]).map((row) => threads.get(row) ?? null)
+  const threads: (StoredThread | null)[] = []
+  for (const row of rows as Value[]) threads.push(await upgradeRow(row))
+  return threads
 }
 
 // A chat as a row the previous client's storage reads: its messages stay on
@@ -597,8 +552,9 @@ function createStore(
         }
       }
       const written: string[] = []
-      await upgradeInBatches(rows(), async (row, thread) => {
+      for await (const row of rows()) {
         const id = str(row.id)
+        const thread = await upgradeRow(row)
         if (!thread) {
           logError(
             'Failed to upgrade a chat stored on this device',
@@ -609,7 +565,7 @@ function createStore(
               metadata: { chatId: id },
             },
           )
-          return
+          continue
         }
         const saved = await serialize(id, async () => {
           const current = await backend.read(id)
@@ -617,7 +573,7 @@ function createStore(
           return backend.write({ ...thread, id }, new Map())
         })
         if (saved) written.push(id)
-      })
+      }
       if (written.length) emit({ reason: 'save', ids: written })
     })().finally(() => {
       upgrading = null

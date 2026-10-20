@@ -214,7 +214,7 @@ describe('device store', () => {
       expect(upgrades()).toHaveLength(1)
     })
 
-    it('upgrades the others when the harness refuses one of them', async () => {
+    it('sends each one alone, and upgrades the others when the harness refuses one', async () => {
       signIn()
       await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))
       await indexedDBStorage.saveChat(legacyRow(OTHER_ID, 'Unreadable'))
@@ -234,16 +234,9 @@ describe('device store', () => {
       expect(await store.get(CHAT_ID)).toEqual(upgraded(CHAT_ID, 'Cats'))
 
       const sent = upgrades().map(([, input]) =>
-        input.threads.map((row: { id: string }) => row.id).sort(),
+        input.threads.map((row: { id: string }) => row.id),
       )
-      expect(sent).toHaveLength(3)
-      expect(sent).toEqual(
-        expect.arrayContaining([
-          [CHAT_ID, OTHER_ID].sort(),
-          [CHAT_ID],
-          [OTHER_ID],
-        ]),
-      )
+      expect(sent.sort()).toEqual([[OTHER_ID], [CHAT_ID]])
       expect(await store.get(OTHER_ID)).toBeNull()
       const unreadable = (await rawRows('chats')).find(
         (row) => row.id === OTHER_ID,
