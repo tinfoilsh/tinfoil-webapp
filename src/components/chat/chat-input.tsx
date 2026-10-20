@@ -2,8 +2,8 @@ import { useProject } from '@/components/project'
 import { cn } from '@/components/ui/utils'
 import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
-import { ROUTES } from '@/services/harness/protocol'
 import { useHarness } from '@/services/harness/provider'
+import { transcribe } from '@/services/speech/transcribe'
 import { logError } from '@/utils/error-handling'
 import {
   TfAttachment,
@@ -492,14 +492,7 @@ export function ChatInput({
         setIsTranscribing(true)
 
         const file = new File([blob], 'audio.webm', { type: 'audio/webm' })
-        // The harness transcribes without the content key, so a chat kept
-        // on the device can be dictated to while the key is locked.
-        const { text } = await api.upload<{ text: string }>(
-          ROUTES.transcriptions,
-          file,
-          {},
-          { keyless: true },
-        )
+        const text = await transcribe(file)
 
         if (text) {
           const currentInput = input.trim()
@@ -533,7 +526,7 @@ export function ChatInput({
         setIsTranscribing(false)
       }
     },
-    [api, setInput, toast, input, resizeTextarea],
+    [setInput, toast, input, resizeTextarea],
   )
 
   const isWebMAudioSupported = () => {

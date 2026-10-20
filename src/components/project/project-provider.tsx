@@ -1,5 +1,6 @@
 import { PROJECTS_CHANGED } from '@/hooks/use-projects'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
+import * as projects from '@/services/harness/projects'
 import { useHarness } from '@/services/harness/provider'
 import type { Project, ProjectDocument } from '@/types/project'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
@@ -48,9 +49,7 @@ export function ProjectProvider({
       const version = ++generation.current
       setLoadingProject({ id, name: name ?? 'Loading…' })
       try {
-        const project = await api.post<
-          Project & { documents: ProjectDocument[] }
-        >('/v1/projects/get', { id })
+        const project = await projects.getProject(api, id)
         if (
           version !== generation.current ||
           !hasPremiumAccessRef.current ||
@@ -115,22 +114,19 @@ export function ProjectProvider({
     exitProjectMode,
     createProject: async (data) => {
       requirePremiumAccess()
-      const project = await api.post<Project>(
-        '/v1/projects/create',
-        data as unknown as Record<string, unknown>,
-      )
+      const project = await projects.createProject(api, data)
       changed()
       return project
     },
     updateProject: async (id, data) => {
       requirePremiumAccess()
-      await api.post('/v1/projects/update', { id, ...data })
+      await projects.updateProject(api, id, data)
       await reloadProject(id)
       changed()
     },
     deleteProject: async (id) => {
       requirePremiumAccess()
-      await api.post('/v1/projects/delete', { id })
+      await projects.deleteProject(api, id)
       if (activeProject?.id === id) exitProjectMode()
       changed()
     },
@@ -138,11 +134,7 @@ export function ProjectProvider({
       requirePremiumAccess()
       if (!activeProject) throw new Error('Select a project first.')
       const projectId = activeProject.id
-      const doc = await api.upload<ProjectDocument>(
-        '/v1/projects/documents/upload',
-        file,
-        { projectId },
-      )
+      const doc = await projects.uploadProjectDocument(api, projectId, file)
       await reloadProject(projectId)
       return doc
     },
@@ -150,10 +142,7 @@ export function ProjectProvider({
       requirePremiumAccess()
       if (!activeProject) return
       const projectId = activeProject.id
-      await api.post('/v1/projects/documents/delete', {
-        projectId,
-        documentId,
-      })
+      await projects.deleteProjectDocument(api, projectId, documentId)
       await reloadProject(projectId)
     },
     refreshDocuments,

@@ -34,6 +34,7 @@ import {
   localThreadStore,
   upgradeThreads,
 } from '@/services/harness/local-threads'
+import { deleteAllProjects } from '@/services/harness/projects'
 import { useHarness, useProfileSetting } from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
 import { useLocalChatsSetting } from '@/services/harness/storage-mode'
@@ -1912,7 +1913,7 @@ export function SettingsModal({
       return
     setIsDeletingAllProjects(true)
     try {
-      await api.post('/v1/projects/delete-all')
+      await deleteAllProjects(api)
       onAllProjectsDeleted?.()
       await refreshProjects()
       await onChatsUpdated?.()

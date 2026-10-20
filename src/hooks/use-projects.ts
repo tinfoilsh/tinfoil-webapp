@@ -1,3 +1,4 @@
+import { listProjects, type ProjectPage } from '@/services/harness/projects'
 import { useHarness } from '@/services/harness/provider'
 import { getView, type HarnessAPI } from '@/services/harness/runtime'
 import type { Project } from '@/types/project'
@@ -62,8 +63,7 @@ class ProjectList {
         const all: Project[] = []
         let cursor: string | null = null
         do {
-          const page: { projects: Project[]; nextCursor: string | null } =
-            await this.api.post('/v1/projects/list', { cursor })
+          const page: ProjectPage = await listProjects(this.api, cursor)
           all.push(...page.projects)
           cursor = page.nextCursor
         } while (cursor)
