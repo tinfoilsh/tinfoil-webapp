@@ -7,7 +7,7 @@ import {
   runOf,
   type ChatState,
 } from './reducer'
-import type { HarnessAPI, RunSpend } from './runtime'
+import type { HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import { createStore } from './store'
 import type {
@@ -32,15 +32,6 @@ const gone = (cause: unknown) =>
   cause instanceof HarnessError &&
   (cause.code === ERROR_CODES.alreadyApplied ||
     cause.code === ERROR_CODES.runNotFound)
-
-function runSpend(value: unknown): RunSpend | undefined {
-  if (!value || typeof value !== 'object') return undefined
-  const { prompt_tokens: prompt, completion_tokens: completion } =
-    value as Record<string, unknown>
-  return typeof prompt === 'number' && typeof completion === 'number'
-    ? { prompt, completion }
-    : undefined
-}
 
 // A run of a chat the browser stores. Its final event returns the whole
 // thread, without the image bytes the browser holds for it.
@@ -273,19 +264,15 @@ export class RunController {
       cause instanceof HarnessError ? cause.detail : CONNECTION_LOST
     this.errorAt = Date.now()
     this.view.update((state) => ({ ...state, error: detail, status: 'error' }))
-    this.api.reportRefusal(detail)
+    this.api.reportRateLimit(detail.rateLimit)
   }
 
-  // The quota a run reports, and its spend once it finishes.
+  // The quota a run reports as it starts and as it ends.
   private reportQuota(event: HarnessEvent) {
     if (event.type === 'STATE_SNAPSHOT')
       this.api.reportRateLimit(event.snapshot.rateLimit)
     else if (isTerminal(event))
-      this.api.reportRateLimit(
-        event.metadata?.rateLimit,
-        runSpend(event.metadata?.usage),
-      )
-    if (event.type === 'RUN_ERROR') this.api.reportRefusal(event)
+      this.api.reportRateLimit(event.metadata?.rateLimit)
   }
 
   cancel(input: { key?: string; threadId: string | null; runId?: string }) {

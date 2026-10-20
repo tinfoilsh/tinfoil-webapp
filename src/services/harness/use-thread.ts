@@ -83,7 +83,8 @@ export function useThread(
       )
         return
       controller.errorAt = Date.now()
-      if (cause instanceof HarnessError) api.reportRefusal(cause.detail)
+      if (cause instanceof HarnessError)
+        api.reportRateLimit(cause.detail.rateLimit)
       patch({
         failure: {
           message:

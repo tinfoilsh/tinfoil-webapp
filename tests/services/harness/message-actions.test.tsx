@@ -424,17 +424,23 @@ describe('retrying after an error', () => {
     expect(result.current.status).toBe('idle')
   })
 
-  it('records the exhausted quota a refused turn names', async () => {
+  it('shows the quota a refused turn reports', async () => {
     const { result } = openCloud()
     await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))
+    const rateLimit = {
+      kind: 'free_daily' as const,
+      maxRequests: 20,
+      remaining: 0,
+      resetsAt: '2026-07-25T00:00:00Z',
+    }
     client.events.mockImplementationOnce(async function* () {
       throw new HarnessError(
         {
           code: 'QUOTA_EXHAUSTED',
-          message: 'The hourly usage limit is reached',
-          kind: 'hourly',
-          resetsAt: '2026-07-24T11:00:00Z',
-          retryAfter: 900,
+          message: 'The daily limit is reached',
+          kind: 'free_daily',
+          resetsAt: '2026-07-25T00:00:00Z',
+          rateLimit,
         },
         429,
       )
@@ -442,12 +448,7 @@ describe('retrying after an error', () => {
 
     await act(() => result.current.send({ content: 'more' }))
 
-    expect(getView().rateLimit).toEqual({
-      kind: 'hourly',
-      maxRequests: 0,
-      remaining: 0,
-      resetsAt: '2026-07-24T11:00:00Z',
-    })
+    expect(getView().rateLimit).toEqual(rateLimit)
   })
 })
 

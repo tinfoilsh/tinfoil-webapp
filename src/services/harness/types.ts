@@ -15,6 +15,8 @@ export interface HarnessErrorBody {
   status?: number
   // A document conversion failure's document_* code.
   upstreamCode?: string
+  // The quota after the request, which an exhausted quota's refusal reports.
+  rateLimit?: RateLimit
 }
 
 export interface Attachment {

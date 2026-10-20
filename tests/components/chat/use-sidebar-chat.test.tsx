@@ -66,7 +66,13 @@ it('stops streaming a cancelled ask and keeps its partial answer', async () => {
   )
 })
 
-it('shows why an ask failed before the harness sent any message, and records the quota it used up', async () => {
+it('shows why an ask failed before the harness sent any message, and the quota it reports', async () => {
+  const rateLimit = {
+    kind: 'free_daily' as const,
+    maxRequests: 20,
+    remaining: 0,
+    resetsAt: '2026-05-02T00:00:00Z',
+  }
   vi.mocked(harnessAPI().client.events).mockImplementation(async function* () {
     throw new HarnessError(
       {
@@ -74,6 +80,7 @@ it('shows why an ask failed before the harness sent any message, and records the
         message: 'The daily limit is reached',
         kind: 'free_daily',
         resetsAt: '2026-05-02T00:00:00Z',
+        rateLimit,
       },
       429,
     )
@@ -98,12 +105,7 @@ it('shows why an ask failed before the harness sent any message, and records the
     ]),
   )
   expect(result.current.isStreaming).toBe(false)
-  expect(getView().rateLimit).toEqual({
-    kind: 'free_daily',
-    maxRequests: 0,
-    remaining: 0,
-    resetsAt: '2026-05-02T00:00:00Z',
-  })
+  expect(getView().rateLimit).toEqual(rateLimit)
   expect(vi.mocked(harnessAPI().client.events)).toHaveBeenCalledWith(
     '/v1/threads/turn',
     expect.objectContaining({
