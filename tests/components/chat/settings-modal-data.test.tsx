@@ -187,9 +187,9 @@ describe('exporting chats from the Data tab', () => {
       path: '/v1/export',
       parts: [
         ['options', { format: 'conversations' }],
-        ['thread', photoChat],
-        ['file', photo.id, 'image/png', 'original'],
         ['thread', photoFork],
+        ['file', photo.id, 'image/png', 'original'],
+        ['thread', photoChat],
       ],
     })
     expect(page.toast).toHaveBeenCalledExactlyOnceWith({
@@ -212,9 +212,9 @@ describe('exporting chats from the Data tab', () => {
 
     expect((await sentForm()).parts).toEqual([
       ['options', { format: 'conversations', key: KEY }],
-      ['thread', photoChat],
-      ['file', photo.id, 'image/png', 'original'],
       ['thread', photoFork],
+      ['file', photo.id, 'image/png', 'original'],
+      ['thread', photoChat],
     ])
     expect(downloads.map(({ name }) => name)).toEqual(['tinfoil-chats.zip'])
   })

@@ -11,7 +11,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { chatActions } from './chat-actions'
 import { useChatList } from './chat-list'
 import { chatTurns } from './chat-turns'
-import { checkUpload } from './composer'
 import { deviceThreads, storeRun } from './device-threads'
 import { localThreadStore, memoryThreadStore } from './local-threads'
 import { OpenAttachments } from './open-attachments'
@@ -44,7 +43,8 @@ export function useThread(
   projectId?: string | null,
   route: ThreadRoute = {},
 ) {
-  const { api, session, profile, profileReady, keyReady, cloud } = useHarness()
+  const { api, session, profile, profileReady, keyReady, cloud, chatRevision } =
+    useHarness()
   const [{ open, controller, attachments, moving, temporaryChats }] = useState(
     () => ({
       open: createStore<OpenChat>({
@@ -108,7 +108,15 @@ export function useThread(
     () => localThreadStore(api.userId ? 'device' : 'tab'),
     [api.userId],
   )
-  const list = useChatList({ api, cloud, keyReady, projectId, device, report })
+  const list = useChatList({
+    api,
+    cloud,
+    keyReady,
+    projectId,
+    device,
+    report,
+    revision: chatRevision,
+  })
   const { clearCloud } = list
   const cloudStore = useMemo(
     () => cloudThreads(api, list.cloud, attachments),
@@ -319,6 +327,63 @@ export function useThread(
   const state = useStore(controller.view)
   const deviceRuns = useStore(controller.deviceRuns)
   useEffect(() => {
+    if (
+      !chatRevision ||
+      !keyReady ||
+      onDevice(open.get()) ||
+      !open.get().id ||
+      open.get().loading ||
+      open.get().unsaved === open.get().id ||
+      state.status !== 'idle'
+    )
+      return
+    const id = open.get().id!
+    const shown = controller.track()
+    let cancelled = false
+    void (async () => {
+      const thread = await cloudStore.get(id)
+      if (!thread) return
+      const wanted = controller.view.get().messages.length
+      while (thread.hasOlder && thread.messages.length < wanted) {
+        const older = await cloudStore.older(id, thread.messages[0]?.id)
+        if (!older.messages.length) break
+        thread.messages.unshift(...older.messages)
+        thread.hasOlder = older.hasOlder
+      }
+      if (cancelled || !shown() || controller.view.get().status !== 'idle')
+        return
+      controller.view.set(initialChat(thread))
+      patch({
+        model: thread.model,
+        chosenPresetId: thread.presetId ?? null,
+        presetChosen: true,
+        webSearch: undefined,
+      })
+    })().catch((cause) => {
+      if (cancelled || !shown()) return
+      if (
+        cause instanceof HarnessError &&
+        cause.code === ERROR_CODES.threadNotFound
+      ) {
+        reset()
+        patch({ notFound: true })
+      } else report(cause)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    chatRevision,
+    keyReady,
+    cloudStore,
+    controller,
+    open,
+    patch,
+    report,
+    reset,
+    state.status,
+  ])
+  useEffect(() => {
     if (session && !openState.model)
       patch({ model: profile.selectedModel || session.defaultModel })
   }, [session, profile.selectedModel, openState.model, patch])
@@ -367,7 +432,6 @@ export function useThread(
   // image's descriptor carries the copy the harness gives models; the file
   // itself is kept apart, to show and download.
   async function upload(file: File): Promise<AttachmentDescriptor> {
-    if (session) checkUpload(file, session.composer.attachments)
     const { attachment } = await api.upload<{
       attachment: AttachmentDescriptor
     }>(ROUTES.attachmentUpload, file, {}, { keyless: true })
@@ -473,12 +537,25 @@ export function useThread(
   return {
     chat,
     chats: [
-      ...(cloud ? list.cloudListed.map((t) => threadView(t)) : []),
+      ...(cloud
+        ? [
+            ...list.cloudListed,
+            ...list.pinnedListed.filter(
+              (pin) => !list.cloudListed.some((chat) => chat.id === pin.id),
+            ),
+          ].map((t) => threadView(t))
+        : []),
       ...list.deviceListed.map((t) => ({
         ...threadView(t),
         isLocalOnly: true,
       })),
-    ].map(liveRun),
+    ]
+      .map(liveRun)
+      .sort(
+        (a, b) =>
+          new Date(b.activityAt ?? b.createdAt).getTime() -
+          new Date(a.activityAt ?? a.createdAt).getTime(),
+      ),
     model,
     setModel: (next: string) => patch({ model: next, modelChosen: true }),
     presetId,

@@ -64,7 +64,9 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
         const initialization = userId
           ? encryptionService.initialize().then(enableCloudSyncForExistingKey)
           : Promise.resolve()
-        void initialization.then(() => api.refresh()).catch(reportHarnessError)
+        void initialization
+          .then(() => api.refresh({ credentials: true }))
+          .catch(reportHarnessError)
       }
       const unlock = () => {
         api.invalidateKey()
@@ -74,11 +76,13 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
         api.invalidateKey()
         void api.refreshProfile().catch(reportHarnessError)
       }
+      const stopChanges = api.watchChanges()
       window.addEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, unlock)
       refresh()
       window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, keyChanged)
       setAccount(userId ?? 'anonymous')
       return () => {
+        stopChanges()
         window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, keyChanged)
         window.removeEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, unlock)
         release?.()

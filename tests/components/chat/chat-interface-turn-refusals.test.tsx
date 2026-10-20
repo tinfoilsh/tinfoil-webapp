@@ -1,10 +1,12 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
+import { getView } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Thread, Turn } from '@/services/harness/types'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { client, signIn } from '../../harness-fixture'
+import { client, signIn, testSession } from '../../harness-fixture'
 import { refuseFetch } from './chat-interface-fixture'
+import { chatPage } from './chat-page-mocks'
 
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
 vi.mock('next/router', async () => (await import('./chat-page-mocks')).router)
@@ -72,6 +74,7 @@ const thread: Thread = {
 const turn = (call: number) => client.events.mock.calls[call][1] as Turn
 
 beforeEach(() => {
+  chatPage.premium = false
   refuseFetch()
   signIn({ cloud: true })
   client.post.mockImplementation(async (path: string) => {
@@ -82,6 +85,39 @@ beforeEach(() => {
 })
 
 describe('a turn the harness refuses', () => {
+  it('rechecks the harness entitlement after a subscription upgrade', async () => {
+    const api = signIn({
+      cloud: true,
+      session: {
+        ...testSession,
+        rateLimit: { kind: 'free_daily', maxRequests: 5, remaining: 0 },
+      },
+    })
+    api.reportRateLimit({ kind: 'free_daily', maxRequests: 5, remaining: 0 })
+    client.post.mockImplementation(async (path, input) => {
+      if (path === '/v1/session') {
+        expect(input).toEqual({ refreshCredentials: true })
+        return {
+          ...testSession,
+          rateLimit: {
+            kind: 'hourly',
+            inputTokens: { max: 10000, used: 0, remaining: 10000 },
+          },
+        }
+      }
+      if (path === '/v1/profile/get') return {}
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      throw new Error(`Unexpected ${path}`)
+    })
+    const { rerender } = render(<ChatInterface />)
+    expect(getView().rateLimit?.kind).toBe('free_daily')
+    await act(async () => {
+      chatPage.premium = true
+      rerender(<ChatInterface />)
+    })
+    await waitFor(() => expect(getView().rateLimit?.kind).toBe('hourly'))
+    expect(api.cloud).toBe(true)
+  })
   it('explains a full queue without the quota or upgrade, and resends the message', async () => {
     const { messages: _messages, hasOlder: _hasOlder, ...summary } = thread
     let release!: () => void

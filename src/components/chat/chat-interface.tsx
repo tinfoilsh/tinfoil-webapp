@@ -271,11 +271,26 @@ export function ChatInterface({
       }
     : null
   // A capped subscriber's cap may lift before it resets.
-  const checkQuota = () => api.refresh()
+  const checkQuota = () => api.refresh({ credentials: true })
   const dismissStreamError = thread.dismissError
   const { isLoading: isSubscriptionLoading, chat_subscription_active } =
     useSubscriptionStatus()
   const isPremium = !isSubscriptionLoading && chat_subscription_active
+  const previousSubscription = useRef(chat_subscription_active)
+  useEffect(() => {
+    if (isSubscriptionLoading) return
+    const changed = previousSubscription.current !== chat_subscription_active
+    previousSubscription.current = chat_subscription_active
+    if (changed && isSignedIn) {
+      void api.refresh({ credentials: true }).catch(thread.report)
+    }
+  }, [
+    api,
+    isSignedIn,
+    isSubscriptionLoading,
+    chat_subscription_active,
+    thread.report,
+  ])
   // The composer only uses premium status to decide which controls to show,
   // and the server enforces access on every request. Using the cached value
   // while auth loads keeps the toolbar from reflowing once Clerk resolves.
@@ -449,7 +464,7 @@ export function ChatInterface({
     if (
       isChatHydrating ||
       processedDocuments.some((d) => d.isUploading) ||
-      (!input.trim() && !processedDocuments.length)
+      (!input.trim() && !quote?.trim() && !processedDocuments.length)
     )
       return
     const result = handleQuery(input, {
@@ -1431,6 +1446,7 @@ export function ChatInterface({
           : c.messages.length,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
+        activityAt: c.activityAt,
         projectId: c.projectId,
         isBlankChat: c.isBlankChat,
         isTemporary: c.isTemporary,

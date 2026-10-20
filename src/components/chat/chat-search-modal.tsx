@@ -33,6 +33,7 @@ export interface SearchableChat {
   id: string
   title: string
   updatedAt?: Date | string
+  activityAt?: Date | string
   projectId?: string
   isBlankChat?: boolean
   isTemporary?: boolean
@@ -102,7 +103,11 @@ export function ChatSearchModal({
     () =>
       [...savedChats]
         .filter((chat) => !chat.projectId)
-        .sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt))
+        .sort(
+          (a, b) =>
+            toTime(b.activityAt ?? b.updatedAt) -
+            toTime(a.activityAt ?? a.updatedAt),
+        )
         .slice(0, CONSTANTS.SEARCH_RECENT_CHAT_COUNT),
     [savedChats],
   )
@@ -120,6 +125,7 @@ export function ChatSearchModal({
             id: result.id,
             title: result.title,
             updatedAt: result.updatedAt,
+            activityAt: result.activityAt,
             projectId: result.projectId ?? undefined,
           }))
       const remoteIds = new Set(remoteMatches.map((chat) => chat.id))

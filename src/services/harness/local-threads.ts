@@ -95,11 +95,26 @@ export function newThread(id: string): StoredThread {
 // A chat on this device belongs to no project, is no favorite, and has no
 // run the harness could report.
 export function localSummary(thread: StoredThread): ThreadSummary {
-  return summaryOf(thread, thread.messages.length)
+  return summaryOf(
+    { ...thread, activityAt: activityAt(thread.createdAt, thread.messages) },
+    thread.messages.length,
+  )
+}
+
+function activityAt(
+  createdAt: string,
+  messages: readonly ThreadMessage[],
+): string {
+  let latest = Date.parse(createdAt) || 0
+  for (const message of messages) {
+    const time = Date.parse(message.createdAt)
+    if (time > latest) latest = time
+  }
+  return new Date(latest).toISOString()
 }
 
 function summaryOf(
-  thread: Omit<StoredThread, 'messages'>,
+  thread: Omit<StoredThread, 'messages'> & { activityAt?: string },
   messageCount: number,
 ): ThreadSummary {
   return {
@@ -108,6 +123,7 @@ function summaryOf(
     titleState: thread.titleState,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
+    activityAt: thread.activityAt ?? thread.createdAt,
     model: thread.model ?? '',
     projectId: null,
     pinned: false,
@@ -322,6 +338,7 @@ function legacyOriginals(row: Value, thread: StoredThread): Originals {
 // the row, so IndexedDB keeps their attachments' content apart, and the
 // rest of the thread is kept with it as it is.
 interface ThreadRow {
+  activityAt: string
   id: string
   isLocalOnly: true
   threadFormat: typeof THREAD_FORMAT
@@ -334,6 +351,7 @@ interface ThreadRow {
 
 function rowOf({ messages, ...thread }: StoredThread): ThreadRow {
   return {
+    activityAt: activityAt(thread.createdAt, messages),
     id: thread.id,
     isLocalOnly: true,
     threadFormat: THREAD_FORMAT,
@@ -632,11 +650,12 @@ function createStore(
             {
               ...(obj(row.thread) as Omit<StoredThread, 'messages'>),
               id: str(row.id),
+              activityAt: str(row.activityAt) || undefined,
             },
             messageCount,
           ),
         )
-        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+        .sort((a, b) => Date.parse(b.activityAt!) - Date.parse(a.activityAt!))
     },
     async get(id) {
       if (isDeleted(id)) return null

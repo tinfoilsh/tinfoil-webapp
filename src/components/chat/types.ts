@@ -165,9 +165,7 @@ export type Chat = {
   messageCount?: number
   isMetadataOnly?: boolean
   createdAt: Date
-  // Latest server-bumped write time, used as the canonical sort
-  // key for the sidebar. Absent for chats that have never been
-  // stored (blank chats kept purely in component state).
+  // Latest server-bumped write time, independent of conversation activity.
   updatedAt?: string
   activityAt?: string
   // Blank chat flag - true for new chats that haven't been used yet

@@ -110,11 +110,51 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  window.getSelection()?.removeAllRanges()
   resetSafeguards()
   authTokenManager.reset()
 })
 
 describe('message actions on the chat page', () => {
+  it('sends a selected quote without requiring extra text', async () => {
+    open()
+    const message = await screen.findByText('Hello there')
+    const range = document.createRange()
+    range.selectNodeContents(message)
+    vi.spyOn(range, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(100, 100, 120, 20),
+    )
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Quote' }))
+    client.events.mockImplementation(async function* (_path, input) {
+      yield {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          threadId: input.threadId!,
+          runId: 'quoted',
+        },
+      }
+      yield {
+        id: 1,
+        event: {
+          type: 'RUN_FINISHED',
+          threadId: input.threadId!,
+          runId: 'quoted',
+        },
+      }
+    })
+    const input = screen.getByRole('textbox', { name: /message/i })
+    fireEvent.submit(input.closest('form')!)
+    await waitFor(() => expect(client.events).toHaveBeenCalledTimes(1))
+    expect(client.events.mock.calls[0][1]).toMatchObject({
+      kind: 'send',
+      content: '',
+      quote: 'Hello there',
+    })
+  })
   it("offers a stored chat's message actions", async () => {
     open()
 

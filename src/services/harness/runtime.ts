@@ -9,14 +9,23 @@ import {
   CLOUD_SYNC_SETTING_CHANGED_EVENT,
   isCloudSyncEnabled,
 } from '@/utils/cloud-sync-settings'
+import { logError } from '@/utils/error-handling'
 import { HarnessClient } from './client'
-import { loadLocalProfile, saveLocalProfile } from './local-profile'
+import { prepareUpload } from './composer'
+import {
+  clearLocalProfileChanges,
+  loadLocalProfile,
+  localProfileChanges,
+  saveLocalProfile,
+} from './local-profile'
 import { ERROR_CODES, ROUTES, type HarnessRoute } from './protocol'
 import { HarnessError } from './sse'
 import type { RateLimit, Session } from './types'
 
 export type Profile = Record<string, any>
 type View = {
+  chatRevision?: string
+  projectRevision?: string
   session?: Session
   profile: Profile
   error?: string
@@ -30,6 +39,13 @@ type View = {
   profileReady: boolean
   // The account's quota as the session and its runs last reported it.
   rateLimit?: RateLimit
+}
+
+const CHANGE_POLL_MS = 20_000
+interface ChangeTokens {
+  chats: string
+  profile: string
+  projects: string
 }
 const empty: View = {
   profile: {},
@@ -66,7 +82,62 @@ export class HarnessAPI {
   private profileVersion = 0
   private profileWrites: Promise<unknown> = Promise.resolve()
   private profileSource: 'cloud' | 'local' | null = null
+  private localProfileToMerge: Profile | undefined
+  private changeTokens: ChangeTokens | undefined
+
+  watchChanges() {
+    let pending = false
+    const check = async () => {
+      if (
+        pending ||
+        !this.cloud ||
+        !view.keyReady ||
+        document.visibilityState === 'hidden'
+      )
+        return
+      pending = true
+      try {
+        const tokens = await this.post<ChangeTokens>(
+          ROUTES.changes,
+          {},
+          { keyless: true },
+        )
+        if (!this.cloud) return
+        if (tokens.profile !== this.changeTokens?.profile) {
+          await this.profileWrites.catch(() => {})
+          await this.refreshProfile()
+        }
+        this.lifetime.signal.throwIfAborted()
+        if (!this.cloud) return
+        this.changeTokens = tokens
+        publish({
+          chatRevision: tokens.chats,
+          projectRevision: tokens.projects,
+        })
+      } catch (cause) {
+        if (!this.lifetime.signal.aborted)
+          logError('Failed to refresh remote changes', cause, {
+            component: 'HarnessAPI',
+            action: 'watchChanges',
+          })
+      } finally {
+        pending = false
+      }
+    }
+    const refresh = () => {
+      void check()
+    }
+    const timer = window.setInterval(refresh, CHANGE_POLL_MS)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }
   invalidateKey() {
+    this.changeTokens = undefined
     this.contentLifetime.abort()
     this.contentLifetime = new AbortController()
     this.profileVersion++
@@ -137,6 +208,14 @@ export class HarnessAPI {
   ): Promise<T> {
     const key = this.keyed(keyless)
     const requestSignal = this.signal({ signal, keyless })
+    const groups =
+      path === ROUTES.attachmentUpload
+        ? view.session?.composer.attachments
+        : path === ROUTES.projectDocumentUpload
+          ? view.session?.composer.projectDocuments
+          : undefined
+    if (groups) file = await prepareUpload(file, groups)
+    requestSignal.throwIfAborted()
     const result = await this.client.upload<T>(
       path,
       file,
@@ -196,10 +275,10 @@ export class HarnessAPI {
       publish({ rateLimit })
   }
 
-  async refresh() {
+  async refresh({ credentials = false }: { credentials?: boolean } = {}) {
     const session = await this.post<Session>(
       ROUTES.session,
-      {},
+      credentials ? { refreshCredentials: true } : {},
       { keyless: true },
     )
     publish({ session, error: undefined })
@@ -241,8 +320,16 @@ export class HarnessAPI {
       return
     }
     try {
-      const profile = await this.post<Profile>(ROUTES.profileGet)
+      const local = this.localProfileToMerge
+      const profile = local
+        ? await this.post<Profile>(ROUTES.profileMerge, {
+            profile: local,
+            changedFields: localProfileChanges(),
+          })
+        : await this.post<Profile>(ROUTES.profileGet)
       if (version === this.profileVersion) {
+        if (local) clearLocalProfileChanges()
+        this.localProfileToMerge = undefined
         this.profileSource = 'cloud'
         publish({
           profile,
@@ -267,13 +354,25 @@ export class HarnessAPI {
   }
   // Cloud sync was turned on or off. Turning it off keeps the settings the
   // harness held, as the previous client kept synced settings on the device.
-  storageModeChanged() {
+  async storageModeChanged() {
+    for (;;) {
+      const writes = this.profileWrites
+      await writes.catch(() => {})
+      if (writes === this.profileWrites) break
+    }
+    this.lifetime.signal.throwIfAborted()
+    this.changeTokens = undefined
+    if (!this.cloud && this.userId && isCloudSyncEnabled()) {
+      this.localProfileToMerge = loadLocalProfile()
+    }
     this.cloudSync = isCloudSyncEnabled()
     publish({ cloud: this.cloud })
     if (!this.cloud && this.profileSource === 'cloud' && view.profileReady) {
       saveLocalProfile(view.profile, true)
+      clearLocalProfileChanges()
       localStorage.setItem(USER_PREFS_LOCAL_PROFILE_UPGRADED, 'true')
     }
+    if (!this.cloud) this.localProfileToMerge = undefined
     this.invalidateKey()
     return this.refreshProfile()
   }

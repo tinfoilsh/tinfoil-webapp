@@ -98,7 +98,7 @@ function projectList(api: HarnessAPI): ProjectList {
   return list
 }
 export function useProjects({ autoLoad = true }: { autoLoad?: boolean } = {}) {
-  const { api, keyReady } = useHarness()
+  const { api, keyReady, projectRevision } = useHarness()
   const list = projectList(api)
   const { projects, loading, error } = useSyncExternalStore(
     list.subscribe,
@@ -107,7 +107,7 @@ export function useProjects({ autoLoad = true }: { autoLoad?: boolean } = {}) {
   )
   useEffect(() => {
     if (autoLoad) void list.load()
-  }, [autoLoad, list, keyReady])
+  }, [autoLoad, list, keyReady, projectRevision])
   const refresh = useCallback(() => list.refresh(), [list])
   return { projects, loading, error, refresh, loadProjects: refresh }
 }

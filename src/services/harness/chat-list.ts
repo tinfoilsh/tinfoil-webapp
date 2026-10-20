@@ -13,6 +13,7 @@ const PAGE_SIZE = 100
 
 interface CloudPage {
   threads: ThreadSummary[]
+  pinned?: ThreadSummary[] | null
   nextCursor: string | null
 }
 
@@ -39,6 +40,7 @@ export function useChatList({
   projectId,
   device,
   report,
+  revision,
 }: {
   api: HarnessAPI
   cloud: boolean
@@ -46,24 +48,46 @@ export function useChatList({
   projectId?: string | null
   device: LocalThreadStore
   report(cause: unknown): void
+  revision?: string
 }) {
   const [lists] = useState(() => {
     const cloudThreads = createStore<ThreadSummary[]>([])
     const deviceThreads = createStore<ThreadSummary[]>([])
+    const pinnedThreads = createStore<ThreadSummary[]>([])
+    const cursor = createStore<string | null>(null)
+    const cloudEdits = editsOf(cloudThreads)
+    const pinnedEdits = editsOf(pinnedThreads)
     // Counts listings of the stored chats apart from the open chat, so that
     // opening a chat keeps the list and only the latest listing applies.
     const listing = { version: 0 }
     return {
       cloudThreads,
       deviceThreads,
-      cursor: createStore<string | null>(null),
+      pinnedThreads,
+      cursor,
       listing,
-      cloud: editsOf(cloudThreads),
+      cloud: {
+        add(summary: ThreadSummary) {
+          cloudEdits.add(summary)
+          if (summary.pinned) pinnedEdits.add(summary)
+        },
+        replace(summary: ThreadSummary) {
+          cloudEdits.replace(summary)
+          if (summary.pinned) pinnedEdits.add(summary)
+          else pinnedEdits.remove(summary.id)
+        },
+        remove(id: string) {
+          cloudEdits.remove(id)
+          pinnedEdits.remove(id)
+        },
+      },
       device: editsOf(deviceThreads),
       // The stored chats are not listed, as once cloud sync is off.
       clearCloud() {
         listing.version++
         cloudThreads.set([])
+        pinnedThreads.set([])
+        cursor.set(null)
       },
       isOnDevice: (threadId: string) =>
         deviceThreads.get().some((thread) => thread.id === threadId),
@@ -73,11 +97,25 @@ export function useChatList({
     async (next?: string) => {
       if (!cloud || !keyReady) return
       const version = next ? lists.listing.version : ++lists.listing.version
-      const result = await api.post<CloudPage>(ROUTES.list, {
-        cursor: next,
-        projectId,
-        limit: PAGE_SIZE,
-      })
+      const wanted = next
+        ? PAGE_SIZE
+        : Math.max(PAGE_SIZE, lists.cloudThreads.get().length)
+      const result: CloudPage = { threads: [], nextCursor: next ?? null }
+      do {
+        const page: CloudPage = await api.post<CloudPage>(ROUTES.list, {
+          cursor: result.nextCursor ?? undefined,
+          projectId,
+          limit: PAGE_SIZE,
+        })
+        if (page.pinned) result.pinned = page.pinned
+        result.threads.push(
+          ...page.threads.filter(
+            (thread) => !result.threads.some((seen) => seen.id === thread.id),
+          ),
+        )
+        if (page.nextCursor === result.nextCursor) break
+        result.nextCursor = page.nextCursor
+      } while (!next && result.nextCursor && result.threads.length < wanted)
       if (version !== lists.listing.version) return
       lists.cloudThreads.update((previous) =>
         next
@@ -90,12 +128,13 @@ export function useChatList({
           : result.threads,
       )
       lists.cursor.set(result.nextCursor)
+      if (!next) lists.pinnedThreads.set(result.pinned ?? [])
     },
     [api, cloud, keyReady, projectId, lists],
   )
   useEffect(() => {
     void refresh().catch(report)
-  }, [refresh, report])
+  }, [refresh, report, revision])
   useEffect(() => {
     let sequence = 0
     const load = () => {
@@ -118,6 +157,7 @@ export function useChatList({
   return {
     ...lists,
     cloudListed: useStore(lists.cloudThreads),
+    pinnedListed: useStore(lists.pinnedThreads),
     deviceListed: useStore(lists.deviceThreads),
     nextCursor: useStore(lists.cursor),
     refresh,

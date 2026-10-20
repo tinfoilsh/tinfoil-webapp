@@ -2,9 +2,11 @@
 
 export const ROUTES = {
   session: '/v1/session',
+  changes: '/v1/changes',
   profileGet: '/v1/profile/get',
   profileUpdate: '/v1/profile/update',
   profileUpgrade: '/v1/profile/upgrade',
+  profileMerge: '/v1/profile/merge',
   keysCurrent: '/v1/keys/current',
   keysRegister: '/v1/keys/register',
   keysAddBundle: '/v1/keys/add-bundle',

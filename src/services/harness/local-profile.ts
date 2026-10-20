@@ -21,6 +21,7 @@ import {
   USER_PREFS_FAVORITE_PROMPT_PRESETS,
   USER_PREFS_LANGUAGE,
   USER_PREFS_LOCAL_PROFILE,
+  USER_PREFS_LOCAL_PROFILE_CHANGES,
   USER_PREFS_NICKNAME,
   USER_PREFS_PERSONALIZATION_ENABLED,
   USER_PREFS_PROFESSION,
@@ -142,5 +143,26 @@ export function saveLocalProfile(
     ...patch,
   })
   write(profile)
+  if (!replace) {
+    localStorage.setItem(
+      USER_PREFS_LOCAL_PROFILE_CHANGES,
+      JSON.stringify([
+        ...new Set([...localProfileChanges(), ...Object.keys(patch)]),
+      ]),
+    )
+  }
   return profile
+}
+
+export function localProfileChanges(): string[] {
+  const fields = parseJSON(
+    localStorage.getItem(USER_PREFS_LOCAL_PROFILE_CHANGES),
+  )
+  return Array.isArray(fields)
+    ? fields.filter((field): field is string => typeof field === 'string')
+    : []
+}
+
+export function clearLocalProfileChanges() {
+  localStorage.removeItem(USER_PREFS_LOCAL_PROFILE_CHANGES)
 }

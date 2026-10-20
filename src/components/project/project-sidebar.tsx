@@ -77,6 +77,7 @@ interface ProjectChat {
   messageCount: number
   createdAt: Date
   updatedAt?: string
+  activityAt?: string
   projectId?: string
   isBlankChat?: boolean
   isTemporary?: boolean
@@ -551,8 +552,8 @@ export function ProjectSidebar({
     .filter((c) => !c.isBlankChat)
     .sort(
       (a, b) =>
-        new Date(b.updatedAt ?? b.createdAt).getTime() -
-        new Date(a.updatedAt ?? a.createdAt).getTime(),
+        new Date(b.activityAt ?? b.createdAt).getTime() -
+        new Date(a.activityAt ?? a.createdAt).getTime(),
     )
     .map((c) => ({
       id: c.id,

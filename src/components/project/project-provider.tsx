@@ -1,6 +1,5 @@
 import { PROJECTS_CHANGED } from '@/hooks/use-projects'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
-import { checkUpload } from '@/services/harness/composer'
 import * as projects from '@/services/harness/projects'
 import { useHarness } from '@/services/harness/provider'
 import type { Project, ProjectDocument } from '@/types/project'
@@ -18,7 +17,7 @@ export function ProjectProvider({
   children: ReactNode
   initialProjectId?: string | null
 }) {
-  const { api, keyReady, session } = useHarness()
+  const { api, keyReady, projectRevision } = useHarness()
   const { isLoading: isSubscriptionLoading, chat_subscription_active } =
     useSubscriptionStatus()
   const hasPremiumAccess = !isSubscriptionLoading && chat_subscription_active
@@ -86,6 +85,16 @@ export function ProjectProvider({
       void enterProjectMode(initialProjectId)
   }, [initialProjectId, keyReady, hasPremiumAccess, enterProjectMode])
   useEffect(() => {
+    if (
+      projectRevision &&
+      keyReady &&
+      hasPremiumAccess &&
+      openProjectId.current
+    ) {
+      void enterProjectMode(openProjectId.current)
+    }
+  }, [projectRevision, keyReady, hasPremiumAccess, enterProjectMode])
+  useEffect(() => {
     if (!isSubscriptionLoading && !chat_subscription_active) exitProjectMode()
   }, [chat_subscription_active, isSubscriptionLoading, exitProjectMode])
   useEffect(() => {
@@ -134,7 +143,6 @@ export function ProjectProvider({
     uploadDocument: async (file) => {
       requirePremiumAccess()
       if (!activeProject) throw new Error('Select a project first.')
-      if (session) checkUpload(file, session.composer.projectDocuments)
       const projectId = activeProject.id
       const doc = await projects.uploadProjectDocument(api, projectId, file)
       await reloadProject(projectId)
