@@ -14,8 +14,15 @@ const backup = new File(['backup'], 'tinfoil-backup.zip', {
   type: 'application/zip',
 })
 
-// A chat the backup kept on a device, as the chat service returns it with
-// the original of its image inline.
+// A chat the backup kept on a device, with its image's copy for models.
+const map = {
+  id: 'att_map',
+  kind: 'image' as const,
+  fileName: 'map.png',
+  mimeType: 'image/png',
+  size: 8,
+  base64: 'bW9kZWw=',
+}
 const deviceChat = storedThread('restored_trip', {
   title: 'Trip',
   messages: [
@@ -24,19 +31,20 @@ const deviceChat = storedThread('restored_trip', {
       role: 'user',
       createdAt: '2026-02-01T10:00:01Z',
       content: 'Our map',
-      attachments: [
-        {
-          id: 'att_map',
-          kind: 'image',
-          fileName: 'map.png',
-          mimeType: 'image/png',
-          size: 8,
-          base64: 'b3JpZ2luYWw=',
-        },
-      ],
+      attachments: [map],
     },
   ],
 })
+// The chat as the chat service returns it, with the original inline.
+const deviceChatLine = {
+  ...deviceChat,
+  messages: [
+    {
+      ...deviceChat.messages[0],
+      attachments: [{ ...map, originalBase64: 'b3JpZ2luYWw=' }],
+    },
+  ],
+}
 
 resetChatStoresAroundEachTest()
 
@@ -112,7 +120,7 @@ describe('NativeBackupRestore', () => {
 
   it("restores to the cloud with cloud sync and stores the backup's device chats", async () => {
     signIn({ cloud: true })
-    answerRestore([deviceChat], {
+    answerRestore([deviceChatLine], {
       jobId: 'job-1',
       warnings: ['1 image could not be restored.'],
     })

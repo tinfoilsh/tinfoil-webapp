@@ -282,8 +282,16 @@ const chatGptExport = new File(
   { type: 'application/json' },
 )
 
-// A chat the chat service converted for this device, with the original of
-// its image inline.
+// A chat the chat service converted for this device, with its image's copy
+// for models.
+const herbs = {
+  id: 'att_herbs',
+  kind: 'image' as const,
+  fileName: 'herbs.png',
+  mimeType: 'image/png',
+  size: 8,
+  base64: 'bW9kZWw=',
+}
 const imported = storedThread('import_plants', {
   title: 'Plants',
   titleState: 'generated',
@@ -293,19 +301,20 @@ const imported = storedThread('import_plants', {
       role: 'user',
       createdAt: '2026-01-01T10:00:01Z',
       content: 'Which herbs?',
-      attachments: [
-        {
-          id: 'att_herbs',
-          kind: 'image',
-          fileName: 'herbs.png',
-          mimeType: 'image/png',
-          size: 8,
-          base64: 'b3JpZ2luYWw=',
-        },
-      ],
+      attachments: [herbs],
     },
   ],
 })
+// The chat as the import's line carries it, with the original inline.
+const importedLine = {
+  ...imported,
+  messages: [
+    {
+      ...imported.messages[0],
+      attachments: [{ ...herbs, originalBase64: 'b3JpZ2luYWw=' }],
+    },
+  ],
+}
 
 // An import's response: a line per chat for this device, then the last line.
 function answerImport(threads: object[], done: object) {
@@ -326,7 +335,7 @@ describe('importing chats from the Data tab', () => {
 
   it('stores the chats the chat service returns on this device without cloud sync', async () => {
     connect()
-    answerImport([imported], {
+    answerImport([importedLine], {
       jobId: null,
       warnings: ['1 attachment could not be read.'],
     })

@@ -4,7 +4,7 @@ import { imageBlob } from './open-attachments'
 import { ERROR_CODES, ROUTES } from './protocol'
 import { harnessAPI, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
-import type { StoredThread } from './types'
+import type { AttachmentDescriptor, StoredThread } from './types'
 export type ImportFailureReason =
   'invalid_archive' | 'wrong_key' | 'internal_error' | string
 export interface ImportStatusResponse {
@@ -199,18 +199,31 @@ async function* importLines(
   }
 }
 
-// An imported chat carries the original of each image. This device keeps
-// the original apart, to show, and the thread keeps its copy for models.
-function importedOriginals(thread: StoredThread): Originals {
+// An imported image carries the archive's original, which its mimeType
+// describes, beside the copy models read.
+type ImportedAttachment = AttachmentDescriptor & { originalBase64?: string }
+
+// This device keeps the originals of an imported chat's images apart, to
+// show, and stores the thread without them.
+function splitOriginals(imported: StoredThread): {
+  thread: StoredThread
+  originals: Originals
+} {
   const originals = new Map<string, AttachmentOriginal>()
-  for (const message of thread.messages)
-    for (const attachment of message.attachments ?? [])
-      if (attachment.kind === 'image' && attachment.base64)
-        originals.set(attachment.id, {
-          base64: attachment.base64,
-          mimeType: attachment.mimeType,
+  const messages = imported.messages.map((message) => {
+    if (!message.attachments) return message
+    const attachments = message.attachments.map((attachment) => {
+      const { originalBase64, ...kept } = attachment as ImportedAttachment
+      if (originalBase64)
+        originals.set(kept.id, {
+          base64: originalBase64,
+          mimeType: kept.mimeType,
         })
-  return originals
+      return kept
+    })
+    return { ...message, attachments }
+  })
+  return { thread: { ...imported, messages }, originals }
 }
 
 // The chat service reads an export or backup in any format it knows. It
@@ -237,7 +250,8 @@ async function importFile(
   for await (const line of importLines(response)) {
     if (!('thread' in line)) return { ...line, stored, skipped }
     signal?.throwIfAborted()
-    if (await store.add(line.thread, importedOriginals(line.thread))) stored++
+    const { thread, originals } = splitOriginals(line.thread)
+    if (await store.add(thread, originals)) stored++
     else skipped++
   }
   throw new HarnessError({
