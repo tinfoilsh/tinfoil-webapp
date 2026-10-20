@@ -5,10 +5,10 @@ import {
   type ChatDragSource,
 } from '@/components/chat/drag-context'
 import type { Chat } from '@/components/chat/types'
-import { SETTINGS_CLOUD_SYNC_ENABLED } from '@/constants/storage-keys'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { signIn } from '../../harness-fixture'
 
 vi.mock('@clerk/react', () => ({
   useAuth: () => ({ isLoaded: true, isSignedIn: true }),
@@ -105,7 +105,7 @@ function SidebarHarness({
 
 describe('chat sidebar during streaming', () => {
   beforeEach(() => {
-    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+    signIn({ cloud: true })
   })
 
   it('keeps other chats visible and selectable through streaming updates', () => {

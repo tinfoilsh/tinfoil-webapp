@@ -33,7 +33,6 @@ import { initialChat, isTerminal, reduceEvent, runOf } from './reducer'
 import type { RunSpend } from './runtime'
 import { MAX_SHARE_REQUEST_BYTES, requestBytes, shareTooLarge } from './shares'
 import { HarnessError } from './sse'
-import { useCloudSyncSetting } from './storage-mode'
 import {
   moveThreadToCloud,
   moveThreadToDevice,
@@ -100,9 +99,7 @@ export function useThread(
   projectId?: string | null,
   route: ThreadRoute = {},
 ) {
-  const { api, session, profile, keyReady } = useHarness()
-  const cloudSyncSetting = useCloudSyncSetting()
-  const cloud = !!api.userId && cloudSyncSetting
+  const { api, session, profile, keyReady, cloud } = useHarness()
   const cloudRef = useRef(cloud)
   cloudRef.current = cloud
   const profileRef = useRef(profile)

@@ -10,10 +10,7 @@ import {
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
-import {
-  useCloudSyncSetting,
-  useLocalChatsSetting,
-} from '@/services/harness/storage-mode'
+import { useLocalChatsSetting } from '@/services/harness/storage-mode'
 import {
   hasUserSetLocalOnlyPreference,
   isLocalOnlyModeEnabled,
@@ -264,12 +261,10 @@ export function ChatSidebar({
     upgradeLoading,
     upgradeError,
   } = useUpgradeToPro()
-  const { keyReady } = useHarness()
-  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   // Without cloud sync every chat stays on this device. With it, "Enable
   // local chats" adds a Local tab whose new chats stay on this device.
-  const cloudSyncSetting = useCloudSyncSetting()
-  const cloudSyncEnabled = Boolean(isSignedIn && cloudSyncSetting)
+  const { keyReady, cloud: cloudSyncEnabled } = useHarness()
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const localOnlyModeEnabled = useLocalChatsSetting()
   const showStorageTabs = cloudSyncEnabled && localOnlyModeEnabled
   const [activeTab, setActiveTab] = useState<'cloud' | 'local'>(() => {

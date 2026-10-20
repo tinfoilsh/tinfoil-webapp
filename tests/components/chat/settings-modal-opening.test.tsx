@@ -8,7 +8,7 @@ import { getView, harnessAPI, publish } from '@/services/harness/runtime'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
+import { signIn, testSession } from '../../harness-fixture'
 
 const authState = vi.hoisted(() => ({ isSignedIn: false }))
 const toasts = vi.hoisted(() => vi.fn())
@@ -107,7 +107,7 @@ describe('settings opening', () => {
     'gates project transfers in settings (premium: %s)',
     (isPremium) => {
       authState.isSignedIn = true
-      localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+      signIn({ cloud: true })
       render(
         <Harness
           initialTab="data"
@@ -216,6 +216,7 @@ describe('settings opening', () => {
   describe('without cloud sync', () => {
     beforeEach(() => {
       authState.isSignedIn = true
+      signIn({ cloud: false })
     })
 
     it('keeps project data controls with cloud sync', () => {
@@ -331,7 +332,7 @@ describe('settings opening', () => {
 
       await waitFor(() => expect(onCloudSyncSetupClick).toHaveBeenCalledOnce())
       expect(setIsOpen).toHaveBeenCalledWith(false)
-      expect(localStorage.getItem(SETTINGS_CLOUD_SYNC_ENABLED)).toBeNull()
+      expect(localStorage.getItem(SETTINGS_CLOUD_SYNC_ENABLED)).toBe('false')
     })
 
     it('turns sync on and off with a key and offers local chats while on', async () => {
@@ -443,7 +444,7 @@ describe('settings imports', () => {
   beforeEach(() => {
     authState.isSignedIn = true
     toasts.mockReset()
-    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+    signIn({ cloud: true })
   })
 
   const exportFile = (name: string, size: number) =>

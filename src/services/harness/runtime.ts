@@ -1,6 +1,13 @@
-import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import {
+  AUTH_ACTIVE_USER_ID,
+  SETTINGS_CLOUD_SYNC_ENABLED,
+  USER_PREFS_LOCAL_PROFILE,
+} from '@/constants/storage-keys'
 import { encryptionService } from '@/services/encryption/encryption-service'
-import { isCloudSyncEnabled } from '@/utils/cloud-sync-settings'
+import {
+  CLOUD_SYNC_SETTING_CHANGED_EVENT,
+  isCloudSyncEnabled,
+} from '@/utils/cloud-sync-settings'
 import { HarnessClient } from './client'
 import { loadLocalProfile, saveLocalProfile } from './local-profile'
 import { ERROR_CODES, ROUTES, type HarnessRoute } from './protocol'
@@ -15,12 +22,20 @@ type View = {
   // The content key is unlocked for the harness's stored chats. A signed-out
   // visitor needs no key.
   keyReady: boolean
+  // The harness stores this account's chats and settings. Without cloud
+  // sync, and for a signed-out visitor, both stay in the browser.
+  cloud: boolean
   // The settings of the current storage mode have loaded.
   profileReady: boolean
   // The account's quota as the session and its runs last reported it.
   rateLimit?: RateLimit
 }
-const empty: View = { profile: {}, keyReady: false, profileReady: false }
+const empty: View = {
+  profile: {},
+  keyReady: false,
+  profileReady: false,
+  cloud: false,
+}
 let view: View = empty
 const listeners = new Set<() => void>()
 let active: HarnessAPI | undefined
@@ -193,10 +208,10 @@ export class HarnessAPI {
     this.profileVersion++
     publish({ profile: {}, keyReady: false, profileReady: false })
   }
-  // The harness stores this account's chats and settings. Without cloud
-  // sync, and for a signed-out visitor, both stay in the browser.
+  // The storage mode, which only a change of the cloud sync setting moves.
+  private cloudSync = isCloudSyncEnabled()
   get cloud() {
-    return !!this.userId && isCloudSyncEnabled()
+    return !!this.userId && this.cloudSync
   }
   constructor(
     readonly client: HarnessClient,
@@ -380,6 +395,8 @@ export class HarnessAPI {
   // Cloud sync was turned on or off. Turning it off keeps the settings the
   // harness held, as the previous client kept synced settings on the device.
   storageModeChanged() {
+    this.cloudSync = isCloudSyncEnabled()
+    publish({ cloud: this.cloud })
     if (!this.cloud && this.profileSource === 'cloud' && view.profileReady)
       saveLocalProfile(view.profile, true)
     this.invalidateKey()
@@ -412,18 +429,45 @@ export class HarnessAPI {
     return update
   }
 }
-export function activateAPI(api: HarnessAPI) {
+// The active API follows the cloud sync setting, in this tab and others,
+// and the settings another tab saves on the device.
+function followStorage(api: HarnessAPI) {
+  const modeChanged = () => {
+    void api.storageModeChanged().catch(reportHarnessError)
+  }
+  const storageChanged = (event: StorageEvent) => {
+    if (event.key === SETTINGS_CLOUD_SYNC_ENABLED) modeChanged()
+    else if (event.key === USER_PREFS_LOCAL_PROFILE && !api.cloud)
+      void api.refreshProfile().catch(reportHarnessError)
+  }
+  window.addEventListener(CLOUD_SYNC_SETTING_CHANGED_EVENT, modeChanged)
+  window.addEventListener('storage', storageChanged)
+  return () => {
+    window.removeEventListener(CLOUD_SYNC_SETTING_CHANGED_EVENT, modeChanged)
+    window.removeEventListener('storage', storageChanged)
+  }
+}
+let unfollow: (() => void) | undefined
+
+function deactivate() {
   active?.lifetime.abort()
   active?.client.dispose?.()
-  active = api
+  unfollow?.()
+  unfollow = undefined
+  active = undefined
   view = empty
-  publish({})
+}
+
+export function activateAPI(api: HarnessAPI) {
+  deactivate()
+  active = api
+  unfollow = followStorage(api)
+  publish({ cloud: api.cloud })
   return () => {
     api.lifetime.abort()
     api.client.dispose?.()
     if (active === api) {
-      active = undefined
-      view = empty
+      deactivate()
       publish({})
     }
   }
@@ -447,9 +491,6 @@ export function reportHarnessError(error: unknown) {
 }
 
 export function resetHarnessAPI() {
-  active?.lifetime.abort()
-  active?.client.dispose?.()
-  active = undefined
-  view = empty
+  deactivate()
   publish({})
 }

@@ -51,7 +51,6 @@ function renderSidebar(
         isDarkMode={false}
         isClient
         pixelateSidebarChatTitles={false}
-        cloudSyncEnabled
         windowWidth={1200}
         project={project}
         onExitProject={vi.fn()}

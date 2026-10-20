@@ -36,10 +36,7 @@ import {
 } from '@/services/harness/local-threads'
 import { useHarness, useProfileSetting } from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
-import {
-  useCloudSyncSetting,
-  useLocalChatsSetting,
-} from '@/services/harness/storage-mode'
+import { useLocalChatsSetting } from '@/services/harness/storage-mode'
 import { validateCurrentPrimaryKey } from '@/services/keys/cloud-key-preflight'
 import {
   deletePasskeyCredential,
@@ -689,7 +686,8 @@ export function SettingsModal({
   const { builtInPresets, userPresets, defaultPreset, setDefaultPreset } =
     usePromptLibrary()
   const { toast } = useToast()
-  const { api, profile, keyReady } = useHarness()
+  // Without cloud sync every chat and setting stays on this device.
+  const { api, profile, keyReady, cloud: cloudSyncEnabled } = useHarness()
 
   const { refresh: refreshProjects } = useProjects({ autoLoad: false })
   // Encryption key management state
@@ -739,9 +737,6 @@ export function SettingsModal({
     SYSTEM_RESPONSE_LANGUAGE,
   )
 
-  // Without cloud sync every chat and setting stays on this device.
-  const cloudSyncSetting = useCloudSyncSetting()
-  const cloudSyncEnabled = !!isSignedIn && cloudSyncSetting
   const localChatsEnabled = useLocalChatsSetting()
 
   // Web Search PII check setting (defaults to on)

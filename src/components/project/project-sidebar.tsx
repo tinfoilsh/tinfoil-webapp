@@ -33,6 +33,7 @@ import {
   UI_SIDEBAR_FAVORITES_EXPANDED,
 } from '@/constants/storage-keys'
 import { toast } from '@/hooks/use-toast'
+import { useHarness } from '@/services/harness/provider'
 import type { Project } from '@/types/project'
 import { logError } from '@/utils/error-handling'
 import { formatFileSize } from '@/utils/format-file-size'
@@ -115,7 +116,6 @@ interface ProjectSidebarProps {
   onToggleFavorite?: (chat: ChatItemData) => void | Promise<void>
   onRemoveFavorite?: (chatId: string) => void
   onOpenFavorite?: (chat: ChatItemData) => void | Promise<void>
-  cloudSyncEnabled: boolean
   windowWidth: number
   isPremium?: boolean
   hasMore?: boolean
@@ -227,13 +227,13 @@ export function ProjectSidebar({
   onToggleFavorite,
   onRemoveFavorite,
   onOpenFavorite,
-  cloudSyncEnabled,
   windowWidth,
   isPremium = false,
   hasMore,
   onLoadMore,
 }: ProjectSidebarProps) {
   const { isSignedIn } = useAuth()
+  const { cloud: cloudSyncEnabled } = useHarness()
   const {
     draggingChatId,
     draggingChatSource,

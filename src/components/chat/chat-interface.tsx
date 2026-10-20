@@ -47,7 +47,6 @@ import { cn } from '@/components/ui/utils'
 import { usePasskeyBackup } from '@/hooks/use-passkey-backup'
 
 import { encryptionService } from '@/services/encryption/encryption-service'
-import { useCloudSyncSetting } from '@/services/harness/storage-mode'
 import {
   isCloudSyncEnabled,
   setCloudSyncEnabled,
@@ -182,12 +181,11 @@ export function ChatInterface({
     keyReady,
     profileReady,
     error: sessionError,
+    // The harness stores chats only for a signed-in account with cloud
+    // sync; otherwise every chat stays on this device.
+    cloud: cloudSyncEnabled,
   } = useHarness()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
-  // The harness stores chats only for a signed-in account with cloud sync;
-  // otherwise every chat stays on this device.
-  const cloudSyncSetting = useCloudSyncSetting()
-  const cloudSyncEnabled = !!isSignedIn && cloudSyncSetting
   const { user } = useUser()
   const router = useRouter()
   const {
@@ -971,13 +969,17 @@ export function ChatInterface({
     passkeyRecoveryNeeded,
     suppressIntroModals,
   ])
-  // A chat the harness stores cannot stay open once cloud sync is off.
+  // The chat service's chats close once cloud sync is off, and the page
+  // leaves the link of the one that was open.
   const previousCloudSync = useRef(cloudSyncEnabled)
   useEffect(() => {
     if (previousCloudSync.current === cloudSyncEnabled) return
     previousCloudSync.current = cloudSyncEnabled
-    if (!cloudSyncEnabled && currentChat.id && !currentChat.isLocalOnly)
-      createNewChat(true)
+    if (cloudSyncEnabled || !initialChatId || isLocalChatUrl) return
+    setInput('')
+    setQuote(null)
+    setProcessedDocuments([])
+    void router.push('/', undefined, { shallow: true })
     // Only a change of the storage mode moves the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloudSyncEnabled])
@@ -1650,7 +1652,6 @@ export function ChatInterface({
                   onToggleFavorite={handleToggleFavorite}
                   onRemoveFavorite={unpinChat}
                   onOpenFavorite={handleOpenFavorite}
-                  cloudSyncEnabled={cloudSyncEnabled}
                   windowWidth={windowWidth}
                   isPremium={isPremium}
                 />
@@ -1680,7 +1681,6 @@ export function ChatInterface({
                   onToggleFavorite={handleToggleFavorite}
                   onRemoveFavorite={unpinChat}
                   onOpenFavorite={handleOpenFavorite}
-                  cloudSyncEnabled={cloudSyncEnabled}
                   windowWidth={windowWidth}
                   isPremium={isPremium}
                 />
