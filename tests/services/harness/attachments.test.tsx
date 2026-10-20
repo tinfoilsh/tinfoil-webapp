@@ -174,33 +174,33 @@ describe('attachments of a local chat', () => {
 })
 
 describe('picking a file to attach', () => {
-  // The session takes images up to 1000 bytes and other files up to 2000.
-  const file = (size: number, type: string) =>
-    new File([new Uint8Array(size)], `file-${size}`, { type })
-
+  // The session takes .png files up to 1000 bytes, and .pdf and .txt files
+  // up to 2000. Picked files carry no type, so only the name tells them
+  // apart.
   it.each([
-    { size: 1000, type: 'image/png', uploads: true },
-    { size: 1001, type: 'image/png', uploads: false },
-    { size: 2000, type: 'text/plain', uploads: true },
-    { size: 2001, type: 'application/pdf', uploads: false },
+    { name: 'photo.png', size: 1000, refused: null },
+    { name: 'PHOTO.PNG', size: 1001, refused: 413 },
+    { name: 'notes.v2.txt', size: 2000, refused: null },
+    { name: 'report.pdf', size: 2001, refused: 413 },
+    { name: 'archive.zip', size: 10, refused: 415 },
   ])(
-    'uploads a $size-byte $type file only within the session limit ($uploads)',
-    async ({ size, type, uploads }) => {
+    'uploads $name of $size bytes unless its group refuses it ($refused)',
+    async ({ name, size, refused }) => {
       signIn({ cloud: true })
       const descriptor = {
         id: 'att_1',
         kind: 'document',
-        fileName: `file-${size}`,
-        mimeType: type,
+        fileName: name,
+        mimeType: 'application/octet-stream',
         size,
       }
       client.upload.mockResolvedValue({ attachment: descriptor })
       const { result } = renderHook(() => useThread())
-      const picked = file(size, type)
+      const picked = new File([new Uint8Array(size)], name)
 
       const upload = result.current.upload(picked)
 
-      if (uploads) {
+      if (!refused) {
         await expect(upload).resolves.toEqual(descriptor)
         expect(client.upload).toHaveBeenCalledExactlyOnceWith(
           '/v1/attachments/upload',
@@ -210,8 +210,9 @@ describe('picking a file to attach', () => {
         )
       } else {
         await expect(upload).rejects.toMatchObject({
-          status: 413,
-          code: 'ATTACHMENT_TOO_LARGE',
+          status: refused,
+          code:
+            refused === 413 ? 'ATTACHMENT_TOO_LARGE' : 'ATTACHMENT_UNSUPPORTED',
         })
         expect(client.upload).not.toHaveBeenCalled()
       }

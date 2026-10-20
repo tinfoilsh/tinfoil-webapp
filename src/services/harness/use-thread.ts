@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { chatActions } from './chat-actions'
 import { useChatList } from './chat-list'
 import { chatTurns } from './chat-turns'
-import { attachmentLimit, checkUploadSize } from './composer'
+import { checkUpload } from './composer'
 import { deviceThreads, storeRun } from './device-threads'
 import { localThreadStore, memoryThreadStore } from './local-threads'
 import { OpenAttachments } from './open-attachments'
@@ -365,7 +365,7 @@ export function useThread(
   // image's descriptor carries the copy the harness gives models; the file
   // itself is kept apart, to show and download.
   async function upload(file: File): Promise<AttachmentDescriptor> {
-    if (session) checkUploadSize(file, attachmentLimit(session.composer, file))
+    if (session) checkUpload(file, session.composer.attachments)
     const { attachment } = await api.upload<{
       attachment: AttachmentDescriptor
     }>(ROUTES.attachmentUpload, file, {}, { keyless: true })

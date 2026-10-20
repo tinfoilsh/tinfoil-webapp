@@ -2,6 +2,7 @@ import { useProject } from '@/components/project'
 import { cn } from '@/components/ui/utils'
 import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
+import { acceptOf } from '@/services/harness/composer'
 import { useHarness } from '@/services/harness/provider'
 import { transcribe } from '@/services/speech/transcribe'
 import { logError } from '@/utils/error-handling'
@@ -785,7 +786,7 @@ export function ChatInput({
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
-            accept={session?.composer.attachments.accept.join(',')}
+            accept={acceptOf(session?.composer.attachments)}
             className="hidden"
             multiple
           />

@@ -42,17 +42,17 @@ function renderChatInput(
 }
 
 // A session whose composer turns a paste longer than 12 characters into a
-// file, and whose picker offers two kinds of file.
+// file, and whose picker offers two groups of files.
 function signInWithComposer() {
   signIn({
     session: {
       ...testSession,
       composer: {
         ...testSession.composer,
-        attachments: {
-          ...testSession.composer.attachments,
-          accept: ['.pdf', 'image/*'],
-        },
+        attachments: [
+          { accept: ['.png', '.jpg'], maxBytes: 1000 },
+          { accept: ['.pdf'], maxBytes: 2000 },
+        ],
         pasteAsFileChars: 12,
       },
     },
@@ -86,6 +86,6 @@ describe('ChatInput attachments', () => {
     const { container } = renderChatInput({ handleDocumentUpload: vi.fn() })
     expect(
       container.querySelector('input[type="file"]')?.getAttribute('accept'),
-    ).toBe('.pdf,image/*')
+    ).toBe('.png,.jpg,.pdf')
   })
 })

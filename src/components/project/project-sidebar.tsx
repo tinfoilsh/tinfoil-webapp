@@ -33,6 +33,7 @@ import {
   UI_SIDEBAR_FAVORITES_EXPANDED,
 } from '@/constants/storage-keys'
 import { toast } from '@/hooks/use-toast'
+import { acceptOf } from '@/services/harness/composer'
 import { useHarness } from '@/services/harness/provider'
 import type { Project } from '@/types/project'
 import { logError } from '@/utils/error-handling'
@@ -1227,7 +1228,7 @@ export function ProjectSidebar({
               className="hidden"
               onChange={handleFileUpload}
               disabled={contextLoading}
-              accept={session?.composer.projectDocuments.accept.join(',')}
+              accept={acceptOf(session?.composer.projectDocuments)}
             />
 
             <AnimatePresence initial={false}>

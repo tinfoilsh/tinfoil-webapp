@@ -47,12 +47,11 @@ export const testSession: Session = {
   profileDefaults: {},
   rateLimit: { kind: null, maxRequests: 100, remaining: 100 },
   composer: {
-    attachments: {
-      accept: ['.pdf', '.txt', '.png'],
-      maxBytes: 1000,
-      maxTextBytes: 2000,
-    },
-    projectDocuments: { accept: ['.pdf', '.md'], maxBytes: 500 },
+    attachments: [
+      { accept: ['.png'], maxBytes: 1000 },
+      { accept: ['.pdf', '.txt'], maxBytes: 2000 },
+    ],
+    projectDocuments: [{ accept: ['.pdf', '.md', '.txt'], maxBytes: 500 }],
     pasteAsFileChars: 40,
     dictationMaxSeconds: 30,
   },

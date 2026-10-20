@@ -221,11 +221,17 @@ export interface Session {
   // What the composer takes: the files a picker offers and their sizes, the
   // paste that becomes a text file, and how long dictation records.
   composer: {
-    attachments: { accept: string[]; maxBytes: number; maxTextBytes: number }
-    projectDocuments: { accept: string[]; maxBytes: number }
+    attachments: FileGroup[]
+    projectDocuments: FileGroup[]
     pasteAsFileChars: number
     dictationMaxSeconds: number
   }
+}
+
+// Files the composer takes by extension, and the largest each may be.
+export interface FileGroup {
+  accept: string[]
+  maxBytes: number
 }
 
 export interface Turn {

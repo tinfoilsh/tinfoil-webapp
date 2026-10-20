@@ -102,6 +102,6 @@ describe('project documents picker', () => {
     renderSidebar()
     expect(
       document.querySelector('input[type="file"]')?.getAttribute('accept'),
-    ).toBe('.pdf,.md')
+    ).toBe('.pdf,.md,.txt')
   })
 })
