@@ -215,6 +215,81 @@ describe('device store', () => {
       expect(upgrades()).toHaveLength(1)
     })
 
+    it("keeps each old image as the original of the harness's copy", async () => {
+      signIn()
+      const row = legacyRow(CHAT_ID, 'Cats')
+      await indexedDBStorage.saveChat({
+        ...row,
+        messages: [
+          ...row.messages,
+          {
+            role: 'user',
+            content: 'And this one',
+            timestamp: new Date('2026-01-01T00:00:02.000Z'),
+            attachments: [
+              {
+                id: 'att-cat',
+                type: 'image',
+                fileName: 'cat.png',
+                mimeType: 'image/png',
+                base64: 'Y2F0',
+              },
+            ],
+          },
+        ],
+      })
+      const modelCopy = (id: string, base64: string) => ({
+        id,
+        kind: 'image' as const,
+        fileName: 'image.webp',
+        mimeType: 'image/webp',
+        size: 5,
+        base64,
+      })
+      const returned = storedThread(CHAT_ID, {
+        title: 'Cats',
+        titleState: 'generated',
+        messages: [
+          {
+            id: `${CHAT_ID}-message-0`,
+            role: 'user',
+            createdAt: '2026-01-01T00:00:01Z',
+            content: 'Look at this',
+            attachments: [
+              modelCopy(`${CHAT_ID}-message-0-attachment-0`, 'Y29weTA='),
+            ],
+          },
+          {
+            id: `${CHAT_ID}-message-1`,
+            role: 'user',
+            createdAt: '2026-01-01T00:00:02Z',
+            content: 'And this one',
+            attachments: [modelCopy('att-cat', 'Y29weTE=')],
+          },
+        ],
+      })
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/upgrade') return { threads: [returned] }
+        throw new Error(`Unexpected ${path}`)
+      })
+
+      expect(await store.get(CHAT_ID)).toEqual(returned)
+      expect(
+        await store.originals(CHAT_ID, [
+          `${CHAT_ID}-message-0-attachment-0`,
+          'att-cat',
+        ]),
+      ).toEqual(
+        new Map([
+          [
+            `${CHAT_ID}-message-0-attachment-0`,
+            { base64: 'aW1n', mimeType: 'image/jpeg' },
+          ],
+          ['att-cat', { base64: 'Y2F0', mimeType: 'image/png' }],
+        ]),
+      )
+    })
+
     it('sends each one alone, and upgrades the others when the harness refuses one', async () => {
       signIn()
       await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))

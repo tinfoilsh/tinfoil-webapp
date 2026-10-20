@@ -282,6 +282,43 @@ async function upgradeRow(row: Value): Promise<StoredThread | null> {
   return { ...thread, id: str(row.id) || thread.id }
 }
 
+// The images of an old row, as the originals of the image attachments the
+// harness upgraded them into; the upgraded thread holds the copy models
+// read. An attachment keeps its id, and an image the row kept on its message
+// is matched in order to the message's upgraded images.
+function legacyOriginals(row: Value, thread: StoredThread): Originals {
+  const originals = new Map<string, AttachmentOriginal>()
+  arr(row.messages).forEach((item, index) => {
+    const message = obj(item)
+    const images = (thread.messages[index]?.attachments ?? []).filter(
+      (attachment) => attachment.kind === 'image',
+    )
+    const keep = (attachment: AttachmentDescriptor | undefined, old: Value) => {
+      const base64 = str(old.base64)
+      if (attachment && base64)
+        originals.set(attachment.id, {
+          base64,
+          mimeType: str(old.mimeType) || attachment.mimeType,
+        })
+    }
+    const listed = arr(message.attachments).map(obj)
+    if (listed.length) {
+      for (const old of listed)
+        keep(
+          images.find((image) => image.id === str(old.id)),
+          old,
+        )
+      return
+    }
+    const kept = arr(message.imageData)
+      .map(obj)
+      .filter((old) => str(old.base64))
+    if (kept.length === images.length)
+      kept.forEach((old, at) => keep(images[at], old))
+  })
+  return originals
+}
+
 export async function upgradeThreads(
   rows: readonly object[],
 ): Promise<(StoredThread | null)[]> {
@@ -572,7 +609,7 @@ function createStore(
         const saved = await serialize(id, async () => {
           const current = await backend.read(id)
           if (!current || isThreadRow(current) || isDeleted(id)) return false
-          return backend.write({ ...thread, id }, new Map())
+          return backend.write({ ...thread, id }, legacyOriginals(row, thread))
         })
         if (saved) written.push(id)
       }
