@@ -1,5 +1,6 @@
 import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
+import type { DeviceChatCopy } from '@/services/harness/transfer'
 import type { StoredThread, ThreadSummary } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
@@ -143,8 +144,8 @@ describe('moving a stored chat to this device', () => {
     expect(
       result.current.chats.map((chat) => [chat.id, chat.isLocalOnly ?? false]),
     ).toEqual([
-      [OTHER_ID, false],
       [CHAT_ID, true],
+      [OTHER_ID, false],
     ])
   })
 
@@ -386,7 +387,7 @@ describe('moving a chat from this device to the cloud', () => {
       expect(result.current.chats.map((chat) => chat.id)).toEqual([CHAT_ID]),
     )
 
-    let original: StoredThread | undefined
+    let original: DeviceChatCopy | undefined
     await act(async () => {
       original = await result.current.moveToCloud(CHAT_ID)
     })
@@ -401,7 +402,7 @@ describe('moving a chat from this device to the cloud', () => {
         },
       ],
     ])
-    expect(original).toEqual(deviceCopy)
+    expect(original?.thread).toEqual(deviceCopy)
     expect(await stored(CHAT_ID)).toBeNull()
     expect(
       result.current.chats
@@ -803,7 +804,15 @@ describe('moving a chat from this device to the cloud', () => {
 
   it('puts the device copy back under the same id after a move is undone', async () => {
     signIn({ cloud: true })
-    await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
+    const imageId = deviceCopy.messages[0].attachments![0].id
+    const originals = new Map([
+      [imageId, { base64: 'b3JpZ2luYWw=', mimeType: 'image/png' }],
+    ])
+    await localThreadStore('device').update(
+      CHAT_ID,
+      () => deviceCopy,
+      originals,
+    )
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
       if (path === '/v1/threads/import') return imported
@@ -811,7 +820,7 @@ describe('moving a chat from this device to the cloud', () => {
       throw new Error(`Unexpected ${path}`)
     })
     const { result } = await renderThreads([])
-    let original: StoredThread | undefined
+    let original: DeviceChatCopy | undefined
     await act(async () => {
       original = await result.current.moveToCloud(CHAT_ID)
     })
@@ -825,6 +834,9 @@ describe('moving a chat from this device to the cloud', () => {
       ['/v1/threads/delete', CHAT_ID],
     ])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
+    expect(
+      await localThreadStore('device').originals(CHAT_ID, [imageId]),
+    ).toEqual(originals)
     expect(result.current.chats.filter((chat) => !chat.isLocalOnly)).toEqual([])
     expect(result.current.chats.map((chat) => chat.id)).toEqual([CHAT_ID])
   })

@@ -1,9 +1,14 @@
 import { logError } from '@/utils/error-handling'
-import type { LocalThreadStore } from './local-threads'
+import type { LocalThreadStore, Originals } from './local-threads'
 import { ERROR_CODES, ROUTES } from './protocol'
 import type { HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import type { StoredThread, ThreadSummary } from './types'
+
+export interface DeviceChatCopy {
+  thread: StoredThread
+  originals: Originals
+}
 
 // Moving a chat between the cloud and this device keeps its id. A chat on the
 // device holds its attachments' content, so a move carries the content with
@@ -78,8 +83,9 @@ export async function placeOnDevice(
   api: HarnessAPI,
   store: LocalThreadStore,
   thread: StoredThread,
+  originals?: Originals,
 ): Promise<StoredThread> {
-  const saved = await store.add(thread)
+  const saved = await store.add(thread, originals)
   if (!saved)
     throw new HarnessError(
       {
@@ -120,7 +126,7 @@ export async function moveThreadToCloud(
   api: HarnessAPI,
   store: LocalThreadStore,
   threadId: string,
-): Promise<{ summary: ThreadSummary; original: StoredThread }> {
+): Promise<{ summary: ThreadSummary; original: DeviceChatCopy }> {
   const original = await store.get(threadId)
   if (!original)
     throw new HarnessError(
@@ -130,6 +136,12 @@ export async function moveThreadToCloud(
       },
       404,
     )
+  const originals = await store.originals(
+    threadId,
+    original.messages.flatMap((message) =>
+      (message.attachments ?? []).map((attachment) => attachment.id),
+    ),
+  )
   const summary = await api.post<ThreadSummary>(ROUTES.threadImport, {
     threadId,
     thread: original,
@@ -146,5 +158,5 @@ export async function moveThreadToCloud(
     )
     throw cause
   }
-  return { summary, original }
+  return { summary, original: { thread: original, originals } }
 }

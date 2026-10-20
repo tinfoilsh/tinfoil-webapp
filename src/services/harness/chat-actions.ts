@@ -11,8 +11,9 @@ import {
   moveThreadToDevice,
   placeOnDevice,
   transferInFlight,
+  type DeviceChatCopy,
 } from './transfer'
-import type { StoredThread, Thread } from './types'
+import type { Thread } from './types'
 
 export interface ChatContext {
   api: HarnessAPI
@@ -44,6 +45,16 @@ export function chatActions({
   openChat,
 }: ChatContext) {
   const isOpen = (threadId: string) => open.get().id === threadId
+  const requireIdle = (threadId: string) => {
+    const { status } = controller.view.get()
+    if (
+      controller.deviceRuns.get().has(threadId) ||
+      controller.startingThread() === threadId ||
+      (isOpen(threadId) && (status === 'streaming' || status === 'queued'))
+    ) {
+      throw transferInFlight()
+    }
+  }
   // A chat takes no changes until its move has ended, the open chat's
   // reopening included. A change made to a chat during its move would stay
   // with the copy the move deletes.
@@ -174,10 +185,16 @@ export function chatActions({
     // Moves a stored chat to this device under the same id. A chat the
     // harness stored a moment ago is put back as it was on the device, so a
     // move that is undone keeps its original attachments.
-    moveToDevice(threadId: string, original?: StoredThread) {
+    moveToDevice(threadId: string, original?: DeviceChatCopy) {
       return whileMoving(threadId, async () => {
+        requireIdle(threadId)
         const moved = original
-          ? await placeOnDevice(api, device, original)
+          ? await placeOnDevice(
+              api,
+              device,
+              original.thread,
+              original.originals,
+            )
           : await moveThreadToDevice(api, device, threadId)
         list.cloud.remove(threadId)
         list.device.add(localSummary(moved))
@@ -187,12 +204,7 @@ export function chatActions({
     // Moves a chat from this device to the cloud under the same id, and
     // returns the device copy it replaced.
     async moveToCloud(threadId: string) {
-      const { status } = controller.view.get()
-      const running =
-        controller.deviceRuns.get().has(threadId) ||
-        controller.startingThread() === threadId ||
-        (isOpen(threadId) && (status === 'streaming' || status === 'queued'))
-      if (running) throw transferInFlight()
+      requireIdle(threadId)
       return whileMoving(threadId, async () => {
         const { summary, original } = await moveThreadToCloud(
           api,
