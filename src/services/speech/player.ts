@@ -25,6 +25,8 @@ interface Session {
   done: boolean
   scheduledUntil: number
   started: boolean
+  // Reads the stream again once playback has drained some audio.
+  drained?: () => void
   onPageHide: () => void
   onKeyDown: (event: KeyboardEvent) => void
 }
@@ -70,6 +72,7 @@ export class SpeechPlayer {
     this.session = null
     if (session) {
       session.controller.abort()
+      session.drained?.()
       window.removeEventListener('pagehide', session.onPageHide)
       window.removeEventListener('keydown', session.onKeyDown)
       session.context.onstatechange = null
@@ -239,7 +242,17 @@ export class SpeechPlayer {
       session.bufferedSeconds = 0
     } catch (error) {
       this.fail(session, error)
+    } finally {
+      session.drained?.()
     }
+  }
+
+  // Seconds of audio received and not played yet, buffered or scheduled.
+  private ahead(session: Session): number {
+    return (
+      session.bufferedSeconds +
+      Math.max(0, session.scheduledUntil - session.context.currentTime)
+    )
   }
 
   private async receive(session: Session): Promise<void> {
@@ -252,6 +265,15 @@ export class SpeechPlayer {
         session.buffers.push(samples)
         session.bufferedSeconds += samples.length / SPEECH.SAMPLE_RATE
         this.pump(session)
+        while (
+          this.session === session &&
+          this.ahead(session) >= SPEECH.MAX_BUFFERED_SECONDS
+        ) {
+          await new Promise<void>((resolve) => {
+            session.drained = resolve
+          })
+        }
+        if (this.session !== session) return
       }
       if (this.session !== session) return
       if (!received) throw new SpeechError('invalid-audio')

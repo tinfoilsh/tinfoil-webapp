@@ -1,6 +1,7 @@
 import { HarnessError } from '@/services/harness/sse'
 
-export type SpeechErrorCode = 'unsupported' | 'invalid-audio' | 'interrupted'
+export type SpeechErrorCode =
+  'unsupported' | 'invalid-audio' | 'interrupted' | 'stalled'
 
 export class SpeechError extends Error {
   constructor(public readonly code: SpeechErrorCode) {
@@ -21,6 +22,8 @@ export function speechErrorMessage(error: unknown): string {
         return 'Audio playback was interrupted. Please try again.'
       case 'invalid-audio':
         return 'The speech service returned unsupported audio. Please try again.'
+      case 'stalled':
+        return 'The speech service stopped responding. Please try again.'
     }
   }
   return 'Could not read this response aloud. Please try again.'

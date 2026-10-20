@@ -7,4 +7,8 @@ export const SPEECH = {
   BLOCK_SAMPLES: 6000,
   START_BUFFER_SECONDS: 12,
   SCHEDULE_LEAD_SECONDS: 0.05,
+  // The stream is not read further while this much audio waits to play.
+  MAX_BUFFERED_SECONDS: 30,
+  // A response that sends nothing for this long has stalled.
+  IDLE_TIMEOUT_MS: 30_000,
 } as const

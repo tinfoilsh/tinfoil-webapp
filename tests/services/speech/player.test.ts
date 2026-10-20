@@ -1,7 +1,8 @@
 import { SPEECH } from '@/services/speech/constants'
 import { SpeechPlayer } from '@/services/speech/player'
+import { speechSource } from '@/services/speech/stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { controlledSpeech, FakeAudioContext } from './fixtures'
+import { controlledSpeak, controlledSpeech, FakeAudioContext } from './fixtures'
 
 describe('buffered speech playback', () => {
   let audio: FakeAudioContext
@@ -258,5 +259,82 @@ describe('buffered speech playback', () => {
     )
     expect(audio.scheduled[2].startTime).toBe(audio.scheduled[1].startTime + 1)
     expect(player.getSnapshot().status).toBe('playing')
+  })
+
+  it('stops reading a stream far ahead of playback and reads on as it plays', async () => {
+    const request = await start()
+    const seconds = SPEECH.MAX_BUFFERED_SECONDS + 2
+    for (let second = 0; second < seconds; second++) request.push(1)
+    await vi.waitFor(() =>
+      expect(audio.scheduled).toHaveLength(SPEECH.MAX_BUFFERED_SECONDS),
+    )
+    expect(request.consumed).toBe(SPEECH.MAX_BUFFERED_SECONDS - 1)
+    audio.advanceTo(3)
+    await vi.waitFor(() => expect(audio.scheduled).toHaveLength(seconds))
+  })
+
+  it('stops reading while paused once enough audio waits to play', async () => {
+    const request = await start()
+    request.push(SPEECH.START_BUFFER_SECONDS)
+    await vi.waitFor(() => expect(audio.scheduled).toHaveLength(1))
+    audio.state = 'suspended'
+    audio.onstatechange?.()
+    const room = SPEECH.MAX_BUFFERED_SECONDS - SPEECH.START_BUFFER_SECONDS
+    for (let second = 0; second < room + 2; second++) request.push(1)
+    await vi.waitFor(() => expect(request.consumed).toBe(room))
+    audio.state = 'running'
+    audio.onstatechange?.()
+    expect(audio.scheduled).toHaveLength(room + 1)
+    audio.advanceTo(SPEECH.START_BUFFER_SECONDS + 1)
+    await vi.waitFor(() => expect(audio.scheduled).toHaveLength(room + 3))
+  })
+})
+
+describe('stalled speech', () => {
+  let player: SpeechPlayer
+  let audio: FakeAudioContext
+  beforeEach(() => {
+    vi.useFakeTimers()
+    audio = new FakeAudioContext()
+    player = new SpeechPlayer(() => audio as unknown as AudioContext)
+  })
+  afterEach(() => {
+    player.stop()
+    vi.useRealTimers()
+  })
+
+  it.each([
+    ['no response arrives', () => new Promise<Response>(() => {})],
+    [
+      'the response stops sending audio',
+      async (signal: AbortSignal) => {
+        const speech = controlledSpeak()
+        const response = await speech.speak('reply', signal)
+        speech.responses[0].push(1)
+        return response
+      },
+    ],
+  ])('ends playback with an error when %s', async (_case, open) => {
+    const owner = Symbol('message')
+    const signals: AbortSignal[] = []
+    player.read(
+      owner,
+      speechSource((signal) => {
+        signals.push(signal)
+        return open(signal)
+      }),
+    )
+    await vi.advanceTimersByTimeAsync(SPEECH.IDLE_TIMEOUT_MS - 1)
+    expect(signals).toHaveLength(1)
+    expect(player.getSnapshot()).toEqual({ owner, status: 'loading' })
+
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(player.getSnapshot()).toEqual({
+      owner,
+      status: 'error',
+      error: 'The speech service stopped responding. Please try again.',
+    })
+    expect(signals[0].aborted).toBe(true)
   })
 })

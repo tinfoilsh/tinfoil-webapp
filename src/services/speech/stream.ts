@@ -7,6 +7,23 @@ export type SpeechSource = (signal: AbortSignal) => AsyncIterable<Float32Array>
 // Asks the harness to read a reply aloud; it answers with one audio stream.
 export type OpenSpeech = (signal: AbortSignal) => Promise<Response>
 
+// The next part of a response, which fails as stalled when nothing arrives
+// in time.
+async function arriving<T>(next: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const stalled = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new SpeechError('stalled')),
+      SPEECH.IDLE_TIMEOUT_MS,
+    )
+  })
+  try {
+    return await Promise.race([next, stalled])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function* decodePcmStream(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal,
@@ -23,7 +40,7 @@ export async function* decodePcmStream(
   try {
     signal.throwIfAborted()
     while (true) {
-      const { done, value } = await reader.read()
+      const { done, value } = await arriving(reader.read())
       signal.throwIfAborted()
       if (done) break
       for (const byte of value) {
@@ -60,7 +77,7 @@ export async function* decodePcmStream(
 // with.
 export function speechSource(open: OpenSpeech): SpeechSource {
   return async function* (signal) {
-    const response = await open(signal)
+    const response = await arriving(open(signal))
     signal.throwIfAborted()
     const mediaType = response.headers.get('content-type')?.split(';')[0].trim()
     if (mediaType !== 'audio/pcm' || !response.body) {
