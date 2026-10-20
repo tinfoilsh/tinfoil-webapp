@@ -1,5 +1,7 @@
+import { localThreadStore } from './local-threads'
+import { imageBlob } from './open-attachments'
 import { ROUTES } from './protocol'
-import { harnessAPI } from './runtime'
+import { harnessAPI, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 export type ImportFailureReason =
   'invalid_archive' | 'wrong_key' | 'internal_error' | string
@@ -29,14 +31,103 @@ function saveDownload(blob: Blob, filename: string) {
   anchor.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
-// The harness builds the Claude-compatible projects.json. Native backups are
-// built in services/native-backup, which adds the chats on this device.
+
+// A Tinfoil backup, or the chats as conversations, which Tinfoil and other
+// chat apps import.
+export type ExportFormat = 'native' | 'conversations'
+const EXPORT_FILENAMES: Record<ExportFormat, string> = {
+  native: 'tinfoil-backup.zip',
+  conversations: 'tinfoil-chats.zip',
+}
+
+// The chats a signed-in account keeps on this device, or a signed-out
+// visitor in this tab.
+const deviceStore = (api: HarnessAPI) =>
+  localThreadStore(api.userId ? 'device' : 'tab')
+
+// Reads an archive as it arrives, reporting the bytes received so far.
+async function receive(
+  response: Response,
+  onProgress?: (received: number) => void,
+): Promise<Blob> {
+  const chunks: BlobPart[] = []
+  let received = 0
+  const reader = response.body?.getReader()
+  for (;;) {
+    const chunk = await reader?.read()
+    if (!chunk || chunk.done) break
+    chunks.push(chunk.value as Uint8Array<ArrayBuffer>)
+    received += chunk.value.length
+    onProgress?.(received)
+  }
+  return new Blob(chunks, {
+    type: response.headers.get('Content-Type') ?? '',
+  })
+}
+
+export interface ExportOptions {
+  // Include the account's cloud chats and projects, which the content key
+  // opens.
+  cloud: boolean
+  signal?: AbortSignal
+  onProgress?: (received: number) => void
+}
+
+// The chat service writes one archive of the chats kept here, sent as they
+// are stored with the originals of their images, and of the account's cloud
+// data. With nothing to export nothing is sent, and false is returned.
+export async function exportArchive(
+  format: ExportFormat,
+  { cloud, signal, onProgress }: ExportOptions,
+): Promise<boolean> {
+  const api = harnessAPI()
+  const key = cloud ? api.key() : undefined
+  const form = new FormData()
+  form.append('options', JSON.stringify({ format, ...(key ? { key } : {}) }))
+  const store = deviceStore(api)
+  // A fork keeps the attachments of its chat, whose originals go once.
+  const sent = new Set<string>()
+  let chats = 0
+  for (const { id } of await store.list()) {
+    signal?.throwIfAborted()
+    const thread = await store.get(id)
+    if (!thread) continue
+    form.append('thread', JSON.stringify(thread))
+    chats++
+    const attachmentIds = thread.messages
+      .flatMap((message) => message.attachments ?? [])
+      .map((attachment) => attachment.id)
+      .filter((attachmentId) => !sent.has(attachmentId))
+    for (const [attachmentId, original] of await store.originals(
+      id,
+      attachmentIds,
+    )) {
+      sent.add(attachmentId)
+      const image = imageBlob(original)
+      form.append('file', new File([image], attachmentId, { type: image.type }))
+    }
+  }
+  if (!key && chats === 0) return false
+  const response = await api.multipart(ROUTES.export, form, {
+    signal,
+    keyless: !key,
+  })
+  const archive = await receive(response, onProgress)
+  signal?.throwIfAborted()
+  saveDownload(archive, EXPORT_FILENAMES[format])
+  return true
+}
+
+// The chat service writes the Claude-compatible projects.json.
 export async function exportClaudeProjects(signal?: AbortSignal) {
-  const blob = await harnessAPI().download(
-    ROUTES.export,
-    { format: 'claude-projects' },
-    { signal },
+  const api = harnessAPI()
+  const form = new FormData()
+  form.append(
+    'options',
+    JSON.stringify({ format: 'claude-projects', key: api.key() }),
   )
+  const response = await api.multipart(ROUTES.export, form, { signal })
+  const blob = await response.blob()
   signal?.throwIfAborted()
   saveDownload(blob, 'projects.json')
 }
@@ -47,13 +138,13 @@ export async function startImport(
 ): Promise<ImportStatusResponse> {
   const api = harnessAPI()
   const { jobId } = await api.upload<{ jobId: string }>(
-    ROUTES.import,
+    '/v1/import',
     file,
     { source },
     { signal },
   )
   const status = await api.post<ImportStatusResponse>(
-    ROUTES.importStatus,
+    '/v1/import/status',
     { jobId },
     { signal, keyless: true },
   )
@@ -61,7 +152,7 @@ export async function startImport(
 }
 export async function importStatus(jobId: string, signal?: AbortSignal) {
   const status = await harnessAPI().post<ImportStatusResponse>(
-    ROUTES.importStatus,
+    '/v1/import/status',
     { jobId },
     { signal, keyless: true },
   )

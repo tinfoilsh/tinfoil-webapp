@@ -11,11 +11,6 @@ import type { SettingsTab } from '@/constants/settings-tabs'
 import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
-import {
-  buildChatExport,
-  type AttachmentBytesFetcher,
-} from '@/services/chat-export/export-archive'
-import { collectChatExport } from '@/services/chat-export/export-chats'
 import { isZipFile, readExportFiles } from '@/services/chat-import/export-files'
 import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
 import {
@@ -23,6 +18,7 @@ import {
   PremiumProjectImportRequiredError,
 } from '@/services/chat-import/local-tinfoil-import'
 import {
+  exportArchive,
   exportClaudeProjects,
   ImportSequenceError,
   importStatus,
@@ -128,8 +124,6 @@ import { SafeguardsSettings } from './safeguards-settings'
 import {
   canDeleteAllProjects,
   canTransferProjectData,
-  countExcludedProjectChats,
-  filterExportableChats,
 } from './settings-project-policy'
 import type { Chat } from './types'
 
@@ -1752,117 +1746,47 @@ export function SettingsModal({
     return null
   }
 
-  // Export chats as conversations.json, or a ZIP holding their images
-  const downloadChats = async (
-    chatsToExport: Chat[],
-    fetchAttachmentBytes: AttachmentBytesFetcher,
-    signal: AbortSignal,
-  ) => {
-    signal.throwIfAborted()
-    if (chatsToExport.length === 0) {
-      toast({
-        title: 'No chats to export',
-        description: 'You have no chats to export yet.',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    setIsExporting(true)
-    setExportType('chats')
-
-    try {
-      // One binary attachment is fetched at a time so the browser never
-      // holds every attachment's bytes in memory at once.
-      const archive = await buildChatExport(chatsToExport, fetchAttachmentBytes)
-      signal.throwIfAborted()
-      const blob =
-        typeof archive.data === 'string'
-          ? new Blob([archive.data], { type: archive.mimeType })
-          : new Blob([new Uint8Array(archive.data)], {
-              type: archive.mimeType,
-            })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = archive.filename
-      document.body.appendChild(a)
-      try {
-        signal.throwIfAborted()
-        a.click()
-      } finally {
-        document.body.removeChild(a)
-        window.URL.revokeObjectURL(url)
-      }
-
-      signal.throwIfAborted()
-      toast({
-        title: 'Export complete',
-        description: `Exported ${chatsToExport.length} conversation${chatsToExport.length !== 1 ? 's' : ''} successfully.`,
-      })
-    } catch (error) {
-      if (signal.aborted) return
-      logError('Failed to create conversations export', error, {
-        component: 'SettingsModal',
-        action: 'downloadChats',
-      })
-      toast({
-        title: 'Export failed',
-        description: 'Failed to download conversations. Please try again.',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsExporting(false)
-      setExportType(null)
-    }
-  }
-
-  // Exports the chats kept on this device and, with cloud sync, the stored
-  // chats. An account change ends the export without a download.
+  // The chat service exports the chats kept on this device (in this tab when
+  // signed out) and, with cloud sync, the stored chats. An account change
+  // ends the export without a download.
   const handleExportAllChats = async () => {
-    const signal = api.lifetime.signal
     setIsPreparingExport(true)
     setExportType('chats')
-
     try {
-      const source = await collectChatExport(api, {
+      const exported = await exportArchive('conversations', {
         cloud: cloudSyncEnabled,
-        signal,
+        signal: api.lifetime.signal,
+        onProgress: () => {
+          setIsPreparingExport(false)
+          setIsExporting(true)
+        },
       })
-      const hasPremiumProjectAccess = Boolean(isPremium)
-      const exportableChats = filterExportableChats(
-        source.chats,
-        hasPremiumProjectAccess,
-      )
-      const excludedProjectChats = countExcludedProjectChats(
-        source.chats,
-        hasPremiumProjectAccess,
-      )
-
-      setIsPreparingExport(false)
-      if (excludedProjectChats > 0) {
+      if (!exported) {
         toast({
-          title: 'Project chats not included',
-          description: `${excludedProjectChats} project chat${excludedProjectChats === 1 ? '' : 's'} could not be exported. Premium is required to export project chats.`,
+          title: 'No chats to export',
+          description: 'You have no chats to export yet.',
+          variant: 'destructive',
         })
-      }
-      await downloadChats(exportableChats, source.fetchAttachmentBytes, signal)
-    } catch (error) {
-      if (signal.aborted) {
-        setIsPreparingExport(false)
-        setExportType(null)
         return
       }
-      logError('Failed to prepare chats for export', error, {
+      toast({
+        title: 'Export complete',
+        description: 'Your chats were exported.',
+      })
+    } catch (error) {
+      if (api.lifetime.signal.aborted) return
+      logError('Failed to export chats', error, {
         component: 'SettingsModal',
         action: 'handleExportAllChats',
       })
       toast({
         title: 'Export failed',
-        description: 'Failed to prepare chats for export. Please try again.',
+        description: 'Failed to export chats. Please try again.',
         variant: 'destructive',
       })
+    } finally {
       setIsPreparingExport(false)
+      setIsExporting(false)
       setExportType(null)
     }
   }
@@ -4110,7 +4034,7 @@ ${encryptionKey.replace('key_', '')}
                       )}
                     >
                       <div className="font-aeonik-fono text-xs text-content-muted">
-                        Export all your conversations as a JSON file. This
+                        Export all your conversations as a ZIP archive. This
                         format can be re-imported into Tinfoil Chat.
                       </div>
                       <button

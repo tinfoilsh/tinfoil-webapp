@@ -44,7 +44,7 @@ export function isAttachmentsUnavailable(error: unknown): boolean {
 
 // A stored chat as this device keeps it: the thread with every attachment's
 // content inline.
-export async function cloudTranscript(
+async function cloudTranscript(
   api: HarnessAPI,
   threadId: string,
   signal?: AbortSignal,

@@ -161,6 +161,18 @@ export class HarnessAPI {
     requestSignal.throwIfAborted()
     return response
   }
+  // A multipart request whose response body streams. Its parts carry the
+  // content key themselves when the route reads one.
+  async multipart(
+    path: HarnessRoute,
+    form: FormData,
+    { signal, keyless = false }: RequestOptions = {},
+  ): Promise<Response> {
+    const requestSignal = this.signal({ signal, keyless })
+    const response = await this.client.multipart(path, form, requestSignal)
+    requestSignal.throwIfAborted()
+    return response
+  }
   async download(
     path: HarnessRoute,
     input: object = {},

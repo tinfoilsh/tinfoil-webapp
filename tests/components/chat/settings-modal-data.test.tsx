@@ -1,12 +1,9 @@
 import { SettingsModal } from '@/components/chat/settings-modal'
-import { buildChatExport } from '@/services/chat-export/export-archive'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
-import type { ThreadSummary } from '@/services/harness/types'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
-import { createFunctionalImportWorker } from '../../services/chat-import/functional-import-worker'
 import {
   resetChatStoresAroundEachTest,
   storedThread,
@@ -89,44 +86,6 @@ const deviceChat = storedThread(LOCAL_ID, {
   ],
 })
 
-const conversation = (id: string, name: string) => ({
-  uuid: id,
-  name,
-  created_at: '2026-04-01T09:00:00.000Z',
-  updated_at: '2026-04-01T09:05:00.000Z',
-  chat_messages: [
-    {
-      uuid: `${id}_msg_0`,
-      text: 'When do I plant?',
-      sender: 'human',
-      created_at: '2026-04-01T09:00:01.000Z',
-    },
-    {
-      uuid: `${id}_msg_1`,
-      text: 'In May.',
-      sender: 'assistant',
-      created_at: '2026-04-01T09:00:05.000Z',
-    },
-  ],
-})
-
-function summary(id: string, projectId: string | null): ThreadSummary {
-  return {
-    id,
-    title: id,
-    titleState: 'generated',
-    createdAt: deviceChat.createdAt,
-    updatedAt: deviceChat.updatedAt,
-    model: 'test-model',
-    projectId,
-    pinned: false,
-    webSearchEnabled: true,
-    messageCount: 2,
-    activeRun: null,
-    contextUsage: null,
-  }
-}
-
 resetChatStoresAroundEachTest()
 
 beforeEach(() => {
@@ -153,73 +112,124 @@ async function exportChats() {
   )
 }
 
+const FORK_ID = '8233746418000_2d5f8b63-0a3c-4f8e-9e2b-6c7d8e9f0a11'
+const photo = {
+  id: 'att_photo',
+  kind: 'image' as const,
+  fileName: 'photo.png',
+  mimeType: 'image/jpeg',
+  size: 5,
+  base64: 'bW9kZWw=',
+}
+const ORIGINAL = { base64: 'b3JpZ2luYWw=', mimeType: 'image/png' }
+// A chat with an image whose picked file this device keeps, and its fork,
+// which keeps the same attachment.
+const photoChat = storedThread(LOCAL_ID, {
+  ...deviceChat,
+  messages: [{ ...deviceChat.messages[0], attachments: [photo] }],
+})
+const photoFork = storedThread(FORK_ID, {
+  ...photoChat,
+  id: FORK_ID,
+  title: 'Garden plans (fork)',
+  updatedAt: '2026-04-01T09:00:00Z',
+})
+const ARCHIVE = new Uint8Array([80, 75, 3, 4, 1])
+
+async function keepPhotoChats(scope: 'device' | 'tab') {
+  const store = localThreadStore(scope)
+  for (const thread of [photoChat, photoFork])
+    await store.update(thread.id, () => thread, new Map([[photo.id, ORIGINAL]]))
+}
+
+function answerExport() {
+  client.multipart.mockResolvedValue(
+    new Response(new Blob([ARCHIVE]), {
+      headers: { 'Content-Type': 'application/zip' },
+    }),
+  )
+}
+
+// The parts of the export request, in order: JSON parts parsed, and files
+// by name, type and content.
+async function exportRequest() {
+  expect(client.multipart).toHaveBeenCalledOnce()
+  const [path, form] = client.multipart.mock.calls[0] as [string, FormData]
+  return {
+    path,
+    parts: await Promise.all(
+      [...form.entries()].map(async ([name, value]) =>
+        typeof value === 'string'
+          ? [name, JSON.parse(value)]
+          : [name, value.name, value.type, await value.text()],
+      ),
+    ),
+  }
+}
+
 describe('exporting chats from the Data tab', () => {
-  it('downloads the chats kept on this device without cloud sync', async () => {
+  it('sends the chats on this device and their originals once without cloud sync', async () => {
     connect()
-    await localThreadStore('device').update(LOCAL_ID, () => deviceChat)
+    await keepPhotoChats('device')
+    answerExport()
     renderData()
 
     await exportChats()
 
+    expect(await exportRequest()).toEqual({
+      path: '/v1/export',
+      parts: [
+        ['options', { format: 'conversations' }],
+        ['thread', photoChat],
+        ['file', photo.id, 'image/png', 'original'],
+        ['thread', photoFork],
+      ],
+    })
     expect(page.toast).toHaveBeenCalledExactlyOnceWith({
       title: 'Export complete',
-      description: 'Exported 1 conversation successfully.',
+      description: 'Your chats were exported.',
     })
-    expect(downloads.map(({ name }) => name)).toEqual(['conversations.json'])
-    expect(JSON.parse(await downloads[0].blob.text())).toEqual([
-      conversation(LOCAL_ID, 'Garden plans'),
-    ])
-    expect(client.post).not.toHaveBeenCalled()
+    expect(downloads.map(({ name }) => name)).toEqual(['tinfoil-chats.zip'])
+    expect(new Uint8Array(await downloads[0].blob.arrayBuffer())).toEqual(
+      ARCHIVE,
+    )
   })
 
-  it("downloads a signed-out visitor's chats from this tab", async () => {
+  it('sends the content key with cloud sync, for the stored chats', async () => {
+    connect({ cloud: true })
+    await keepPhotoChats('device')
+    answerExport()
+    renderData()
+
+    await exportChats()
+
+    expect((await exportRequest()).parts).toEqual([
+      ['options', { format: 'conversations', key: KEY }],
+      ['thread', photoChat],
+      ['file', photo.id, 'image/png', 'original'],
+      ['thread', photoFork],
+    ])
+    expect(downloads.map(({ name }) => name)).toEqual(['tinfoil-chats.zip'])
+  })
+
+  it("sends a signed-out visitor's chats from this tab without a key", async () => {
     page.isSignedIn = false
     connect()
-    await localThreadStore('tab').update(LOCAL_ID, () => deviceChat)
+    await keepPhotoChats('tab')
+    answerExport()
     renderData()
 
     await exportChats()
 
-    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
-      title: 'Export complete',
-      description: 'Exported 1 conversation successfully.',
-    })
-    expect(JSON.parse(await downloads[0].blob.text())).toEqual([
-      conversation(LOCAL_ID, 'Garden plans'),
+    expect((await exportRequest()).parts).toEqual([
+      ['options', { format: 'conversations' }],
+      ['thread', photoChat],
+      ['file', photo.id, 'image/png', 'original'],
+      ['thread', photoFork],
     ])
-  })
-
-  it('leaves out project chats without premium and says so', async () => {
-    connect({ cloud: true })
-    client.post.mockImplementation(async (path: string, input) => {
-      const { threadId } = input as { threadId?: string }
-      if (path === '/v1/threads/list')
-        return {
-          threads: [summary('in-project', 'project-1'), summary('loose', null)],
-          nextCursor: null,
-        }
-      if (path === '/v1/threads/transcript')
-        return { thread: { ...deviceChat, id: threadId, title: threadId } }
-      throw new Error(`Unexpected ${path}`)
-    })
-    renderData()
-
-    await exportChats()
-
-    expect(page.toast.mock.calls.map(([toast]) => toast)).toEqual([
-      {
-        title: 'Project chats not included',
-        description:
-          '1 project chat could not be exported. Premium is required to export project chats.',
-      },
-      {
-        title: 'Export complete',
-        description: 'Exported 1 conversation successfully.',
-      },
-    ])
-    expect(JSON.parse(await downloads[0].blob.text())).toEqual([
-      conversation('loose', 'loose'),
-    ])
+    expect(new Uint8Array(await downloads[0].blob.arrayBuffer())).toEqual(
+      ARCHIVE,
+    )
   })
 
   it('says when there is nothing to export', async () => {
@@ -233,12 +243,13 @@ describe('exporting chats from the Data tab', () => {
       description: 'You have no chats to export yet.',
       variant: 'destructive',
     })
+    expect(client.multipart).not.toHaveBeenCalled()
     expect(downloads).toEqual([])
   })
 
-  it('reports an export whose chats cannot be read', async () => {
+  it('reports an export the chat service refuses', async () => {
     connect({ cloud: true })
-    client.post.mockRejectedValue(
+    client.multipart.mockRejectedValue(
       new HarnessError({ code: 'UPSTREAM_REFUSED', message: 'Down' }, 503),
     )
     renderData()
@@ -247,7 +258,7 @@ describe('exporting chats from the Data tab', () => {
 
     expect(page.toast).toHaveBeenCalledExactlyOnceWith({
       title: 'Export failed',
-      description: 'Failed to prepare chats for export. Please try again.',
+      description: 'Failed to export chats. Please try again.',
       variant: 'destructive',
     })
     expect(downloads).toEqual([])
@@ -436,97 +447,6 @@ describe('importing chats from the Data tab', () => {
     ])
     expect(await localThreadStore('tab').get(listed.id)).toEqual(
       upgraded({ id: listed.id, title: 'Soup' }),
-    )
-  })
-
-  it('stores a Tinfoil export with its images on this device', async () => {
-    connect()
-    acceptUpgrades()
-    vi.stubGlobal('Worker', createFunctionalImportWorker())
-    const image = new Uint8Array([137, 80, 78, 71, 9])
-    const archive = await buildChatExport(
-      [
-        {
-          id: 'source',
-          title: 'Trip',
-          createdAt: new Date('2026-02-01T10:00:00Z'),
-          messages: [
-            {
-              role: 'user',
-              content: 'Our map',
-              timestamp: new Date('2026-02-01T10:00:01Z'),
-              attachments: [
-                {
-                  id: 'map',
-                  type: 'image',
-                  fileName: 'map.png',
-                  mimeType: 'image/png',
-                },
-              ],
-            },
-          ],
-        },
-        {
-          id: 'project-chat',
-          title: 'Budget',
-          projectId: 'project-1',
-          createdAt: new Date('2026-02-01T10:00:00Z'),
-          messages: [
-            {
-              role: 'user',
-              content: 'Costs',
-              timestamp: new Date('2026-02-01T10:00:01Z'),
-            },
-          ],
-        },
-      ],
-      async () => image,
-    )
-    renderData()
-
-    pickFiles('Tinfoil', [
-      new File([archive.data as Uint8Array<ArrayBuffer>], archive.filename, {
-        type: archive.mimeType,
-      }),
-    ])
-    await waitFor(() => expect(page.toast).toHaveBeenCalled())
-
-    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
-      title: 'Chats imported; project chats skipped',
-      description:
-        'Imported 1 chat. Premium is required to import the 1 project chat.',
-    })
-    const [listed] = await localThreadStore('device').list()
-    expect(upgradeRequests()).toEqual([
-      {
-        threads: [
-          expect.objectContaining({
-            id: listed.id,
-            title: 'Trip',
-            messages: [
-              expect.objectContaining({
-                content: 'Our map',
-                attachments: [
-                  {
-                    id: 'map',
-                    type: 'image',
-                    fileName: 'map.png',
-                    mimeType: 'image/png',
-                    fileSize: image.length,
-                    base64: 'iVBORwk=',
-                  },
-                ],
-              }),
-            ],
-          }),
-        ],
-      },
-    ])
-    expect(await localThreadStore('device').get(listed.id)).toEqual(
-      upgraded({ id: listed.id, title: 'Trip' }),
-    )
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Skipped 1 project chat. Premium is required to import project chats.',
     )
   })
 
