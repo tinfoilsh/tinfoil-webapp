@@ -159,6 +159,7 @@ export function describeImportKickoff(
     chatsImported: status.imported,
     projectsImported: 0,
     errors: status.errors ?? [],
+    warnings: status.warnings,
     pending,
     failed,
     message: failed

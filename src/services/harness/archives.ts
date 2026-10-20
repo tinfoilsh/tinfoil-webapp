@@ -371,7 +371,10 @@ export interface ImportSequenceResult {
   imported: number
   /** The job at `fileIndex` was lost while it was processing. */
   interrupted: boolean
-  /** What the chat service could not import as it was, from every file. */
+  /**
+   * What the chat service could not import as it was, from every file and
+   * the last status of its cloud job.
+   */
   warnings: string[]
 }
 
@@ -425,7 +428,7 @@ export async function runImports(
                 fileIndex,
                 imported,
                 interrupted: true,
-                warnings,
+                warnings: [...warnings, ...(status.warnings ?? [])],
               }
             if (
               options.signal?.aborted ||
@@ -436,6 +439,7 @@ export async function runImports(
           }
           options.onProcessing?.(fileIndex, status)
         }
+        warnings.push(...(status.warnings ?? []))
       }
       if (isLast || status?.status === 'failed')
         return { status, fileIndex, imported, interrupted: false, warnings }

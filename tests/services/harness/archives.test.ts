@@ -145,6 +145,35 @@ describe('runImports', () => {
     ])
   })
 
+  it("keeps what each file's job could not import as it was", async () => {
+    statuses = {
+      'job-1': [
+        job('running', 0, { warnings: ['job-1 skipped a project'] }),
+        job('completed', 4, {
+          warnings: ['job-1 skipped a project', 'job-1 skipped a document'],
+        }),
+      ],
+      'job-2': [job('running', 0, { warnings: ['job-2 skipped a chat'] })],
+    }
+
+    const result = await runImports(
+      'cloud',
+      [
+        namedFile('conversations-000.json'),
+        namedFile('conversations-001.json'),
+      ],
+      { wait: noWait },
+    )
+
+    expect(result.warnings).toEqual([
+      'conversations-000.json had a note',
+      'job-1 skipped a project',
+      'job-1 skipped a document',
+      'conversations-001.json had a note',
+      'job-2 skipped a chat',
+    ])
+  })
+
   it('stops at the first file that fails', async () => {
     const failed = job('failed', 0, {
       failure_reason: 'invalid_archive',
@@ -169,9 +198,10 @@ describe('runImports', () => {
   })
 
   it('reports a job that was lost as interrupted without starting the next', async () => {
+    const running = job('running', 2, { warnings: ['a chat had no messages'] })
     statuses = {
       'job-1': [
-        job('running', 2),
+        running,
         new HarnessError(
           { code: 'THREAD_NOT_FOUND', message: 'not found' },
           404,
@@ -191,11 +221,11 @@ describe('runImports', () => {
       'status job-1 error',
     ])
     expect(result).toEqual({
-      status: { ...job('running', 2), jobId: 'job-1' },
+      status: { ...running, jobId: 'job-1' },
       fileIndex: 0,
       imported: 0,
       interrupted: true,
-      warnings: ['conversations.json had a note'],
+      warnings: ['conversations.json had a note', 'a chat had no messages'],
     })
   })
 

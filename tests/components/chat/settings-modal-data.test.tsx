@@ -552,6 +552,52 @@ describe('importing chats from the Data tab', () => {
     expect(await localThreadStore('device').list()).toEqual([])
   })
 
+  it('shows what the cloud job could not import as it was', async () => {
+    connect({ cloud: true })
+    answerImport([], { jobId: 'job-1', warnings: [] })
+    const statuses = [
+      {
+        status: 'running',
+        imported: 0,
+        failed: 0,
+        total: 2,
+        warnings: ['1 project was skipped.'],
+      },
+      {
+        status: 'partial',
+        imported: 1,
+        failed: 1,
+        total: 2,
+        warnings: ['1 project was skipped.', '1 chat had no messages.'],
+      },
+    ]
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/projects/list')
+        return { projects: [], nextCursor: null }
+      if (path !== '/v1/import/status') throw new Error(`Unexpected ${path}`)
+      return statuses.shift()
+    })
+    renderData()
+
+    pickFiles('ChatGPT', [chatGptExport])
+    await importStaged()
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        '1 project was skipped.',
+      ),
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Check import progress' }),
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        '1 chat had no messages.',
+      ),
+    )
+    expect(screen.getByRole('status')).toHaveTextContent('1 chat imported')
+  })
+
   it("sends Claude's project files to the cloud without cloud sync", async () => {
     connect()
     answerImport([], { jobId: 'job-1', warnings: [] })
