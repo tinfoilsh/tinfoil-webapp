@@ -347,14 +347,35 @@ export function useThread(
   async function saveRun(run: LocalRun, event: HarnessEvent) {
     const thread: unknown = event.metadata?.thread
     if (!isThread(thread)) return
-    const saved = await run.store.update(run.threadId, () => ({
+    const saved = await run.store.update(run.threadId, (stored) => ({
       ...thread,
       id: run.threadId,
       messages: withHeldImages(thread.messages, run.images),
+      // A title the user set on this device during the run stays.
+      ...(stored?.titleState === 'manual'
+        ? { title: stored.title, titleState: stored.titleState }
+        : {}),
     }))
     if (!saved) return
     markSaved(saved.id)
-    if (idRef.current === saved.id) rememberThreadImages(saved)
+    if (idRef.current !== saved.id) return
+    rememberThreadImages(saved)
+    const shown = current.current.snapshot.thread
+    if (shown?.id === saved.id && shown.title !== saved.title) {
+      const next = {
+        ...current.current,
+        snapshot: {
+          ...current.current.snapshot,
+          thread: {
+            ...shown,
+            title: saved.title,
+            titleState: saved.titleState,
+          },
+        },
+      }
+      current.current = next
+      setState(next)
+    }
   }
   async function stream(
     path: '/v1/threads/turn' | '/v1/threads/follow',

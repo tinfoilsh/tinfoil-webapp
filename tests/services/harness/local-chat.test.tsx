@@ -304,6 +304,63 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(await stored(threadId)).toEqual(returned)
   })
 
+  it("keeps a title set on this device while a reply streams over the run's", async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const returned = seeded({
+      title: 'Generated',
+      titleState: 'generated',
+      messages: [
+        ...SEEDED_MESSAGES,
+        { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
+      ],
+    })
+    client.events.mockImplementation(async function* () {
+      yield {
+        id: 0,
+        event: { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-1' },
+      }
+      await held
+      yield {
+        id: 1,
+        event: {
+          type: 'STATE_SNAPSHOT',
+          snapshot: {
+            thread: { ...summary(SEEDED_ID, 'Generated'), messageCount: 5 },
+            queue: [],
+          },
+        },
+      }
+      yield { id: 2, event: finished(SEEDED_ID, returned) }
+    })
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    let sending!: Promise<boolean | undefined> | undefined
+    act(() => {
+      sending = result.current.send({ content: 'third' })
+    })
+    await waitFor(() => expect(result.current.running).toBe(true))
+
+    await act(() => result.current.update(SEEDED_ID, { title: 'Mine' }))
+    await act(async () => {
+      release()
+      await sending
+    })
+
+    expect(await stored(SEEDED_ID)).toEqual({
+      ...returned,
+      title: 'Mine',
+      titleState: 'manual',
+    })
+    expect(result.current.chat.title).toBe('Mine')
+  })
+
   const QUESTION = {
     id: 'msg_user',
     role: 'user' as const,
