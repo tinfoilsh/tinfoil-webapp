@@ -17,6 +17,7 @@ import {
   ImportSequenceError,
   importStatus,
   runImports,
+  type ImportSequenceOptions,
   type ImportSequenceResult,
   type ImportStatusResponse,
   type ImportTarget,
@@ -126,6 +127,9 @@ const DELETE_ALL_CHATS_CONFIRM_PHRASE = 'delete all chats'
 const DELETE_ALL_PROJECTS_CONFIRM_PHRASE = 'delete all projects'
 const ZIP_MIME_TYPE = 'application/zip'
 const MAX_LISTED_IMPORT_WARNINGS = 3
+// The part of a file's share of the progress bar that its cloud job fills
+// while it is processed before the next file is uploaded.
+const IMPORT_PROCESSING_SHARE = 0.5
 
 interface ImportResult {
   jobId?: string
@@ -262,8 +266,8 @@ function fileFailureErrors(
 }
 
 // The chat service receives each file of an export in one request, so an
-// upload advances a file at a time.
-export type ImportProgress =
+// upload advances a file at a time. `percent` is of the whole import.
+export type ImportProgress = { percent: number } & (
   | {
       type: 'upload'
       file: number
@@ -278,16 +282,14 @@ export type ImportProgress =
       imported: number
       total: number
     }
-  // Chats for this device arrive once the chat service has a file, so its
-  // bytes count as uploaded.
+  // Chats for this device arrive once the chat service has a file.
   | {
       type: 'storing'
       file: number
       files: number
       stored: number
-      uploadedBytes: number
-      totalBytes: number
     }
+)
 
 export function describeImportProgress(progress: ImportProgress): {
   title: string
@@ -295,25 +297,25 @@ export function describeImportProgress(progress: ImportProgress): {
   percent: number
 } {
   if (progress.type === 'storing') {
-    const { file, files, stored, uploadedBytes, totalBytes } = progress
+    const { file, files, stored, percent } = progress
     return {
       title:
         files > 1
           ? `Importing file ${file} of ${files}...`
           : 'Importing chats...',
       detail: `${stored} chat${stored !== 1 ? 's' : ''} imported so far`,
-      percent: totalBytes > 0 ? (uploadedBytes / totalBytes) * 100 : 0,
+      percent,
     }
   }
   if (progress.type === 'processing') {
-    const { file, files, imported, total } = progress
+    const { file, files, imported, total, percent } = progress
     return {
       title: `Importing file ${file} of ${files}...`,
       detail: `${total > 0 ? `${imported} of ${total} chats` : 'Reading export'}. Keep this page open until every file has started.`,
-      percent: total > 0 ? (imported / total) * 100 : 0,
+      percent,
     }
   }
-  const { file, files, uploadedBytes, totalBytes } = progress
+  const { file, files, uploadedBytes, totalBytes, percent } = progress
   return {
     title:
       files > 1
@@ -323,7 +325,67 @@ export function describeImportProgress(progress: ImportProgress): {
       files > 1
         ? `${formatFileSize(uploadedBytes)} of ${formatFileSize(totalBytes)} uploaded`
         : formatFileSize(totalBytes),
-    percent: totalBytes > 0 ? (uploadedBytes / totalBytes) * 100 : 0,
+    percent,
+  }
+}
+
+/**
+ * Reports the progress of an import split across files as one bar that
+ * never moves back. Each file fills a share of the bar by its size: its
+ * upload fills that share, except the part its cloud job fills when the job
+ * is processed before the next file is uploaded.
+ */
+export function importProgressReporter(
+  files: readonly File[],
+  target: ImportTarget,
+  report: (progress: ImportProgress) => void,
+): Pick<ImportSequenceOptions, 'onUpload' | 'onStored' | 'onProcessing'> {
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+  const bytesBefore = files.map((_, index) =>
+    files.slice(0, index).reduce((sum, file) => sum + file.size, 0),
+  )
+  const percent = (fileIndex: number, fileDone: number) =>
+    totalBytes > 0
+      ? ((bytesBefore[fileIndex] + files[fileIndex].size * fileDone) /
+          totalBytes) *
+        100
+      : 0
+  const uploadShare = (fileIndex: number) =>
+    target === 'cloud' && fileIndex < files.length - 1
+      ? 1 - IMPORT_PROCESSING_SHARE
+      : 1
+  return {
+    onUpload: (fileIndex) =>
+      report({
+        type: 'upload',
+        file: fileIndex + 1,
+        files: files.length,
+        uploadedBytes: bytesBefore[fileIndex],
+        totalBytes,
+        percent: percent(fileIndex, 0),
+      }),
+    onStored: (fileIndex, stored) =>
+      report({
+        type: 'storing',
+        file: fileIndex + 1,
+        files: files.length,
+        stored,
+        percent: percent(fileIndex, uploadShare(fileIndex)),
+      }),
+    onProcessing: (fileIndex, status) => {
+      const processed = status.total > 0 ? status.imported / status.total : 0
+      report({
+        type: 'processing',
+        file: fileIndex + 1,
+        files: files.length,
+        imported: status.imported,
+        total: status.total,
+        percent: percent(
+          fileIndex,
+          1 - IMPORT_PROCESSING_SHARE * (1 - processed),
+        ),
+      })
+    },
   }
 }
 
@@ -1191,10 +1253,6 @@ export function SettingsModal({
     target: ImportTarget = importTarget,
   ) => {
     if (files.length === 0) return
-    const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
-    const bytesBefore = files.map((_, index) =>
-      files.slice(0, index).reduce((sum, file) => sum + file.size, 0),
-    )
     const fileNames = files.map((file) => file.name)
     setIsImporting(true)
     setImportSource(source)
@@ -1205,31 +1263,7 @@ export function SettingsModal({
     try {
       const outcome = await runImports(target, files, {
         signal: controller.signal,
-        onUpload: (fileIndex) =>
-          setImportProgress({
-            type: 'upload',
-            file: fileIndex + 1,
-            files: files.length,
-            uploadedBytes: bytesBefore[fileIndex],
-            totalBytes,
-          }),
-        onProcessing: (fileIndex, status) =>
-          setImportProgress({
-            type: 'processing',
-            file: fileIndex + 1,
-            files: files.length,
-            imported: status.imported,
-            total: status.total,
-          }),
-        onStored: (fileIndex, stored) =>
-          setImportProgress({
-            type: 'storing',
-            file: fileIndex + 1,
-            files: files.length,
-            stored,
-            uploadedBytes: bytesBefore[fileIndex] + files[fileIndex].size,
-            totalBytes,
-          }),
+        ...importProgressReporter(files, target, setImportProgress),
       })
       const result = describeImportOutcome(outcome, fileNames, sourceLabel)
       setImportResult(result)
@@ -1427,6 +1461,7 @@ export function SettingsModal({
           files: 1,
           uploadedBytes: 0,
           totalBytes: 0,
+          percent: 0,
         },
       )
       return (
