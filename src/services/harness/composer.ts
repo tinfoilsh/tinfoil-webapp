@@ -27,7 +27,7 @@ export function checkUpload(file: File, groups: readonly FileGroup[]) {
       },
       415,
     )
-  if (file.size <= group.maxBytes) return
+  if (file.size <= group.maxBytes) return group
   throw new HarnessError(
     {
       code: ERROR_CODES.attachmentTooLarge,
@@ -35,4 +35,67 @@ export function checkUpload(file: File, groups: readonly FileGroup[]) {
     },
     413,
   )
+}
+
+const UPLOAD_IMAGE_QUALITY = 0.85
+
+// Only the upload copy is scaled; text extraction and image descriptions
+// belong to the harness.
+export async function prepareUpload(
+  file: File,
+  groups: readonly FileGroup[],
+): Promise<File> {
+  const group = groups.find((candidate) =>
+    candidate.accept.includes(extensionOf(file.name)),
+  )
+  if (!group?.imageMaxSide) {
+    checkUpload(file, groups)
+    return file
+  }
+  const source = URL.createObjectURL(file)
+  try {
+    const image = new Image()
+    image.src = source
+    await image.decode()
+    const scale = Math.min(
+      1,
+      group.imageMaxSide / Math.max(image.naturalWidth, image.naturalHeight),
+    )
+    if (scale === 1) {
+      checkUpload(file, groups)
+      return file
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.floor(image.naturalWidth * scale))
+    canvas.height = Math.max(1, Math.floor(image.naturalHeight * scale))
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Image resizing is unavailable.')
+    context.fillStyle = 'white'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (value) =>
+          value
+            ? resolve(value)
+            : reject(new Error('The image could not be resized.')),
+        'image/jpeg',
+        UPLOAD_IMAGE_QUALITY,
+      ),
+    )
+    const resized = new File([blob], file.name, {
+      type: blob.type,
+      lastModified: file.lastModified,
+    })
+    checkUpload(resized, groups)
+    return resized
+  } catch (cause) {
+    // A browser without this image decoder can still upload an image that
+    // already fits; the harness has its own decoders.
+    checkUpload(file, groups)
+    if (cause instanceof HarnessError) throw cause
+    return file
+  } finally {
+    URL.revokeObjectURL(source)
+  }
 }
