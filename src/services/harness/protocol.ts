@@ -78,5 +78,3 @@ export const ERROR_CODES = {
   threadTooLarge: 'THREAD_TOO_LARGE',
   attachmentsUnavailable: 'ATTACHMENTS_UNAVAILABLE',
 } as const
-
-export type HarnessErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]

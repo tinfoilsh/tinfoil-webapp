@@ -1,5 +1,6 @@
 import type { ChatList } from './chat-list'
 import { localSummary, type LocalThreadStore } from './local-threads'
+import type { OpenChat } from './open-chat'
 import { ROUTES } from './protocol'
 import type { RunController } from './run-controller'
 import type { HarnessAPI } from './runtime'
@@ -13,16 +14,10 @@ import {
 } from './transfer'
 import type { StoredThread, Thread } from './types'
 
-// What the chat actions read of the open chat.
-export interface OpenChatId {
-  id: string | null
-  temporary: boolean
-}
-
 export interface ChatContext {
   api: HarnessAPI
   controller: RunController
-  open: Store<OpenChatId>
+  open: Store<OpenChat>
   list: ChatList
   // The browser's store of chats on this device, which moves use.
   device: LocalThreadStore

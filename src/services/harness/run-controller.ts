@@ -20,7 +20,7 @@ import type {
 
 // A stream that broke without a reason from the harness, as when the
 // connection dropped. Its run may go on.
-export const CONNECTION_LOST: HarnessErrorBody = {
+const CONNECTION_LOST: HarnessErrorBody = {
   code: ERROR_CODES.streamInterrupted,
   message: 'The connection closed. Reconnect to continue.',
 }
