@@ -696,6 +696,53 @@ describe('DefaultMessageRenderer work traces', () => {
     },
   )
 
+  it('offers to retry a widget whose stored arguments no longer match it', async () => {
+    const onRetryToolCall = vi.fn(async () => true)
+    const widgetReply = (invalidArguments?: boolean): WireMessage => ({
+      id: 'a1',
+      role: 'assistant',
+      createdAt: '2026-08-07T00:00:01.000Z',
+      timeline: [
+        {
+          id: 'call-1',
+          type: 'tool_call',
+          toolCallId: 'call-1',
+          name: 'render_message_compose',
+          arguments: JSON.stringify({
+            channel: 'message',
+            title: 'Reply draft',
+            variants: [{ label: 'Concise', body: 'Thanks.' }],
+          }),
+          complete: true,
+          ...(invalidArguments ? { invalidArguments } : {}),
+        },
+      ],
+    })
+    const view = (message: WireMessage) => (
+      <Renderer
+        message={messageView(message)}
+        messageIndex={1}
+        model={model}
+        isDarkMode={false}
+        isLastMessage
+        onRetryToolCall={onRetryToolCall}
+      />
+    )
+    const { rerender } = render(view(widgetReply()))
+    expect(screen.getByText('Reply draft')).toBeInTheDocument()
+
+    rerender(view(widgetReply(true)))
+
+    expect(screen.queryByText('Reply draft')).not.toBeInTheDocument()
+    expect(
+      screen.getByText("Couldn't display message compose"),
+    ).toBeInTheDocument()
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Retry widget' })),
+    )
+    expect(onRetryToolCall).toHaveBeenCalledExactlyOnceWith(1, 'call-1')
+  })
+
   it('shows a link the reply cites as a citation', () => {
     renderReply(
       searchReply(

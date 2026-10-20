@@ -69,6 +69,8 @@ export interface TimelineBlock {
   display?: ToolDisplay
   resolvedAt?: string | number | null
   resolution?: { text: string; data?: Json } | null
+  // A widget's stored arguments no longer match the widget's declaration.
+  invalidArguments?: boolean
 }
 
 export interface Message {

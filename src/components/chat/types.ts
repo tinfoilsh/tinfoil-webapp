@@ -89,6 +89,8 @@ export type TimelineToolCallBlock = {
     text: string
     data?: unknown
   }
+  // The harness found the stored arguments no longer match the widget.
+  invalidArguments?: boolean
 }
 
 // Code-execution tool call. Args are fully-formed (router emits a single

@@ -63,6 +63,8 @@ export interface GenUIToolCall {
   id: string
   name: string
   arguments: string
+  // The harness found the stored arguments no longer match the widget.
+  invalidArguments?: boolean
 }
 
 /**

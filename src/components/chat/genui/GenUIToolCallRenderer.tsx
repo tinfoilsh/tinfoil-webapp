@@ -120,6 +120,20 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
           )
         }
 
+        if (tc.invalidArguments) {
+          return (
+            <ParseFailureCard
+              key={tc.id}
+              toolName={tc.name}
+              failure={{ type: 'schema_invalid' }}
+              onRetry={onRetry}
+              onRetryToolCall={
+                onRetryToolCall ? () => onRetryToolCall(tc.id) : undefined
+              }
+            />
+          )
+        }
+
         const input = parseInput(tc)
         if (input.ok && widget.render) {
           return (
@@ -252,7 +266,10 @@ function StreamingToolCallTracer({ toolCall }: { toolCall: GenUIToolCall }) {
   )
 }
 
-type ParseFailure = { type: 'invalid_json' } | { type: 'render_exception' }
+type ParseFailure =
+  | { type: 'invalid_json' }
+  | { type: 'render_exception' }
+  | { type: 'schema_invalid' }
 
 function ParseFailureCard({
   toolName,
@@ -323,7 +340,9 @@ function ParseFailureCard({
     ? retryFailureDescriptions[retryFailure]
     : failure.type === 'invalid_json'
       ? 'The component data is not valid JSON.'
-      : `The ${prettyWidgetName(toolName)} component ran into a problem while rendering.`
+      : failure.type === 'schema_invalid'
+        ? `The component data doesn't match the ${prettyWidgetName(toolName)} component.`
+        : `The ${prettyWidgetName(toolName)} component ran into a problem while rendering.`
 
   return (
     <div className="my-4 flex flex-col items-stretch gap-3 rounded-lg border border-border-subtle bg-surface-card px-4 py-3 text-sm md:flex-row md:items-center md:justify-between">

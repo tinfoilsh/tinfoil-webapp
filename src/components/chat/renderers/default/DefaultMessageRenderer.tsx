@@ -478,6 +478,7 @@ const DefaultMessageComponent = ({
                         name: block.name,
                         arguments: block.arguments,
                         result: block.result,
+                        invalidArguments: block.invalidArguments,
                       },
                     ]}
                     isStreaming={!!isStreaming && !!isLastMessage}
