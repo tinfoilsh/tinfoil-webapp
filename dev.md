@@ -16,9 +16,10 @@ npm run lint
 npm run build
 ```
 
-With the harness repository checked out next to this one, `npm test` also
-checks the widget argument types against the harness's tool declarations;
-`npm run generate:widgets` regenerates them.
+`npm test` also checks the widget argument types against the harness's tool
+declarations, read from `HARNESS_WIDGETS_JSON` (CI downloads the harness's
+`widgets.json` from its main branch) or from the harness repository checked out
+next to this one; `npm run generate:widgets` regenerates them.
 
 To reproduce a shuffled failure, pass the seed printed by Vitest:
 `npm run test:shuffle -- --sequence.seed=42`. Keep the workstation's timezone

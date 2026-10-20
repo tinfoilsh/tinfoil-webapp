@@ -6,15 +6,17 @@ import {
   widgetTypes,
 } from '../../scripts/generate-widget-types.mjs'
 
-// The harness checkout beside this one, as `npm run generate:widgets` reads
-// it. CI has no such checkout.
-const harnessCheckout = existsSync(WIDGETS_JSON)
+// The harness's widget declarations: the copy CI downloads from the
+// harness's main branch, or the harness checkout beside this one, as
+// `npm run generate:widgets` reads it.
+const downloaded = process.env.HARNESS_WIDGETS_JSON
+const declarationsFile = downloaded || WIDGETS_JSON
 
 describe('widget argument types', () => {
-  it.skipIf(!harnessCheckout)(
+  it.skipIf(!downloaded && !existsSync(WIDGETS_JSON))(
     "match the harness's widget declarations",
     async () => {
-      const declarations = JSON.parse(readFileSync(WIDGETS_JSON, 'utf8'))
+      const declarations = JSON.parse(readFileSync(declarationsFile, 'utf8'))
       expect(readFileSync(WIDGET_TYPES, 'utf8')).toBe(
         await widgetTypes(declarations),
       )
