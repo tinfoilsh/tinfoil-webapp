@@ -90,13 +90,6 @@ const textOf = (timeline: TimelineBlock[] | undefined, type: string) =>
     .map((block) => block.content ?? '')
     .join('')
 
-function millis(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value !== 'string') return undefined
-  const date = Date.parse(value)
-  return Number.isNaN(date) ? undefined : date
-}
-
 function parsedArguments(text: string | undefined): Record<string, unknown> {
   try {
     const value: unknown = JSON.parse(text ?? '')
@@ -155,15 +148,12 @@ function backupTimeline(timeline: TimelineBlock[] | undefined) {
         })
         continue
       }
-      const resolvedAt = millis(block.resolvedAt)
       blocks.push({
         type: 'tool_call',
         id: block.id,
         toolCallId: block.toolCallId || block.id,
         name,
         arguments: block.arguments ?? '',
-        ...(block.resolution ? { resolution: block.resolution } : {}),
-        ...(resolvedAt !== undefined ? { resolvedAt } : {}),
       })
     }
   }

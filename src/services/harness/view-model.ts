@@ -62,11 +62,6 @@ function toolBlock(block: WireBlock, streaming: boolean): TimelineBlock {
     toolCallId,
     name: block.name ?? '',
     arguments: block.arguments ?? '',
-    resolvedAt:
-      block.resolvedAt == null
-        ? undefined
-        : new Date(block.resolvedAt).getTime(),
-    resolution: block.resolution ?? undefined,
   }
 }
 

@@ -71,7 +71,7 @@ export type TimelineContentBlock = {
 }
 
 // GenUI tool calls — one block per call. Arguments arrive as JSON-string
-// deltas during streaming; widgets can be resolved via the input surface.
+// deltas during streaming.
 export type TimelineToolCallBlock = {
   type: 'tool_call'
   id: string
@@ -79,16 +79,10 @@ export type TimelineToolCallBlock = {
   name: string
   // Accumulating JSON string from streamed argument deltas.
   arguments: string
-  // Set once a `surface: 'input'` widget has been resolved by the user.
-  resolvedAt?: number
   complete?: boolean
   result?: unknown
   metadata?: unknown
   progress?: unknown[]
-  resolution?: {
-    text: string
-    data?: unknown
-  }
   // The harness found the stored arguments no longer match the widget.
   invalidArguments?: boolean
 }

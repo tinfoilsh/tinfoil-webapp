@@ -306,8 +306,6 @@ export function reduceEvent(
                 arguments: '',
                 complete: false,
                 progress: [],
-                resolvedAt: null,
-                resolution: null,
               },
             ],
           ),

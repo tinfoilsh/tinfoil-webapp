@@ -8,11 +8,7 @@
  */
 import type { JSX } from 'react'
 import { GENUI_WIDGETS_BY_NAME } from './registry'
-import type {
-  GenUIRenderContext,
-  GenUIToolResolution,
-  GenUIWidget,
-} from './types'
+import type { GenUIRenderContext, GenUIWidget } from './types'
 
 export function getGenUIWidget(name: string): GenUIWidget | undefined {
   return GENUI_WIDGETS_BY_NAME[name]
@@ -26,15 +22,4 @@ export function renderGenUIInline(
   const widget = GENUI_WIDGETS_BY_NAME[name]
   if (!widget || !widget.render) return null
   return widget.render(args, ctx)
-}
-
-export function renderGenUIResolved(
-  name: string,
-  args: unknown,
-  resolution: GenUIToolResolution,
-  ctx: GenUIRenderContext,
-): JSX.Element | null {
-  const widget = GENUI_WIDGETS_BY_NAME[name]
-  if (!widget || !widget.renderResolved) return null
-  return widget.renderResolved(args, resolution, ctx)
 }

@@ -39,17 +39,6 @@ export interface GenUIWidget<Args = any> {
 
   /** Inline render. */
   render?: (args: Args, ctx: GenUIRenderContext) => JSX.Element | null
-
-  /**
-   * Optional compact stamp shown inline after the user resolves an
-   * input-surface widget. When omitted, the widget leaves no trace in the
-   * chat scroll once resolved.
-   */
-  renderResolved?: (
-    args: Args,
-    resolution: GenUIToolResolution,
-    ctx: GenUIRenderContext,
-  ) => JSX.Element | null
 }
 
 /**
@@ -65,13 +54,4 @@ export interface GenUIToolCall {
   arguments: string
   // The harness found the stored arguments no longer match the widget.
   invalidArguments?: boolean
-}
-
-/**
- * Persisted resolution of an input-surface tool call.
- */
-export interface GenUIToolResolution {
-  text: string
-  data?: unknown
-  resolvedAt: number
 }

@@ -1,5 +1,4 @@
 import { GenUIToolCallRenderer } from '@/components/chat/genui/GenUIToolCallRenderer'
-import { renderGenUIResolved } from '@/components/chat/genui/render'
 import { cn } from '@/components/ui/utils'
 import {
   ArrowUturnLeftIcon,
@@ -435,40 +434,6 @@ const DefaultMessageComponent = ({
                 </div>
               )
             case 'tool_call': {
-              const resolved = block.resolvedAt && block.resolution
-              if (resolved) {
-                let parsed: Record<string, unknown> | null = null
-                try {
-                  const raw = JSON.parse(block.arguments)
-                  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-                    parsed = raw as Record<string, unknown>
-                  }
-                } catch {
-                  // Ignore malformed args — renderResolved will receive null.
-                }
-                const stamp =
-                  parsed &&
-                  renderGenUIResolved(
-                    block.name,
-                    parsed,
-                    {
-                      text: block.resolution!.text,
-                      data: block.resolution!.data,
-                      resolvedAt: block.resolvedAt!,
-                    },
-                    { isDarkMode },
-                  )
-                if (stamp) {
-                  return (
-                    <div key={block.id} className="w-full px-4">
-                      {stamp}
-                    </div>
-                  )
-                }
-                // Fall through to the unresolved renderer below so the
-                // tool call still surfaces in the timeline (with retry)
-                // instead of disappearing silently.
-              }
               return (
                 <div key={block.id} className="w-full px-4">
                   <GenUIToolCallRenderer
