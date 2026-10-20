@@ -191,6 +191,26 @@ describe('profile storage modes', () => {
       { nickname: 'Sam', language: 'German' },
     )
     expect(localStorage.getItem(USER_PREFS_LOCAL_PROFILE_UPGRADED)).toBeNull()
+    const upgraded = {
+      nickname: 'Sam',
+      language: 'German',
+      themeMode: 'system',
+    }
+    client.post.mockResolvedValueOnce({ profile: upgraded })
+
+    await api.refreshProfile()
+
+    expect(client.post).toHaveBeenCalledTimes(2)
+    expect(client.post).toHaveBeenLastCalledWith(
+      '/v1/profile/upgrade',
+      { profile: { nickname: 'Sam', language: 'German' } },
+      expect.any(AbortSignal),
+    )
+    expect(getView().profile).toEqual(upgraded)
+    expect(JSON.parse(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)!)).toEqual(
+      upgraded,
+    )
+    expect(localStorage.getItem(USER_PREFS_LOCAL_PROFILE_UPGRADED)).toBe('true')
   })
 
   it('reads a cloud account’s settings from the harness and keeps them when sync is turned off', async () => {
