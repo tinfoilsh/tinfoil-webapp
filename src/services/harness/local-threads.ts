@@ -537,8 +537,8 @@ function createStore(
       else deletedChatsTracker.removeDeletion(id)
   }
   // Rows the previous client wrote are rewritten as threads once, before
-  // anything reads them. A row the harness cannot upgrade stays as it was
-  // and is left out until a later attempt upgrades it.
+  // anything reads them. A row the harness cannot upgrade, or fails to, stays
+  // as it was and is left out until a later attempt upgrades it.
   let upgrading: Promise<void> | null = null
   const upgradeOldRows = () => {
     upgrading ??= (async () => {
@@ -554,17 +554,19 @@ function createStore(
       const written: string[] = []
       for await (const row of rows()) {
         const id = str(row.id)
-        const thread = await upgradeRow(row)
+        let thread: StoredThread | null = null
+        let failure: unknown
+        try {
+          thread = await upgradeRow(row)
+        } catch (cause) {
+          failure = cause
+        }
         if (!thread) {
-          logError(
-            'Failed to upgrade a chat stored on this device',
-            undefined,
-            {
-              component: 'localThreads',
-              action: 'upgradeOldRows',
-              metadata: { chatId: id },
-            },
-          )
+          logError('Failed to upgrade a chat stored on this device', failure, {
+            component: 'localThreads',
+            action: 'upgradeOldRows',
+            metadata: { chatId: id },
+          })
           continue
         }
         const saved = await serialize(id, async () => {

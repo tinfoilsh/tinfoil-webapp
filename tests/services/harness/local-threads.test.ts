@@ -6,6 +6,7 @@ import type {
 } from '@/services/harness/types'
 import { chatEvents } from '@/services/storage/chat-events'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
+import { logError } from '@/utils/error-handling'
 import { IDBFactory } from 'fake-indexeddb'
 import { describe, expect, it, vi } from 'vitest'
 import { client, signIn } from '../../harness-fixture'
@@ -243,6 +244,42 @@ describe('device store', () => {
       )
       expect(unreadable).toMatchObject({ title: 'Unreadable' })
       expect(unreadable).not.toHaveProperty('threadFormat')
+    })
+
+    it('lists the others when the harness fails on one, and upgrades it on a later load', async () => {
+      signIn()
+      await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))
+      await indexedDBStorage.saveChat(legacyRow(OTHER_ID, 'Dogs'))
+      const failure = new HarnessError(
+        { code: 'UPSTREAM_REFUSED', message: 'The chat service is busy' },
+        503,
+      )
+      let failing = true
+      client.post.mockImplementation(
+        async (path: string, input: { threads: { id: string }[] }) => {
+          if (path !== '/v1/threads/upgrade')
+            throw new Error(`Unexpected ${path}`)
+          const [{ id }] = input.threads
+          if (id === OTHER_ID && failing) throw failure
+          return { threads: [upgraded(id, id === CHAT_ID ? 'Cats' : 'Dogs')] }
+        },
+      )
+
+      expect((await store.list()).map((summary) => summary.id)).toEqual([
+        CHAT_ID,
+      ])
+      expect(await store.get(OTHER_ID)).toBeNull()
+      expect(logError).toHaveBeenCalledWith(
+        'Failed to upgrade a chat stored on this device',
+        failure,
+        expect.objectContaining({ metadata: { chatId: OTHER_ID } }),
+      )
+      failing = false
+
+      expect((await store.list()).map((summary) => summary.id).sort()).toEqual(
+        [CHAT_ID, OTHER_ID].sort(),
+      )
+      expect(await store.get(OTHER_ID)).toEqual(upgraded(OTHER_ID, 'Dogs'))
     })
   })
 
