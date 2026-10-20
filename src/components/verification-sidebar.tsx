@@ -1,4 +1,4 @@
-import { harnessAPI } from '@/services/harness/runtime'
+import { verificationDocument as readVerificationDocument } from '@/services/harness/attestation'
 import { logError } from '@/utils/error-handling'
 import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -35,10 +35,7 @@ export function VerifierSidebar({
 
   const fetchVerificationDocument = useCallback(async () => {
     try {
-      const api = harnessAPI()
-      await api.client.ready()
-      const doc = await api.client.verification
-      setVerificationDocument(doc)
+      setVerificationDocument(await readVerificationDocument())
       onVerificationCompleteRef.current(true)
     } catch (cause) {
       onVerificationCompleteRef.current(false)

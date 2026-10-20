@@ -1386,7 +1386,7 @@ describe('cloud chats', () => {
         'Question',
         'Hello',
       ])
-      expect(result.current.state.status).toBe('idle')
+      expect(result.current.status).toBe('idle')
       expect(result.current.error).toBe('')
     })
 
@@ -1400,7 +1400,7 @@ describe('cloud chats', () => {
 
       expect(client.events).toHaveBeenCalledTimes(2)
       expect(result.current.running).toBe(false)
-      expect(result.current.state.status).toBe('error')
+      expect(result.current.status).toBe('error')
       expect(result.current.errorDetail).toEqual({
         code: 'STREAM_INTERRUPTED',
         message: 'The connection closed. Reconnect to continue.',
@@ -1422,7 +1422,7 @@ describe('cloud chats', () => {
         'Question',
         'Hello, from storage',
       ])
-      expect(result.current.state.status).toBe('idle')
+      expect(result.current.status).toBe('idle')
       expect(result.current.error).toBe('')
     })
   })
@@ -1476,7 +1476,7 @@ describe('cloud chats', () => {
       { key: KEY, threadId: stored.id, runId: 'run-1' },
     ])
     expect(result.current.error).toBe('')
-    expect(result.current.state.status).toBe('idle')
+    expect(result.current.status).toBe('idle')
   })
 
   it('keep the chat list when a chat opens from its link', async () => {
@@ -1604,12 +1604,12 @@ describe('cloud chats', () => {
     expect(result.current.error).toBe('The chat could not be renamed')
     expect(result.current.errorDetail).toEqual(refusal.detail)
     expect(result.current.running).toBe(true)
-    expect(result.current.state.status).toBe('streaming')
+    expect(result.current.status).toBe('streaming')
     await act(async () => {
       release()
       await sending
     })
-    expect(result.current.state.status).toBe('idle')
+    expect(result.current.status).toBe('idle')
   })
 
   it('rejoin a temporary run after a reload only until it ends', async () => {

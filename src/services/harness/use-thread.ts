@@ -1,54 +1,37 @@
 import { GENUI_WIDGETS } from '@/components/chat/genui/registry'
-import type { Chat, Attachment as UIAttachment } from '@/components/chat/types'
+import type {
+  Chat,
+  QueuedMessage,
+  Attachment as UIAttachment,
+} from '@/components/chat/types'
 import { displayModels } from '@/config/models'
 import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
-import { chatEvents } from '@/services/storage/chat-events'
-import { buildForkedChat } from '@/services/storage/chat-fork'
-import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
+import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { generateReverseId } from '@/utils/reverse-id'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { turnProfile } from './local-profile'
-import {
-  heldImages,
-  holdImages,
-  isThread,
-  localDocumentText,
-  localSummary,
-  localThreadStore,
-  localThreadView,
-  memoryThreadStore,
-  newThread,
-  now,
-  replaceReplyText,
-  shareThread,
-  turnThread,
-  withHeldImages,
-  type ImagesById,
-  type LocalThreadStore,
-} from './local-threads'
-import { ROUTES, type RunRoute } from './protocol'
+import { chatActions } from './chat-actions'
+import { useChatList } from './chat-list'
+import { deviceThreads, storeRun } from './device-threads'
+import { localThreadStore, memoryThreadStore, now } from './local-threads'
+import { OpenAttachments, uploaded } from './open-attachments'
+import { ROUTES } from './protocol'
 import { useHarness } from './provider'
-import { initialChat, isTerminal, reduceEvent, runOf } from './reducer'
-import type { RunSpend } from './runtime'
-import { MAX_SHARE_REQUEST_BYTES, requestBytes, shareTooLarge } from './shares'
+import { initialChat } from './reducer'
+import { RunController } from './run-controller'
+import { getView, type Profile } from './runtime'
 import { HarnessError } from './sse'
+import { createStore, useStore } from './store'
 import {
-  moveThreadToCloud,
-  moveThreadToDevice,
-  placeOnDevice,
-  transferInFlight,
-} from './transfer'
+  cloudThreads,
+  type AskContext,
+  type ThreadStore,
+  type TurnSettings,
+} from './thread-store'
 import type {
   AttachmentDescriptor,
-  FollowInput,
-  Frame,
   HarnessErrorBody,
-  StoredThread,
-  TerminalEvent,
-  Thread,
   ThreadMessage,
-  ThreadSummary,
   Turn,
 } from './types'
 import { messageView, threadView } from './view-model'
@@ -60,148 +43,83 @@ export interface ThreadRoute {
   newChatLocal?: boolean
 }
 
-// A run of a thread the browser stores. Its final event returns the whole
-// thread, without the image bytes the browser holds for it.
-interface LocalRun {
-  threadId: string
-  store: LocalThreadStore
-  images: ImagesById
-  runId?: string
+// The open chat, apart from what its runs show.
+interface OpenChat {
+  id: string | null
+  temporary: boolean
+  // A chat the browser stores: every chat of a signed-out visitor or of an
+  // account without cloud sync, and chats from the Local tab. A temporary
+  // chat without cloud sync is one too, with its transcript held in memory.
+  local: boolean
+  // A new chat until the harness accepts its first turn, or this device
+  // first stores it. Its route waits, since opening the route before then
+  // would find nothing.
+  unsaved: string | null
+  loading: boolean
+  notFound: boolean
+  model: string
+  // An action that failed. The open chat's run reports how it ended in the
+  // run's state.
+  failure: { message: string; detail?: HarnessErrorBody } | null
+  // Whether the open chat's prompt was chosen, rather than left at the
+  // default a new chat starts with.
+  presetChosen: boolean
+  chosenPresetId: string | null
+  // The open chat's web search setting, where a saved prompt or the toggle
+  // set it before the chat stores it.
+  webSearch?: boolean
+  // Counts new chats, so the default prompt applies to each one.
+  blankChats: number
 }
 
-// A stream that broke without a reason from the harness, as when the
-// connection dropped. Its run may go on.
-const CONNECTION_LOST: HarnessErrorBody = {
-  code: 'STREAM_INTERRUPTED',
-  message: 'The connection closed. Reconnect to continue.',
-}
-const interrupted = (cause: unknown) =>
-  !(cause instanceof HarnessError) || cause.code === CONNECTION_LOST.code
+// The prompt new chats start with, which the harness keeps in the profile.
+const defaultPresetIdOf = (profile: Profile): string | null =>
+  typeof profile.defaultPromptPresetId === 'string' &&
+  profile.defaultPromptPresetId
+    ? profile.defaultPromptPresetId
+    : null
 
-// The attachments of a turn that are new uploads, rather than ones the chat
-// stores already.
-const uploaded = (attachments: Turn['attachments'] = []) =>
-  attachments.filter(
-    (attachment): attachment is AttachmentDescriptor => 'kind' in attachment,
-  )
-
-function runSpend(value: unknown): RunSpend | undefined {
-  if (!value || typeof value !== 'object') return undefined
-  const { prompt_tokens: prompt, completion_tokens: completion } =
-    value as Record<string, unknown>
-  return typeof prompt === 'number' && typeof completion === 'number'
-    ? { prompt, completion }
-    : undefined
-}
+const presetIdOf = (open: OpenChat, profile: Profile) =>
+  !open.id && !open.presetChosen
+    ? defaultPresetIdOf(profile)
+    : open.chosenPresetId
 
 export function useThread(
   initialId?: string | null,
   projectId?: string | null,
   route: ThreadRoute = {},
 ) {
-  const { api, session, profile, keyReady, cloud } = useHarness()
-  const cloudRef = useRef(cloud)
-  cloudRef.current = cloud
-  const profileRef = useRef(profile)
-  profileRef.current = profile
-  const [state, setState] = useState(initialChat)
-  const current = useRef(state)
-  current.current = state
-  const [id, setId] = useState<string | null>(null)
-  const idRef = useRef(id)
-  idRef.current = id
-  const [temporary, setTemporary] = useState(false)
-  const temporaryRef = useRef(temporary)
-  temporaryRef.current = temporary
-  // Whether the open chat is a thread the browser stores: every chat of a
-  // signed-out visitor or of an account without cloud sync, and chats from
-  // the Local tab. A temporary chat without cloud sync is one too, with its
-  // transcript held in memory.
-  const [local, setLocal] = useState(
-    () => !cloud || !!route.local || !!route.newChatLocal,
+  const { api, session, profile, profileReady, keyReady, cloud } = useHarness()
+  const [{ open, controller, attachments, moving, temporaryChats }] = useState(
+    () => ({
+      open: createStore<OpenChat>({
+        id: null,
+        temporary: false,
+        local: !cloud || !!route.local || !!route.newChatLocal,
+        unsaved: null,
+        loading: false,
+        notFound: false,
+        model: '',
+        failure: null,
+        presetChosen: false,
+        chosenPresetId: null,
+        blankChats: 0,
+      }),
+      controller: new RunController(
+        api,
+        {},
+        `harness-run:${api.userId ?? 'anonymous'}`,
+      ),
+      attachments: new OpenAttachments(),
+      moving: new Map<string, Promise<unknown>>(),
+      // A temporary chat on this device; each new chat starts another.
+      temporaryChats: { store: memoryThreadStore() },
+    }),
   )
-  const localRef = useRef(local)
-  localRef.current = local
-  const [model, setModel] = useState('')
-  const [chosenPresetId, setChosenPresetId] = useState<string | null>(null)
-  // Whether the open chat's prompt was chosen, rather than left at the
-  // default a new chat starts with.
-  const [presetChosen, setPresetChosen] = useState(false)
-  const presetChosenRef = useRef(presetChosen)
-  presetChosenRef.current = presetChosen
-  // The open chat's web search setting, where a saved prompt or the toggle
-  // set it before the chat stores it.
-  const [webSearch, setWebSearch] = useState<boolean | undefined>()
-  // Counts new chats, so the default prompt applies to each one.
-  const [blankChats, setBlankChats] = useState(0)
-  // The prompt new chats start with, which the harness keeps in the profile.
-  const defaultPresetId =
-    typeof profile.defaultPromptPresetId === 'string' &&
-    profile.defaultPromptPresetId
-      ? profile.defaultPromptPresetId
-      : null
-  const presetId = !id && !presetChosen ? defaultPresetId : chosenPresetId
-  const choosePreset = (next: string | null) => {
-    presetChosenRef.current = true
-    setPresetChosen(true)
-    setChosenPresetId(next)
-  }
-  const [threads, setThreads] = useState<ThreadSummary[]>([])
-  const [localThreads, setLocalThreads] = useState<ThreadSummary[]>([])
-  const localIds = useRef(new Set<string>())
-  localIds.current = new Set(localThreads.map((thread) => thread.id))
-  const [cursor, setCursor] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [notFound, setNotFound] = useState(false)
-  // A new local chat until its first save lands. Its route waits, since
-  // opening the route before then would find nothing on the device.
-  const [unsaved, setUnsaved] = useState<string | null>(null)
-  const unsavedRef = useRef(unsaved)
-  // An action that failed. The open chat's run reports how it ended through
-  // its own stream, in the chat state.
-  const [failure, setFailure] = useState<{
-    message: string
-    detail?: HarnessErrorBody
-  } | null>(null)
-  // When the current error happened, so a wait the harness asks for counts
-  // from then.
-  const errorAt = useRef(0)
-  // The kind of the last turn sent, and the reply a continuation extends.
-  const lastTurn = useRef<Pick<Turn, 'kind' | 'messageId'> | null>(null)
-  const followers = useRef(new Set<AbortController>())
-  const localRuns = useRef(new Map<string, LocalRun>())
-  // Renders the chat list again as local runs start and end, including runs
-  // whose chat is no longer open.
-  const [, setLocalRunsChanged] = useState(0)
-  const generation = useRef(0)
-  // The local turn sent and not started yet. Its chat takes no other local
-  // turn until the turn starts or its stream ends, as when it was queued and
-  // then removed.
-  const starting = useRef<LocalRun | null>(null)
-  const settle = (run: LocalRun) => {
-    if (starting.current === run) starting.current = null
-  }
-  // Chats moving between the cloud and this device, and their moves. A change
-  // made to a chat during its move would stay with the copy the move deletes,
-  // so the chat takes no turns or edits until the move ends, and is deleted
-  // only once it has.
-  const moving = useRef(new Map<string, Promise<unknown>>())
-  const pending = useRef<{ input: Turn; run?: LocalRun } | null>(null)
-  const uploads = useRef(new Map<string, AttachmentDescriptor>())
-  const images = useRef(
-    new Map<string, { base64: string; mimeType?: string }>(),
+  const patch = useCallback(
+    (fields: Partial<OpenChat>) => open.update((o) => ({ ...o, ...fields })),
+    [open],
   )
-  const documentTexts = useRef(new Map<string, Promise<string>>())
-  const store = useMemo(
-    () => localThreadStore(api.userId ? 'device' : 'tab'),
-    [api.userId],
-  )
-  const memory = useRef(memoryThreadStore())
-  const storeFor = (isTemporary: boolean) =>
-    isTemporary ? memory.current : store
-  const runsLocally = () => localRef.current
-  const storageKey = `harness-run:${api.userId ?? 'anonymous'}`
-  const contentKey = () => api.key()
   const report = useCallback(
     (cause: unknown) => {
       if (
@@ -209,664 +127,391 @@ export function useThread(
         (cause instanceof DOMException && cause.name === 'AbortError')
       )
         return
-      errorAt.current = Date.now()
+      controller.errorAt = Date.now()
       if (cause instanceof HarnessError) api.reportRefusal(cause.detail)
-      setFailure({
-        message:
-          cause instanceof Error
-            ? cause.message
-            : 'The connection failed. Reconnect to continue.',
-        ...(cause instanceof HarnessError ? { detail: cause.detail } : {}),
-      })
-    },
-    [api],
-  )
-  // The open chat's run ended with its stream, refused or cut off.
-  function failRun(cause: unknown) {
-    const detail =
-      cause instanceof HarnessError ? cause.detail : CONNECTION_LOST
-    errorAt.current = Date.now()
-    const next = {
-      ...current.current,
-      error: detail,
-      status: 'error' as const,
-    }
-    current.current = next
-    setState(next)
-    api.reportRefusal(detail)
-  }
-  // Counts listings of the stored chats apart from the open chat, so that
-  // opening a chat keeps the list and only the latest listing applies.
-  const listing = useRef(0)
-  const refresh = useCallback(
-    async (next?: string) => {
-      if (!cloud || !keyReady) return
-      const version = next ? listing.current : ++listing.current
-      const result = await api.post<{
-        threads: ThreadSummary[]
-        nextCursor: string | null
-      }>(ROUTES.list, { cursor: next, projectId, limit: 100 })
-      if (version !== listing.current) return
-      setThreads((previous) =>
-        next
-          ? [
-              ...previous,
-              ...result.threads.filter(
-                (t) => !previous.some((p) => p.id === t.id),
-              ),
-            ]
-          : result.threads,
-      )
-      setCursor(result.nextCursor)
-    },
-    [api, cloud, keyReady, projectId],
-  )
-  const rememberImages = (attachments: readonly AttachmentDescriptor[]) => {
-    for (const attachment of attachments)
-      if (attachment.base64)
-        images.current.set(attachment.id, {
-          base64: attachment.base64,
-          mimeType: attachment.mimeType,
-        })
-  }
-  const rememberThreadImages = (thread: StoredThread) => {
-    for (const message of thread.messages)
-      rememberImages(message.attachments ?? [])
-  }
-  const reset = useCallback(() => {
-    generation.current++
-    for (const controller of followers.current) controller.abort()
-    followers.current.clear()
-    current.current = initialChat()
-    setState(current.current)
-    idRef.current = null
-    setId(null)
-    setFailure(null)
-    setNotFound(false)
-    unsavedRef.current = null
-    setUnsaved(null)
-    starting.current = null
-    pending.current = null
-    uploads.current = new Map()
-    images.current = new Map()
-    documentTexts.current = new Map()
-    presetChosenRef.current = false
-    setPresetChosen(false)
-    setChosenPresetId(null)
-    setWebSearch(undefined)
-    setBlankChats((count) => count + 1)
-  }, [])
-  // The chat as this device stores it. A new chat starts from an empty
-  // thread.
-  async function localTranscript(
-    threadId: string,
-    target: LocalThreadStore,
-  ): Promise<StoredThread> {
-    return (
-      (await target.get(threadId)) ??
-      newThread(threadId, {
-        model,
-        presetId,
-        webSearchEnabled: webSearch,
-      })
-    )
-  }
-  // A device run's final event carries the whole thread, which this device
-  // stores as it is, with the images it holds where the harness left them
-  // out.
-  async function saveRun(run: LocalRun, event: TerminalEvent) {
-    const thread: unknown = event.metadata?.thread
-    if (!isThread(thread)) return
-    const saved = await run.store.update(run.threadId, (stored) => ({
-      ...thread,
-      id: run.threadId,
-      messages: withHeldImages(thread.messages, run.images),
-      // A title the user set on this device during the run stays.
-      ...(stored?.titleState === 'manual'
-        ? { title: stored.title, titleState: stored.titleState }
-        : {}),
-    }))
-    if (!saved) return
-    markSaved(saved.id)
-    if (idRef.current !== saved.id) return
-    rememberThreadImages(saved)
-    const shown = current.current.snapshot.thread
-    if (shown?.id === saved.id && shown.title !== saved.title) {
-      const next = {
-        ...current.current,
-        snapshot: {
-          ...current.current.snapshot,
-          thread: {
-            ...shown,
-            title: saved.title,
-            titleState: saved.titleState,
-          },
+      patch({
+        failure: {
+          message:
+            cause instanceof Error
+              ? cause.message
+              : 'The connection failed. Reconnect to continue.',
+          ...(cause instanceof HarnessError ? { detail: cause.detail } : {}),
         },
-      }
-      current.current = next
-      setState(next)
-    }
+      })
+    },
+    [api, controller, patch],
+  )
+  const markSaved = useCallback(
+    (threadId: string) =>
+      open.update((o) =>
+        o.unsaved === threadId ? { ...o, unsaved: null } : o,
+      ),
+    [open],
+  )
+  const device = useMemo(
+    () => localThreadStore(api.userId ? 'device' : 'tab'),
+    [api.userId],
+  )
+  const list = useChatList({ api, cloud, keyReady, projectId, device, report })
+  const { clearCloud } = list
+  const cloudStore = useMemo(
+    () => cloudThreads(api, list.cloud, attachments),
+    [api, list.cloud, attachments],
+  )
+  const deviceStore = useMemo(
+    () =>
+      deviceThreads({
+        api,
+        store: device,
+        controller,
+        attachments,
+        list: list.device,
+        saved: markSaved,
+      }),
+    [api, device, controller, attachments, list.device, markSaved],
+  )
+  // The open chat's store.
+  const openStore = (): ThreadStore => {
+    const { local, temporary } = open.get()
+    if (!local) return cloudStore
+    if (!temporary) return deviceStore
+    return deviceThreads({
+      api,
+      store: temporaryChats.store,
+      controller,
+      attachments,
+      list: { add() {}, replace() {}, remove() {} },
+      saved: markSaved,
+    })
   }
-  async function stream(
-    path: RunRoute,
-    input: Turn | FollowInput,
-    run?: LocalRun,
-    quiet = false,
-    rejoined = false,
-  ): Promise<boolean> {
-    const controller = new AbortController()
-    // A run the browser stores keeps reading when the view moves to another
-    // chat, or the page to another route, so its reply is still saved. An
-    // account change ends it with the API's lifetime.
-    if (!run) followers.current.add(controller)
-    const version = generation.current
-    let runId = 'runId' in input ? input.runId : undefined
-    let succeeded = false
-    let view = current.current
-    try {
-      for await (const frame of api.client.events(
-        path,
-        input,
-        api.signal({ signal: controller.signal, keyless: !!run }),
-      )) {
-        const attached = version === generation.current
-        if (!attached && !run) break
-        runId = runOf(frame.event) ?? runId
-        const base = attached ? current.current : view
-        const next = reduceEvent(base, frame, runId)
-        const event = frame.event
-        // A replayed frame leaves the view as it was.
-        if (next !== base) {
-          reportQuota(event)
-          if (event.type === 'RUN_ERROR' && attached)
-            errorAt.current = Date.now()
-        }
-        view = next
-        if (attached) {
-          current.current = next
-          setState(next)
-        }
-        if (event.type === 'RUN_FINISHED')
-          succeeded = event.metadata?.cancelled !== true
-        if (event.type === 'RUN_STARTED') {
-          if (run) {
-            settle(run)
-            run.runId = event.runId
-            localRuns.current.set(run.threadId, run)
-            setLocalRunsChanged((count) => count + 1)
-          }
-          if (attached) {
-            pending.current = null
-            // The harness stored a new chat's first turn.
-            if (!run) markSaved(input.threadId!)
-            // A stored chat names its run itself; a temporary chat or one on
-            // this device is rejoined after a reload through this hint.
-            if (run || temporary)
-              try {
-                sessionStorage.setItem(
-                  storageKey,
-                  JSON.stringify({
-                    threadId: input.threadId,
-                    runId,
-                    temporary,
-                    ...(run ? { local: true } : {}),
-                  }),
-                )
-              } catch {
-                /* routing hints are optional */
-              }
-          }
-        }
-        if (run && isTerminal(event))
-          await saveRun(run, event).catch((cause) => {
-            logError('Failed to save a local chat', cause, {
-              component: 'useThread',
-              action: 'saveRun',
-            })
-            if (version === generation.current)
-              setFailure({
-                message: 'This chat could not be saved on this device.',
-              })
-          })
-        if (isTerminal(event)) {
-          forgetReceipt(runId)
-          void refresh().catch(report)
-        }
-      }
-    } catch (cause) {
-      if (controller.signal.aborted) return false
-      // A stream cut off after its run started rejoins the run once, which
-      // replays it; a run on this device does so after the view moved on.
-      if (
-        runId &&
-        !rejoined &&
-        interrupted(cause) &&
-        (run || version === generation.current)
-      ) {
-        let follow: FollowInput
-        try {
-          follow = { ...runKey(!!run), threadId: input.threadId!, runId }
-        } catch (refusal) {
-          if (version === generation.current) failRun(refusal)
-          return false
-        }
-        return await stream(ROUTES.follow, follow, run, quiet, true)
-      }
-      if (version === generation.current) {
-        // A turn sent again after the harness applied it changed the chat
-        // already, and a run the harness no longer has ended, finished or
-        // not: either way the chat shows as stored.
-        if (
-          cause instanceof HarnessError &&
-          (cause.code === 'ALREADY_APPLIED' || cause.code === 'RUN_NOT_FOUND')
-        ) {
-          pending.current = null
-          forgetReceipt(runId)
-          await showStored(input.threadId!).catch(report)
-        }
-        // A run the harness refused to follow is gone. One that could not be
-        // reached keeps its receipt, so it can still be rejoined.
-        else if (!quiet) failRun(cause)
-        else if (cause instanceof HarnessError && cause.status !== undefined)
-          forgetReceipt(runId)
-      }
-    } finally {
-      followers.current.delete(controller)
-      // A local run this page no longer reads is not shown as running, and
-      // another turn may follow one that never started.
-      if (run) {
-        settle(run)
-        if (localRuns.current.get(run.threadId) === run) {
-          localRuns.current.delete(run.threadId)
-          setLocalRunsChanged((count) => count + 1)
-        }
-      }
-    }
-    return succeeded && version === generation.current
-  }
+  const storeOf = (threadId: string): ThreadStore =>
+    open.get().id === threadId
+      ? openStore()
+      : !api.cloud || list.isOnDevice(threadId)
+        ? deviceStore
+        : cloudStore
+  const reset = useCallback(() => {
+    controller.reset()
+    attachments.clear()
+    open.update((o) => ({
+      ...o,
+      id: null,
+      failure: null,
+      notFound: false,
+      unsaved: null,
+      presetChosen: false,
+      chosenPresetId: null,
+      webSearch: undefined,
+      blankChats: o.blankChats + 1,
+    }))
+  }, [controller, attachments, open])
+  const choosePreset = (next: string | null) =>
+    patch({ presetChosen: true, chosenPresetId: next })
   // Shows the open chat as it is stored once its run is over, as when the
   // harness no longer has the run or had applied a turn sent again. A
-  // temporary chat, or one never saved, keeps what it shows.
+  // temporary stored chat, or one never saved, keeps what it shows.
   async function showStored(threadId: string) {
-    if (idRef.current !== threadId) return
-    const version = generation.current
-    let thread: Thread | null = null
-    if (localRef.current) {
-      const stored = await storeFor(temporaryRef.current).get(threadId)
-      if (stored) {
-        rememberThreadImages(stored)
-        thread = localThreadView(stored)
-      }
-    } else if (!temporaryRef.current)
-      thread = await api.post<Thread>(ROUTES.get, { id: threadId })
-    if (version !== generation.current) return
+    const { id, temporary, local } = open.get()
+    if (id !== threadId) return
+    const shown = controller.track()
+    const thread = temporary && !local ? null : await openStore().get(threadId)
+    if (!shown()) return
     if (thread) markSaved(threadId)
-    const next = thread
-      ? initialChat(thread)
-      : { ...current.current, status: 'idle' as const, error: undefined }
-    current.current = next
-    setState(next)
-  }
-  // The quota a run reports, and its spend once it finishes.
-  function reportQuota(event: Frame['event']) {
-    if (event.type === 'STATE_SNAPSHOT')
-      api.reportRateLimit(event.snapshot?.rateLimit)
-    else if (event.type === 'RUN_FINISHED' || event.type === 'RUN_ERROR')
-      api.reportRateLimit(
-        event.metadata?.rateLimit,
-        runSpend(event.metadata?.usage),
-      )
-    if (event.type === 'RUN_ERROR') api.reportRefusal(event)
-  }
-  // A run that ended is not followed again after a reload.
-  function forgetReceipt(runId?: string) {
-    try {
-      const receipt = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null')
-      if (runId && receipt?.runId === runId)
-        sessionStorage.removeItem(storageKey)
-    } catch {
-      /* optional routing hint */
-    }
-  }
-  // Rejoins a run of a stored chat: one this page started, or one a
-  // reloaded page left behind, so its reply is still saved.
-  function resumeLocalRun(thread: StoredThread) {
-    let runId = localRuns.current.get(thread.id)?.runId
-    if (!runId)
-      try {
-        const receipt = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null')
-        if (receipt?.local && receipt.threadId === thread.id)
-          runId = receipt.runId
-      } catch {
-        /* discard invalid routing hints */
-      }
-    if (typeof runId !== 'string') return
-    void stream(
-      ROUTES.follow,
-      { threadId: thread.id, runId },
-      { threadId: thread.id, store, images: heldImages(thread.messages) },
-      true,
+    controller.view.set(
+      thread
+        ? initialChat(thread)
+        : { ...controller.view.get(), status: 'idle', error: undefined },
     )
   }
-  async function openLocal(threadId: string, version: number) {
-    const thread = await store.get(threadId)
-    if (version !== generation.current) return
-    setTemporary(false)
-    setLocal(true)
-    if (!thread) {
-      setNotFound(true)
-      return
-    }
-    rememberThreadImages(thread)
-    const next = initialChat(localThreadView(thread))
-    current.current = next
-    setState(next)
-    setId(thread.id)
-    idRef.current = thread.id
-    setModel(thread.model ?? '')
-    choosePreset(thread.presetId ?? null)
-    setWebSearch(undefined)
-    resumeLocalRun(thread)
+  controller.hooks = {
+    accepted: markSaved,
+    async saved(run, event, attached) {
+      try {
+        const saved = await storeRun(run, event)
+        if (!saved) return
+        markSaved(saved.id)
+        if (open.get().id !== saved.id) return
+        attachments.rememberThread(saved)
+        controller.view.update((state) => {
+          const shown = state.snapshot.thread
+          return shown?.id === saved.id && shown.title !== saved.title
+            ? {
+                ...state,
+                snapshot: {
+                  ...state.snapshot,
+                  thread: {
+                    ...shown,
+                    title: saved.title,
+                    titleState: saved.titleState,
+                  },
+                },
+              }
+            : state
+        })
+      } catch (cause) {
+        logError('Failed to save a local chat', cause, {
+          component: 'useThread',
+          action: 'saveRun',
+        })
+        if (attached)
+          patch({
+            failure: {
+              message: 'This chat could not be saved on this device.',
+            },
+          })
+      }
+    },
+    ended: () => {
+      void list.refresh().catch(report)
+    },
+    gone: (threadId) => showStored(threadId).catch(report),
   }
-  async function open(threadId: string, options: { local?: boolean } = {}) {
-    const openLocally =
-      options.local ?? (!cloudRef.current || localIds.current.has(threadId))
+  async function openChat(threadId: string, options: { local?: boolean } = {}) {
+    const local = options.local ?? (!api.cloud || list.isOnDevice(threadId))
     reset()
-    const version = generation.current
-    setLoading(true)
+    const shown = controller.track()
+    patch({ loading: true })
     try {
-      if (openLocally) return await openLocal(threadId, version)
-      const thread = await api.post<Thread>(ROUTES.get, { id: threadId })
-      if (version !== generation.current) return
-      const next = initialChat(thread)
-      current.current = next
-      setState(next)
-      setId(thread.id)
-      idRef.current = thread.id
-      setTemporary(false)
-      setLocal(false)
-      setModel(thread.model)
-      choosePreset(thread.presetId ?? null)
-      setWebSearch(undefined)
-      if (thread.activeRun)
-        void stream(ROUTES.follow, {
-          key: api.key(),
-          threadId,
-          runId: thread.activeRun.runId,
-        })
+      const store = local ? deviceStore : cloudStore
+      const thread = await store.get(threadId)
+      if (!shown()) return
+      if (!thread) {
+        patch({ temporary: false, local, notFound: true })
+        return
+      }
+      controller.view.set(initialChat(thread))
+      patch({
+        id: thread.id,
+        temporary: false,
+        local,
+        model: thread.model ?? '',
+        presetChosen: true,
+        chosenPresetId: thread.presetId ?? null,
+        webSearch: undefined,
+      })
+      // A run of the chat may still be live: one this page started, one a
+      // reloaded page left behind, or one the harness names.
+      const runId = store.liveRun(thread)
+      if (!runId) return
+      const { input, device: run } = await store.follow(threadId, runId)
+      void controller.run(ROUTES.follow, input, { device: run, quiet: !!run })
     } finally {
-      if (version === generation.current) setLoading(false)
+      if (shown()) patch({ loading: false })
     }
   }
-  const initial = useRef<string | null>(null)
+  const actions = chatActions({
+    api,
+    controller,
+    open,
+    list,
+    device,
+    storeOf,
+    moving,
+    reset,
+    openChat,
+  })
+  // The route opened last, so updates of the open chat do not reopen it.
+  const opened = useRef<string | null>(null)
+  const openState = useStore(open)
+  const state = useStore(controller.view)
+  const deviceRuns = useStore(controller.deviceRuns)
   useEffect(() => {
-    if (session && !model)
-      setModel(profile.selectedModel || session.defaultModel)
-  }, [session, profile.selectedModel, model])
-  useEffect(() => {
-    void refresh().catch(report)
-  }, [refresh, report])
-  useEffect(() => {
-    let sequence = 0
-    const load = () => {
-      const request = ++sequence
-      void store
-        .list()
-        .then((list) => {
-          if (request === sequence) setLocalThreads(list)
-        })
-        .catch((cause) =>
-          logError('Failed to list local chats', cause, {
-            component: 'useThread',
-            action: 'listLocal',
-          }),
-        )
-    }
-    load()
-    return chatEvents.on(load)
-  }, [store])
+    if (session && !openState.model)
+      patch({ model: profile.selectedModel || session.defaultModel })
+  }, [session, profile.selectedModel, openState.model, patch])
   const previousCloud = useRef(cloud)
   useEffect(() => {
     if (previousCloud.current === cloud) return
     previousCloud.current = cloud
-    if (!cloud) {
-      listing.current++
-      setThreads([])
-    }
+    if (!cloud) clearCloud()
     // A blank chat follows the storage mode; a stored chat of the harness
     // cannot stay open once cloud sync is off.
-    if (!idRef.current) setLocal(!cloud || !!route.newChatLocal)
-    else if (!cloud && !localRef.current) {
+    const { id, local } = open.get()
+    if (!id) patch({ local: !cloud || !!route.newChatLocal })
+    else if (!cloud && !local) {
       reset()
-      setLocal(true)
+      patch({ local: true })
     }
-  }, [cloud, reset, route.newChatLocal])
+  }, [cloud, reset, route.newChatLocal, clearCloud, open, patch])
   useEffect(() => {
     if (
       !initialId ||
-      initial.current === initialId ||
-      idRef.current === initialId
+      opened.current === initialId ||
+      open.get().id === initialId
     )
       return
     if (!route.local && !keyReady) return
-    initial.current = initialId
-    void open(initialId, { local: !!route.local }).catch(report)
+    opened.current = initialId
+    void openChat(initialId, { local: !!route.local }).catch(report)
     // Opening a route must not run again when its stream updates the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialId, keyReady, route.local])
   useEffect(() => {
     const clear = () => {
-      listing.current++
-      setThreads([])
-      if (localRef.current) return
+      clearCloud()
+      if (open.get().local) return
       reset()
-      initial.current = null
-      try {
-        sessionStorage.removeItem(storageKey)
-      } catch {
-        /* optional routing hint */
-      }
+      opened.current = null
+      controller.clearReceipt()
     }
     window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, clear)
     return () => {
       window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, clear)
       reset()
     }
-  }, [reset, storageKey])
+  }, [reset, clearCloud, open, controller])
+  // A temporary stored chat's run is rejoined after a reload through its
+  // receipt, until it ends.
   useEffect(() => {
     if (initialId || !session || (api.userId && !keyReady)) return
+    const receipt = controller.receipt()
+    if (!receipt?.temporary || receipt.local) return
+    let key: string | undefined
     try {
-      const receipt = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null')
-      if (
-        typeof receipt?.threadId !== 'string' ||
-        typeof receipt?.runId !== 'string'
-      )
-        return
-      if (receipt.temporary && !receipt.local) {
-        setTemporary(true)
-        setId(receipt.threadId)
-        void stream(ROUTES.follow, {
-          key: api.key(),
-          threadId: receipt.threadId,
-          runId: receipt.runId,
-        })
-      }
+      key = api.key()
     } catch {
-      /* discard invalid routing hints */
+      return
     }
+    patch({ temporary: true, id: receipt.threadId })
+    void controller.run(
+      ROUTES.follow,
+      { key, threadId: receipt.threadId, runId: receipt.runId },
+      { temporary: true },
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, keyReady, !!session])
-  function turnFields(fields: Partial<Turn>): Turn {
-    return {
-      clientRequestId: crypto.randomUUID(),
-      threadId: idRef.current,
-      kind: 'send',
-      widgets: GENUI_WIDGETS.map((widget) => widget.name).filter((name) =>
-        session?.widgets.includes(name),
-      ),
-      options: {
-        model,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      },
-      ...fields,
-    }
-  }
-  // A local turn carries the thread and the settings a prompt reads instead
-  // of the content key, which it never uses.
-  async function sendLocal(fields: Partial<Turn>) {
-    const version = generation.current
-    const target = storeFor(temporaryRef.current)
-    const threadId = startChat()
-    const run: LocalRun = { threadId, store: target, images: new Map() }
-    starting.current = run
-    let base: StoredThread
-    try {
-      base = await localTranscript(threadId, target)
-    } catch (cause) {
-      settle(run)
-      report(cause)
-      return false
-    }
-    if (version !== generation.current) return false
-    const input: Turn = {
-      ...turnFields(fields),
-      threadId,
-      local: true,
-      thread: turnThread(base),
-      profile: turnProfile(profileRef.current),
-    }
-    run.images = holdImages(
-      uploaded(fields.attachments),
-      heldImages(base.messages),
-    )
-    pending.current = { input, run }
-    const message = sentMessage(input)
-    showSent(input)
-    // The chat keeps the message until the run returns the thread, so a new
-    // chat is listed from its first message.
-    if (message)
-      await target
-        .update(threadId, () => ({
-          ...base,
-          messages: [...base.messages, message],
-          updatedAt: message.createdAt,
-        }))
-        .then((saved) => saved && markSaved(threadId))
-        .catch((cause) =>
-          logError('Failed to keep a sent message on this device', cause, {
-            component: 'useThread',
-            action: 'sendLocal',
-          }),
-        )
-    return stream(ROUTES.turn, input, run)
-  }
-  // A new chat takes its id with its first turn. Until the harness accepts a
-  // turn of a stored chat, or a chat on this device is first saved, the chat
-  // is new: its route waits, and its turns carry what a first turn sets.
+  // The fields every turn of the open chat has.
+  const turnDefaults = (): Turn => ({
+    clientRequestId: crypto.randomUUID(),
+    threadId: open.get().id,
+    kind: 'send',
+    widgets: GENUI_WIDGETS.map((widget) => widget.name).filter((name) =>
+      session?.widgets.includes(name),
+    ),
+    options: {
+      model: open.get().model,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    },
+  })
+  // A new chat takes its id with its first turn, and keeps showing the
+  // prompt it started with.
   function startChat(): string {
-    if (idRef.current) return idRef.current
+    const current = open.get()
+    if (current.id) return current.id
     const threadId = generateReverseId().id
-    // The chat keeps showing the prompt it started with.
-    if (!presetChosenRef.current) choosePreset(presetId)
-    initial.current = threadId
-    idRef.current = threadId
-    setId(threadId)
-    unsavedRef.current = threadId
-    setUnsaved(threadId)
+    opened.current = threadId
+    patch({
+      ...(current.presetChosen
+        ? {}
+        : {
+            presetChosen: true,
+            chosenPresetId: presetIdOf(current, getView().profile),
+          }),
+      id: threadId,
+      unsaved: threadId,
+    })
     return threadId
-  }
-  const isNewChat = () => !idRef.current || unsavedRef.current === idRef.current
-  function markSaved(threadId: string) {
-    if (unsavedRef.current !== threadId) return
-    unsavedRef.current = null
-    setUnsaved(null)
   }
   // The message a turn adds, under the id the harness stores it with. A
   // message queued behind a running reply shows in the queue instead.
   function sentMessage(input: Turn): ThreadMessage | null {
-    const { status } = current.current
+    const { status } = controller.view.get()
     if (input.kind !== 'send' || status === 'streaming' || status === 'queued')
       return null
-    const attachments = uploaded(input.attachments)
+    const sent = uploaded(input.attachments)
     return {
       id: input.clientRequestId,
       role: 'user',
       createdAt: now(),
       content: input.content ?? '',
       ...(input.quote ? { quote: input.quote } : {}),
-      ...(attachments.length ? { attachments } : {}),
+      ...(sent.length ? { attachments: sent } : {}),
     }
   }
   // A message the user sends shows at once, until the run's first window
   // replaces the messages.
-  function showSent(input: Turn) {
-    const message = sentMessage(input)
-    if (!message) return
-    const { attachments, ...shown } = message
-    const next = {
-      ...current.current,
+  function showSent({ attachments: sent, ...message }: ThreadMessage) {
+    controller.view.update((state) => ({
+      ...state,
       messages: [
-        ...current.current.messages,
-        attachments
+        ...state.messages,
+        sent
           ? {
-              ...shown,
-              attachments: attachments.map(
-                ({ base64: _, pages: __, ...view }) => view,
+              ...message,
+              attachments: sent.map(
+                ({ base64: _base64, pages: _pages, ...shown }) => shown,
               ),
             }
-          : shown,
+          : message,
       ],
-    }
-    current.current = next
-    setState(next)
+    }))
   }
-  function send(fields: Partial<Turn> = {}) {
-    if (runsLocally() && starting.current) return
-    if (idRef.current && moving.current.has(idRef.current)) return
-    setFailure(null)
-    rememberSent(fields.attachments)
-    lastTurn.current = {
+  function send(fields: Partial<Turn> = {}): Promise<boolean> | undefined {
+    const threads = openStore()
+    if (threads.local && controller.startingThread() !== undefined) return
+    const current = open.get()
+    if (current.id && moving.has(current.id)) return
+    patch({ failure: null })
+    attachments.rememberSent(fields.attachments)
+    controller.lastTurn = {
       kind: fields.kind ?? 'send',
       messageId: fields.messageId,
     }
-    if (runsLocally()) return sendLocal(fields)
-    const key = contentKey()
-    const first = isNewChat()
-    const chosen = presetChosenRef.current
-    const input = turnFields({
-      key,
-      threadId: startChat(),
-      ephemeral: temporary,
-      projectId: first ? projectId : undefined,
-      // The harness starts a stored chat with the default prompt when its
-      // first turn names none, and keeps a first turn's choice, null too. A
-      // temporary chat is not stamped, so it names the default itself.
-      presetId: !first || (!chosen && !temporary) ? undefined : presetId,
-      ...fields,
+    let key: { key?: string }
+    try {
+      key = threads.runKey()
+    } catch (cause) {
+      report(cause)
+      return
+    }
+    const currentProfile = getView().profile
+    const settings: TurnSettings = {
+      first: !current.id || current.unsaved === current.id,
+      model: current.model,
+      presetId: presetIdOf(current, currentProfile),
+      presetChosen: current.presetChosen,
+      webSearch: current.webSearch,
+      temporary: current.temporary,
+      projectId,
+      profile: currentProfile,
+    }
+    const threadId = startChat()
+    return (async () => {
+      const turn = await threads.prepareTurn(
+        threadId,
+        { defaults: turnDefaults(), fields, key },
+        settings,
+      )
+      if (!turn) return false
+      controller.pending = { input: turn.resend, run: turn.run }
+      const message = sentMessage(turn.input)
+      if (message) {
+        showSent(message)
+        await turn.keep?.(message)
+      }
+      return controller.run(ROUTES.turn, turn.input, {
+        device: turn.run,
+        temporary: settings.temporary,
+      })
+    })().catch((cause) => {
+      report(cause)
+      return false
     })
-    pending.current = { input: { ...input, key: undefined } }
-    showSent(input)
-    return stream(ROUTES.turn, input)
   }
   function cancel() {
-    return api.post(
-      ROUTES.cancel,
-      {
-        ...runKey(),
-        threadId: idRef.current,
-        runId:
-          current.current.snapshot.thread?.activeRun?.runId ??
-          current.current.runId,
-      },
-      { keyless: true },
-    )
+    const state = controller.view.get()
+    return controller.cancel({
+      ...openStore().runKey(),
+      threadId: open.get().id,
+      runId: state.snapshot.thread?.activeRun?.runId ?? state.runId,
+    })
   }
   // The harness regenerates the reply it is named. The message actions name
   // a message by its index: a reply, or the user message it answers. A user
-  // message left without a reply is sent again with its own text, as the
-  // previous client regenerated it. A run in progress is stopped first.
+  // message left without a reply is sent again with its own text. A run in
+  // progress is stopped first.
   async function regenerate(index: number, fields: Partial<Turn> = {}) {
-    const messages = current.current.messages
+    const { messages, status } = controller.view.get()
     const target = messages[index]
     if (!target) return false
     const reply =
@@ -878,169 +523,68 @@ export function useThread(
     const turn: Partial<Turn> = reply
       ? { kind: 'regenerate', messageId: reply.id, content: '' }
       : { kind: 'edit', messageId: target.id, content: target.content ?? '' }
-    const status = current.current.status
     if (status === 'streaming' || status === 'queued')
-      await cancel().catch((cause) =>
-        logError('Failed to stop a run before regenerating', cause, {
-          component: 'useThread',
-          action: 'regenerate',
-        }),
-      )
+      await cancel().catch(report)
     return send({ ...fields, ...turn })
   }
-  const isLocalThread = (threadId: string) =>
-    idRef.current === threadId
-      ? localRef.current
-      : !cloudRef.current || localIds.current.has(threadId)
-  async function update(threadId: string, patch: Record<string, unknown>) {
-    if (moving.current.has(threadId)) return
-    if (isLocalThread(threadId)) {
-      const target = storeFor(
-        idRef.current === threadId && temporaryRef.current,
-      )
-      const saved = await target.update(
-        threadId,
-        (thread) =>
-          thread && {
-            ...thread,
-            ...(typeof patch.title === 'string'
-              ? { title: patch.title, titleState: 'manual' as const }
-              : {}),
-            ...(typeof patch.model === 'string' ? { model: patch.model } : {}),
-            ...('presetId' in patch
-              ? { presetId: (patch.presetId as string | null) || null }
-              : {}),
-            ...(typeof patch.webSearchEnabled === 'boolean'
-              ? { webSearchEnabled: patch.webSearchEnabled }
-              : {}),
-            updatedAt: now(),
-          },
-      )
-      if (saved && idRef.current === threadId)
-        setState((previous) =>
-          previous.snapshot.thread
-            ? {
-                ...previous,
-                snapshot: {
-                  ...previous.snapshot,
-                  thread: {
-                    ...previous.snapshot.thread,
-                    title: saved.title,
-                    titleState: saved.titleState,
-                    model: saved.model,
-                    webSearchEnabled: saved.webSearchEnabled,
-                    updatedAt: saved.updatedAt,
-                  },
-                },
-              }
-            : previous,
-        )
-      return
-    }
-    const summary = await api.post<ThreadSummary>(ROUTES.update, {
-      id: threadId,
-      ...patch,
-    })
-    setThreads((previous) =>
-      previous.map((t) => (t.id === summary.id ? summary : t)),
-    )
-    if (idRef.current === threadId)
-      setState((previous) => ({
-        ...previous,
-        snapshot: { ...previous.snapshot, thread: summary },
-      }))
-  }
-  async function remove(threadId: string) {
-    // A chat deleted during its move is deleted where the move left it.
-    const move = moving.current.get(threadId)
-    if (move) await move.catch(() => {})
-    if (move ? localIds.current.has(threadId) : isLocalThread(threadId)) {
-      const runId = localRuns.current.get(threadId)?.runId
-      if (runId)
-        void api
-          .post(ROUTES.cancel, { threadId, runId }, { keyless: true })
-          .catch(() => {})
-      await store.delete(threadId)
-      localRuns.current.delete(threadId)
-      setLocalThreads((previous) => previous.filter((t) => t.id !== threadId))
-      if (idRef.current === threadId) reset()
-      return
-    }
-    await api.post(ROUTES.delete, { id: threadId })
-    setThreads((previous) => previous.filter((t) => t.id !== threadId))
-    if (idRef.current === threadId) reset()
-  }
-  // Moves a stored chat to this device under the same id. A chat the
-  // harness stored a moment ago is put back as it was on the device, so a
-  // move that is undone keeps its original attachments.
-  async function moveToDevice(threadId: string, original?: StoredThread) {
-    return whileMoving(threadId, async () => {
-      const moved = original
-        ? await placeOnDevice(api, store, original)
-        : await moveThreadToDevice(api, store, threadId)
-      localIds.current.add(threadId)
-      setThreads((previous) => previous.filter((t) => t.id !== threadId))
-      setLocalThreads((previous) => [
-        localSummary(moved),
-        ...previous.filter((t) => t.id !== threadId),
-      ])
-      if (idRef.current === threadId) await open(threadId, { local: true })
+  // Asks the model to resume a reply where it stopped. The harness drops the
+  // messages after it, so the continued reply ends the chat.
+  function continueReply(index: number, fields: Partial<Turn> = {}) {
+    const reply = controller.view.get().messages[index]
+    if (reply?.role !== 'assistant') return
+    return send({
+      ...fields,
+      kind: 'continue',
+      messageId: reply.id,
+      content: '',
     })
   }
-  // Moves a chat from this device to the cloud under the same id, and
-  // returns the device copy it replaced.
-  async function moveToCloud(threadId: string) {
-    const running =
-      localRuns.current.has(threadId) ||
-      starting.current?.threadId === threadId ||
-      (idRef.current === threadId &&
-        (current.current.status === 'streaming' ||
-          current.current.status === 'queued'))
-    if (running) throw transferInFlight()
-    return whileMoving(threadId, async () => {
-      const { summary, original } = await moveThreadToCloud(
-        api,
-        store,
-        threadId,
+  async function reconnect() {
+    patch({ failure: null })
+    const threads = openStore()
+    const { id: threadId, temporary } = open.get()
+    // A turn whose acceptance never arrived is sent again with its nonce,
+    // which the harness answers with the run it may already have started.
+    if (controller.pending) {
+      const { input, run } = controller.pending
+      if (run) controller.begin(run)
+      return controller.run(
+        ROUTES.turn,
+        { ...input, ...threads.runKey() },
+        { device: run, temporary },
       )
-      localIds.current.delete(threadId)
-      setLocalThreads((previous) => previous.filter((t) => t.id !== threadId))
-      setThreads((previous) => [
-        summary,
-        ...previous.filter((t) => t.id !== threadId),
-      ])
-      if (idRef.current === threadId) await open(threadId, { local: false })
-      return original
-    })
-  }
-  // A chat takes no changes until its move has ended, the open chat's
-  // reopening included.
-  async function whileMoving<T>(threadId: string, move: () => Promise<T>) {
-    const moved = move()
-    moving.current.set(threadId, moved)
-    try {
-      return await moved
-    } finally {
-      if (moving.current.get(threadId) === moved)
-        moving.current.delete(threadId)
     }
-  }
-  // Deletes every chat the user can see here: the harness's stored chats
-  // with cloud sync, and the chats kept on this device.
-  async function removeAll() {
-    // A move that ended after the deletion would put its chat back.
-    await Promise.allSettled(moving.current.values())
-    let cloudDeletionCompleted = false
-    if (cloudRef.current) {
-      await api.post(ROUTES.deleteAll)
-      cloudDeletionCompleted = true
+    const state = controller.view.get()
+    const runId = state.runId ?? state.snapshot.thread?.activeRun?.runId
+    if (threadId && runId) {
+      const { input, device: run } = await threads.follow(threadId, runId)
+      return controller.run(ROUTES.follow, input, { device: run, temporary })
     }
-    await store.deleteAll()
-    reset()
-    listing.current++
-    setThreads([])
-    setLocalThreads([])
-    return { cloudDeletionCompleted }
+    if (initialId) return openChat(initialId, { local: !!route.local })
+  }
+  // Retries what failed. A run that ended with an error runs again: a
+  // continuation continues its reply again, and any other turn regenerates
+  // the reply to the last user message. A refused request or a dropped
+  // stream reconnects.
+  async function retry(fields: Partial<Turn> = {}) {
+    const { failedRun, status, messages } = controller.view.get()
+    if (!failedRun || status !== 'error') return reconnect()
+    const { lastTurn } = controller
+    if (lastTurn?.kind === 'continue') {
+      const replyId =
+        lastTurn.messageId ??
+        messages.findLast((message) => message.role === 'assistant')?.id
+      if (replyId)
+        return send({
+          ...fields,
+          kind: 'continue',
+          messageId: replyId,
+          content: '',
+        })
+    }
+    const index = messages.findLastIndex((message) => message.role === 'user')
+    if (index < 0) return reconnect()
+    return regenerate(index, fields)
   }
   // Converts a file into the descriptor the turn that uses it sends. The
   // harness keeps nothing of an upload, so an image keeps its bytes.
@@ -1054,264 +598,6 @@ export function useThread(
       base64: uint8ArrayToBase64(new Uint8Array(await file.arrayBuffer())),
     }
   }
-  // The attachments a turn sends stay readable in the view until the chat
-  // stores them: a document's text, and an image's bytes, which a chat on
-  // this device keeps.
-  function rememberSent(attachments: Turn['attachments']) {
-    for (const attachment of uploaded(attachments))
-      uploads.current.set(attachment.id, attachment)
-    rememberImages(uploaded(attachments))
-  }
-  // An attachment of the open chat. The harness finds a stored chat's
-  // attachments under the chat; only a fresh upload resolves without it.
-  function download(attachment: UIAttachment, signal?: AbortSignal) {
-    const threadId = idRef.current
-    return api.download(
-      ROUTES.attachmentGet,
-      { id: attachment.id, ...(threadId ? { threadId } : {}) },
-      { signal },
-    )
-  }
-  async function loadImage(
-    attachment: UIAttachment,
-    signal?: AbortSignal,
-  ): Promise<Blob> {
-    if (!runsLocally()) return download(attachment, signal)
-    const image = images.current.get(attachment.id)
-    if (!image)
-      throw new HarnessError({
-        code: 'THREAD_NOT_FOUND',
-        message: 'This image is not stored on this device.',
-      })
-    return new Blob([base64ToUint8Array(image.base64)], {
-      type: image.mimeType || 'image/jpeg',
-    })
-  }
-  // A document's text. A stored chat's messages leave it out, and the
-  // harness sends a document as its extracted text; a chat on this device
-  // keeps it in the document's descriptor. Reads are shared until the view
-  // moves to another chat.
-  function documentText(attachment: UIAttachment): Promise<string> {
-    if (attachment.textContent !== undefined)
-      return Promise.resolve(attachment.textContent)
-    const texts = documentTexts.current
-    const cached = texts.get(attachment.id)
-    if (cached) return cached
-    const threadId = idRef.current
-    const target = storeFor(temporaryRef.current)
-    const reading = (async () => {
-      if (!runsLocally()) return (await download(attachment)).text()
-      const descriptor =
-        uploads.current.get(attachment.id) ??
-        (threadId ? await target.get(threadId) : null)?.messages
-          .flatMap((message) => message.attachments ?? [])
-          .find((candidate) => candidate.id === attachment.id)
-      if (!descriptor)
-        throw new HarnessError({
-          code: 'THREAD_NOT_FOUND',
-          message: 'This document is not stored on this device.',
-        })
-      return localDocumentText(descriptor)
-    })()
-    texts.set(attachment.id, reading)
-    reading.catch(() => {
-      if (texts.get(attachment.id) === reading) texts.delete(attachment.id)
-    })
-    return reading
-  }
-  // Forks the open chat from a message into a new chat holding the messages
-  // through it. The harness copies a stored chat with its attachments; a
-  // local chat is forked on the device, the way the previous client forked
-  // the chats it stored.
-  async function fork(messageIndex: number) {
-    const threadId = idRef.current
-    if (!threadId || temporaryRef.current) return null
-    if (!localRef.current) {
-      const messageId = current.current.messages[messageIndex]?.id
-      if (!messageId) return null
-      const version = generation.current
-      const forked = await api.post<ThreadSummary>(ROUTES.fork, {
-        threadId,
-        messageId,
-      })
-      if (version !== generation.current) return null
-      setThreads((previous) => [
-        forked,
-        ...previous.filter((thread) => thread.id !== forked.id),
-      ])
-      await open(forked.id, { local: false })
-      return forked.id
-    }
-    const source = await localTranscript(threadId, store)
-    const messageId = current.current.messages[messageIndex]?.id
-    const count =
-      source.messages.findIndex((message) => message.id === messageId) + 1
-    if (!count) return null
-    const forkId = generateReverseId().id
-    const forked = buildForkedChat(
-      {
-        ...source,
-        createdAt: new Date(source.createdAt),
-        presetId: source.presetId ?? undefined,
-        projectId: undefined,
-        isLocalOnly: true,
-        messages: source.messages as unknown as Chat['messages'],
-      },
-      count,
-      forkId,
-    )
-    const thread: StoredThread = {
-      ...newThread(forkId, source),
-      title: forked.title,
-      titleState: 'manual',
-      messages: forked.messages as unknown as ThreadMessage[],
-    }
-    await store.update(forkId, () => thread)
-    await open(forkId, { local: true })
-    return forkId
-  }
-  // Message actions change one message of the open chat. The harness changes
-  // a stored chat and answers with its latest window; a chat on this device
-  // changes its own copy, which its next turn sends.
-  async function changeMessage(
-    index: number,
-    stored: {
-      path: typeof ROUTES.messageDelete | typeof ROUTES.messageUpdate
-      fields: Record<string, unknown>
-    },
-    change: (thread: StoredThread, messageId: string) => StoredThread | null,
-  ) {
-    const threadId = idRef.current
-    const messageId = current.current.messages[index]?.id
-    if (!threadId || !messageId || moving.current.has(threadId)) return
-    const version = generation.current
-    if (!runsLocally()) {
-      const thread = await api.post<Thread>(stored.path, {
-        threadId,
-        messageId,
-        ...stored.fields,
-      })
-      if (version !== generation.current) return
-      const {
-        messages,
-        hasOlder,
-        revision: _,
-        presetId: __,
-        ...summary
-      } = thread
-      const next = {
-        ...current.current,
-        messages,
-        hasOlder,
-        snapshot: { ...current.current.snapshot, thread: summary },
-      }
-      current.current = next
-      setState(next)
-      setThreads((previous) =>
-        previous.map((item) => (item.id === summary.id ? summary : item)),
-      )
-      return
-    }
-    const target = storeFor(temporaryRef.current)
-    const saved = await target.update(
-      threadId,
-      (thread) => thread && change(thread, messageId),
-    )
-    if (!saved || version !== generation.current) return
-    const view = localThreadView(saved)
-    const shown = current.current.snapshot.thread
-    const next = {
-      ...current.current,
-      messages: view.messages,
-      snapshot: {
-        ...current.current.snapshot,
-        thread: shown && {
-          ...shown,
-          messageCount: view.messageCount,
-          updatedAt: view.updatedAt,
-        },
-      },
-    }
-    current.current = next
-    setState(next)
-  }
-  // Removes one message; its reply, or the message it answers, stays. As on
-  // main, a chat keeps its last message.
-  function deleteMessage(index: number) {
-    if (current.current.messages.length <= 1) return Promise.resolve()
-    return changeMessage(
-      index,
-      { path: ROUTES.messageDelete, fields: {} },
-      (thread, messageId) =>
-        thread.messages.length > 1 &&
-        thread.messages.some((message) => message.id === messageId)
-          ? {
-              ...thread,
-              messages: thread.messages.filter(
-                (message) => message.id !== messageId,
-              ),
-              updatedAt: now(),
-            }
-          : null,
-    )
-  }
-  // Rewrites a reply's text in place; later messages stay.
-  function editReply(index: number, content: string) {
-    if (current.current.messages[index]?.role !== 'assistant')
-      return Promise.resolve()
-    return changeMessage(
-      index,
-      { path: ROUTES.messageUpdate, fields: { content } },
-      (thread, messageId) =>
-        thread.messages.some(
-          (message) => message.id === messageId && message.role === 'assistant',
-        )
-          ? {
-              ...thread,
-              messages: thread.messages.map((message) =>
-                message.id === messageId
-                  ? replaceReplyText(message, content)
-                  : message,
-              ),
-              updatedAt: now(),
-            }
-          : null,
-    )
-  }
-  // Asks the model to resume a reply where it stopped. The harness drops the
-  // messages after it, so the continued reply ends the chat.
-  function continueReply(index: number, fields: Partial<Turn> = {}) {
-    const reply = current.current.messages[index]
-    if (reply?.role !== 'assistant') return
-    return send({
-      ...fields,
-      kind: 'continue',
-      messageId: reply.id,
-      content: '',
-    })
-  }
-  // Creates a share link. A chat kept on this device is shared from its own
-  // copy, which the harness seals without storing it.
-  async function share(threadId: string): Promise<string> {
-    if (!isLocalThread(threadId)) {
-      const { url } = await api.post<{ url: string }>(ROUTES.share, {
-        threadId,
-      })
-      return url
-    }
-    const thread = shareThread(
-      await localTranscript(
-        threadId,
-        storeFor(idRef.current === threadId && temporaryRef.current),
-      ),
-    )
-    const input = { local: true, threadId, thread }
-    if (requestBytes(input) > MAX_SHARE_REQUEST_BYTES) throw shareTooLarge()
-    const { url } = await api.post<{ url: string }>(ROUTES.share, input, {
-      keyless: true,
-    })
-    return url
-  }
   // The model and web search setting a saved prompt applies when it is
   // chosen. Built-in prompts carry none, and a model the catalog no longer
   // offers is skipped.
@@ -1319,8 +605,9 @@ export function useThread(
     model?: string
     webSearchEnabled?: boolean
   } {
-    const saved = Array.isArray(profileRef.current.customPromptPresets)
-      ? (profileRef.current.customPromptPresets as Record<string, unknown>[])
+    const { customPromptPresets } = getView().profile
+    const saved: Record<string, unknown>[] = Array.isArray(customPromptPresets)
+      ? customPromptPresets
       : []
     const preset = saved.find((candidate) => candidate?.id === id)
     if (!preset) return {}
@@ -1340,133 +627,40 @@ export function useThread(
   async function selectPreset(next: string | null) {
     choosePreset(next)
     const settings = presetSettings(next)
-    if (settings.model) setModel(settings.model)
+    if (settings.model) patch({ model: settings.model })
     if (settings.webSearchEnabled !== undefined)
-      setWebSearch(settings.webSearchEnabled)
-    const threadId = idRef.current
-    if (threadId && !temporaryRef.current)
-      await update(threadId, { presetId: next, ...settings })
+      patch({ webSearch: settings.webSearchEnabled })
+    const { id: threadId, temporary } = open.get()
+    if (threadId && !temporary)
+      await actions.update(threadId, { presetId: next, ...settings })
   }
   // A new chat that keeps the default prompt takes the prompt's settings.
+  const defaultPresetId = defaultPresetIdOf(profile)
   const defaultSettings = presetSettings(defaultPresetId)
   useEffect(() => {
-    if (id || presetChosen) return
-    if (defaultSettings.model) setModel(defaultSettings.model)
-    setWebSearch(defaultSettings.webSearchEnabled)
+    if (openState.id || openState.presetChosen) return
+    if (defaultSettings.model) patch({ model: defaultSettings.model })
+    patch({ webSearch: defaultSettings.webSearchEnabled })
     // The settings apply when a new chat opens or the default changes.
   }, [
-    id,
-    presetChosen,
-    blankChats,
+    openState.id,
+    openState.presetChosen,
+    openState.blankChats,
     defaultPresetId,
     defaultSettings.model,
     defaultSettings.webSearchEnabled,
+    patch,
   ])
-  // The thread an ask carries: a local chat sends its transcript.
-  async function askContext(): Promise<
-    Pick<Turn, 'key' | 'threadId' | 'local' | 'thread' | 'profile'>
-  > {
-    const threadId = idRef.current
-    if (threadId && runsLocally())
-      return {
-        threadId,
-        local: true,
-        thread: turnThread(
-          await localTranscript(threadId, storeFor(temporaryRef.current)),
-        ),
-        profile: turnProfile(profileRef.current),
-      }
-    return { key: contentKey(), threadId }
+  function newChat(options: { local?: boolean } = {}) {
+    opened.current = null
+    reset()
+    patch({ local: !api.cloud || !!options.local })
+    temporaryChats.store = memoryThreadStore()
+    controller.clearReceipt()
   }
-  async function reconnect() {
-    setFailure(null)
-    // A request whose acceptance never arrived is sent again with its nonce,
-    // which the harness answers with the run it may already have started.
-    if (pending.current) {
-      const { input, run } = pending.current
-      if (run) starting.current = run
-      return stream(
-        ROUTES.turn,
-        run ? input : { ...input, key: contentKey() },
-        run,
-      )
-    }
-    const runId =
-      current.current.runId ?? current.current.snapshot.thread?.activeRun?.runId
-    const threadId = idRef.current
-    if (threadId && runId) {
-      if (!runsLocally())
-        return stream(ROUTES.follow, {
-          key: contentKey(),
-          threadId,
-          runId,
-        })
-      const target = storeFor(temporaryRef.current)
-      const run = localRuns.current.get(threadId) ?? {
-        threadId,
-        store: target,
-        images: holdImages(
-          [...uploads.current.values()],
-          heldImages((await localTranscript(threadId, target)).messages),
-        ),
-      }
-      return stream(ROUTES.follow, { threadId, runId }, run)
-    }
-    if (initialId) return open(initialId, { local: !!route.local })
-  }
-  // Retries what failed. A run that ended with an error runs again: a
-  // continuation continues its reply again, and any other turn regenerates
-  // the reply to the last user message. A refused request or a dropped
-  // stream reconnects.
-  async function retry(fields: Partial<Turn> = {}) {
-    const failed = current.current.failedRun
-    if (!failed || current.current.status !== 'error') return reconnect()
-    const messages = current.current.messages
-    if (lastTurn.current?.kind === 'continue') {
-      const replyId =
-        lastTurn.current.messageId ??
-        messages.findLast((message) => message.role === 'assistant')?.id
-      if (replyId)
-        return send({
-          ...fields,
-          kind: 'continue',
-          messageId: replyId,
-          content: '',
-        })
-    }
-    const index = messages.findLastIndex((message) => message.role === 'user')
-    if (index < 0) return reconnect()
-    return regenerate(index, fields)
-  }
-  // Messages before those shown. A run's window of a chat on this device
-  // starts later than the device's copy, which holds the rest.
-  async function older() {
-    if (!id) return
-    const version = generation.current
-    const before = state.messages[0]?.id
-    let thread: Pick<Thread, 'messages' | 'hasOlder'>
-    if (local) {
-      const stored = await storeFor(temporary).get(id)
-      const messages = stored ? localThreadView(stored).messages : []
-      const index = messages.findIndex((message) => message.id === before)
-      thread = {
-        messages: messages.slice(0, Math.max(index, 0)),
-        hasOlder: false,
-      }
-    } else thread = await api.post<Thread>(ROUTES.get, { id, before })
-    if (version === generation.current)
-      setState((previous) => ({
-        ...previous,
-        messages: [
-          ...thread.messages.filter(
-            (m) => !previous.messages.some((p) => p.id === m.id),
-          ),
-          ...previous.messages,
-        ],
-        hasOlder: thread.hasOlder,
-      }))
-  }
-  const runKey = (local = runsLocally()) => (local ? {} : { key: contentKey() })
+  // The open chat's view.
+  const { id, temporary, local, unsaved, model, failure, webSearch } = openState
+  const presetId = presetIdOf(openState, profile)
   const running = state.status === 'streaming' || state.status === 'queued'
   const isLocalChat = local && !temporary
   const messages = state.messages.map((m, index) => {
@@ -1476,14 +670,12 @@ export function useThread(
     // bytes; others load them when opened in the gallery.
     return {
       ...view,
-      attachments: view.attachments.map((attachment) =>
-        attachment.thumbnailBase64 || !images.current.has(attachment.id)
+      attachments: view.attachments.map((attachment) => {
+        const held = attachments.images.get(attachment.id)
+        return attachment.thumbnailBase64 || !held
           ? attachment
-          : {
-              ...attachment,
-              base64: images.current.get(attachment.id)!.base64,
-            },
-      ),
+          : { ...attachment, base64: held.base64 }
+      }),
     }
   })
   // A run this tab streams is active in the chat list before the list next
@@ -1491,7 +683,7 @@ export function useThread(
   const liveRun = (listed: Chat): Chat => {
     if (listed.activeRun) return listed
     const runId =
-      localRuns.current.get(listed.id)?.runId ??
+      deviceRuns.get(listed.id)?.runId ??
       (listed.id === id && running ? state.runId : undefined)
     return runId ? { ...listed, activeRun: { runId } } : listed
   }
@@ -1519,82 +711,90 @@ export function useThread(
         presetId: presetId ?? undefined,
         webSearchEnabled: webSearch,
       }
+  const queue: QueuedMessage[] = state.snapshot.queue.map((item) => ({
+    id: item.queueId,
+    text: item.content,
+  }))
+  const queueInput = (queueId: string) => ({
+    ...openStore().runKey(),
+    threadId: open.get().id,
+    queueId,
+  })
   return {
-    api,
-    state,
     chat,
-    threads,
     chats: [
-      ...(cloud ? threads.map((t) => threadView(t)) : []),
-      ...localThreads.map((t) => ({ ...threadView(t), isLocalOnly: true })),
+      ...(cloud ? list.cloudListed.map((t) => threadView(t)) : []),
+      ...list.deviceListed.map((t) => ({
+        ...threadView(t),
+        isLocalOnly: true,
+      })),
     ].map(liveRun),
     model,
-    setModel,
+    setModel: (next: string) => patch({ model: next }),
     presetId,
     setPresetId: choosePreset,
     selectPreset,
-    setWebSearch,
+    setWebSearch: (next: boolean) => patch({ webSearch: next }),
     temporary,
-    setTemporary,
+    setTemporary: (next: boolean) => patch({ temporary: next }),
     local: isLocalChat,
-    runsLocally: local,
-    loading,
-    notFound,
+    cloud,
+    loading: openState.loading,
+    notFound: openState.notFound,
+    status: state.status,
+    running,
+    // The open chat takes turns once its settings load and, for a chat the
+    // harness stores, once the content key is unlocked.
+    canSend: profileReady && (local || keyReady),
+    // A chat on this device changes its own copy; the harness changes a
+    // stored chat, and a temporary one is not stored at all.
+    canChangeMessages: !!chat.id && (local || !temporary),
+    queue,
+    contextUsage: summary?.contextUsage ?? undefined,
     error: failure?.message || state.error?.message || '',
     errorDetail: failure ? failure.detail : state.error,
+    errorAt: controller.errorAt,
+    hasOlder: state.hasOlder,
+    hasMoreChats: !!list.nextCursor,
     report,
-    open,
+    open: openChat,
     send,
-    update,
-    remove,
-    removeAll,
-    moveToDevice,
-    moveToCloud,
+    ...actions,
     upload,
-    loadImage,
-    documentText,
-    fork,
-    deleteMessage,
-    editReply,
-    continueReply,
-    share,
-    askContext,
-    refresh,
+    loadImage: (attachment: UIAttachment, signal?: AbortSignal) =>
+      openStore().image(open.get().id, attachment, signal),
+    // A document's text: a stored chat's messages leave it out, and the
+    // harness reads it from the chat; a chat on this device keeps it.
+    documentText: (attachment: UIAttachment): Promise<string> =>
+      attachment.textContent !== undefined
+        ? Promise.resolve(attachment.textContent)
+        : openStore().documentText(open.get().id, attachment),
+    // The thread an ask reads: a chat on this device sends its transcript.
+    async askContext(): Promise<AskContext> {
+      const threadId = open.get().id
+      if (!threadId) return { key: api.key(), threadId: null }
+      return openStore().askContext(threadId, getView().profile)
+    },
+    refresh: () => list.refresh(),
+    loadMoreChats: () => list.refresh(list.nextCursor ?? undefined),
     reconnect,
     retry,
-    errorAt: errorAt.current,
-    older,
-    hasOlder: state.hasOlder,
-    cursor,
-    running,
-    newChat: (options: { local?: boolean } = {}) => {
-      initial.current = null
-      reset()
-      setLocal(!cloudRef.current || !!options.local)
-      memory.current = memoryThreadStore()
-      try {
-        sessionStorage.removeItem(storageKey)
-      } catch {
-        /* optional */
-      }
-    },
+    newChat,
     cancel,
     regenerate,
-    sendQueued: (queueId: string) =>
-      api.post(
-        ROUTES.queueSend,
-        { ...runKey(), threadId: id, queueId },
-        { keyless: true },
-      ),
+    continueReply,
+    sendQueued: (queueId: string) => controller.sendQueued(queueInput(queueId)),
     removeQueued: (queueId: string) =>
-      api.post(
-        ROUTES.queueRemove,
-        { ...runKey(), threadId: id, queueId },
-        { keyless: true },
-      ),
+      controller.removeQueued(queueInput(queueId)),
+    // Deletes the chats of a project the harness stores.
+    async removeProjectChats(projectId: string) {
+      await api.post(ROUTES.deleteAll, { projectId })
+      newChat()
+      await list.refresh()
+    },
     dismissError: () => {
-      setFailure(null)
-      setState((previous) => ({ ...previous, error: undefined }))
+      patch({ failure: null })
+      controller.view.update((previous) => ({ ...previous, error: undefined }))
     },
   }
 }

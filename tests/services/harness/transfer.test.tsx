@@ -100,9 +100,11 @@ const transfers = () => posted().filter(([path]) => path !== '/v1/threads/list')
 async function renderThreads(cloud: ThreadSummary[]) {
   const hook = renderHook(() => useThread())
   await waitFor(() =>
-    expect(hook.result.current.threads.map((t) => t.id)).toEqual(
-      cloud.map((t) => t.id),
-    ),
+    expect(
+      hook.result.current.chats
+        .filter((chat) => !chat.isLocalOnly)
+        .map((chat) => chat.id),
+    ).toEqual(cloud.map((t) => t.id)),
   )
   return hook
 }
@@ -133,7 +135,11 @@ describe('moving a stored chat to this device', () => {
       ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
     ])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
-    expect(result.current.threads.map((t) => t.id)).toEqual([OTHER_ID])
+    expect(
+      result.current.chats
+        .filter((chat) => !chat.isLocalOnly)
+        .map((chat) => chat.id),
+    ).toEqual([OTHER_ID])
     expect(
       result.current.chats.map((chat) => [chat.id, chat.isLocalOnly ?? false]),
     ).toEqual([
@@ -169,7 +175,11 @@ describe('moving a stored chat to this device', () => {
     expect(copied).toEqual(deviceCopy)
     expect(await stored(CHAT_ID)).toBeNull()
     expect(await localThreadStore('device').list()).toEqual([])
-    expect(result.current.threads.map((t) => t.id)).toEqual([CHAT_ID])
+    expect(
+      result.current.chats
+        .filter((chat) => !chat.isLocalOnly)
+        .map((chat) => chat.id),
+    ).toEqual([CHAT_ID])
     expect(result.current.chats.some((chat) => chat.isLocalOnly)).toBe(false)
   })
 
@@ -236,7 +246,11 @@ describe('moving a stored chat to this device', () => {
       ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
     ])
     expect(await stored(CHAT_ID)).toBeNull()
-    expect(result.current.threads.map((t) => t.id)).toEqual([CHAT_ID])
+    expect(
+      result.current.chats
+        .filter((chat) => !chat.isLocalOnly)
+        .map((chat) => chat.id),
+    ).toEqual([CHAT_ID])
   })
 
   it('reopens the open chat from this device', async () => {
@@ -389,7 +403,11 @@ describe('moving a chat from this device to the cloud', () => {
     ])
     expect(original).toEqual(deviceCopy)
     expect(await stored(CHAT_ID)).toBeNull()
-    expect(result.current.threads).toEqual([imported])
+    expect(
+      result.current.chats
+        .filter((chat) => !chat.isLocalOnly)
+        .map((chat) => chat.id),
+    ).toEqual([imported.id])
     expect(result.current.chats.map((chat) => chat.isLocalOnly)).toEqual([
       undefined,
     ])
@@ -415,7 +433,7 @@ describe('moving a chat from this device to the cloud', () => {
 
     expect(transfers().map(([path]) => path)).toEqual(['/v1/threads/import'])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
-    expect(result.current.threads).toEqual([])
+    expect(result.current.chats.filter((chat) => !chat.isLocalOnly)).toEqual([])
   })
 
   it('deletes the cloud copy again when the device copy cannot be deleted', async () => {
@@ -440,7 +458,7 @@ describe('moving a chat from this device to the cloud', () => {
       ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
     ])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
-    expect(result.current.threads).toEqual([])
+    expect(result.current.chats.filter((chat) => !chat.isLocalOnly)).toEqual([])
   })
 
   it('refuses while a reply to the chat streams on this device', async () => {
@@ -576,8 +594,8 @@ describe('moving a chat from this device to the cloud', () => {
         queuedTurn = result.current.send({ content: 'And then?' })
       })
       await waitFor(() =>
-        expect(result.current.state.snapshot.queue).toEqual([
-          { queueId: 'queued-1', content: 'And then?' },
+        expect(result.current.queue).toEqual([
+          { id: 'queued-1', text: 'And then?' },
         ]),
       )
 
@@ -792,7 +810,7 @@ describe('moving a chat from this device to the cloud', () => {
       ['/v1/threads/delete', CHAT_ID],
     ])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
-    expect(result.current.threads).toEqual([])
+    expect(result.current.chats.filter((chat) => !chat.isLocalOnly)).toEqual([])
     expect(result.current.chats.map((chat) => chat.id)).toEqual([CHAT_ID])
   })
 })

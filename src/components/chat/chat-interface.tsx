@@ -147,6 +147,7 @@ const OnboardingView = dynamic(
 )
 
 import { displayModels } from '@/config/models'
+import { verifyChatService } from '@/services/harness/attestation'
 import { useHarness } from '@/services/harness/provider'
 import { isAttachmentsUnavailable } from '@/services/harness/transfer'
 import type { Turn } from '@/services/harness/types'
@@ -387,7 +388,7 @@ export function ChatInterface({
     currentChat.webSearchEnabled ?? profile.webSearchEnabled ?? true
   const codeExecutionEnabled = profile.codeExecutionEnabled ?? false
   const canEnableCodeExecution = session?.features.codeExecution ?? false
-  const contextUsage = thread.state.snapshot.thread?.contextUsage ?? undefined
+  const contextUsage = thread.contextUsage
   const modKey =
     typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
       ? '⌘'
@@ -400,13 +401,12 @@ export function ChatInterface({
   const handleInputFocusWithRateLimitCheck = handleInputFocus
   // A chat on this device changes its own copy; the harness changes a stored
   // chat, and a temporary one is not stored at all.
-  const canChangeMessages =
-    !!currentChat.id && (thread.runsLocally || !isTemporaryMode)
+  const canChangeMessages = thread.canChangeMessages
   const canFork =
     !!currentChat.id && !currentChat.isTemporary && !currentChat.isBlankChat
   const canShare =
     !!isSignedIn && !currentChat.isTemporary && currentChat.messages.length > 0
-  const canChat = profileReady && (thread.runsLocally || keyReady)
+  const canChat = thread.canSend
   const reloadChats = () => thread.refresh()
   const createNewChat = (isLocalOnly = false, fromUserAction = true) => {
     thread.newChat({ local: isLocalOnly })
@@ -471,11 +471,7 @@ export function ChatInterface({
   }
   const handleQuery = (content: string, fields: Partial<Turn> = {}) => {
     if (generationBlocked) return
-    try {
-      return thread.send({ content, options, ...fields })
-    } catch (cause) {
-      thread.report(cause)
-    }
+    return thread.send({ content, options, ...fields })
   }
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -584,15 +580,12 @@ export function ChatInterface({
   const cancelGenerationAndResumeQueue = () => {
     void thread.cancel().catch(thread.report)
   }
-  const queuedMessages = thread.state.snapshot.queue.map((q) => ({
-    id: q.queueId,
-    text: q.content,
-  }))
+  const queuedMessages = thread.queue
   const removeQueuedMessage = (id: string) => {
     void thread.removeQueued(id).catch(thread.report)
   }
-  const pinnedChatIds = thread.threads.filter((t) => t.pinned).map((t) => t.id)
   const favoriteChats = chats.filter((c) => c.pinned)
+  const pinnedChatIds = favoriteChats.map((c) => c.id)
   const unpinChat = (id: string) => {
     void thread.update(id, { pinned: false }).catch(thread.report)
   }
@@ -721,9 +714,7 @@ export function ChatInterface({
     thread.update(id, { projectId: null }).then(reloadChats)
   const handleDeleteProjectChats = async () => {
     if (!activeProject) return
-    await api.post('/v1/threads/delete-all', { projectId: activeProject.id })
-    thread.newChat()
-    await thread.refresh()
+    await thread.removeProjectChats(activeProject.id)
   }
   const handleCreateProject = async () => {
     const project = await createProject({ name: 'New Project' })
@@ -828,12 +819,12 @@ export function ChatInterface({
   // ask about it.
   const runningRef = useRef(isStreaming)
   runningRef.current = isStreaming
-  const queueRef = useRef(thread.state.snapshot.queue)
-  queueRef.current = thread.state.snapshot.queue
+  const queueRef = useRef(thread.queue)
+  queueRef.current = thread.queue
   useEffect(() => {
     if (!currentChatIsFlagged) return
     for (const item of queueRef.current)
-      void thread.removeQueued(item.queueId).catch(thread.report)
+      void thread.removeQueued(item.id).catch(thread.report)
     if (runningRef.current) void thread.cancel().catch(thread.report)
     setIsAskSidebarOpen(false)
     sidebarChat.reset()
@@ -918,8 +909,7 @@ export function ChatInterface({
     setProcessedDocuments((previous) => previous.filter((d) => d.id !== id))
   useEffect(() => {
     initializeRenderers()
-    void api.client
-      .ready()
+    void verifyChatService()
       .then(() => setVerificationStatus('verified'))
       .catch(() => setVerificationStatus('failed'))
   }, [api])
@@ -1619,8 +1609,8 @@ export function ChatInterface({
             >
               {isProjectMode && activeProject ? (
                 <ProjectSidebar
-                  hasMore={!!thread.cursor}
-                  onLoadMore={() => thread.refresh(thread.cursor ?? undefined)}
+                  hasMore={thread.hasMoreChats}
+                  onLoadMore={thread.loadMoreChats}
                   isOpen={isSidebarOpen}
                   setIsOpen={setIsSidebarOpen}
                   project={activeProject}
@@ -1699,8 +1689,8 @@ export function ChatInterface({
                 isOpen={isSidebarOpen}
                 setIsOpen={setIsSidebarOpen}
                 chats={chats}
-                hasMore={!!thread.cursor}
-                onLoadMore={() => thread.refresh(thread.cursor ?? undefined)}
+                hasMore={thread.hasMoreChats}
+                onLoadMore={thread.loadMoreChats}
                 currentChat={currentChat}
                 isDarkMode={isDarkMode}
                 pixelateSidebarChatTitles={pixelateSidebarChatTitles}
@@ -2123,7 +2113,7 @@ export function ChatInterface({
                       onRetryToolCall={retryToolCall}
                       loadImage={thread.loadImage}
                       loadDocumentText={thread.documentText}
-                      imagesUnsaved={!api.userId && !isTemporaryMode}
+                      imagesUnsaved={!isSignedIn && !isTemporaryMode}
                       showScrollButton={showScrollButton}
                       webSearchEnabled={effectiveWebSearchEnabled}
                       onWebSearchToggle={

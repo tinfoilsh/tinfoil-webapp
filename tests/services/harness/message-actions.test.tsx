@@ -343,7 +343,7 @@ describe('retrying after an error', () => {
       regenerated(transcript.slice(0, 3).map(wire)),
     )
     await act(() => result.current.send({ content: 'two' }))
-    expect(result.current.state.error).toEqual({
+    expect(result.current.errorDetail).toEqual({
       code: 'MODEL_UNAVAILABLE',
       message: 'The model is temporarily unavailable',
     })
@@ -373,7 +373,7 @@ describe('retrying after an error', () => {
       )
     })
     await act(() => result.current.send({ content: 'second' }))
-    expect(result.current.state.error).toMatchObject({
+    expect(result.current.errorDetail).toMatchObject({
       code: 'RATE_LIMITED',
       retryAfter: 2,
     })
@@ -422,7 +422,7 @@ describe('retrying after an error', () => {
       'a2',
     ])
     expect(result.current.error).toBe('')
-    expect(result.current.state.status).toBe('idle')
+    expect(result.current.status).toBe('idle')
   })
 
   it('records the exhausted quota a refused turn names', async () => {
@@ -551,7 +551,11 @@ describe('changing messages of a stored chat', () => {
     ])
     expect(result.current.chat.id).toBe('fork-1')
     expect(result.current.chat.messages.map((m) => m.id)).toEqual(['u1', 'a1'])
-    expect(result.current.threads.map((t) => t.id)).toEqual(['fork-1'])
+    expect(
+      result.current.chats
+        .filter((chat) => !chat.isLocalOnly)
+        .map((chat) => chat.id),
+    ).toEqual(['fork-1'])
   })
 
   it('continues a reply in place', async () => {

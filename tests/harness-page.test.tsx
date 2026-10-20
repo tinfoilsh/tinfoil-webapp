@@ -113,7 +113,7 @@ it('retries an ambiguous initial request with its original nonce and input', asy
     })
   const { result } = renderHook(() => useThread())
   await act(() => result.current.send({ content: 'private question' }))
-  expect(result.current.state.status).toBe('error')
+  expect(result.current.status).toBe('error')
   expect(result.current.error).toBe(
     'The connection closed. Reconnect to continue.',
   )
@@ -154,5 +154,5 @@ it('rejoins an accepted turn by its run when its stream drops', async () => {
     'private question',
     'private answer, and more, and the end',
   ])
-  expect(result.current.state.status).toBe('idle')
+  expect(result.current.status).toBe('idle')
 })
