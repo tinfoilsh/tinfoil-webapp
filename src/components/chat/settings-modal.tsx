@@ -273,12 +273,33 @@ export type ImportProgress =
       imported: number
       total: number
     }
+  // Chats for this device arrive once the chat service has a file, so its
+  // bytes count as uploaded.
+  | {
+      type: 'storing'
+      file: number
+      files: number
+      stored: number
+      uploadedBytes: number
+      totalBytes: number
+    }
 
 export function describeImportProgress(progress: ImportProgress): {
   title: string
   detail: string
   percent: number
 } {
+  if (progress.type === 'storing') {
+    const { file, files, stored, uploadedBytes, totalBytes } = progress
+    return {
+      title:
+        files > 1
+          ? `Importing file ${file} of ${files}...`
+          : 'Importing chats...',
+      detail: `${stored} chat${stored !== 1 ? 's' : ''} imported so far`,
+      percent: totalBytes > 0 ? (uploadedBytes / totalBytes) * 100 : 0,
+    }
+  }
   if (progress.type === 'processing') {
     const { file, files, imported, total } = progress
     return {
@@ -1194,6 +1215,15 @@ export function SettingsModal({
             files: files.length,
             imported: status.imported,
             total: status.total,
+          }),
+        onStored: (fileIndex, stored) =>
+          setImportProgress({
+            type: 'storing',
+            file: fileIndex + 1,
+            files: files.length,
+            stored,
+            uploadedBytes: bytesBefore[fileIndex] + files[fileIndex].size,
+            totalBytes,
           }),
       })
       const result = describeImportOutcome(outcome, fileNames, sourceLabel)

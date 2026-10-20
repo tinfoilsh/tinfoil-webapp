@@ -247,6 +247,7 @@ async function importFile(
   file: File,
   target: ImportTarget,
   signal?: AbortSignal,
+  onStored?: (stored: number) => void,
 ): Promise<FileImport> {
   const api = harnessAPI()
   const key = target === 'cloud' ? api.key() : undefined
@@ -264,8 +265,10 @@ async function importFile(
     if (!('thread' in line)) return { ...line, stored, skipped }
     signal?.throwIfAborted()
     const { thread, originals } = splitOriginals(line.thread)
-    if (await store.add(thread, originals)) stored++
-    else skipped++
+    if (await store.add(thread, originals)) {
+      stored++
+      onStored?.(stored)
+    } else skipped++
   }
   throw new HarnessError({
     code: ERROR_CODES.streamInterrupted,
@@ -330,6 +333,8 @@ export interface ImportSequenceOptions {
   onUpload?: (fileIndex: number) => void
   /** Called with each status polled while an earlier file is processed. */
   onProcessing?: (fileIndex: number, status: ImportStatusResponse) => void
+  /** Called with the chats a file has stored on this device so far. */
+  onStored?: (fileIndex: number, stored: number) => void
   wait?: (ms: number) => Promise<void>
   signal?: AbortSignal
 }
@@ -394,7 +399,12 @@ export async function runImports(
     let status: ImportStatusResponse | null = null
     try {
       options.onUpload?.(fileIndex)
-      const file = await importFile(files[fileIndex], target, options.signal)
+      const file = await importFile(
+        files[fileIndex],
+        target,
+        options.signal,
+        (stored) => options.onStored?.(fileIndex, stored),
+      )
       imported += file.stored
       warnings.push(...file.warnings)
       if (file.jobId) {

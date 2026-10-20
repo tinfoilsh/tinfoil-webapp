@@ -429,6 +429,44 @@ describe('importing chats from the Data tab', () => {
     expect(status).toHaveTextContent('1 attachment could not be read.')
   })
 
+  it('counts the chats stored on this device while the import runs', async () => {
+    connect()
+    const line = (value: object) =>
+      new TextEncoder().encode(`${JSON.stringify(value)}\n`)
+    let send!: ReadableStreamDefaultController<Uint8Array>
+    client.multipart.mockResolvedValue(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start: (controller) => {
+            send = controller
+          },
+        }),
+      ),
+    )
+    renderData()
+
+    pickFiles('ChatGPT', [chatGptExport])
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Import conversations' }),
+    )
+    send.enqueue(line({ thread: importedLine }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Importing chats...1 chat imported so far',
+      ),
+    )
+    expect(page.toast).not.toHaveBeenCalled()
+    send.enqueue(line({ done: { jobId: null, warnings: [] } }))
+    send.close()
+    await waitFor(() =>
+      expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+        title: 'Import complete',
+        description: 'Imported 1 chat from ChatGPT',
+      }),
+    )
+  })
+
   it('keeps the chats stored before an import fails partway and shows why', async () => {
     connect()
     client.multipart.mockResolvedValue(

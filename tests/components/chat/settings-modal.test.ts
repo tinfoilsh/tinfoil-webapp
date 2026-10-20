@@ -268,6 +268,23 @@ describe('import progress', () => {
     })
   })
 
+  it('counts the chats a file stores on this device once it is uploaded', () => {
+    expect(
+      describeImportProgress({
+        type: 'storing',
+        file: 2,
+        files: 3,
+        stored: 5,
+        uploadedBytes: 6 * 1024 * 1024,
+        totalBytes: 8 * 1024 * 1024,
+      }),
+    ).toEqual({
+      title: 'Importing file 2 of 3...',
+      detail: '5 chats imported so far',
+      percent: 75,
+    })
+  })
+
   it('counts the chats of a file being processed', () => {
     expect(
       describeImportProgress({
