@@ -528,11 +528,13 @@ describe('moving a chat from this device to the cloud', () => {
     async function movesToCloud(result: {
       current: ReturnType<typeof useThread>
     }) {
+      const before = transfers().length
       await act(() => result.current.moveToCloud(CHAT_ID))
-      expect(transfers().map(([path]) => path)).toEqual([
-        '/v1/threads/import',
-        '/v1/threads/get',
-      ])
+      expect(
+        transfers()
+          .slice(before)
+          .map(([path]) => path),
+      ).toEqual(['/v1/threads/import', '/v1/threads/get'])
       expect(await stored(CHAT_ID)).toBeNull()
     }
 
@@ -541,10 +543,15 @@ describe('moving a chat from this device to the cloud', () => {
       const replying = new Promise<void>((resolve) => {
         finishReply = resolve
       })
-      let removeQueued!: () => void
+      let endQueued!: () => void
       const queued = new Promise<void>((resolve) => {
-        removeQueued = resolve
+        endQueued = resolve
       })
+      const answer = client.post.getMockImplementation()!
+      client.post.mockImplementation(
+        async (path: string, ...rest: unknown[]) =>
+          path === '/v1/threads/queue/remove' ? {} : answer(path, ...rest),
+      )
       client.events
         .mockImplementationOnce(async function* () {
           yield {
@@ -599,8 +606,16 @@ describe('moving a chat from this device to the cloud', () => {
         ]),
       )
 
+      await act(() => result.current.removeQueued('queued-1'))
+
+      expect(transfers()).toEqual([
+        [
+          '/v1/threads/queue/remove',
+          { threadId: CHAT_ID, queueId: 'queued-1' },
+        ],
+      ])
       await act(async () => {
-        removeQueued()
+        endQueued()
         await queuedTurn
         finishReply()
         await replied
