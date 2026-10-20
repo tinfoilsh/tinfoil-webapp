@@ -11,6 +11,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -111,10 +112,17 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
     </HarnessContext.Provider>
   )
 }
+// The harness's view, with the profile's unset fields shown at the
+// defaults the session names.
 export function useHarness() {
   const view = useSyncExternalStore(subscribe, getView, getServerView)
   const api = useContext(HarnessContext)
-  return { ...view, api: api ?? harnessAPI() }
+  const defaults = view.session?.profileDefaults
+  const profile = useMemo(
+    () => (defaults ? { ...defaults, ...view.profile } : view.profile),
+    [defaults, view.profile],
+  )
+  return { ...view, profile, api: api ?? harnessAPI() }
 }
 // Whether the harness's session offers a feature. Features are off until the
 // session loads, and while the harness cannot reach the service behind them.

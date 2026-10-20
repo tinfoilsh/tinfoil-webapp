@@ -29,123 +29,21 @@ import {
 } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { isPersonalizationEnabled } from '@/utils/personalization-settings'
-import type { Json, RecordValue } from './types'
+import type { RecordValue } from './types'
 
 // The settings of a chat the harness does not store: a signed-in account
 // without cloud sync, or a signed-out visitor. They use the harness profile's
-// field names and live under one local storage key.
+// field names and live under one local storage key. The harness reads the
+// fields it knows of a device turn's profile and drops invalid ones.
 export type LocalProfile = RecordValue
 
-const STRING_FIELDS = [
-  'themeMode',
-  'chatFont',
-  'language',
-  'nickname',
-  'profession',
-  'additionalContext',
-  'customSystemPrompt',
-  // The preset new chats start with; an empty string for none.
-  'defaultPromptPresetId',
-  'selectedModel',
-  'autoIntelligence',
-  'reasoningEffort',
-]
-const BOOLEAN_FIELDS = [
-  'isUsingPersonalization',
-  'isUsingCustomPrompt',
-  'thinkingEnabled',
-  'webSearchEnabled',
-  'codeExecutionEnabled',
-  'piiCheckEnabled',
-  'genUIEnabled',
-  'pixelateSidebarChatTitlesEnabled',
-  'browserTabChatTitleEnabled',
-  'enterToNewlineEnabled',
-  'hasSeenOnboarding',
-  'hasSeenWebSearchIntro',
-]
-const CHOICES: Record<string, string[]> = {
-  themeMode: ['light', 'dark', 'system'],
-  chatFont: ['system', 'serif', 'mono', 'dyslexic'],
-  reasoningEffort: ['low', 'medium', 'high'],
-  autoIntelligence: ['instant', 'low', 'medium', 'high', 'extra', 'max'],
-}
-const MAX_LIST_ENTRIES = 500
-
-// What a prompt reads. The harness ignores other fields of a local turn's
-// profile; the agent sandbox setting is left out because the harness refuses
-// turns that enable it.
-const PROMPT_FIELDS = [
-  'language',
-  'nickname',
-  'profession',
-  'traits',
-  'additionalContext',
-  'isUsingPersonalization',
-  'isUsingCustomPrompt',
-  'customSystemPrompt',
-  'customPromptPresets',
-  'selectedModel',
-  'autoIntelligence',
-  'reasoningEffort',
-  'thinkingEnabled',
-  'webSearchEnabled',
-  'codeExecutionEnabled',
-  'piiCheckEnabled',
-  'genUIEnabled',
-]
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+const isRecord = (value: unknown): value is RecordValue =>
   !!value && typeof value === 'object' && !Array.isArray(value)
 
-// The harness's validateProfile, per field: a value it would refuse is
-// dropped instead, so one bad setting cannot block every local turn.
-function validField(field: string, value: unknown): value is Json {
-  if (STRING_FIELDS.includes(field))
-    return (
-      typeof value === 'string' &&
-      (!CHOICES[field] || CHOICES[field].includes(value))
-    )
-  if (BOOLEAN_FIELDS.includes(field)) return typeof value === 'boolean'
-  if (field === 'traits' || field === 'favoritePromptPresetIds')
-    return (
-      Array.isArray(value) &&
-      value.length <= MAX_LIST_ENTRIES &&
-      value.every((entry) => typeof entry === 'string')
-    )
-  if (field === 'customPromptPresets')
-    return (
-      Array.isArray(value) &&
-      value.length <= MAX_LIST_ENTRIES &&
-      value.every(
-        (preset) =>
-          isRecord(preset) &&
-          typeof preset.id === 'string' &&
-          preset.id !== '' &&
-          typeof preset.name === 'string' &&
-          preset.name !== '' &&
-          ['description', 'systemPrompt', 'model'].every(
-            (key) =>
-              preset[key] === undefined || typeof preset[key] === 'string',
-          ) &&
-          (preset.webSearchEnabled === undefined ||
-            typeof preset.webSearchEnabled === 'boolean'),
-      )
-    )
-  if (field === 'dismissed')
-    return (
-      isRecord(value) &&
-      Object.values(value).every((entry) => typeof entry === 'boolean')
-    )
-  return false
-}
-
-function validProfile(value: unknown): LocalProfile {
-  if (!isRecord(value)) return {}
-  return Object.fromEntries(
-    Object.entries(value).filter(([field, entry]) => validField(field, entry)),
+const defined = (value: Record<string, unknown>): LocalProfile =>
+  Object.fromEntries(
+    Object.entries(value).filter(([, field]) => field !== undefined),
   ) as LocalProfile
-}
 
 function parseJSON(value: string | null): unknown {
   if (value === null) return undefined
@@ -166,7 +64,7 @@ function previousClientSettings(): LocalProfile {
   const personalization = localStorage.getItem(
     USER_PREFS_PERSONALIZATION_ENABLED,
   )
-  return validProfile({
+  return defined({
     language: text(USER_PREFS_LANGUAGE),
     nickname: text(USER_PREFS_NICKNAME),
     profession: text(USER_PREFS_PROFESSION),
@@ -221,7 +119,10 @@ function write(profile: LocalProfile): void {
 export function loadLocalProfile(): LocalProfile {
   try {
     const stored = localStorage.getItem(USER_PREFS_LOCAL_PROFILE)
-    if (stored !== null) return validProfile(parseJSON(stored))
+    if (stored !== null) {
+      const profile = parseJSON(stored)
+      return isRecord(profile) ? profile : {}
+    }
     const imported = previousClientSettings()
     if (Object.keys(imported).length > 0) write(imported)
     return imported
@@ -238,18 +139,10 @@ export function saveLocalProfile(
   patch: Record<string, unknown>,
   replace = false,
 ): LocalProfile {
-  const profile = validProfile({
+  const profile = defined({
     ...(replace ? {} : loadLocalProfile()),
     ...patch,
   })
   write(profile)
   return profile
-}
-
-export function turnProfile(profile: Record<string, unknown>): RecordValue {
-  return Object.fromEntries(
-    PROMPT_FIELDS.flatMap((field) =>
-      validField(field, profile[field]) ? [[field, profile[field]]] : [],
-    ),
-  ) as RecordValue
 }

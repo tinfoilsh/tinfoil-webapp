@@ -4,6 +4,7 @@ export const ROUTES = {
   session: '/v1/session',
   profileGet: '/v1/profile/get',
   profileUpdate: '/v1/profile/update',
+  profileUpgrade: '/v1/profile/upgrade',
   keysCurrent: '/v1/keys/current',
   keysRegister: '/v1/keys/register',
   keysAddBundle: '/v1/keys/add-bundle',

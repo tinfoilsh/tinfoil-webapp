@@ -3,6 +3,7 @@ import {
   SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
   USER_ENCRYPTION_KEY,
   USER_PREFS_LOCAL_PROFILE,
+  USER_PREFS_LOCAL_PROFILE_UPGRADED,
 } from '@/constants/storage-keys'
 import { authTokenManager } from '@/services/auth'
 import { encryptionService } from '@/services/encryption/encryption-service'
@@ -228,6 +229,7 @@ describe('signed-in storage modes', () => {
       USER_PREFS_LOCAL_PROFILE,
       JSON.stringify({ nickname: 'Local Sam' }),
     )
+    localStorage.setItem(USER_PREFS_LOCAL_PROFILE_UPGRADED, 'true')
     render(
       <HarnessProvider>
         <StorageMode />

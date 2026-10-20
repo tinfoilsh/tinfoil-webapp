@@ -2,6 +2,7 @@ import {
   AUTH_ACTIVE_USER_ID,
   SETTINGS_CLOUD_SYNC_ENABLED,
   USER_PREFS_LOCAL_PROFILE,
+  USER_PREFS_LOCAL_PROFILE_UPGRADED,
 } from '@/constants/storage-keys'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import {
@@ -151,51 +152,6 @@ type Refusal = Pick<
   'code' | 'kind' | 'resetsAt' | 'retryAfter'
 >
 
-// Main moved the custom default prompt into the prompt library: an enabled
-// one becomes a saved prompt, under the id the iOS app also uses, that new
-// chats start with unless another default was chosen. The old setting is
-// turned off either way.
-export const MIGRATED_CUSTOM_PROMPT_PRESET_ID = 'user:migrated-custom-prompt'
-
-function legacyCustomPromptPatch(
-  profile: Profile,
-  now = Date.now(),
-): Profile | null {
-  if (profile.isUsingCustomPrompt !== true) return null
-  const prompt =
-    typeof profile.customSystemPrompt === 'string'
-      ? profile.customSystemPrompt
-      : ''
-  const patch: Profile = { isUsingCustomPrompt: false, customSystemPrompt: '' }
-  const hasContent =
-    prompt
-      .replace(/^<system>\s*\n?/, '')
-      .replace(/\n?<\/system>\s*$/, '')
-      .trim().length > 0
-  if (!hasContent || profile.defaultPromptPresetId) return patch
-  const presets: Record<string, unknown>[] = Array.isArray(
-    profile.customPromptPresets,
-  )
-    ? profile.customPromptPresets
-    : []
-  if (
-    !presets.some((preset) => preset?.id === MIGRATED_CUSTOM_PROMPT_PRESET_ID)
-  )
-    patch.customPromptPresets = [
-      ...presets,
-      {
-        id: MIGRATED_CUSTOM_PROMPT_PRESET_ID,
-        name: 'My default prompt',
-        description: 'Migrated from the custom default prompt setting',
-        systemPrompt: prompt,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ]
-  patch.defaultPromptPresetId = MIGRATED_CUSTOM_PROMPT_PRESET_ID
-  return patch
-}
-
 export class HarnessAPI {
   readonly lifetime = new AbortController()
   private contentLifetime = new AbortController()
@@ -344,13 +300,24 @@ export class HarnessAPI {
     await this.refreshProfile()
     return session
   }
-  // Moves a profile still using the custom default prompt to the prompt
-  // library, where the harness keeps the default prompt.
-  private adoptLegacyCustomPrompt(profile: Profile) {
-    if (!legacyCustomPromptPatch(profile)) return
-    void this.updateProfile(
-      (current) => legacyCustomPromptPatch(current) ?? {},
-    ).catch(reportHarnessError)
+  // The harness upgrades a local profile from what older clients stored,
+  // once. A profile changed while it was upgraded is upgraded on a later
+  // load.
+  private async upgradeLocalProfile(profile: Profile, version: number) {
+    if (localStorage.getItem(USER_PREFS_LOCAL_PROFILE_UPGRADED) === 'true')
+      return
+    if (Object.keys(profile).length) {
+      const sent = JSON.stringify(profile)
+      const upgraded = await this.post<{ profile: Profile }>(
+        ROUTES.profileUpgrade,
+        { profile },
+        { keyless: true },
+      )
+      if (JSON.stringify(loadLocalProfile()) !== sent) return
+      const saved = saveLocalProfile(upgraded.profile, true)
+      if (version === this.profileVersion) publish({ profile: saved })
+    }
+    localStorage.setItem(USER_PREFS_LOCAL_PROFILE_UPGRADED, 'true')
   }
   async refreshProfile() {
     const version = ++this.profileVersion
@@ -363,7 +330,7 @@ export class HarnessAPI {
         profileReady: true,
         error: undefined,
       })
-      this.adoptLegacyCustomPrompt(profile)
+      await this.upgradeLocalProfile(profile, version).catch(reportHarnessError)
       return
     }
     try {
@@ -376,7 +343,6 @@ export class HarnessAPI {
           profileReady: true,
           error: undefined,
         })
-        this.adoptLegacyCustomPrompt(profile)
       }
     } catch (cause) {
       this.lifetime.signal.throwIfAborted()
@@ -397,8 +363,10 @@ export class HarnessAPI {
   storageModeChanged() {
     this.cloudSync = isCloudSyncEnabled()
     publish({ cloud: this.cloud })
-    if (!this.cloud && this.profileSource === 'cloud' && view.profileReady)
+    if (!this.cloud && this.profileSource === 'cloud' && view.profileReady) {
       saveLocalProfile(view.profile, true)
+      localStorage.setItem(USER_PREFS_LOCAL_PROFILE_UPGRADED, 'true')
+    }
     this.invalidateKey()
     return this.refreshProfile()
   }

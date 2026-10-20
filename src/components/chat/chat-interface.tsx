@@ -11,7 +11,7 @@ import {
 } from '@/hooks/use-safeguards'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { toast } from '@/hooks/use-toast'
-import { logError, logInfo } from '@/utils/error-handling'
+import { logError } from '@/utils/error-handling'
 import { useAuth, useUser } from '@clerk/react'
 import { ArrowDownIcon } from '@heroicons/react/24/outline'
 import {
@@ -365,20 +365,7 @@ export function ChatInterface({
   const { reasoningEffort, setReasoningEffort } = useReasoningEffort()
   const { thinkingEnabled, setThinkingEnabled } = useThinkingEnabled()
   const { autoIntelligence, setAutoIntelligence } = useAutoIntelligence()
-  const { getPresetById, pruneUnavailableModels, userPresets } =
-    usePromptLibrary()
-  // A saved prompt may name a model the catalog has since retired.
-  const pruneRef = useRef(pruneUnavailableModels)
-  pruneRef.current = pruneUnavailableModels
-  useEffect(() => {
-    if (!profileReady) return
-    const pruned = pruneRef.current(models)
-    if (pruned.length)
-      logInfo('Cleared unavailable models from prompt presets', {
-        component: 'ChatInterface',
-        metadata: { presetIds: pruned },
-      })
-  }, [models, profileReady, userPresets])
+  const { getPresetById } = usePromptLibrary()
 
   const activePreset = getPresetById(activePresetId)
   const pixelateSidebarChatTitles =

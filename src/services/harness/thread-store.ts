@@ -25,10 +25,8 @@ export interface ThreadPatch {
 export interface TurnSettings {
   // The chat has no turn the harness accepted, or no copy on this device.
   first: boolean
-  model: string
   presetId: string | null
   presetChosen: boolean
-  webSearch?: boolean
   projectId?: string | null
   profile: Profile
 }

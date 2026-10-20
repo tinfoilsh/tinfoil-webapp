@@ -73,12 +73,9 @@ const defined = <T extends object>(value: T): T =>
 
 export const now = () => new Date().toISOString()
 
-export function newThread(
-  id: string,
-  fields: Pick<StoredThread, 'model' | 'presetId'> & {
-    webSearchEnabled?: boolean
-  },
-): StoredThread {
+// The copy of a new chat this device lists until the harness returns the
+// chat its first turn made.
+export function newThread(id: string): StoredThread {
   const createdAt = now()
   return {
     id,
@@ -86,11 +83,11 @@ export function newThread(
     titleState: 'placeholder',
     createdAt,
     updatedAt: createdAt,
-    model: fields.model,
+    model: '',
     projectId: null,
-    presetId: fields.presetId,
+    presetId: null,
     pinned: false,
-    webSearchEnabled: fields.webSearchEnabled ?? true,
+    webSearchEnabled: true,
     messages: [],
     activeRun: null,
   }

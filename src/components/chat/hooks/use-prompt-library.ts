@@ -1,4 +1,3 @@
-import type { BaseModel } from '@/config/models'
 import { useHarness } from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
 import {
@@ -12,7 +11,6 @@ import {
   TfWriting2,
   type IconType,
 } from '@tinfoilsh/tinfoil-icons'
-import { isPresetModelAvailable } from '../prompts/preset-settings'
 import type {
   PromptPreset,
   PromptPresetSettings,
@@ -157,29 +155,6 @@ export function usePromptLibrary() {
             : {}
         })
         .catch(reportHarnessError)
-    },
-    // Clears the model of saved prompts whose model the catalog no longer
-    // offers, so a retired model does not linger. Returns their ids.
-    pruneUnavailableModels: (models: BaseModel[]) => {
-      const stale = raw
-        .filter(
-          (p) =>
-            typeof p.model === 'string' &&
-            !isPresetModelAvailable(p.model, models),
-        )
-        .map((p) => p.id)
-      if (!models.length || !stale.length) return []
-      save((presets) =>
-        presets.map((p) =>
-          stale.includes(p.id)
-            ? withSettings(
-                { ...p, updatedAt: Date.now() },
-                { model: undefined },
-              )
-            : p,
-        ),
-      )
-      return stale
     },
     defaultPresetId,
     defaultPreset: getPresetById(defaultPresetId),

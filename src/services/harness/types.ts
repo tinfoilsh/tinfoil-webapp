@@ -176,6 +176,8 @@ export interface Session {
   } | null
   defaultModel: string
   widgets: string[]
+  // The value of every profile field a profile leaves unset.
+  profileDefaults: RecordValue
   presets: {
     id: string
     name: string

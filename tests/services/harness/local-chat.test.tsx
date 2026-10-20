@@ -144,7 +144,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
       returned = storedThread(threadId, {
         title: 'Greeting',
         titleState: 'generated',
-        createdAt: input.thread!.createdAt,
+        createdAt: '2026-05-01T10:00:00Z',
         updatedAt: '2026-05-01T10:00:06Z',
         lastRequestId: input.clientRequestId,
         contextUsage: { usedTokens: 30, limitTokens: 1000, percentage: 3 },
@@ -217,11 +217,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
       content: 'Hi there',
       widgets: ['render_chart'],
       options: { model: 'test-model', timezone: expect.any(String) },
-      profile: { nickname: 'Sam', traits: ['direct'] },
-      thread: storedThread(threadId, {
-        createdAt: expect.any(String),
-        updatedAt: expect.any(String),
-      }),
+      profile: PROFILE,
     })
     expect(await stored(threadId)).toEqual(returned)
     expect(result.current.chat).toMatchObject({
@@ -293,8 +289,8 @@ describe('local chats of a signed-in account without cloud sync', () => {
         content: 'Hi',
       },
     ])
-    // The turn carries the thread as it was before the message.
-    expect(turn().thread?.messages).toEqual([])
+    // The harness makes the chat from its first turn.
+    expect(turn()).not.toHaveProperty('thread')
 
     await act(async () => {
       release()
@@ -620,7 +616,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     })
     const { result } = renderHook(() => useThread())
     await waitFor(() => expect(result.current.model).toBe('test-model'))
-    act(() => result.current.setPresetId('builtin:tutor'))
+    await act(() => result.current.selectPreset('builtin:tutor'))
     let sending: Promise<boolean | undefined> | undefined
     act(() => {
       sending = result.current.send({ content: 'Hi' })
@@ -1150,7 +1146,7 @@ describe('stored local chat changes', () => {
       )
       .mockResolvedValueOnce({ thread: { ...replied, title: 'Front doors' } })
 
-    let renaming!: Promise<void>
+    let renaming!: Promise<unknown>
     act(() => {
       renaming = result.current.update(SEEDED_ID, { title: 'Front doors' })
     })
@@ -1225,7 +1221,7 @@ describe('stored local chat changes', () => {
       threadId: SEEDED_ID,
       local: true,
       thread: withPhoto(),
-      profile: { nickname: 'Sam', traits: ['direct'] },
+      profile: PROFILE,
     })
   })
 
@@ -1413,7 +1409,7 @@ describe('temporary chats', () => {
         const thread = storedThread(input.threadId!, {
           lastRequestId: input.clientRequestId,
           messages: [
-            ...input.thread!.messages,
+            ...(input.thread?.messages ?? []),
             {
               id: input.clientRequestId,
               role: 'user',
@@ -1447,7 +1443,7 @@ describe('temporary chats', () => {
         content: 'Still off',
         local: true,
         thread: returned[0],
-        profile: { nickname: 'Sam', traits: ['direct'] },
+        profile: PROFILE,
       })
       expect(result.current.chat).toMatchObject({
         id: turn().threadId,

@@ -1,6 +1,5 @@
 import type { Attachment as UIAttachment } from '@/components/chat/types'
 import { logError } from '@/utils/error-handling'
-import { turnProfile } from './local-profile'
 import {
   heldImages,
   holdImages,
@@ -19,7 +18,7 @@ import type { DeviceRun, RunController } from './run-controller'
 import type { HarnessAPI } from './runtime'
 import { MAX_SHARE_REQUEST_BYTES, requestBytes, shareTooLarge } from './shares'
 import { HarnessError } from './sse'
-import type { ListEdits, ThreadStore, TurnSettings } from './thread-store'
+import type { ListEdits, ThreadStore } from './thread-store'
 import type { StoredThread, TerminalEvent, Thread, Turn } from './types'
 
 const notOnDevice = (what: string) =>
@@ -83,18 +82,9 @@ export function deviceThreads({
   // The store holds a new chat now, so its route can open it.
   saved(threadId: string): void
 }): ThreadStore {
-  // The chat as this device stores it. A new chat starts from an empty
-  // thread.
-  const transcript = async (
-    threadId: string,
-    settings?: Pick<TurnSettings, 'model' | 'presetId' | 'webSearch'>,
-  ): Promise<StoredThread> =>
-    (await store.get(threadId)) ??
-    newThread(threadId, {
-      model: settings?.model ?? '',
-      presetId: settings?.presetId ?? null,
-      webSearchEnabled: settings?.webSearch,
-    })
+  // The chat as this device stores it, or an empty one.
+  const transcript = async (threadId: string): Promise<StoredThread> =>
+    (await store.get(threadId)) ?? newThread(threadId)
   // The harness applies an operation to the chat this device sends it. The
   // chat it answers with keeps the images this device holds where the
   // harness left them out.
@@ -217,28 +207,32 @@ export function deviceThreads({
       return url
     },
     runKey: () => ({}),
-    // A turn carries the thread and the settings a prompt reads instead of
-    // the content key, which it never uses.
+    // A turn carries the thread as stored and the profile instead of the
+    // content key, which it never uses. The harness makes a new chat from
+    // its first turn, as it does a stored one.
     async prepareTurn(threadId, { defaults, fields }, settings) {
       const run: DeviceRun = { threadId, store, images: new Map() }
       controller.begin(run)
       const shown = controller.track()
-      let base: StoredThread
+      let stored: StoredThread | null
       try {
-        base = await transcript(threadId, settings)
+        stored = await store.get(threadId)
       } catch (cause) {
         controller.settle(run)
         throw cause
       }
       if (!shown()) return null
+      const { first, presetChosen, presetId, profile } = settings
       const input: Turn = {
         ...defaults,
+        ...(stored ? { thread: stored } : {}),
+        presetId: first && presetChosen ? presetId : undefined,
         ...fields,
         threadId,
         local: true,
-        thread: base,
-        profile: turnProfile(settings.profile),
+        profile,
       }
+      const base = stored ?? newThread(threadId)
       const sent = uploaded(fields.attachments)
       run.images = holdImages(sent, heldImages(base.messages))
       run.originals = attachments.originalsOf(sent)
@@ -292,11 +286,12 @@ export function deviceThreads({
       }
     },
     async askContext(threadId, profile) {
+      const thread = await store.get(threadId)
       return {
         threadId,
         local: true,
-        thread: await transcript(threadId),
-        profile: turnProfile(profile),
+        ...(thread ? { thread } : {}),
+        profile,
       }
     },
     // A chat on this device keeps a document's text in its descriptor.

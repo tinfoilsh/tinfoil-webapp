@@ -3,7 +3,7 @@ import { generateReverseId } from '@/utils/reverse-id'
 import { now } from './local-threads'
 import type { OpenAttachments } from './open-attachments'
 import { uploaded } from './open-attachments'
-import { presetIdOf, type OpenChat } from './open-chat'
+import { presetIdOf, type OpenChat, type PresetChoice } from './open-chat'
 import { ROUTES } from './protocol'
 import type { RunController } from './run-controller'
 import { getView, type HarnessAPI } from './runtime'
@@ -23,6 +23,8 @@ export interface TurnContext {
   openStore(): ThreadStore
   patch(fields: Partial<OpenChat>): void
   report(cause: unknown): void
+  // What a new chat's saved prompt chooses, which the harness applies.
+  presetChoice(): PresetChoice
   // A new chat names the route it will open under.
   claim(threadId: string): void
   // Opens the chat the route names again, when nothing else reconnects.
@@ -42,6 +44,7 @@ export function chatTurns({
   openStore,
   patch,
   report,
+  presetChoice,
   claim,
   reopen,
 }: TurnContext) {
@@ -59,8 +62,8 @@ export function chatTurns({
     },
   })
   // A new chat takes its id with its first turn, and keeps showing the
-  // prompt it started with.
-  function startChat(): string {
+  // prompt it started with and the settings the prompt chose.
+  function startChat(choice: PresetChoice): string {
     const current = open.get()
     if (current.id) return current.id
     const threadId = generateReverseId().id
@@ -72,10 +75,26 @@ export function chatTurns({
             presetChosen: true,
             chosenPresetId: presetIdOf(current, getView().profile),
           }),
+      ...(choice.model ? { model: choice.model } : {}),
+      ...(choice.webSearchEnabled !== undefined
+        ? { webSearch: choice.webSearchEnabled }
+        : {}),
       id: threadId,
       unsaved: threadId,
     })
     return threadId
+  }
+  // A new chat's first turn leaves the settings its prompt chooses to the
+  // harness, which applies the prompt.
+  const leaveToPreset = (
+    options: Turn['options'],
+    choice: PresetChoice,
+  ): Turn['options'] => {
+    if (!options) return options
+    const left = { ...options }
+    if (choice.model) delete left.model
+    if (choice.webSearchEnabled !== undefined) delete left.webSearch
+    return left
   }
   // The message a turn adds, under the id the harness stores it with. A
   // message queued behind a running reply shows in the queue instead.
@@ -132,18 +151,30 @@ export function chatTurns({
     const currentProfile = getView().profile
     const settings: TurnSettings = {
       first: !current.id || current.unsaved === current.id,
-      model: current.model,
       presetId: presetIdOf(current, currentProfile),
       presetChosen: current.presetChosen,
-      webSearch: current.webSearch,
       projectId,
       profile: currentProfile,
     }
-    const threadId = startChat()
+    const choice = presetChoice()
+    const threadId = startChat(choice)
+    const defaults = turnDefaults()
     return (async () => {
       const turn = await threads.prepareTurn(
         threadId,
-        { defaults: turnDefaults(), fields, key },
+        {
+          defaults: {
+            ...defaults,
+            options: leaveToPreset(defaults.options, choice),
+          },
+          fields: {
+            ...fields,
+            ...(fields.options
+              ? { options: leaveToPreset(fields.options, choice) }
+              : {}),
+          },
+          key,
+        },
         settings,
       )
       if (!turn) return false

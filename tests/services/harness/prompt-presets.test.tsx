@@ -1,8 +1,6 @@
 import { usePromptLibrary } from '@/components/chat/hooks/use-prompt-library'
-import {
-  getView,
-  MIGRATED_CUSTOM_PROMPT_PRESET_ID,
-} from '@/services/harness/runtime'
+import { localThreadStore } from '@/services/harness/local-threads'
+import { getView } from '@/services/harness/runtime'
 import type { Frame, Session, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -13,7 +11,7 @@ import {
   signIn as signInTo,
   testSession,
 } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from './thread-fixture'
+import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/utils/error-handling', () => ({
@@ -130,7 +128,7 @@ describe('the default prompt of a new stored chat', () => {
     expect(turn(1)).toMatchObject({ presetId: 'builtin:tutor' })
   })
 
-  it("applies the default prompt's model to a new chat", async () => {
+  it("shows the default prompt's model and web search, and leaves them to the harness", async () => {
     signIn({ cloud: true, profile: { defaultPromptPresetId: RESEARCH.id } })
     client.events.mockImplementation((_path: string, input: Turn) =>
       finished(input.threadId!)(),
@@ -139,13 +137,57 @@ describe('the default prompt of a new stored chat', () => {
 
     await waitFor(() => expect(result.current.model).toBe('deep-model'))
     expect(result.current.chat.webSearchEnabled).toBe(true)
-    await act(() => result.current.send({ content: 'Hi' }))
-    expect(turn().options?.model).toBe('deep-model')
+    await act(() =>
+      result.current.send({
+        content: 'Hi',
+        options: { model: 'deep-model', webSearch: true, thinking: true },
+      }),
+    )
+
+    expect(turn().options).toEqual({ thinking: true })
+    expect(result.current.model).toBe('deep-model')
+    expect(result.current.chat.webSearchEnabled).toBe(true)
+  })
+
+  it("sends a model chosen over the prompt's", async () => {
+    signIn({ cloud: true, profile: { defaultPromptPresetId: RESEARCH.id } })
+    client.events.mockImplementation((_path: string, input: Turn) =>
+      finished(input.threadId!)(),
+    )
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('deep-model'))
+
+    act(() => result.current.setModel('test-model'))
+    expect(result.current.model).toBe('test-model')
+    await act(() =>
+      result.current.send({
+        content: 'Hi',
+        options: { model: 'test-model', webSearch: true },
+      }),
+    )
+
+    expect(turn().options).toEqual({ model: 'test-model' })
+  })
+
+  it('does not show a model the catalog no longer offers', async () => {
+    signIn({
+      cloud: true,
+      profile: {
+        customPromptPresets: [{ ...RESEARCH, model: 'retired-model' }],
+      },
+    })
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+
+    await act(() => result.current.selectPreset(RESEARCH.id))
+
+    expect(result.current.model).toBe('test-model')
+    expect(result.current.chat.webSearchEnabled).toBe(true)
   })
 })
 
-describe('the default prompt of a new local chat', () => {
-  it('is stamped on the local copy the turn carries', async () => {
+describe('the default prompt of a new device chat', () => {
+  it('is left to the harness, which makes the chat from its first turn', async () => {
     signIn({ cloud: false, profile: { defaultPromptPresetId: QUIET.id } })
     client.events.mockImplementation((_path: string, input: Turn) =>
       finished(input.threadId!)(),
@@ -155,9 +197,18 @@ describe('the default prompt of a new local chat', () => {
 
     await act(() => result.current.send({ content: 'Hi' }))
 
-    expect(turn()).toMatchObject({
+    expect(sent()).toEqual({
+      clientRequestId: expect.any(String),
+      threadId: expect.any(String),
+      kind: 'send',
+      widgets: [],
+      options: { model: 'test-model', timezone: expect.any(String) },
+      content: 'Hi',
       local: true,
-      thread: { presetId: QUIET.id, webSearchEnabled: false },
+      profile: {
+        customPromptPresets: [RESEARCH, QUIET],
+        defaultPromptPresetId: QUIET.id,
+      },
     })
     expect(result.current.chat.id).toBe(turn().threadId)
     expect(result.current.presetId).toBe(QUIET.id)
@@ -165,7 +216,7 @@ describe('the default prompt of a new local chat', () => {
 })
 
 describe('choosing a saved prompt', () => {
-  it('applies its model and web search to a stored chat and stores them', async () => {
+  it('names it to the harness for a stored chat, and shows the settings it applied', async () => {
     signIn({ cloud: true })
     client.post.mockImplementation(async (path: string, input) => {
       if (path === '/v1/threads/get')
@@ -195,7 +246,9 @@ describe('choosing a saved prompt', () => {
           pinned: false,
           messageCount: 0,
           activeRun: null,
-          ...(input as object),
+          model: 'deep-model',
+          webSearchEnabled: true,
+          presetId: (input as { presetId: string }).presetId,
         }
       return { threads: [], nextCursor: null }
     })
@@ -206,13 +259,7 @@ describe('choosing a saved prompt', () => {
 
     expect(client.post).toHaveBeenCalledWith(
       '/v1/threads/update',
-      {
-        key: KEY,
-        id: 'thread-1',
-        presetId: RESEARCH.id,
-        model: 'deep-model',
-        webSearchEnabled: true,
-      },
+      { key: KEY, id: 'thread-1', presetId: RESEARCH.id },
       expect.any(AbortSignal),
     )
     expect(result.current.model).toBe('deep-model')
@@ -220,19 +267,32 @@ describe('choosing a saved prompt', () => {
     expect(result.current.presetId).toBe(RESEARCH.id)
   })
 
-  it('skips a model the catalog no longer offers', async () => {
-    signIn({
-      cloud: true,
-      profile: {
-        customPromptPresets: [{ ...RESEARCH, model: 'retired-model' }],
-      },
+  it('stores the chat the harness returns for a device chat', async () => {
+    signIn({ cloud: false })
+    const id = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
+    const before = storedThread(id, {
+      messages: [{ id: 'u1', role: 'user', createdAt: 't1', content: 'Hi' }],
     })
-    const { result } = renderHook(() => useThread())
-    await waitFor(() => expect(result.current.model).toBe('test-model'))
+    const applied = {
+      ...before,
+      presetId: RESEARCH.id,
+      model: 'deep-model',
+      webSearchEnabled: true,
+    }
+    await localThreadStore('device').update(id, () => before)
+    const { result } = renderHook(() => useThread(id, null, { local: true }))
+    await waitFor(() => expect(result.current.chat.id).toBe(id))
+    client.post.mockResolvedValueOnce({ thread: applied })
 
     await act(() => result.current.selectPreset(RESEARCH.id))
 
-    expect(result.current.model).toBe('test-model')
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/update',
+      { id, presetId: RESEARCH.id, local: true, thread: before },
+      expect.any(AbortSignal),
+    )
+    expect(await localThreadStore('device').get(id)).toEqual(applied)
+    expect(result.current.model).toBe('deep-model')
     expect(result.current.chat.webSearchEnabled).toBe(true)
   })
 })
@@ -349,87 +409,5 @@ describe('the prompt library', () => {
     expect(
       (getView().profile.customPromptPresets as object[])[0],
     ).not.toHaveProperty('model')
-  })
-
-  it('clears a retired model from saved prompts', async () => {
-    signIn({ cloud: true })
-    const { result } = renderHook(() => usePromptLibrary())
-
-    let pruned: string[] = []
-    act(() => {
-      pruned = result.current.pruneUnavailableModels([
-        {
-          modelName: 'test-model',
-          name: 'Test model',
-          nameShort: 'Test',
-          image: '',
-          description: '',
-          type: 'chat',
-          chat: true,
-        },
-      ])
-    })
-
-    expect(pruned).toEqual([RESEARCH.id])
-    await waitFor(() =>
-      expect(
-        (getView().profile.customPromptPresets as object[])[0],
-      ).not.toHaveProperty('model'),
-    )
-  })
-})
-
-describe('the custom default prompt', () => {
-  it('moves to a saved prompt that new chats start with', async () => {
-    const api = signIn({ cloud: false })
-    localStorage.setItem(
-      'tinfoil-user-prefs-local-profile',
-      JSON.stringify({
-        isUsingCustomPrompt: true,
-        customSystemPrompt: '<system>Answer in French.</system>',
-      }),
-    )
-
-    await act(() => api.refreshProfile())
-
-    await waitFor(() =>
-      expect(getView().profile).toEqual({
-        isUsingCustomPrompt: false,
-        customSystemPrompt: '',
-        defaultPromptPresetId: MIGRATED_CUSTOM_PROMPT_PRESET_ID,
-        customPromptPresets: [
-          {
-            id: MIGRATED_CUSTOM_PROMPT_PRESET_ID,
-            name: 'My default prompt',
-            description: 'Migrated from the custom default prompt setting',
-            systemPrompt: '<system>Answer in French.</system>',
-            createdAt: expect.any(Number),
-            updatedAt: expect.any(Number),
-          },
-        ],
-      }),
-    )
-  })
-
-  it('is turned off without replacing a default already chosen', async () => {
-    const api = signIn({ cloud: false })
-    localStorage.setItem(
-      'tinfoil-user-prefs-local-profile',
-      JSON.stringify({
-        isUsingCustomPrompt: true,
-        customSystemPrompt: 'Answer in French.',
-        defaultPromptPresetId: 'builtin:tutor',
-      }),
-    )
-
-    await act(() => api.refreshProfile())
-
-    await waitFor(() =>
-      expect(getView().profile).toEqual({
-        isUsingCustomPrompt: false,
-        customSystemPrompt: '',
-        defaultPromptPresetId: 'builtin:tutor',
-      }),
-    )
   })
 })

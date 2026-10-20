@@ -28,6 +28,7 @@ export const testSession: Session = {
   },
   presets: [],
   widgets: [],
+  profileDefaults: {},
   rateLimit: { kind: null, maxRequests: 100, remaining: 100 },
   features: {
     webSearch: true,

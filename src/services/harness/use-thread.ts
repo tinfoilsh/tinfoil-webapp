@@ -1,3 +1,4 @@
+import { isPresetModelAvailable } from '@/components/chat/prompts/preset-settings'
 import type {
   Chat,
   QueuedMessage,
@@ -15,10 +16,10 @@ import { deviceThreads, storeRun } from './device-threads'
 import { localThreadStore, memoryThreadStore } from './local-threads'
 import { OpenAttachments } from './open-attachments'
 import {
-  defaultPresetIdOf,
   onDevice,
   presetIdOf,
   type OpenChat,
+  type PresetChoice,
 } from './open-chat'
 import { ROUTES } from './protocol'
 import { useHarness } from './provider'
@@ -57,7 +58,7 @@ export function useThread(
         failure: null,
         presetChosen: false,
         chosenPresetId: null,
-        blankChats: 0,
+        modelChosen: false,
       }),
       controller: new RunController(
         api,
@@ -155,12 +156,36 @@ export function useThread(
       unsaved: null,
       presetChosen: false,
       chosenPresetId: null,
+      modelChosen: false,
       webSearch: undefined,
-      blankChats: o.blankChats + 1,
     }))
   }, [controller, attachments, open])
-  const choosePreset = (next: string | null) =>
-    patch({ presetChosen: true, chosenPresetId: next })
+  // What a new chat's saved prompt chooses and the user did not change,
+  // which the composer shows until the first turn, when the harness applies
+  // it. A model the catalog no longer offers is not shown.
+  const presetChoice = (): PresetChoice => {
+    const current = open.get()
+    if (current.id) return {}
+    const { customPromptPresets } = getView().profile
+    const saved: Record<string, unknown>[] = Array.isArray(customPromptPresets)
+      ? customPromptPresets
+      : []
+    const preset = saved.find(
+      (candidate) => candidate?.id === presetIdOf(current, getView().profile),
+    )
+    if (!preset) return {}
+    return {
+      ...(!current.modelChosen &&
+      typeof preset.model === 'string' &&
+      isPresetModelAvailable(preset.model, displayModels(session ?? undefined))
+        ? { model: preset.model }
+        : {}),
+      ...(current.webSearch === undefined &&
+      typeof preset.webSearchEnabled === 'boolean'
+        ? { webSearchEnabled: preset.webSearchEnabled }
+        : {}),
+    }
+  }
   // Shows the open chat as it is stored once its run is over, as when the
   // harness no longer has the run or had applied a turn sent again. A chat
   // never saved keeps what it shows.
@@ -276,6 +301,7 @@ export function useThread(
     openStore,
     patch,
     report,
+    presetChoice,
     claim: (threadId) => {
       opened.current = threadId
     },
@@ -344,59 +370,25 @@ export function useThread(
       })
     return attachment
   }
-  // The model and web search setting a saved prompt applies when it is
-  // chosen. Built-in prompts carry none, and a model the catalog no longer
-  // offers is skipped.
-  function presetSettings(id: string | null): {
-    model?: string
-    webSearchEnabled?: boolean
-  } {
-    const { customPromptPresets } = getView().profile
-    const saved: Record<string, unknown>[] = Array.isArray(customPromptPresets)
-      ? customPromptPresets
-      : []
-    const preset = saved.find((candidate) => candidate?.id === id)
-    if (!preset) return {}
-    const models = displayModels(session ?? undefined)
-    return {
-      ...(typeof preset.model === 'string' &&
-      models.some((candidate) => candidate.modelName === preset.model)
-        ? { model: preset.model }
-        : {}),
-      ...(typeof preset.webSearchEnabled === 'boolean'
-        ? { webSearchEnabled: preset.webSearchEnabled }
-        : {}),
-    }
-  }
-  // Chooses the open chat's prompt and applies the prompt's settings to the
-  // chat, once, as later turns may change them.
+  // Chooses the open chat's prompt. A new chat shows what the prompt chooses
+  // until its first turn; the harness applies the prompt's settings to a
+  // chat it is named for, and the chat then shows them.
   async function selectPreset(next: string | null) {
-    choosePreset(next)
-    const settings = presetSettings(next)
-    if (settings.model) patch({ model: settings.model })
-    if (settings.webSearchEnabled !== undefined)
-      patch({ webSearch: settings.webSearchEnabled })
-    const { id: threadId, temporary } = open.get()
-    if (threadId && !temporary)
-      await actions.update(threadId, { presetId: next, ...settings })
+    const threadId = open.get().id
+    if (!threadId) {
+      patch({
+        presetChosen: true,
+        chosenPresetId: next,
+        modelChosen: false,
+        webSearch: undefined,
+      })
+      return
+    }
+    patch({ presetChosen: true, chosenPresetId: next })
+    const summary = await actions.update(threadId, { presetId: next })
+    if (summary && open.get().id === threadId)
+      patch({ model: summary.model, webSearch: undefined })
   }
-  // A new chat that keeps the default prompt takes the prompt's settings.
-  const defaultPresetId = defaultPresetIdOf(profile)
-  const defaultSettings = presetSettings(defaultPresetId)
-  useEffect(() => {
-    if (openState.id || openState.presetChosen) return
-    if (defaultSettings.model) patch({ model: defaultSettings.model })
-    patch({ webSearch: defaultSettings.webSearchEnabled })
-    // The settings apply when a new chat opens or the default changes.
-  }, [
-    openState.id,
-    openState.presetChosen,
-    openState.blankChats,
-    defaultPresetId,
-    defaultSettings.model,
-    defaultSettings.webSearchEnabled,
-    patch,
-  ])
   function newChat(options: { local?: boolean } = {}) {
     opened.current = null
     reset()
@@ -405,7 +397,10 @@ export function useThread(
     controller.clearReceipt()
   }
   // The open chat's view.
-  const { id, temporary, local, unsaved, model, failure, webSearch } = openState
+  const { id, temporary, local, unsaved, failure } = openState
+  const choice = presetChoice()
+  const model = choice.model ?? openState.model
+  const webSearch = openState.webSearch ?? choice.webSearchEnabled
   const presetId = presetIdOf(openState, profile)
   const running = state.status === 'streaming' || state.status === 'queued'
   const isLocalChat = local && !temporary
@@ -471,9 +466,8 @@ export function useThread(
       })),
     ].map(liveRun),
     model,
-    setModel: (next: string) => patch({ model: next }),
+    setModel: (next: string) => patch({ model: next, modelChosen: true }),
     presetId,
-    setPresetId: choosePreset,
     selectPreset,
     setWebSearch: (next: boolean) => patch({ webSearch: next }),
     temporary,

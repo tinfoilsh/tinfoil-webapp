@@ -58,7 +58,7 @@ beforeEach(() => {
     session: { ...testSession, widgets: ['render_chart'] },
   })
 })
-it('runs a signed-out first turn as a local thread with its preset and keeps it in the tab', async () => {
+it('runs a signed-out first turn as a new device chat with its preset and keeps it in the tab', async () => {
   client.events.mockImplementation(async function* (
     _path: string,
     input: Turn,
@@ -69,23 +69,32 @@ it('runs a signed-out first turn as a local thread with its preset and keeps it 
       ...finished,
       event: {
         ...finished.event,
-        metadata: { thread: { ...input.thread, messages: answered } },
+        metadata: {
+          thread: {
+            ...thread,
+            id: input.threadId,
+            presetId: input.presetId,
+            messages: answered,
+          },
+        },
       },
     }
   })
   const { result } = renderHook(() => useThread(null, 'project-1'))
-  act(() => result.current.setPresetId('builtin:tutor'))
+  await act(() => result.current.selectPreset('builtin:tutor'))
   await act(() => result.current.send({ content: 'private question' }))
   const input = client.events.mock.calls[0][1] as Turn
-  expect(input).toMatchObject({
-    content: 'private question',
-    local: true,
+  expect(input).toEqual({
+    clientRequestId: expect.any(String),
+    threadId: expect.stringMatching(/^\d{13}_[0-9a-f-]{36}$/),
+    kind: 'send',
     widgets: ['render_chart'],
-    thread: { presetId: 'builtin:tutor', messages: [] },
+    options: { model: 'test-model', timezone: expect.any(String) },
+    content: 'private question',
+    presetId: 'builtin:tutor',
+    local: true,
+    profile: {},
   })
-  expect(input).not.toHaveProperty('key')
-  expect(input).not.toHaveProperty('projectId')
-  expect(input.clientRequestId).toBeTruthy()
   expect(result.current.chat.messages.map((m) => m.content)).toEqual([
     'private question',
     'private answer',

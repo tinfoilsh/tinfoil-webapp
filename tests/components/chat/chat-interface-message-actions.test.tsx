@@ -187,7 +187,7 @@ describe('message actions on the chat page', () => {
 })
 
 describe('attachments on the chat page', () => {
-  it('sends what an upload returned, with the image bytes, in the message that uses it', async () => {
+  it('sends what an upload returned, never the picked file, in the message that uses it', async () => {
     open()
     await screen.findByText('Hello there')
     const bytes = new Uint8Array([137, 80, 78, 71])
@@ -198,6 +198,7 @@ describe('attachments on the chat page', () => {
       mimeType: 'image/png',
       size: 4,
       thumbnail: 'dGh1bWI=',
+      base64: 'bW9kZWwtY29weQ==',
     }
     client.upload.mockResolvedValueOnce({ attachment: descriptor })
     client.events.mockImplementation(async function* () {
@@ -229,9 +230,7 @@ describe('attachments on the chat page', () => {
     expect(client.events.mock.calls[0][1]).toMatchObject({
       threadId: THREAD_ID,
       content: 'What door?',
-      attachments: [
-        { ...descriptor, base64: btoa(String.fromCharCode(...bytes)) },
-      ],
     })
+    expect(client.events.mock.calls[0][1].attachments).toEqual([descriptor])
   })
 })

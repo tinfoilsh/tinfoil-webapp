@@ -88,13 +88,14 @@ export function chatActions({
   }
   return {
     async update(threadId: string, patch: ThreadPatch) {
-      if (moving.has(threadId)) return
+      if (moving.has(threadId)) return null
       const summary = await storeOf(threadId).update(threadId, patch)
       if (summary && isOpen(threadId))
         controller.view.update((state) => ({
           ...state,
           snapshot: { ...state.snapshot, thread: summary },
         }))
+      return summary
     },
     async remove(threadId: string) {
       // A chat deleted during its move is deleted where the move left it.

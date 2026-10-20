@@ -22,11 +22,17 @@ export interface OpenChat {
   // default a new chat starts with.
   presetChosen: boolean
   chosenPresetId: string | null
-  // The open chat's web search setting, where a saved prompt or the toggle
-  // set it before the chat stores it.
+  // The user chose the open chat's model, over what its prompt chooses.
+  modelChosen: boolean
+  // The open chat's web search setting, where the toggle set it before the
+  // chat stores it.
   webSearch?: boolean
-  // Counts new chats, so the default prompt applies to each one.
-  blankChats: number
+}
+
+// The settings a new chat's saved prompt chooses.
+export interface PresetChoice {
+  model?: string
+  webSearchEnabled?: boolean
 }
 
 // The browser holds the chat and sends it with each request: a chat it
@@ -35,7 +41,7 @@ export const onDevice = (open: Pick<OpenChat, 'local' | 'temporary'>) =>
   open.local || open.temporary
 
 // The prompt new chats start with, which the harness keeps in the profile.
-export const defaultPresetIdOf = (profile: Profile): string | null =>
+const defaultPresetIdOf = (profile: Profile): string | null =>
   typeof profile.defaultPromptPresetId === 'string' &&
   profile.defaultPromptPresetId
     ? profile.defaultPromptPresetId
