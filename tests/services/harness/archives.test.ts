@@ -368,6 +368,7 @@ describe('runImports', () => {
     ).catch((cause: unknown) => cause)
 
     expect(error).toBeInstanceOf(ImportSequenceError)
+    expect(error).toMatchObject({ fileIndex: 0, imported: 1 })
     expect((error as ImportSequenceError).cause).toMatchObject({
       code: 'STREAM_INTERRUPTED',
     })

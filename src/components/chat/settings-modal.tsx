@@ -214,8 +214,8 @@ export function describeImportOutcome(
 }
 
 /**
- * Panel state for an import that threw. When a later file of a split
- * export fails, the chats earlier files imported are still counted and
+ * Panel state for an import that threw. The chats imported before it
+ * threw are still counted, and when a later file of a split export fails
  * the failing file is named.
  */
 export function describeImportError(
@@ -229,7 +229,7 @@ export function describeImportError(
   if (!(err instanceof ImportSequenceError) || fileNames.length < 2) {
     return {
       success: false,
-      chatsImported: 0,
+      chatsImported: err instanceof ImportSequenceError ? err.imported : 0,
       projectsImported: 0,
       errors: [message],
     }

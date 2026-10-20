@@ -402,13 +402,17 @@ export async function runImports(
     let status: ImportStatusResponse | null = null
     try {
       options.onUpload?.(fileIndex)
+      // Counted as each is stored, so a file that fails partway still counts
+      // the chats it kept.
       const file = await importFile(
         files[fileIndex],
         target,
         options.signal,
-        (stored) => options.onStored?.(fileIndex, stored),
+        (stored) => {
+          imported++
+          options.onStored?.(fileIndex, stored)
+        },
       )
-      imported += file.stored
       warnings.push(...file.warnings)
       if (file.jobId) {
         status = await jobStatus(api, file.jobId, options.signal)

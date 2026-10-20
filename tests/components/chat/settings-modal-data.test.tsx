@@ -499,6 +499,7 @@ describe('importing chats from the Data tab', () => {
         'Storage refused the chats.',
       ),
     ).toBeVisible()
+    expect(screen.getByRole('status')).toHaveTextContent('1 chat imported')
     expect(await localThreadStore('device').get(imported.id)).toEqual(imported)
   })
 
