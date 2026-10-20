@@ -384,13 +384,20 @@ describe('local chats of a signed-in account without cloud sync', () => {
     ).toEqual([
       [
         '/v1/threads/update',
-        { id: SEEDED_ID, title: 'Mine', local: true, thread: kept },
+        {
+          id: SEEDED_ID,
+          title: 'Mine',
+          profile: PROFILE,
+          local: true,
+          thread: kept,
+        },
       ],
       [
         '/v1/threads/update',
         {
           id: SEEDED_ID,
           presetId: 'user:research',
+          profile: PROFILE,
           local: true,
           thread: { ...kept, title: 'Mine', titleState: 'manual' },
         },
@@ -1209,6 +1216,7 @@ describe('stored local chat changes', () => {
       {
         id: SEEDED_ID,
         title: 'Front doors',
+        profile: PROFILE,
         local: true,
         thread: withPhoto(),
       },
@@ -1257,6 +1265,7 @@ describe('stored local chat changes', () => {
       {
         id: SEEDED_ID,
         title: 'Front doors',
+        profile: PROFILE,
         local: true,
         thread: withPhoto(),
       },

@@ -292,7 +292,14 @@ describe('choosing a saved prompt', () => {
 
     expect(client.post).toHaveBeenCalledExactlyOnceWith(
       '/v1/threads/update',
-      { id, presetId: RESEARCH.id, local: true, thread: before },
+      {
+        id,
+        presetId: RESEARCH.id,
+        // The saved prompt the harness applies is in the profile.
+        profile: { customPromptPresets: [RESEARCH, QUIET] },
+        local: true,
+        thread: before,
+      },
       expect.any(AbortSignal),
     )
     expect(await localThreadStore('device').get(id)).toEqual(applied)

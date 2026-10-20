@@ -15,7 +15,7 @@ import {
 import { imageBlob, uploaded, type OpenAttachments } from './open-attachments'
 import { ERROR_CODES, ROUTES } from './protocol'
 import type { DeviceRun, RunController } from './run-controller'
-import type { HarnessAPI } from './runtime'
+import { getView, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import type { ListEdits, ThreadStore } from './thread-store'
 import type { StoredThread, TerminalEvent, Thread, Turn } from './types'
@@ -165,10 +165,12 @@ export function deviceThreads({
         hasOlder: false,
       }
     },
+    // An update may apply a saved prompt, which the profile holds.
     async update(threadId, { pinned: _pinned, projectId: _project, ...patch }) {
       const changed = await change(threadId, ROUTES.update, {
         id: threadId,
         ...patch,
+        profile: getView().profile,
       })
       return changed && localSummary(changed)
     },
