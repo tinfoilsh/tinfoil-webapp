@@ -2,7 +2,6 @@ import { logError } from '@/utils/error-handling'
 import type { LocalThreadStore } from './local-threads'
 import { ERROR_CODES, ROUTES } from './protocol'
 import type { HarnessAPI } from './runtime'
-import { MAX_TURN_REQUEST_BYTES, requestBytes } from './shares'
 import { HarnessError } from './sse'
 import type { StoredThread, ThreadSummary } from './types'
 
@@ -10,16 +9,6 @@ import type { StoredThread, ThreadSummary } from './types'
 // device holds its attachments' content, so a move carries the content with
 // it: /v1/threads/transcript returns a stored chat with every attachment
 // inline, and /v1/threads/import stores a device chat in the cloud.
-
-function transferTooLarge(): HarnessError {
-  return new HarnessError(
-    {
-      code: ERROR_CODES.threadTooLarge,
-      message: 'This chat is too large to move to the cloud.',
-    },
-    413,
-  )
-}
 
 // A run of the chat is still streaming, so moving it now would leave the
 // reply behind.
@@ -141,9 +130,10 @@ export async function moveThreadToCloud(
       },
       404,
     )
-  const input = { threadId, thread: original }
-  if (requestBytes(input) > MAX_TURN_REQUEST_BYTES) throw transferTooLarge()
-  const summary = await api.post<ThreadSummary>(ROUTES.threadImport, input)
+  const summary = await api.post<ThreadSummary>(ROUTES.threadImport, {
+    threadId,
+    thread: original,
+  })
   try {
     await store.delete(threadId)
   } catch (cause) {

@@ -1328,33 +1328,6 @@ describe('stored local chat changes', () => {
       },
     ])
   })
-
-  it('refuses to send a local share larger than the harness reads', async () => {
-    signIn('alice')
-    await localThreadStore('device').update(SEEDED_ID, () =>
-      seeded({
-        messages: [
-          ...SEEDED_MESSAGES,
-          {
-            id: 'u3',
-            role: 'user',
-            createdAt: 't5',
-            content: 'x'.repeat(8 * 1024 * 1024),
-          },
-        ],
-      }),
-    )
-    const { result } = renderHook(() =>
-      useThread(SEEDED_ID, null, { local: true }),
-    )
-    await waitFor(() => expect(result.current.chat.messages).toHaveLength(5))
-
-    const refusal = await result.current.share(SEEDED_ID).catch((e) => e)
-
-    expect(refusal).toBeInstanceOf(HarnessError)
-    expect(refusal).toMatchObject({ code: 'THREAD_TOO_LARGE', status: 413 })
-    expect(client.post).not.toHaveBeenCalled()
-  })
 })
 
 describe('signed-out chats', () => {
