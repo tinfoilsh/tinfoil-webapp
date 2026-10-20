@@ -126,8 +126,9 @@ export const USER_PREFS_DEFAULT_PROMPT_PRESET_ID =
 // Settings of an account without cloud sync and of a signed-out visitor, in
 // the chat service's profile format.
 export const USER_PREFS_LOCAL_PROFILE = 'tinfoil-user-prefs-local-profile'
-// Set once the chat service has upgraded the local profile from what older
-// clients stored.
+// Set once the local profile needs no upgrade from what older clients
+// stored: the chat service upgraded it, it was empty, or it is the cloud
+// profile kept on this device when cloud sync was turned off.
 export const USER_PREFS_LOCAL_PROFILE_UPGRADED =
   'tinfoil-user-prefs-local-profile-upgraded'
 export const USER_PREFS_NATIVE_APP_DISMISSED =
