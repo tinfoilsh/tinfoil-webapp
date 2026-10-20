@@ -3,6 +3,7 @@ import {
   SETTINGS_CLOUD_SYNC_ENABLED,
   SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
   SETTINGS_LOCAL_ONLY_MODE_ENABLED,
+  USER_PREFS_LOCAL_PROFILE,
 } from '@/constants/storage-keys'
 import { getView, harnessAPI, publish } from '@/services/harness/runtime'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -437,6 +438,41 @@ describe('settings prompts', () => {
       expect(getView().profile.defaultPromptPresetId).toBe('user:quiet'),
     )
     expect(picker).toHaveValue('user:quiet')
+  })
+})
+
+describe('settings personalization', () => {
+  beforeEach(() => {
+    authState.isSignedIn = false
+  })
+
+  it('keeps unsaved edits when personalization is turned off and on', async () => {
+    const profile = { nickname: 'Sam', isUsingPersonalization: true }
+    localStorage.setItem(USER_PREFS_LOCAL_PROFILE, JSON.stringify(profile))
+    publish({ profile })
+    render(<Harness initialTab="personalization" isClient />)
+    fireEvent.change(screen.getByPlaceholderText('Nickname'), {
+      target: { value: 'Samantha' },
+    })
+    const toggle = screen.getByRole('checkbox', {
+      name: 'Personalize responses',
+    })
+
+    fireEvent.click(toggle)
+    await waitFor(() =>
+      expect(getView().profile.isUsingPersonalization).toBe(false),
+    )
+    fireEvent.click(toggle)
+    await waitFor(() =>
+      expect(getView().profile.isUsingPersonalization).toBe(true),
+    )
+
+    expect(getView().profile.nickname).toBe('Sam')
+    expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Samantha')
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+    await waitFor(() => expect(getView().profile.nickname).toBe('Samantha'))
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+    expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Samantha')
   })
 })
 

@@ -999,8 +999,12 @@ export function SettingsModal({
     if (isClient) setLanguage(value)
   }
 
+  // Turning personalization on or off keeps unsaved edits.
   const handleTogglePersonalization = (enabled: boolean) => {
-    if (isClient) savePersonalizationSettings(savedPersonalization, enabled)
+    if (!isClient) return
+    void api
+      .updateProfile({ isUsingPersonalization: enabled })
+      .catch(reportHarnessError)
   }
 
   const handleClearPersonalization = () => {
@@ -2591,6 +2595,7 @@ ${encryptionKey.replace('key_', '')}
                       <label className="relative inline-flex cursor-pointer items-center">
                         <input
                           type="checkbox"
+                          aria-label="Personalize responses"
                           checked={isUsingPersonalization}
                           onChange={(e) =>
                             handleTogglePersonalization(e.target.checked)
