@@ -150,8 +150,6 @@ export class HarnessClient {
           typeof value.error.message === 'string'
         )
           detail = value.error as HarnessErrorBody
-        if (anonymous && detail.code === 'QUOTA_EXHAUSTED')
-          this.anonymous.exhausted()
         throw new HarnessError(detail, response.status)
       }
       return response
@@ -221,20 +219,6 @@ export class HarnessClient {
         message: 'The chat service did not return an event stream.',
       })
     }
-    for await (const frame of readEvents(response.body)) {
-      // Refresh issuance metadata after a run. A started run is never
-      // replayed automatically when a downstream credential expires.
-      if (
-        frame.event.type === 'RUN_ERROR' &&
-        frame.event.code === 'QUOTA_EXHAUSTED'
-      )
-        this.anonymous.exhausted()
-      if (
-        frame.event.type === 'RUN_FINISHED' ||
-        frame.event.type === 'RUN_ERROR'
-      )
-        this.anonymous.invalidate()
-      yield frame
-    }
+    yield* readEvents(response.body)
   }
 }

@@ -130,7 +130,6 @@ describe('anonymous client credentials', () => {
       detail: { code: 'QUOTA_EXHAUSTED' },
     })
     expect(controlplane).toHaveBeenCalledTimes(2)
-    expect(client.anonymousRateLimit?.remaining).toBe(0)
     client.dispose()
   })
 
@@ -208,26 +207,29 @@ describe('anonymous client credentials', () => {
     client.dispose()
   })
 
-  it('refreshes quota metadata after a completed run without replaying the run', async () => {
+  it('keeps the key after a run', async () => {
     const { client, secure } = setup()
     secure.fetch.mockResolvedValueOnce(
       new Response('data: {"type":"RUN_FINISHED"}\n\n', {
         headers: { 'Content-Type': 'text/event-stream' },
       }),
     )
+    const frames = []
     for await (const frame of client.events('/v1/threads/follow', {
       threadId: 't',
       runId: 'r',
     }))
-      expect(frame.event.type).toBe('RUN_FINISHED')
-    expect(secure.fetch).toHaveBeenCalledTimes(1)
-    controlplane.mockImplementationOnce(async () => issuance('free_first', 8))
+      frames.push(frame)
+    expect(frames).toEqual([{ event: { type: 'RUN_FINISHED' } }])
+
     await client.post('/v1/session', {})
-    expect(controlplane).toHaveBeenCalledTimes(2)
-    expect(client.anonymousRateLimit?.remaining).toBe(8)
-    expect(secure.fetch.mock.calls[1][0]).toBe(
-      'https://harness.example/v1/session',
-    )
+
+    expect(controlplane).toHaveBeenCalledTimes(1)
+    expect(
+      secure.fetch.mock.calls.map(([, options]) =>
+        new Headers(options.headers).get('Authorization'),
+      ),
+    ).toEqual(['Bearer free_first', 'Bearer free_first'])
     client.dispose()
   })
 })

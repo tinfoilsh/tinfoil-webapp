@@ -50,15 +50,6 @@ export class AnonymousCredentialCache {
     if (this.cached?.key === key) this.cached = undefined
   }
 
-  invalidate() {
-    if (this.cached) this.cached.expiresAt = 0
-  }
-
-  exhausted() {
-    if (this.cached)
-      this.cached.rateLimit = { ...this.cached.rateLimit, remaining: 0 }
-  }
-
   dispose() {
     this.lifetime.abort()
     this.cached = undefined

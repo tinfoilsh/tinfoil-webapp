@@ -45,7 +45,6 @@ import type {
   FollowInput,
   Frame,
   HarnessErrorBody,
-  RateLimit,
   StoredThread,
   TerminalEvent,
   Thread,
@@ -79,30 +78,6 @@ const CONNECTION_LOST: HarnessErrorBody = {
 }
 const interrupted = (cause: unknown) =>
   !(cause instanceof HarnessError) || cause.code === CONNECTION_LOST.code
-
-// The quota a refusal for an exhausted quota describes.
-function exhaustedQuota({
-  kind,
-  resetsAt,
-  retryAfter,
-}: {
-  kind?: string
-  resetsAt?: string
-  retryAfter?: number
-}): RateLimit | undefined {
-  if (kind !== 'hourly' && kind !== 'free_daily') return undefined
-  const reset =
-    resetsAt ||
-    (retryAfter
-      ? new Date(Date.now() + retryAfter * 1000).toISOString()
-      : undefined)
-  return {
-    kind,
-    maxRequests: 0,
-    remaining: 0,
-    ...(reset ? { resetsAt: reset } : {}),
-  }
-}
 
 // The attachments of a turn that are new uploads, rather than ones the chat
 // stores already.
@@ -238,8 +213,7 @@ export function useThread(
       )
         return
       errorAt.current = Date.now()
-      if (cause instanceof HarnessError && cause.code === 'QUOTA_EXHAUSTED')
-        api.reportRateLimit(exhaustedQuota(cause.detail))
+      if (cause instanceof HarnessError) api.reportRefusal(cause.detail)
       setFailure({
         message:
           cause instanceof Error
@@ -262,8 +236,7 @@ export function useThread(
     }
     current.current = next
     setState(next)
-    if (detail.code === 'QUOTA_EXHAUSTED')
-      api.reportRateLimit(exhaustedQuota(detail))
+    api.reportRefusal(detail)
   }
   // Counts listings of the stored chats apart from the open chat, so that
   // opening a chat keeps the list and only the latest listing applies.
@@ -460,7 +433,7 @@ export function useThread(
           })
         if (isTerminal(event)) {
           forgetReceipt(runId)
-          void (api.userId ? refresh() : api.refresh()).catch(report)
+          void refresh().catch(report)
         }
       }
     } catch (cause) {
@@ -543,11 +516,10 @@ export function useThread(
       api.reportRateLimit(event.snapshot?.rateLimit)
     else if (event.type === 'RUN_FINISHED' || event.type === 'RUN_ERROR')
       api.reportRateLimit(
-        event.metadata?.rateLimit as RateLimit | undefined,
+        event.metadata?.rateLimit,
         runSpend(event.metadata?.usage),
       )
-    if (event.type === 'RUN_ERROR' && event.code === 'QUOTA_EXHAUSTED')
-      api.reportRateLimit(exhaustedQuota(event))
+    if (event.type === 'RUN_ERROR') api.reportRefusal(event)
   }
   // A run that ended is not followed again after a reload.
   function forgetReceipt(runId?: string) {

@@ -5,7 +5,7 @@ import { HarnessClient } from './client'
 import { loadLocalProfile, saveLocalProfile } from './local-profile'
 import { ERROR_CODES, ROUTES, type HarnessRoute } from './protocol'
 import { HarnessError } from './sse'
-import type { RateLimit, Session, TokenBudget } from './types'
+import type { HarnessErrorBody, RateLimit, Session, TokenBudget } from './types'
 
 export type Profile = Record<string, any>
 type View = {
@@ -109,6 +109,32 @@ function mergeRateLimit(
     ...(outputTokens ? { outputTokens } : {}),
   }
 }
+
+// The quota a refusal for an exhausted quota describes.
+function exhaustedQuota({
+  kind,
+  resetsAt,
+  retryAfter,
+}: Partial<Refusal>): RateLimit | undefined {
+  if (kind !== 'hourly' && kind !== 'free_daily') return undefined
+  const reset =
+    resetsAt ||
+    (retryAfter
+      ? new Date(Date.now() + retryAfter * 1000).toISOString()
+      : undefined)
+  return {
+    kind,
+    maxRequests: 0,
+    remaining: 0,
+    ...(reset ? { resetsAt: reset } : {}),
+  }
+}
+
+// What a refused request or a failed run says about why.
+type Refusal = Pick<
+  HarnessErrorBody,
+  'code' | 'kind' | 'resetsAt' | 'retryAfter'
+>
 
 // Main moved the custom default prompt into the prompt library: an enabled
 // one becomes a saved prompt, under the id the iOS app also uses, that new
@@ -277,6 +303,13 @@ export class HarnessAPI {
       JSON.stringify(rateLimit) !== JSON.stringify(view.rateLimit)
     )
       publish({ rateLimit })
+  }
+
+  // Records the quota a refusal names as exhausted, the one place the
+  // browser learns of an exhausted quota.
+  reportRefusal(refusal: Partial<Refusal>) {
+    if (refusal.code === ERROR_CODES.quotaExhausted)
+      this.reportRateLimit(exhaustedQuota(refusal))
   }
 
   async refresh() {
