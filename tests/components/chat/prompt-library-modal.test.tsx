@@ -172,4 +172,16 @@ describe('PromptLibraryModal default prompt', () => {
       screen.getByText('Chat settings').nextElementSibling,
     ).toHaveTextContent('ModelNo override setWeb searchOn')
   })
+
+  it('shows a saved model the catalog no longer offers as unset', () => {
+    withDefaults({
+      customPromptPresets: [{ ...SAVED, model: 'retired-model' }],
+    })
+    renderModal()
+    fireEvent.click(screen.getByRole('button', { name: /Research/ }))
+
+    expect(
+      screen.getByText('Chat settings').nextElementSibling,
+    ).toHaveTextContent('ModelNo override setWeb searchOff')
+  })
 })
