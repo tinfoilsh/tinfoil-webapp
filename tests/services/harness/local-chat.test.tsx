@@ -346,6 +346,11 @@ describe('local chats of a signed-in account without cloud sync', () => {
       sending = result.current.send({ content: 'third' })
     })
     await waitFor(() => expect(result.current.running).toBe(true))
+    client.post.mockImplementationOnce(
+      async (_path: string, input: { thread: StoredThread }) => ({
+        thread: { ...input.thread, title: 'Mine', titleState: 'manual' },
+      }),
+    )
 
     await act(() => result.current.update(SEEDED_ID, { title: 'Mine' }))
     await act(async () => {
@@ -998,52 +1003,119 @@ describe('stored local chat changes', () => {
     return hook
   }
 
-  it('renames a chat on the device as a manual title', async () => {
+  // The harness's answer to a change of the chat this device sent, which
+  // leaves image bytes out.
+  const withoutBytes = (thread: StoredThread): StoredThread => ({
+    ...thread,
+    messages: thread.messages.map((message) =>
+      message.attachments
+        ? {
+            ...message,
+            attachments: message.attachments.map(
+              ({ base64: _, ...attachment }) => attachment,
+            ),
+          }
+        : message,
+    ),
+  })
+
+  it('renames a chat through the harness and stores the chat it returns', async () => {
     const { result } = await openSeeded()
+    const renamed = {
+      ...withPhoto(),
+      title: 'Front doors',
+      titleState: 'manual' as const,
+      updatedAt: '2026-04-01T09:06:00Z',
+    }
+    client.post.mockResolvedValueOnce({ thread: withoutBytes(renamed) })
 
     await act(() => result.current.update(SEEDED_ID, { title: 'Front doors' }))
 
-    expect(await stored(SEEDED_ID)).toEqual({
-      ...withPhoto(),
-      title: 'Front doors',
-      titleState: 'manual',
-      updatedAt: expect.any(String),
-    })
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/update',
+      {
+        id: SEEDED_ID,
+        title: 'Front doors',
+        local: true,
+        thread: withPhoto(),
+      },
+      expect.any(AbortSignal),
+    )
+    expect(await stored(SEEDED_ID)).toEqual(renamed)
     expect(result.current.chat.title).toBe('Front doors')
-    expect(client.post).not.toHaveBeenCalled()
   })
 
-  it('forks a chat on the device up to the chosen message', async () => {
+  it('sends a change again when a reply finished while the harness made it', async () => {
     const { result } = await openSeeded()
+    const replied = seeded({
+      messages: [
+        ...withPhoto().messages,
+        { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
+      ],
+    })
+    let answer!: (value: unknown) => void
+    client.post
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answer = resolve
+          }),
+      )
+      .mockResolvedValueOnce({ thread: { ...replied, title: 'Front doors' } })
+
+    let renaming!: Promise<void>
+    act(() => {
+      renaming = result.current.update(SEEDED_ID, { title: 'Front doors' })
+    })
+    await waitFor(() => expect(client.post).toHaveBeenCalledTimes(1))
+    await localThreadStore('device').update(SEEDED_ID, () => replied)
+    await act(async () => {
+      answer({ thread: { ...withPhoto(), title: 'Front doors' } })
+      await renaming
+    })
+
+    expect(client.post.mock.calls[1][1]).toEqual({
+      id: SEEDED_ID,
+      title: 'Front doors',
+      local: true,
+      thread: replied,
+    })
+    expect(await stored(SEEDED_ID)).toEqual({
+      ...replied,
+      title: 'Front doors',
+    })
+  })
+
+  it('forks a chat through the harness, which names the fork', async () => {
+    const { result } = await openSeeded()
+    const FORK_ID = '8233746420000_2d5f8b63-0a3c-4f8e-9e2d-6c7d8e9f0a11'
+    const [u1, a1, u2] = withPhoto().messages
+    const fork = storedThread(FORK_ID, {
+      title: 'Doors (fork)',
+      titleState: 'manual',
+      messages: [u1, a1, u2],
+    })
+    client.post.mockResolvedValueOnce({ thread: withoutBytes(fork) })
 
     let forkId: string | null = null
     await act(async () => {
       forkId = await result.current.fork(2)
     })
 
-    expect(forkId).toMatch(REVERSE_ID)
-    const fork = await stored(forkId!)
-    const [u1, a1, u2] = withPhoto().messages
-    expect(fork).toEqual(
-      storedThread(forkId!, {
-        title: 'Doors (fork)',
-        titleState: 'manual',
-        createdAt: expect.any(String),
-        updatedAt: expect.any(String),
-        messages: [
-          u1,
-          a1,
-          {
-            ...u2,
-            attachments: [
-              { ...PHOTO, id: expect.not.stringMatching(/^att_photo$/) },
-            ],
-          },
-        ],
-      }),
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/fork',
+      {
+        threadId: SEEDED_ID,
+        messageId: 'u2',
+        local: true,
+        thread: withPhoto(),
+      },
+      expect.any(AbortSignal),
     )
+    expect(forkId).toBe(FORK_ID)
+    expect(await stored(FORK_ID)).toEqual(fork)
     expect(await stored(SEEDED_ID)).toEqual(withPhoto())
-    expect(result.current.chat.id).toBe(forkId)
+    expect(result.current.chat.id).toBe(FORK_ID)
     expect(result.current.chat.isLocalOnly).toBe(true)
   })
 

@@ -1,8 +1,6 @@
 import type { Attachment as UIAttachment } from '@/components/chat/types'
-import { forkChatTitle } from '@/constants/chat'
 import { base64ToUint8Array } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
-import { generateReverseId } from '@/utils/reverse-id'
 import { turnProfile } from './local-profile'
 import {
   heldImages,
@@ -12,8 +10,6 @@ import {
   localSummary,
   localThreadView,
   newThread,
-  now,
-  replaceReplyText,
   shareThread,
   turnThread,
   withHeldImages,
@@ -33,6 +29,18 @@ const notOnDevice = (what: string) =>
     code: ERROR_CODES.threadNotFound,
     message: `This ${what} is not stored on this device.`,
   })
+
+// A chat that keeps changing while the harness changes it, as when replies
+// finish meanwhile, is sent again this many times.
+const MAX_CHANGE_ATTEMPTS = 3
+
+// The routes that change a chat on this device: the browser sends the chat,
+// and the harness answers with it changed.
+type ChangeRoute =
+  | typeof ROUTES.update
+  | typeof ROUTES.messageDelete
+  | typeof ROUTES.messageUpdate
+  | typeof ROUTES.fork
 
 // A device run's final event carries the whole thread, which this device
 // stores as it is, with the images it holds where the harness left them
@@ -84,16 +92,50 @@ export function deviceThreads({
       presetId: settings?.presetId ?? null,
       webSearchEnabled: settings?.webSearch,
     })
-  // A chat on this device changes its own copy, which its next turn sends.
-  const changeMessage = async (
-    threadId: string,
-    change: (thread: StoredThread) => StoredThread | null,
-  ) => {
-    const changed = await store.update(
-      threadId,
-      (thread) => thread && change(thread),
+  // The harness applies an operation to the chat this device sends it. The
+  // chat it answers with keeps the images this device holds where the
+  // harness left them out.
+  const request = async (
+    path: ChangeRoute,
+    sent: StoredThread,
+    fields: Record<string, unknown>,
+  ): Promise<StoredThread> => {
+    const { thread } = await api.post<{ thread?: unknown }>(
+      path,
+      { ...fields, local: true, thread: sent },
+      { keyless: true },
     )
-    return changed && localThreadView(changed)
+    if (!isThread(thread))
+      throw new HarnessError({
+        code: ERROR_CODES.upstreamRefused,
+        message: 'The chat service returned an invalid chat.',
+      })
+    return {
+      ...thread,
+      messages: withHeldImages(thread.messages, heldImages(sent.messages)),
+    }
+  }
+  // Stores the changed chat in place of the copy it was made from. A copy
+  // that changed meanwhile, as when a reply finished, is sent again.
+  const change = async (
+    threadId: string,
+    path: ChangeRoute,
+    fields: Record<string, unknown>,
+  ): Promise<StoredThread | null> => {
+    for (let attempt = 0; attempt < MAX_CHANGE_ATTEMPTS; attempt++) {
+      const sent = await store.get(threadId)
+      if (!sent) return null
+      const changed = await request(path, sent, fields)
+      const before = JSON.stringify(sent)
+      let stale = false
+      const saved = await store.update(threadId, (current) => {
+        if (!current) return null
+        stale = JSON.stringify(current) !== before
+        return stale ? null : { ...changed, id: threadId }
+      })
+      if (!stale) return saved
+    }
+    return null
   }
   return {
     local: true,
@@ -114,88 +156,43 @@ export function deviceThreads({
         hasOlder: false,
       }
     },
-    async update(threadId, patch) {
-      const changed = await store.update(
-        threadId,
-        (thread) =>
-          thread && {
-            ...thread,
-            ...(typeof patch.title === 'string'
-              ? { title: patch.title, titleState: 'manual' as const }
-              : {}),
-            ...(typeof patch.model === 'string' ? { model: patch.model } : {}),
-            ...('presetId' in patch
-              ? { presetId: patch.presetId || null }
-              : {}),
-            ...(typeof patch.webSearchEnabled === 'boolean'
-              ? { webSearchEnabled: patch.webSearchEnabled }
-              : {}),
-            updatedAt: now(),
-          },
-      )
+    async update(threadId, { pinned: _pinned, projectId: _project, ...patch }) {
+      const changed = await change(threadId, ROUTES.update, {
+        id: threadId,
+        ...patch,
+      })
       return changed && localSummary(changed)
     },
     async remove(threadId) {
       await store.delete(threadId)
       list.remove(threadId)
     },
-    // A fork holds the messages through the chosen one, with its own
-    // attachment ids, under a title that names it a fork.
+    // The harness makes the fork, a new chat under an id it chooses, which
+    // this device stores beside the chat it came from.
     async fork(threadId, messageId) {
-      const source = await transcript(threadId)
-      const count =
-        source.messages.findIndex((message) => message.id === messageId) + 1
-      if (!count) return null
-      const forkId = generateReverseId().id
-      await store.update(forkId, () => ({
-        ...newThread(forkId, source),
-        title: forkChatTitle(source.title),
-        titleState: 'manual',
-        messages: source.messages.slice(0, count).map((message) =>
-          message.attachments
-            ? {
-                ...message,
-                attachments: message.attachments.map((attachment) => ({
-                  ...attachment,
-                  id: crypto.randomUUID(),
-                })),
-              }
-            : message,
-        ),
-      }))
-      return forkId
+      const source = await store.get(threadId)
+      if (!source) return null
+      const forked = await request(ROUTES.fork, source, {
+        threadId,
+        messageId,
+      })
+      return (await store.add(forked)) && forked.id
     },
-    // Removes one message; its reply, or the message it answers, stays.
-    deleteMessage: (threadId, messageId) =>
-      changeMessage(threadId, (thread) =>
-        thread.messages.length > 1 &&
-        thread.messages.some((message) => message.id === messageId)
-          ? {
-              ...thread,
-              messages: thread.messages.filter(
-                (message) => message.id !== messageId,
-              ),
-              updatedAt: now(),
-            }
-          : null,
-      ),
-    // Rewrites a reply's text in place; later messages stay.
-    editReply: (threadId, messageId, content) =>
-      changeMessage(threadId, (thread) =>
-        thread.messages.some(
-          (message) => message.id === messageId && message.role === 'assistant',
-        )
-          ? {
-              ...thread,
-              messages: thread.messages.map((message) =>
-                message.id === messageId
-                  ? replaceReplyText(message, content)
-                  : message,
-              ),
-              updatedAt: now(),
-            }
-          : null,
-      ),
+    async deleteMessage(threadId, messageId) {
+      const changed = await change(threadId, ROUTES.messageDelete, {
+        threadId,
+        messageId,
+      })
+      return changed && localThreadView(changed)
+    },
+    async editReply(threadId, messageId, content) {
+      const changed = await change(threadId, ROUTES.messageUpdate, {
+        threadId,
+        messageId,
+        content,
+      })
+      return changed && localThreadView(changed)
+    },
     // A chat kept on this device is shared from its own copy, which the
     // harness seals without storing it.
     async share(threadId) {

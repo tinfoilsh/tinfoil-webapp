@@ -608,65 +608,62 @@ describe('changing messages of a local chat', () => {
   }
   const saved = () => localThreadStore('device').get(THREAD_ID)
 
-  it('deletes a message from the stored copy without the harness', async () => {
+  it('deletes a message through the harness and stores the chat it returns', async () => {
     const { result } = await openLocal()
+    const changed = localThread([transcript[0], transcript[1], transcript[3]])
+    client.post.mockResolvedValueOnce({ thread: changed })
 
     await act(() => result.current.deleteMessage(2))
 
-    expect((await saved())?.messages.map((m) => m.id)).toEqual([
-      'u1',
-      'a1',
-      'a2',
-    ])
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/messages/delete',
+      {
+        threadId: THREAD_ID,
+        messageId: 'u2',
+        local: true,
+        thread: localThread(),
+      },
+      expect.any(AbortSignal),
+    )
+    expect(await saved()).toEqual(changed)
     expect(result.current.chat.messages.map((m) => m.id)).toEqual([
       'u1',
       'a1',
       'a2',
     ])
-    expect(client.post).not.toHaveBeenCalled()
   })
 
-  it('keeps the last message', async () => {
-    const { result } = await openLocal(transcript.slice(0, 1))
-
-    await act(() => result.current.deleteMessage(0))
-
-    expect((await saved())?.messages.map((m) => m.id)).toEqual(['u1'])
-  })
-
-  it("rewrites a reply's text in its copy, which the next turn sends", async () => {
-    const { result } = await openLocal([
+  it("rewrites a reply's text through the harness, and the next turn sends the chat it returns", async () => {
+    const { result } = await openLocal()
+    const edited = localThread([
       ...transcript.slice(0, 3),
       {
         ...transcript[3],
-        timeline: [
-          { id: 't2', type: 'thinking', content: 'hmm' },
-          { id: 'b2', type: 'content', content: 'second ' },
-          { id: 'b3', type: 'content', content: 'answer' },
-        ],
+        content: 'Better',
+        timeline: [{ id: 'b2', type: 'content', content: 'Better' }],
       },
     ])
+    client.post.mockResolvedValueOnce({ thread: edited })
 
     await act(() => result.current.editReply(3, 'Better'))
 
-    const edited = (await saved())?.messages[3]
-    expect(edited).toMatchObject({
-      id: 'a2',
-      content: 'Better',
-      timeline: [
-        { id: 't2', type: 'thinking', content: 'hmm' },
-        { id: 'b2', type: 'content', content: 'Better' },
-      ],
-    })
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/messages/update',
+      {
+        threadId: THREAD_ID,
+        messageId: 'a2',
+        content: 'Better',
+        local: true,
+        thread: localThread(),
+      },
+      expect.any(AbortSignal),
+    )
+    expect(await saved()).toEqual(edited)
     expect(result.current.chat.messages[3].content).toBe('Better')
-    expect(client.post).not.toHaveBeenCalled()
 
     client.events.mockImplementationOnce(regenerated([...transcript.map(wire)]))
     await act(() => result.current.send({ content: 'three' }))
-    expect(turn().thread?.messages[3]).toMatchObject({
-      id: 'a2',
-      content: 'Better',
-    })
+    expect(turn().thread).toEqual(edited)
   })
 
   it('continues a reply with its thread and stores the thread its run returns', async () => {

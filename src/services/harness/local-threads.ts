@@ -137,30 +137,6 @@ export function localThreadView(thread: StoredThread): Thread {
   }
 }
 
-// A reply's text rewritten as the harness rewrites a stored one: its text
-// blocks collapse into one holding the new text, where the first was, and
-// its reasoning, search and tool blocks stay.
-export function replaceReplyText(
-  message: ThreadMessage,
-  text: string,
-): ThreadMessage {
-  const timeline = message.timeline ?? []
-  let first = timeline.findIndex((block) => block.type === 'content')
-  const edited = {
-    id: first < 0 ? 'edited-content' : timeline[first].id,
-    type: 'content' as const,
-    content: text,
-  }
-  if (first < 0) first = timeline.length
-  const blocks: typeof timeline = []
-  for (let i = 0; i <= timeline.length; i++) {
-    if (i === first && text !== '') blocks.push(edited)
-    if (i < timeline.length && timeline[i].type !== 'content')
-      blocks.push(timeline[i])
-  }
-  return { ...message, content: text, timeline: blocks }
-}
-
 // A document's text as the harness reads a stored one: its extracted text,
 // or else the text of its pages.
 export function localDocumentText(attachment: AttachmentDescriptor): string {
