@@ -8,8 +8,6 @@ export type BaseModel = {
   nameShort: string
   description: string
   image: string
-  type: 'chat'
-  chat: boolean
   multimodal?: boolean
   paid?: boolean
   deprecated?: boolean
@@ -49,16 +47,12 @@ export const getAutoDisplayName = (id: string) =>
   `Auto · ${getAutoIntelligenceLevel(id).label}`
 export function displayModels(session?: Session): BaseModel[] {
   if (!session) return []
-  // Free chat models serve free-tier keys server-side and are never offered.
-  const offered = session.models.filter((m) => m.paid !== false)
-  const models: BaseModel[] = offered.map((m) => ({
+  const models: BaseModel[] = session.models.map((m) => ({
     ...m,
     modelName: m.id,
     nameShort: m.nameShort ?? m.name,
     description: m.description ?? '',
     image: m.image ?? '',
-    type: 'chat',
-    chat: true,
     chatConfig: {
       attributes: m.attributes ?? [],
       descriptionShort: m.descriptionShort ?? '',
@@ -78,8 +72,6 @@ export function displayModels(session?: Session): BaseModel[] {
       nameShort: 'Auto',
       image: '',
       description: '',
-      type: 'chat',
-      chat: true,
       isAuto: true,
       multimodal: session.auto.multimodal,
     })
@@ -98,7 +90,6 @@ export const getSelectableChatModels = (
 ): BaseModel[] =>
   models.filter(
     (model) =>
-      model.chat === true &&
       !model.isAuto &&
       (model.deprecated !== true || model.modelName === selectedModel),
   )

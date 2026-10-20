@@ -89,8 +89,6 @@ export default function SharePage({ chatId }: { chatId?: string }) {
           nameShort: 'Shared chat',
           description: '',
           image: '',
-          type: 'chat' as const,
-          chat: true,
         }
         setChatData(parsed)
         setModel(chatModel)

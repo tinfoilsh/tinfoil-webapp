@@ -47,8 +47,6 @@ const model: BaseModel = {
   nameShort: 'GPT-OSS',
   image: '',
   description: '',
-  type: 'chat',
-  chat: true,
 }
 
 const customRenderer: MessageRenderer = {

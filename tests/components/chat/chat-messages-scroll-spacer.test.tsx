@@ -30,8 +30,6 @@ const models: BaseModel[] = [
     nameShort: 'GPT-OSS',
     image: '',
     description: '',
-    type: 'chat',
-    chat: true,
   },
 ]
 

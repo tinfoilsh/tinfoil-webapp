@@ -28,8 +28,6 @@ const MODELS: BaseModel[] = [
     nameShort: 'Auto',
     image: '',
     description: '',
-    type: 'chat',
-    chat: true,
     isAuto: true,
   },
   {
@@ -38,8 +36,6 @@ const MODELS: BaseModel[] = [
     nameShort: 'Deep',
     image: '',
     description: '',
-    type: 'chat',
-    chat: true,
   },
 ]
 const SAVED = {

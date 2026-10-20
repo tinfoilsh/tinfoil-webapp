@@ -16,8 +16,6 @@ const model = {
   nameShort: 'Current',
   image: '',
   description: '',
-  type: 'chat',
-  chat: true,
 } satisfies BaseModel
 
 const Renderer = DefaultMessageRenderer.render

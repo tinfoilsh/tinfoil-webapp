@@ -11,8 +11,6 @@ const model: BaseModel = {
   nameShort: 'Test',
   image: '',
   description: '',
-  type: 'chat',
-  chat: true,
 }
 
 beforeAll(() => initializeRenderers())

@@ -43,8 +43,6 @@ const models: BaseModel[] = [
     nameShort: 'Test',
     image: '',
     description: '',
-    type: 'chat',
-    chat: true,
   },
 ]
 

@@ -18,8 +18,6 @@ const MODEL: BaseModel = {
   name: 'GPT-OSS 120B',
   nameShort: 'GPT-OSS',
   description: 'Reasoning model',
-  type: 'chat',
-  chat: true,
 }
 
 afterEach(() => {
@@ -138,7 +136,7 @@ describe('model lifecycle tags', () => {
     expect(within(row).getByText('Deprecated')).toBeVisible()
   })
 
-  it('shows tags with a description under Other models without exposing API-only models', () => {
+  it('shows tags with a description under Other models', () => {
     const taggedModel: BaseModel = {
       ...MODEL,
       experimental: true,
@@ -152,10 +150,9 @@ describe('model lifecycle tags', () => {
         name: `Chat ${index}`,
       })),
       taggedModel,
-      { ...MODEL, modelName: 'api-only', name: 'API only', chat: false },
     ]
     const onSelect = vi.fn()
-    const { rerender } = render(
+    render(
       <ModelSelector
         selectedModel={taggedModel.modelName}
         models={models}
@@ -178,19 +175,8 @@ describe('model lifecycle tags', () => {
     expect(
       within(row).getByText('Best for quick reasoning tasks'),
     ).toBeVisible()
-    expect(screen.queryByText('API only')).not.toBeInTheDocument()
     fireEvent.click(row)
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(taggedModel.modelName)
-    rerender(
-      <ModelSelector
-        selectedModel="api-only"
-        models={models}
-        onSelect={onSelect}
-        isDarkMode={true}
-      />,
-    )
-    expect(screen.getByText('Chat 0')).toBeVisible()
-    expect(screen.queryByText('API only')).not.toBeInTheDocument()
   })
 
   it.each(['auto-smart', 'auto-fast'])(
