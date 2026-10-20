@@ -4,7 +4,11 @@ import { imageBlob } from './open-attachments'
 import { ERROR_CODES, ROUTES } from './protocol'
 import { harnessAPI, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
-import type { AttachmentDescriptor, StoredThread } from './types'
+import type {
+  AttachmentDescriptor,
+  HarnessErrorBody,
+  StoredThread,
+} from './types'
 export type ImportFailureReason =
   'invalid_archive' | 'wrong_key' | 'internal_error' | string
 export interface ImportStatusResponse {
@@ -162,8 +166,17 @@ function importLine(text: string): { thread: StoredThread } | ImportDone {
   } catch {
     throw invalidImport()
   }
-  const { thread, done } = (value ?? {}) as { thread?: unknown; done?: unknown }
+  const { thread, done, error } = (value ?? {}) as {
+    thread?: unknown
+    done?: unknown
+    error?: unknown
+  }
   if (isThread(thread)) return { thread }
+  // A failure after the first line ends the import; the chats stored before
+  // it stay stored.
+  const { code, message } = (error ?? {}) as Partial<HarnessErrorBody>
+  if (typeof code === 'string' && typeof message === 'string')
+    throw new HarnessError(error as HarnessErrorBody)
   const { jobId, warnings = [] } = (done ?? {}) as Partial<ImportDone>
   if (
     done &&

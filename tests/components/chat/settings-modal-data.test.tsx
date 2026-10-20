@@ -1,7 +1,13 @@
 import { SettingsModal } from '@/components/chat/settings-modal'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
 import {
@@ -373,6 +379,41 @@ describe('importing chats from the Data tab', () => {
     const status = screen.getByRole('status')
     expect(status).toHaveTextContent('1 chat imported')
     expect(status).toHaveTextContent('1 attachment could not be read.')
+  })
+
+  it('keeps the chats stored before an import fails partway and shows why', async () => {
+    connect()
+    client.multipart.mockResolvedValue(
+      new Response(
+        [
+          { thread: importedLine },
+          {
+            error: {
+              code: 'UPSTREAM_REFUSED',
+              message: 'Storage refused the chats.',
+            },
+          },
+        ]
+          .map((line) => `${JSON.stringify(line)}\n`)
+          .join(''),
+      ),
+    )
+    renderData()
+
+    pickFiles('ChatGPT', [chatGptExport])
+    await importStaged()
+
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Import failed',
+      description: 'Could not start the ChatGPT import',
+      variant: 'destructive',
+    })
+    expect(
+      within(screen.getByRole('status')).getByText(
+        'Storage refused the chats.',
+      ),
+    ).toBeVisible()
+    expect(await localThreadStore('device').get(imported.id)).toEqual(imported)
   })
 
   it("stores a signed-out visitor's chats in this tab", async () => {
