@@ -45,13 +45,8 @@ export async function prepareUpload(
   file: File,
   groups: readonly FileGroup[],
 ): Promise<File> {
-  const group = groups.find((candidate) =>
-    candidate.accept.includes(extensionOf(file.name)),
-  )
-  if (!group?.imageMaxSide) {
-    checkUpload(file, groups)
-    return file
-  }
+  const group = checkUpload(file, groups)
+  if (!group.imageMaxSide) return file
   const source = URL.createObjectURL(file)
   try {
     const image = new Image()
@@ -62,7 +57,6 @@ export async function prepareUpload(
       group.imageMaxSide / Math.max(image.naturalWidth, image.naturalHeight),
     )
     if (scale === 1) {
-      checkUpload(file, groups)
       return file
     }
     const canvas = document.createElement('canvas')
@@ -92,7 +86,6 @@ export async function prepareUpload(
   } catch (cause) {
     // A browser without this image decoder can still upload an image that
     // already fits; the harness has its own decoders.
-    checkUpload(file, groups)
     if (cause instanceof HarnessError) throw cause
     return file
   } finally {
