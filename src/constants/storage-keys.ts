@@ -36,8 +36,6 @@ export const SETTINGS_AUTO_INTELLIGENCE = 'tinfoil-settings-auto-intelligence'
 export const SETTINGS_REASONING_EFFORT = 'tinfoil-settings-reasoning-effort'
 export const SETTINGS_THINKING_ENABLED = 'tinfoil-settings-thinking-enabled'
 export const SETTINGS_WEB_SEARCH_ENABLED = 'tinfoil-settings-web-search-enabled'
-export const SETTINGS_CODE_EXECUTION_ENABLED =
-  'tinfoil-settings-code-execution-enabled'
 export const SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED =
   'tinfoil-settings-pixelate-sidebar-chat-titles-enabled'
 // When disabled, the browser tab shows only the base app title instead of

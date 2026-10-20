@@ -213,8 +213,6 @@ interface WelcomeScreenProps {
   setThinkingEnabled?: (enabled: boolean) => void
   autoIntelligence: AutoIntelligenceLevelId
   setAutoIntelligence: (level: AutoIntelligenceLevelId) => void
-  codeExecutionEnabled?: boolean
-  onCodeExecutionToggle?: () => void
   isTemporaryMode?: boolean
   activePromptPreset?: PromptPreset | null
   onOpenPromptLibrary?: () => void
@@ -250,8 +248,6 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   setThinkingEnabled,
   autoIntelligence,
   setAutoIntelligence,
-  codeExecutionEnabled,
-  onCodeExecutionToggle,
   isTemporaryMode,
   activePromptPreset,
   onOpenPromptLibrary,
@@ -484,8 +480,6 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   }
                   webSearchEnabled={webSearchEnabled}
                   onWebSearchToggle={onWebSearchToggle}
-                  codeExecutionEnabled={codeExecutionEnabled}
-                  onCodeExecutionToggle={onCodeExecutionToggle}
                   isTemporaryMode={isTemporaryMode}
                   activePromptPreset={activePromptPreset}
                   onOpenPromptLibrary={onOpenPromptLibrary}

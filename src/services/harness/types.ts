@@ -255,7 +255,6 @@ export interface Turn {
     reasoningEffort?: string
     thinking?: boolean
     webSearch?: boolean
-    codeExecution?: boolean
     genUI?: boolean
     piiCheck?: boolean
   }

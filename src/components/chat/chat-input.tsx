@@ -17,7 +17,6 @@ import {
   TfPlus,
   TfQuote,
   TfStop,
-  TfTerminal,
   TfTools,
 } from '@tinfoilsh/tinfoil-icons'
 import type { FormEvent, RefObject } from 'react'
@@ -75,8 +74,6 @@ type ChatInputProps = {
   modelSelectorButton?: React.ReactNode
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
-  codeExecutionEnabled?: boolean
-  onCodeExecutionToggle?: () => void
   quote?: string | null
   onClearQuote?: () => void
   isTemporaryMode?: boolean
@@ -111,8 +108,6 @@ export function ChatInput({
   modelSelectorButton,
   webSearchEnabled,
   onWebSearchToggle,
-  codeExecutionEnabled,
-  onCodeExecutionToggle,
   quote,
   onClearQuote,
   isTemporaryMode,
@@ -1282,7 +1277,7 @@ export function ChatInput({
                             Change system prompt
                           </button>
                         )}
-                        {(onWebSearchToggle || onCodeExecutionToggle) && (
+                        {onWebSearchToggle && (
                           <div className="my-1.5 border-t border-border-subtle" />
                         )}
                         {onWebSearchToggle && (
@@ -1309,30 +1304,6 @@ export function ChatInput({
                             )}
                             <span className="flex-1">Web search</span>
                             {webSearchEnabled && (
-                              <TfBoxCheckmark
-                                className="h-4 w-4 text-brand-accent-light"
-                                aria-hidden="true"
-                              />
-                            )}
-                          </button>
-                        )}
-                        {onCodeExecutionToggle && (
-                          <button
-                            type="button"
-                            role="menuitemcheckbox"
-                            aria-checked={codeExecutionEnabled}
-                            onClick={() => {
-                              onCodeExecutionToggle()
-                              closeInputMenu(true)
-                            }}
-                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
-                          >
-                            <TfTerminal
-                              className="h-5 w-5 !text-content-secondary"
-                              aria-hidden="true"
-                            />
-                            <span className="flex-1">Code execution</span>
-                            {codeExecutionEnabled && (
                               <TfBoxCheckmark
                                 className="h-4 w-4 text-brand-accent-light"
                                 aria-hidden="true"

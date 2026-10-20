@@ -217,8 +217,6 @@ export type Chat = {
   // default. Persisted with the chat and synced across devices (the iOS
   // app reads/writes the same field).
   webSearchEnabled?: boolean
-  // For code execution.
-  codeExecutionAccessToken?: string
 }
 
 export type LoadingState = 'idle' | 'loading' | 'streaming' | 'retrying'

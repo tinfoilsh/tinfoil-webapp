@@ -358,8 +358,6 @@ export function ChatInterface({
   const webSearchAvailable = session?.features.webSearch ?? false
   const effectiveWebSearchEnabled =
     currentChat.webSearchEnabled ?? profile.webSearchEnabled ?? true
-  const codeExecutionEnabled = profile.codeExecutionEnabled ?? false
-  const canEnableCodeExecution = session?.features.codeExecution ?? false
   const contextUsage = thread.contextUsage
   const modKey =
     typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
@@ -434,7 +432,6 @@ export function ChatInterface({
     reasoningEffort,
     thinking: thinkingEnabled,
     webSearch: effectiveWebSearchEnabled,
-    codeExecution: codeExecutionEnabled,
     piiCheck: profile.piiCheckEnabled ?? true,
     genUI: profile.genUIEnabled ?? true,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -713,11 +710,6 @@ export function ChatInterface({
         .catch(thread.report)
     void api
       .updateProfile({ webSearchEnabled: !effectiveWebSearchEnabled })
-      .catch(thread.report)
-  }
-  const handleCodeExecutionToggle = () => {
-    void api
-      .updateProfile({ codeExecutionEnabled: !codeExecutionEnabled })
       .catch(thread.report)
   }
   const handleOpenVerifierSidebar = () => {
@@ -2084,14 +2076,6 @@ export function ChatInterface({
                       setThinkingEnabled={setThinkingEnabled}
                       autoIntelligence={autoIntelligence}
                       setAutoIntelligence={setAutoIntelligence}
-                      codeExecutionEnabled={
-                        canEnableCodeExecution ? codeExecutionEnabled : false
-                      }
-                      onCodeExecutionToggle={
-                        canEnableCodeExecution
-                          ? handleCodeExecutionToggle
-                          : undefined
-                      }
                       isTemporaryMode={isTemporaryMode}
                       activePromptPreset={activePreset}
                       onOpenPromptLibrary={handleOpenPromptLibrary}
@@ -2271,14 +2255,6 @@ export function ChatInterface({
                         webSearchEnabled={effectiveWebSearchEnabled}
                         onWebSearchToggle={
                           webSearchAvailable ? handleWebSearchToggle : undefined
-                        }
-                        codeExecutionEnabled={
-                          canEnableCodeExecution ? codeExecutionEnabled : false
-                        }
-                        onCodeExecutionToggle={
-                          canEnableCodeExecution
-                            ? handleCodeExecutionToggle
-                            : undefined
                         }
                       />
                     </form>

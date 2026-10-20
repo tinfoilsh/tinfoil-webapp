@@ -86,8 +86,6 @@ type ChatMessagesProps = {
   setThinkingEnabled?: (enabled: boolean) => void
   autoIntelligence: AutoIntelligenceLevelId
   setAutoIntelligence: (level: AutoIntelligenceLevelId) => void
-  codeExecutionEnabled?: boolean
-  onCodeExecutionToggle?: () => void
   isTemporaryMode?: boolean
   activePromptPreset?: PromptPreset | null
   onOpenPromptLibrary?: () => void
@@ -289,8 +287,6 @@ export function ChatMessages({
   setThinkingEnabled,
   autoIntelligence,
   setAutoIntelligence,
-  codeExecutionEnabled,
-  onCodeExecutionToggle,
   isTemporaryMode,
   activePromptPreset,
   onOpenPromptLibrary,
@@ -447,8 +443,6 @@ export function ChatMessages({
             setThinkingEnabled={setThinkingEnabled}
             autoIntelligence={autoIntelligence}
             setAutoIntelligence={setAutoIntelligence}
-            codeExecutionEnabled={codeExecutionEnabled}
-            onCodeExecutionToggle={onCodeExecutionToggle}
             isTemporaryMode={isTemporaryMode}
             activePromptPreset={activePromptPreset}
             onOpenPromptLibrary={onOpenPromptLibrary}

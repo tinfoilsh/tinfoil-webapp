@@ -57,7 +57,6 @@ export const testSession: Session = {
   },
   features: {
     webSearch: true,
-    codeExecution: true,
     transcription: true,
     speech: true,
     genUI: true,
