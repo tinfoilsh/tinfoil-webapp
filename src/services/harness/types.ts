@@ -223,6 +223,7 @@ export interface Turn {
     | 'edit'
     | 'regenerate'
     | 'continue'
+    | 'retry'
     | 'resolve'
     | 'retryToolCall'
     | 'ask'

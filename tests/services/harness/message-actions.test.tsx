@@ -321,7 +321,7 @@ describe('retrying after an error', () => {
     return renderHook(() => useThread(THREAD_ID, null))
   }
 
-  it('runs a failed reply again instead of rejoining its finished run', async () => {
+  it('asks the harness to retry a failed run instead of rejoining it', async () => {
     const { result } = openCloud()
     await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))
     client.events.mockImplementationOnce(async function* () {
@@ -355,7 +355,15 @@ describe('retrying after an error', () => {
     await act(() => result.current.retry())
 
     expect(client.events.mock.calls[1][0]).toBe('/v1/threads/turn')
-    expect(turn(1)).toMatchObject({ kind: 'regenerate', messageId: 'msg_err' })
+    expect(turn(1)).toEqual({
+      clientRequestId: expect.any(String),
+      threadId: THREAD_ID,
+      key: KEY,
+      kind: 'retry',
+      widgets: ['render_chart'],
+      options: { model: 'test-model', timezone: expect.any(String) },
+    })
+    expect(turn(1).clientRequestId).not.toBe(turn(0).clientRequestId)
     expect(result.current.chat.messages.at(-1)?.content).toBe('new answer')
   })
 
@@ -788,7 +796,7 @@ describe('changing messages of a local chat', () => {
     expect(await saved()).toEqual(returned)
   })
 
-  it('continues a failed continuation again on retry', async () => {
+  it('retries a failed continuation as a retry of the chat it failed in', async () => {
     const { result } = await openLocal()
     client.events.mockImplementationOnce(async function* () {
       const events: Frame['event'][] = [
@@ -815,6 +823,15 @@ describe('changing messages of a local chat', () => {
 
     await act(() => result.current.retry())
 
-    expect(turn(1)).toMatchObject({ kind: 'continue', messageId: 'a1' })
+    expect(turn(1)).toEqual({
+      clientRequestId: expect.any(String),
+      threadId: THREAD_ID,
+      kind: 'retry',
+      widgets: ['render_chart'],
+      options: { model: 'test-model', timezone: expect.any(String) },
+      local: true,
+      thread: localThread(),
+      profile: {},
+    })
   })
 })

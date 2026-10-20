@@ -87,8 +87,6 @@ export class RunController {
   // The turn sent whose run has not started. It is sent again, with its
   // nonce, to reconnect.
   pending: { input: Turn; run?: DeviceRun } | null = null
-  // The kind of the last turn sent, and the reply a continuation extends.
-  lastTurn: Pick<Turn, 'kind' | 'messageId'> | null = null
   // Changes each time the view moves to another chat. A run started for
   // the previous one no longer updates the view.
   private generation = 0

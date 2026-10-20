@@ -137,10 +137,6 @@ export function chatTurns({
     if (current.id && moving.has(current.id)) return
     patch({ failure: null })
     attachments.rememberSent(fields.attachments)
-    controller.lastTurn = {
-      kind: fields.kind ?? 'send',
-      messageId: fields.messageId,
-    }
     let key: { key?: string }
     try {
       key = threads.runKey()
@@ -254,29 +250,14 @@ export function chatTurns({
     }
     return reopen()
   }
-  // Retries what failed. A run that ended with an error runs again: a
-  // continuation continues its reply again, and any other turn regenerates
-  // the reply to the last user message. A refused request or a dropped
-  // stream reconnects.
+  // Retries what failed. A run that ended with an error runs again, as the
+  // harness decides from the chat: a continuation continues again, a reply
+  // is regenerated, and a message left without a reply is answered. A
+  // refused request or a dropped stream reconnects.
   async function retry(fields: Partial<Turn> = {}) {
-    const { failedRun, status, messages } = controller.view.get()
+    const { failedRun, status } = controller.view.get()
     if (!failedRun || status !== 'error') return reconnect()
-    const { lastTurn } = controller
-    if (lastTurn?.kind === 'continue') {
-      const replyId =
-        lastTurn.messageId ??
-        messages.findLast((message) => message.role === 'assistant')?.id
-      if (replyId)
-        return send({
-          ...fields,
-          kind: 'continue',
-          messageId: replyId,
-          content: '',
-        })
-    }
-    const index = messages.findLastIndex((message) => message.role === 'user')
-    if (index < 0) return reconnect()
-    return regenerate(index, fields)
+    return send({ ...fields, kind: 'retry' })
   }
   const queueInput = (queueId: string) => ({
     ...openStore().runKey(),
