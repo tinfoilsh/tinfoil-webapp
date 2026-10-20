@@ -326,6 +326,7 @@ export function useThread(
   const openState = useStore(open)
   const state = useStore(controller.view)
   const deviceRuns = useStore(controller.deviceRuns)
+  const refreshedChat = useRef<{ id: string; revision: string } | null>(null)
   useEffect(() => {
     if (
       !chatRevision ||
@@ -338,6 +339,11 @@ export function useThread(
     )
       return
     const id = open.get().id!
+    if (
+      refreshedChat.current?.id === id &&
+      refreshedChat.current.revision === chatRevision
+    )
+      return
     const shown = controller.track()
     let cancelled = false
     void (async () => {
@@ -353,6 +359,7 @@ export function useThread(
       if (cancelled || !shown() || controller.view.get().status !== 'idle')
         return
       controller.view.set(initialChat(thread))
+      refreshedChat.current = { id, revision: chatRevision }
       patch({
         model: thread.model,
         chosenPresetId: thread.presetId ?? null,

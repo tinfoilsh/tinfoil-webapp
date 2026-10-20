@@ -3,6 +3,7 @@ import {
   SETTINGS_CLOUD_SYNC_ENABLED,
   USER_PREFS_LOCAL_PROFILE,
   USER_PREFS_LOCAL_PROFILE_UPGRADED,
+  USER_PREFS_PENDING_PROFILE_MERGE,
 } from '@/constants/storage-keys'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import {
@@ -82,7 +83,6 @@ export class HarnessAPI {
   private profileVersion = 0
   private profileWrites: Promise<unknown> = Promise.resolve()
   private profileSource: 'cloud' | 'local' | null = null
-  private localProfileToMerge: Profile | undefined
   private changeTokens: ChangeTokens | undefined
 
   watchChanges() {
@@ -105,15 +105,20 @@ export class HarnessAPI {
         if (!this.cloud) return
         if (tokens.profile !== this.changeTokens?.profile) {
           await this.profileWrites.catch(() => {})
-          await this.refreshProfile()
+          await this.refreshProfile({ background: true })
         }
         this.lifetime.signal.throwIfAborted()
         if (!this.cloud) return
         this.changeTokens = tokens
-        publish({
-          chatRevision: tokens.chats,
-          projectRevision: tokens.projects,
-        })
+        if (
+          tokens.chats !== view.chatRevision ||
+          tokens.projects !== view.projectRevision
+        ) {
+          publish({
+            chatRevision: tokens.chats,
+            projectRevision: tokens.projects,
+          })
+        }
       } catch (cause) {
         if (!this.lifetime.signal.aborted)
           logError('Failed to refresh remote changes', cause, {
@@ -305,7 +310,7 @@ export class HarnessAPI {
     }
     localStorage.setItem(USER_PREFS_LOCAL_PROFILE_UPGRADED, 'true')
   }
-  async refreshProfile() {
+  async refreshProfile({ background = false }: { background?: boolean } = {}) {
     const version = ++this.profileVersion
     if (!this.cloud) {
       this.profileSource = 'local'
@@ -320,7 +325,10 @@ export class HarnessAPI {
       return
     }
     try {
-      const local = this.localProfileToMerge
+      const local =
+        localStorage.getItem(USER_PREFS_PENDING_PROFILE_MERGE) === this.userId
+          ? loadLocalProfile()
+          : undefined
       const profile = local
         ? await this.post<Profile>(ROUTES.profileMerge, {
             profile: local,
@@ -328,8 +336,10 @@ export class HarnessAPI {
           })
         : await this.post<Profile>(ROUTES.profileGet)
       if (version === this.profileVersion) {
-        if (local) clearLocalProfileChanges()
-        this.localProfileToMerge = undefined
+        if (local) {
+          clearLocalProfileChanges()
+          localStorage.removeItem(USER_PREFS_PENDING_PROFILE_MERGE)
+        }
         this.profileSource = 'cloud'
         publish({
           profile,
@@ -341,6 +351,7 @@ export class HarnessAPI {
     } catch (cause) {
       this.lifetime.signal.throwIfAborted()
       if (version !== this.profileVersion) return
+      if (background) throw cause
       publish({
         profile: {},
         keyReady: false,
@@ -363,7 +374,7 @@ export class HarnessAPI {
     this.lifetime.signal.throwIfAborted()
     this.changeTokens = undefined
     if (!this.cloud && this.userId && isCloudSyncEnabled()) {
-      this.localProfileToMerge = loadLocalProfile()
+      localStorage.setItem(USER_PREFS_PENDING_PROFILE_MERGE, this.userId)
     }
     this.cloudSync = isCloudSyncEnabled()
     publish({ cloud: this.cloud })
@@ -372,7 +383,7 @@ export class HarnessAPI {
       clearLocalProfileChanges()
       localStorage.setItem(USER_PREFS_LOCAL_PROFILE_UPGRADED, 'true')
     }
-    if (!this.cloud) this.localProfileToMerge = undefined
+    if (!this.cloud) localStorage.removeItem(USER_PREFS_PENDING_PROFILE_MERGE)
     this.invalidateKey()
     return this.refreshProfile()
   }

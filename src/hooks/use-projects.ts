@@ -20,6 +20,7 @@ class ProjectList {
     error: null,
   }
   private listing: Promise<void> | null = null
+  private revision?: string
   // Only the latest listing applies, so a list read before a change cannot
   // replace the list read after it.
   private generation = 0
@@ -43,7 +44,11 @@ class ProjectList {
     this.state = { ...this.state, ...patch }
     for (const listener of this.listeners) listener()
   }
-  load(): Promise<void> {
+  load(revision?: string): Promise<void> {
+    if (revision !== this.revision) {
+      this.revision = revision
+      return this.refresh()
+    }
     return (getView().keyReady && this.listing) || this.refresh()
   }
   // A failed refresh keeps its error here and resolves, since callers start
@@ -106,7 +111,7 @@ export function useProjects({ autoLoad = true }: { autoLoad?: boolean } = {}) {
     list.read,
   )
   useEffect(() => {
-    if (autoLoad) void list.load()
+    if (autoLoad) void list.load(projectRevision)
   }, [autoLoad, list, keyReady, projectRevision])
   const refresh = useCallback(() => list.refresh(), [list])
   return { projects, loading, error, refresh, loadProjects: refresh }

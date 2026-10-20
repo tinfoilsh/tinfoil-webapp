@@ -91,7 +91,10 @@ const deviceCopy: StoredThread = storedThread(CHAT_ID, {
     },
   ],
 })
-const transcript = () => structuredClone(deviceCopy)
+const transcript = () => ({
+  thread: structuredClone(deviceCopy),
+  revision: 'transfer-revision',
+})
 
 const stored = (id: string) => localThreadStore('device').get(id)
 const posted = () =>
@@ -119,7 +122,7 @@ describe('moving a stored chat to this device', () => {
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
-      if (path === '/v1/threads/transcript') return { thread: transcript() }
+      if (path === '/v1/threads/transcript') return transcript()
       if (path === '/v1/threads/delete') {
         // The device copy is stored before the cloud copy is deleted.
         expect(await stored(CHAT_ID)).toEqual(deviceCopy)
@@ -133,7 +136,10 @@ describe('moving a stored chat to this device', () => {
 
     expect(transfers()).toEqual([
       ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
-      ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
+      [
+        '/v1/threads/delete',
+        { key: KEY, id: CHAT_ID, revision: 'transfer-revision' },
+      ],
     ])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
     expect(
@@ -160,7 +166,7 @@ describe('moving a stored chat to this device', () => {
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
-      if (path === '/v1/threads/transcript') return { thread: transcript() }
+      if (path === '/v1/threads/transcript') return transcript()
       if (path === '/v1/threads/delete') {
         copied = await stored(CHAT_ID)
         throw refusal
@@ -203,7 +209,7 @@ describe('moving a stored chat to this device', () => {
       client.post.mockImplementation(async (path: string) => {
         if (path === '/v1/threads/list')
           return { threads: cloud, nextCursor: null }
-        if (path === '/v1/threads/transcript') return { thread: transcript() }
+        if (path === '/v1/threads/transcript') return transcript()
         if (path === '/v1/threads/delete') throw failure
         throw new Error(`Unexpected ${path}`)
       })
@@ -215,7 +221,10 @@ describe('moving a stored chat to this device', () => {
 
       expect(transfers()).toEqual([
         ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
-        ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
+        [
+          '/v1/threads/delete',
+          { key: KEY, id: CHAT_ID, revision: 'transfer-revision' },
+        ],
       ])
       expect(await stored(CHAT_ID)).toEqual(deviceCopy)
     },
@@ -273,7 +282,7 @@ describe('moving a stored chat to this device', () => {
             },
           ],
         }
-      if (path === '/v1/threads/transcript') return { thread: transcript() }
+      if (path === '/v1/threads/transcript') return transcript()
       if (path === '/v1/threads/delete') return {}
       throw new Error(`Unexpected ${path}`)
     })
@@ -326,7 +335,7 @@ describe('moving a stored chat to this device', () => {
         }
       if (path === '/v1/threads/transcript') {
         await reading
-        return { thread: transcript() }
+        return transcript()
       }
       if (path === '/v1/threads/delete') return {}
       throw new Error(`Unexpected ${path}`)
@@ -357,7 +366,10 @@ describe('moving a stored chat to this device', () => {
     expect(transfers()).toEqual([
       ['/v1/threads/get', { key: KEY, id: CHAT_ID }],
       ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
-      ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
+      [
+        '/v1/threads/delete',
+        { key: KEY, id: CHAT_ID, revision: 'transfer-revision' },
+      ],
     ])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
     expect(result.current.chat).toMatchObject({

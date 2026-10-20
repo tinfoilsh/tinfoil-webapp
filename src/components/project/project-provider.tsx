@@ -36,6 +36,7 @@ export function ProjectProvider({
   // The project the user opened last. A change to another project that
   // finishes later must not reopen that one.
   const openProjectId = useRef<string | null>(null)
+  const committedProjectId = useRef<string | null>(null)
   const changed = () => window.dispatchEvent(new Event(PROJECTS_CHANGED))
   const requirePremiumAccess = useCallback(() => {
     if (!hasPremiumAccessRef.current) {
@@ -56,15 +57,18 @@ export function ProjectProvider({
           options?.isCurrent?.() === false
         )
           return false
+        committedProjectId.current = project.id
         setActiveProject(project)
         setProjectDocuments(project.documents)
         setError(null)
         return true
       } catch (cause) {
-        if (version === generation.current)
+        if (version === generation.current) {
+          openProjectId.current = committedProjectId.current
           setError(
             cause instanceof Error ? cause.message : 'Unable to load project.',
           )
+        }
         return false
       } finally {
         if (version === generation.current) setLoadingProject(null)
@@ -75,6 +79,7 @@ export function ProjectProvider({
   const exitProjectMode = useCallback(() => {
     generation.current++
     openProjectId.current = null
+    committedProjectId.current = null
     setActiveProject(null)
     setProjectDocuments([])
     setLoadingProject(null)
@@ -89,9 +94,10 @@ export function ProjectProvider({
       projectRevision &&
       keyReady &&
       hasPremiumAccess &&
-      openProjectId.current
+      committedProjectId.current &&
+      openProjectId.current === committedProjectId.current
     ) {
-      void enterProjectMode(openProjectId.current)
+      void enterProjectMode(committedProjectId.current)
     }
   }, [projectRevision, keyReady, hasPremiumAccess, enterProjectMode])
   useEffect(() => {

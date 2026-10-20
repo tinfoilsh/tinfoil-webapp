@@ -3,7 +3,7 @@ import {
   type ProjectContextValue,
 } from '@/components/project/project-context'
 import { ProjectProvider } from '@/components/project/project-provider'
-import { harnessAPI } from '@/services/harness/runtime'
+import { harnessAPI, publish } from '@/services/harness/runtime'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -68,6 +68,29 @@ beforeEach(() => {
 })
 
 describe('ProjectProvider', () => {
+  it('refreshes the visible project after navigation to another project fails', async () => {
+    render(
+      <ProjectProvider>
+        <Projects />
+      </ProjectProvider>,
+    )
+    await act(() => context.enterProjectMode('alpha'))
+    vi.mocked(client().post).mockRejectedValueOnce(
+      new Error('Project unavailable'),
+    )
+    await act(() => context.enterProjectMode('beta'))
+    vi.mocked(client().post).mockResolvedValueOnce({
+      ...stored('alpha'),
+      name: 'Updated Alpha',
+    })
+    act(() => publish({ projectRevision: 'remote-change' }))
+    await waitFor(() =>
+      expect(screen.getByLabelText('Open project')).toHaveTextContent(
+        'Updated Alpha',
+      ),
+    )
+    expect(loads()).toEqual(['alpha', 'beta', 'alpha'])
+  })
   it.each([
     {
       change: 'an upload',

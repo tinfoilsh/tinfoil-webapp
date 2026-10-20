@@ -115,7 +115,12 @@ export function useChatList({
         )
         if (page.nextCursor === result.nextCursor) break
         result.nextCursor = page.nextCursor
-      } while (!next && result.nextCursor && result.threads.length < wanted)
+      } while (
+        !next &&
+        result.nextCursor &&
+        result.threads.length < wanted &&
+        version === lists.listing.version
+      )
       if (version !== lists.listing.version) return
       lists.cloudThreads.update((previous) =>
         next

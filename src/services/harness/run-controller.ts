@@ -36,6 +36,7 @@ const gone = (cause: unknown) =>
 // A run of a chat the browser stores. Its final event returns the whole
 // thread, without the image bytes the browser holds for it.
 export interface DeviceRun {
+  saved?: boolean
   threadId: string
   store: LocalThreadStore
   images: ImagesById
@@ -185,7 +186,7 @@ export class RunController {
         runId = runOf(event) ?? runId
         const base = shown ? this.view.get() : view
         const next = reduceEvent(base, frame, runId)
-        if (next === base) {
+        if (next === base && (!isTerminal(event) || !device || device.saved)) {
           if (event.type === 'RUN_FINISHED')
             succeeded = event.metadata?.cancelled !== true
           continue
@@ -221,7 +222,10 @@ export class RunController {
           this.settle(device)
         }
         if (!isTerminal(event)) continue
-        if (device) await this.hooks.saved?.(device, event, attached())
+        if (device) {
+          await this.hooks.saved?.(device, event, attached())
+          device.saved = true
+        }
         this.forgetReceipt(runId)
         this.hooks.ended?.()
       }

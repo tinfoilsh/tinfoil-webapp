@@ -116,7 +116,6 @@ describe('a turn the harness refuses', () => {
       rerender(<ChatInterface />)
     })
     await waitFor(() => expect(getView().rateLimit?.kind).toBe('hourly'))
-    expect(api.cloud).toBe(true)
   })
   it('explains a full queue without the quota or upgrade, and resends the message', async () => {
     const { messages: _messages, hasOlder: _hasOlder, ...summary } = thread

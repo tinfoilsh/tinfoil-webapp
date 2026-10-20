@@ -5,6 +5,10 @@ import {
 } from '@/constants/storage-keys'
 import { storeRun } from '@/services/harness/device-threads'
 import { localThreadStore } from '@/services/harness/local-threads'
+import {
+  RunController,
+  type DeviceRun,
+} from '@/services/harness/run-controller'
 import { getView } from '@/services/harness/runtime'
 import type {
   Frame,
@@ -13,12 +17,18 @@ import type {
   Turn,
 } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
+import { logError } from '@/utils/error-handling'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 import { client, signIn, testSession } from '../../harness-fixture'
 import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
+vi.mock('@/utils/error-handling', () => ({
+  logError: vi.fn(),
+  logInfo: vi.fn(),
+  logWarning: vi.fn(),
+}))
 resetChatStoresAroundEachTest()
 
 it.each(['/v1/attachments/upload', '/v1/projects/documents/upload'] as const)(
@@ -110,6 +120,41 @@ function summary(id: string): ThreadSummary {
   }
 }
 
+it('retries an unfinished profile merge after the page reloads', async () => {
+  const local = {
+    nickname: 'Local Sam',
+    customPromptPresets: [
+      { id: 'user:editor', name: 'Editor', systemPrompt: 'Keep this prompt.' },
+    ],
+  }
+  localStorage.setItem(USER_PREFS_LOCAL_PROFILE, JSON.stringify(local))
+  localStorage.setItem(USER_PREFS_LOCAL_PROFILE_UPGRADED, 'true')
+  const beforeReload = signIn()
+  await beforeReload.refreshProfile()
+  client.post.mockRejectedValueOnce(new Error('Connection lost'))
+  localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+  await beforeReload.storageModeChanged()
+  expect(getView().profileReady).toBe(false)
+
+  const afterReload = signIn({ cloud: true })
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/profile/merge') {
+      expect(input).toMatchObject({ profile: local })
+      return local
+    }
+    if (path === '/v1/profile/get') return { ...local, nickname: 'Remote Sam' }
+    throw new Error(`Unexpected ${path}`)
+  })
+  await afterReload.refreshProfile()
+  expect(getView().profile).toEqual(local)
+  await afterReload.refreshProfile()
+  expect(getView().profile.nickname).toBe('Remote Sam')
+  expect(client.post.mock.calls.map(([path]) => path)).toEqual([
+    '/v1/profile/merge',
+    '/v1/profile/get',
+  ])
+})
+
 it('keeps loaded pages and older favorites when the chat list refreshes', async () => {
   signIn({ cloud: true })
   let renamed = false
@@ -146,6 +191,7 @@ it('keeps loaded pages and older favorites when the chat list refreshes', async 
 it('refreshes remote profile and open chat changes when the page regains focus', async () => {
   const api = signIn({ cloud: true })
   let revision = 1
+  let failProfile = false
   const thread = (): Thread => ({
     ...summary('shared'),
     title: `Remote ${revision}`,
@@ -169,7 +215,13 @@ it('refreshes remote profile and open chat changes when the page regains focus',
         profile: String(revision),
         projects: String(revision),
       }
-    if (path === '/v1/profile/get') return { nickname: `Remote ${revision}` }
+    if (path === '/v1/profile/get') {
+      if (failProfile) {
+        failProfile = false
+        throw new Error('Profile request interrupted')
+      }
+      return { nickname: `Remote ${revision}` }
+    }
     throw new Error(`Unexpected ${path}`)
   })
   const { result, unmount } = renderHook(() => useThread('shared'))
@@ -179,6 +231,17 @@ it('refreshes remote profile and open chat changes when the page regains focus',
     act(() => window.dispatchEvent(new Event('focus')))
     await waitFor(() => expect(getView().profile.nickname).toBe('Remote 1'))
     revision = 2
+    failProfile = true
+    act(() => window.dispatchEvent(new Event('focus')))
+    await waitFor(() =>
+      expect(logError).toHaveBeenCalledWith(
+        'Failed to refresh remote changes',
+        expect.any(Error),
+        expect.anything(),
+      ),
+    )
+    expect(getView().profile.nickname).toBe('Remote 1')
+    expect(getView().keyReady).toBe(true)
     act(() => window.dispatchEvent(new Event('focus')))
     await waitFor(() =>
       expect(result.current.chat.messages[0].content).toBe('Reply 2'),
@@ -189,6 +252,63 @@ it('refreshes remote profile and open chat changes when the page regains focus',
     stop()
     unmount()
   }
+})
+
+it('stores a replayed terminal frame after the first device save fails', async () => {
+  const api = signIn()
+  const store = localThreadStore('device')
+  await store.add(storedThread('device'))
+  const completed = storedThread('device', {
+    messages: [
+      {
+        id: 'answer',
+        role: 'assistant',
+        createdAt: '2026-01-01T00:00:00Z',
+        content: 'Completed answer',
+      },
+    ],
+  })
+  client.events.mockImplementation(async function* () {
+    yield {
+      id: 0,
+      event: { type: 'RUN_STARTED', threadId: 'device', runId: 'retry-save' },
+    }
+    yield {
+      id: 1,
+      event: {
+        type: 'RUN_FINISHED',
+        threadId: 'device',
+        runId: 'retry-save',
+        metadata: { thread: completed },
+      },
+    }
+  })
+  vi.spyOn(store, 'update').mockRejectedValueOnce(
+    new TypeError('Storage connection closed'),
+  )
+  const device: DeviceRun = {
+    threadId: 'device',
+    store,
+    images: new Map(),
+    since: 0,
+  }
+  const controller = new RunController(api, {
+    saved: async (run, event) => {
+      await storeRun(run, event, [])
+    },
+  })
+  await controller.run(
+    '/v1/threads/follow',
+    { threadId: 'device', runId: 'retry-save' },
+    { device },
+  )
+  expect((await store.get('device'))?.messages[0].content).toBe(
+    'Completed answer',
+  )
+  expect(client.events.mock.calls.map(([route]) => route)).toEqual([
+    '/v1/threads/follow',
+    '/v1/threads/follow',
+  ])
 })
 
 it('accepts more than one queued message in a device chat', async () => {

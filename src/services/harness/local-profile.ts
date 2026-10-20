@@ -144,12 +144,19 @@ export function saveLocalProfile(
   })
   write(profile)
   if (!replace) {
-    localStorage.setItem(
-      USER_PREFS_LOCAL_PROFILE_CHANGES,
-      JSON.stringify([
-        ...new Set([...localProfileChanges(), ...Object.keys(patch)]),
-      ]),
-    )
+    try {
+      localStorage.setItem(
+        USER_PREFS_LOCAL_PROFILE_CHANGES,
+        JSON.stringify([
+          ...new Set([...localProfileChanges(), ...Object.keys(patch)]),
+        ]),
+      )
+    } catch (error) {
+      logError('Failed to save local settings changes', error, {
+        component: 'localProfile',
+        action: 'saveLocalProfile',
+      })
+    }
   }
   return profile
 }

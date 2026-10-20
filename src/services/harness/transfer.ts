@@ -53,14 +53,15 @@ async function cloudTranscript(
   api: HarnessAPI,
   threadId: string,
   signal?: AbortSignal,
-): Promise<StoredThread> {
-  const result = await api.post<{ thread?: unknown }>(
+): Promise<{ thread: StoredThread; revision: string }> {
+  const result = await api.post<{ thread?: unknown; revision?: string }>(
     ROUTES.transcript,
     { threadId },
     { signal },
   )
   const thread = result?.thread
   if (
+    !result.revision ||
     !thread ||
     typeof thread !== 'object' ||
     Array.isArray(thread) ||
@@ -70,7 +71,10 @@ async function cloudTranscript(
       code: ERROR_CODES.upstreamRefused,
       message: 'The chat service returned an invalid chat.',
     })
-  return { ...(thread as StoredThread), id: threadId }
+  return {
+    thread: { ...(thread as StoredThread), id: threadId },
+    revision: result.revision,
+  }
 }
 
 // Stores a chat on this device, then deletes its cloud copy. A deletion that
@@ -84,6 +88,7 @@ export async function placeOnDevice(
   store: LocalThreadStore,
   thread: StoredThread,
   originals?: Originals,
+  revision?: string,
 ): Promise<StoredThread> {
   const saved = await store.add(thread, originals)
   if (!saved)
@@ -95,7 +100,10 @@ export async function placeOnDevice(
       409,
     )
   try {
-    await api.post(ROUTES.delete, { id: thread.id })
+    await api.post(ROUTES.delete, {
+      id: thread.id,
+      ...(revision ? { revision } : {}),
+    })
   } catch (cause) {
     if (!isRefusal(cause)) throw cause
     await store.delete(thread.id).catch((error) =>
@@ -115,7 +123,8 @@ export async function moveThreadToDevice(
   store: LocalThreadStore,
   threadId: string,
 ): Promise<StoredThread> {
-  return placeOnDevice(api, store, await cloudTranscript(api, threadId))
+  const { thread, revision } = await cloudTranscript(api, threadId)
+  return placeOnDevice(api, store, thread, undefined, revision)
 }
 
 // Stores a chat from this device in the cloud under the same id, then

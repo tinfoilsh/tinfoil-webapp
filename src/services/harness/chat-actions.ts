@@ -185,9 +185,9 @@ export function chatActions({
     // Moves a stored chat to this device under the same id. A chat the
     // harness stored a moment ago is put back as it was on the device, so a
     // move that is undone keeps its original attachments.
-    moveToDevice(threadId: string, original?: DeviceChatCopy) {
+    async moveToDevice(threadId: string, original?: DeviceChatCopy) {
+      requireIdle(threadId)
       return whileMoving(threadId, async () => {
-        requireIdle(threadId)
         const moved = original
           ? await placeOnDevice(
               api,

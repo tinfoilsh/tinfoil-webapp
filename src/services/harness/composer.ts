@@ -81,12 +81,10 @@ export async function prepareUpload(
       type: blob.type,
       lastModified: file.lastModified,
     })
-    checkUpload(resized, groups)
-    return resized
-  } catch (cause) {
+    return resized.size <= group.maxBytes ? resized : file
+  } catch {
     // A browser without this image decoder can still upload an image that
     // already fits; the harness has its own decoders.
-    if (cause instanceof HarnessError) throw cause
     return file
   } finally {
     URL.revokeObjectURL(source)

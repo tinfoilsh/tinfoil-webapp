@@ -547,7 +547,7 @@ export function ProjectSidebar({
       (editedColor ?? '') !== (project.color ?? '')
     : false
 
-  // Convert chatsProp to ChatItemData format and sort by updatedAt descending
+  // Convert chatsProp to ChatItemData format and sort by latest activity.
   const projectChats: ChatItemData[] = (chatsProp || [])
     .filter((c) => !c.isBlankChat)
     .sort(

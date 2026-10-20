@@ -124,6 +124,8 @@ export const USER_PREFS_DEFAULT_PROMPT_PRESET_ID =
 // Settings of an account without cloud sync and of a signed-out visitor, in
 // the chat service's profile format.
 export const USER_PREFS_LOCAL_PROFILE = 'tinfoil-user-prefs-local-profile'
+export const USER_PREFS_PENDING_PROFILE_MERGE =
+  'tinfoil-user-prefs-pending-profile-merge'
 export const USER_PREFS_LOCAL_PROFILE_CHANGES =
   'tinfoil-user-prefs-local-profile-changes'
 // Set once the local profile needs no upgrade from what older clients
