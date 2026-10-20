@@ -10,9 +10,19 @@ export class SpeechError extends Error {
   }
 }
 
+// Statuses with which the harness refuses the text itself, as one with
+// nothing to read aloud or too long, and says why.
+const REFUSED_TEXT_STATUSES = new Set([400, 413])
+
 export function speechErrorMessage(error: unknown): string {
   if (error instanceof HarnessError && error.status === 429) {
     return 'Speech usage limit reached. Please try again later.'
+  }
+  if (
+    error instanceof HarnessError &&
+    REFUSED_TEXT_STATUSES.has(error.status ?? 0)
+  ) {
+    return error.message
   }
   if (error instanceof SpeechError) {
     switch (error.code) {

@@ -213,4 +213,24 @@ describe('speech requests', () => {
       'Speech usage limit reached. Please try again later.',
     )
   })
+
+  it.each([
+    [400, 'BAD_REQUEST', 'There is nothing to read aloud'],
+    [413, 'PAYLOAD_TOO_LARGE', 'The text is too long to read aloud'],
+  ])(
+    'shows why the harness refuses a text with status %i',
+    async (status, code, message) => {
+      const { speech } = connect(
+        () =>
+          new Response(JSON.stringify({ error: { code, message } }), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      )
+      const result = collect(speech(new AbortController().signal)).catch(
+        speechErrorMessage,
+      )
+      await expect(result).resolves.toBe(message)
+    },
+  )
 })
