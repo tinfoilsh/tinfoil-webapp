@@ -125,8 +125,9 @@ describe('NativeBackupExport', () => {
     holdBackup()
     render(<NativeBackupExport available />)
     startBackup()
+    await waitFor(() => expect(client.multipart).toHaveBeenCalledOnce())
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
     expect(await screen.findByText(/No backup file was saved/)).toBeVisible()
     expect(requestSignal().aborted).toBe(true)
