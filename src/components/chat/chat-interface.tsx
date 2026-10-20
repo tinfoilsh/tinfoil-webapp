@@ -399,8 +399,6 @@ export function ChatInterface({
       ? `${currentChat.title} · Tinfoil`
       : 'Tinfoil Private Chat'
   const handleInputFocusWithRateLimitCheck = handleInputFocus
-  // A chat on this device changes its own copy; the harness changes a stored
-  // chat, and a temporary one is not stored at all.
   const canChangeMessages = thread.canChangeMessages
   const canFork =
     !!currentChat.id && !currentChat.isTemporary && !currentChat.isBlankChat
@@ -450,7 +448,7 @@ export function ChatInterface({
   const handleModelSelect = (model: string) => {
     thread.setModel(model)
     setExpandedLabel(null)
-    if (currentChat.id && !isTemporaryMode)
+    if (currentChat.id)
       void thread.update(currentChat.id, { model }).catch(thread.report)
     void api.updateProfile({ selectedModel: model }).catch(thread.report)
   }
@@ -741,7 +739,7 @@ export function ChatInterface({
   }
   const handleWebSearchToggle = () => {
     thread.setWebSearch(!effectiveWebSearchEnabled)
-    if (currentChat.id && !isTemporaryMode)
+    if (currentChat.id)
       void thread
         .update(currentChat.id, {
           webSearchEnabled: !effectiveWebSearchEnabled,

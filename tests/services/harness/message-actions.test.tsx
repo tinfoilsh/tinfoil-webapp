@@ -190,7 +190,6 @@ describe('regenerating a reply', () => {
         clientRequestId: expect.any(String),
         threadId: THREAD_ID,
         key: KEY,
-        ephemeral: false,
         kind: 'regenerate',
         messageId: call === 0 ? 'a2' : 'msg_regen',
         content: '',

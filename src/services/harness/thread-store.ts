@@ -29,7 +29,6 @@ export interface TurnSettings {
   presetId: string | null
   presetChosen: boolean
   webSearch?: boolean
-  temporary: boolean
   projectId?: string | null
   profile: Profile
 }
@@ -177,18 +176,15 @@ export function cloudThreads(
     },
     runKey: () => ({ key: api.key() }),
     async prepareTurn(threadId, { defaults, fields, key }, settings) {
-      const { first, presetChosen, temporary, presetId, projectId } = settings
+      const { first, presetChosen, presetId, projectId } = settings
       const input: Turn = {
         ...defaults,
         ...key,
         threadId,
-        ephemeral: temporary,
         projectId: first ? projectId : undefined,
         // The harness starts a stored chat with the default prompt when its
         // first turn names none, and keeps a first turn's choice, null too.
-        // A temporary chat is not stamped, so it names the default itself.
-        presetId:
-          !first || (!presetChosen && !temporary) ? undefined : presetId,
+        presetId: first && presetChosen ? presetId : undefined,
         ...fields,
       }
       return { input, resend: { ...input, key: undefined } }

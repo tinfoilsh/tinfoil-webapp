@@ -56,8 +56,6 @@ export interface RunOptions {
   // or the page to another route, so its reply is still saved. An account
   // change ends it with the API's lifetime.
   device?: DeviceRun
-  // A temporary chat's run, which a reload rejoins through its receipt.
-  temporary?: boolean
   // Rejoining a run left behind: losing it shows no error.
   quiet?: boolean
   rejoined?: boolean
@@ -77,12 +75,10 @@ export interface RunHooks {
   gone?(threadId: string): Promise<void>
 }
 
-// A hint that rejoins a run after a reload, kept for the tab.
+// A hint that rejoins a device chat's run after a reload, kept for the tab.
 interface Receipt {
   threadId: string
   runId: string
-  temporary: boolean
-  local?: true
 }
 
 // Streams the runs of the chat a view shows: a turn's run, or a live run it
@@ -181,7 +177,7 @@ export class RunController {
         if (event.type === 'RUN_FINISHED')
           succeeded = event.metadata?.cancelled !== true
         if (event.type === 'RUN_STARTED') {
-          this.started(event.runId, input.threadId!, options, shown)
+          this.started(event.runId, input.threadId!, device, shown)
           if (shown)
             this.hooks.started?.({
               threadId: event.threadId,
@@ -251,7 +247,7 @@ export class RunController {
   private started(
     runId: string,
     threadId: string,
-    { device, temporary = false }: RunOptions,
+    device: DeviceRun | undefined,
     shown: boolean,
   ) {
     if (device) {
@@ -263,16 +259,10 @@ export class RunController {
     }
     if (!shown) return
     this.pending = null
-    if (!device) this.hooks.accepted?.(threadId)
-    // A stored chat names its run itself; a temporary chat or one on this
-    // device is rejoined after a reload through this receipt.
-    if (device || temporary)
-      this.writeReceipt({
-        threadId,
-        runId,
-        temporary,
-        ...(device ? { local: true as const } : {}),
-      })
+    // A stored chat names its run itself; a chat on this device is
+    // rejoined after a reload through this receipt.
+    if (device) this.writeReceipt({ threadId, runId })
+    else this.hooks.accepted?.(threadId)
   }
 
   // The open chat's run ended with its stream, refused or cut off.

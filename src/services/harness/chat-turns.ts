@@ -136,7 +136,6 @@ export function chatTurns({
       presetId: presetIdOf(current, currentProfile),
       presetChosen: current.presetChosen,
       webSearch: current.webSearch,
-      temporary: current.temporary,
       projectId,
       profile: currentProfile,
     }
@@ -154,10 +153,7 @@ export function chatTurns({
         showSent(message)
         await turn.keep?.(message)
       }
-      return controller.run(ROUTES.turn, turn.input, {
-        device: turn.run,
-        temporary: settings.temporary,
-      })
+      return controller.run(ROUTES.turn, turn.input, { device: turn.run })
     })().catch((cause) => {
       report(cause)
       return false
@@ -207,7 +203,7 @@ export function chatTurns({
   async function reconnect() {
     patch({ failure: null })
     const threads = openStore()
-    const { id: threadId, temporary } = open.get()
+    const threadId = open.get().id
     // A turn whose acceptance never arrived is sent again with its nonce,
     // which the harness answers with the run it may already have started.
     if (controller.pending) {
@@ -216,14 +212,14 @@ export function chatTurns({
       return controller.run(
         ROUTES.turn,
         { ...input, ...threads.runKey() },
-        { device: run, temporary },
+        { device: run },
       )
     }
     const state = controller.view.get()
     const runId = state.runId ?? state.snapshot.thread?.activeRun?.runId
     if (threadId && runId) {
       const { input, device: run } = await threads.follow(threadId, runId)
-      return controller.run(ROUTES.follow, input, { device: run, temporary })
+      return controller.run(ROUTES.follow, input, { device: run })
     }
     return reopen()
   }

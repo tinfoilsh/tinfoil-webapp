@@ -266,9 +266,7 @@ export function deviceThreads({
       const receipt = controller.receipt()
       return (
         controller.deviceRuns.get().get(thread.id)?.runId ??
-        (receipt?.local && receipt.threadId === thread.id
-          ? receipt.runId
-          : undefined)
+        (receipt?.threadId === thread.id ? receipt.runId : undefined)
       )
     },
     async follow(threadId, runId) {

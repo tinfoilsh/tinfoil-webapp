@@ -130,20 +130,6 @@ describe('the default prompt of a new stored chat', () => {
     expect(turn(1)).toMatchObject({ presetId: 'builtin:tutor' })
   })
 
-  it('names the default itself in a temporary chat, which is not stamped', async () => {
-    signIn({ cloud: true, profile: { defaultPromptPresetId: QUIET.id } })
-    client.events.mockImplementation((_path: string, input: Turn) =>
-      finished(input.threadId!)(),
-    )
-    const { result } = renderHook(() => useThread())
-    await waitFor(() => expect(result.current.model).toBe('test-model'))
-    act(() => result.current.setTemporary(true))
-
-    await act(() => result.current.send({ content: 'Hi' }))
-
-    expect(turn()).toMatchObject({ ephemeral: true, presetId: QUIET.id })
-  })
-
   it("applies the default prompt's model to a new chat", async () => {
     signIn({ cloud: true, profile: { defaultPromptPresetId: RESEARCH.id } })
     client.events.mockImplementation((_path: string, input: Turn) =>

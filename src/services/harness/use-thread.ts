@@ -14,7 +14,12 @@ import { chatTurns } from './chat-turns'
 import { deviceThreads, storeRun } from './device-threads'
 import { localThreadStore, memoryThreadStore } from './local-threads'
 import { OpenAttachments } from './open-attachments'
-import { defaultPresetIdOf, presetIdOf, type OpenChat } from './open-chat'
+import {
+  defaultPresetIdOf,
+  onDevice,
+  presetIdOf,
+  type OpenChat,
+} from './open-chat'
 import { ROUTES } from './protocol'
 import { useHarness } from './provider'
 import { initialChat } from './reducer'
@@ -61,7 +66,7 @@ export function useThread(
       ),
       attachments: new OpenAttachments(),
       moving: new Map<string, Promise<unknown>>(),
-      // A temporary chat on this device; each new chat starts another.
+      // A temporary chat, kept in page memory; each new chat starts another.
       temporaryChats: { store: memoryThreadStore() },
     }),
   )
@@ -119,11 +124,11 @@ export function useThread(
       }),
     [api, device, controller, attachments, list.device, markSaved],
   )
-  // The open chat's store.
+  // The open chat's store. A temporary chat runs as a chat on this device
+  // whose thread lives only in page memory, with or without cloud sync.
   const openStore = (): ThreadStore => {
     const { local, temporary } = open.get()
-    if (!local) return cloudStore
-    if (!temporary) return deviceStore
+    if (!temporary) return local ? deviceStore : cloudStore
     return deviceThreads({
       api,
       store: temporaryChats.store,
@@ -157,13 +162,12 @@ export function useThread(
   const choosePreset = (next: string | null) =>
     patch({ presetChosen: true, chosenPresetId: next })
   // Shows the open chat as it is stored once its run is over, as when the
-  // harness no longer has the run or had applied a turn sent again. A
-  // temporary stored chat, or one never saved, keeps what it shows.
+  // harness no longer has the run or had applied a turn sent again. A chat
+  // never saved keeps what it shows.
   async function showStored(threadId: string) {
-    const { id, temporary, local } = open.get()
-    if (id !== threadId) return
+    if (open.get().id !== threadId) return
     const shown = controller.track()
-    const thread = temporary && !local ? null : await openStore().get(threadId)
+    const thread = await openStore().get(threadId)
     if (!shown()) return
     if (thread) markSaved(threadId)
     controller.view.set(
@@ -292,9 +296,9 @@ export function useThread(
     if (!cloud) clearCloud()
     // A blank chat follows the storage mode; a stored chat of the harness
     // cannot stay open once cloud sync is off.
-    const { id, local } = open.get()
-    if (!id) patch({ local: !cloud || !!route.newChatLocal })
-    else if (!cloud && !local) {
+    const current = open.get()
+    if (!current.id) patch({ local: !cloud || !!route.newChatLocal })
+    else if (!cloud && !onDevice(current)) {
       reset()
       patch({ local: true })
     }
@@ -315,7 +319,7 @@ export function useThread(
   useEffect(() => {
     const clear = () => {
       clearCloud()
-      if (open.get().local) return
+      if (onDevice(open.get())) return
       reset()
       opened.current = null
       controller.clearReceipt()
@@ -326,26 +330,6 @@ export function useThread(
       reset()
     }
   }, [reset, clearCloud, open, controller])
-  // A temporary stored chat's run is rejoined after a reload through its
-  // receipt, until it ends.
-  useEffect(() => {
-    if (initialId || !session || (api.userId && !keyReady)) return
-    const receipt = controller.receipt()
-    if (!receipt?.temporary || receipt.local) return
-    let key: string | undefined
-    try {
-      key = api.key()
-    } catch {
-      return
-    }
-    patch({ temporary: true, id: receipt.threadId })
-    void controller.run(
-      ROUTES.follow,
-      { key, threadId: receipt.threadId, runId: receipt.runId },
-      { temporary: true },
-    )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, keyReady, !!session])
   // Converts a file into the descriptor the turn that uses it sends. The
   // harness keeps nothing of an upload, so an image keeps its bytes.
   async function upload(file: File): Promise<AttachmentDescriptor> {
@@ -425,7 +409,7 @@ export function useThread(
   const isLocalChat = local && !temporary
   const messages = state.messages.map((m, index) => {
     const view = messageView(m, running && index === state.messages.length - 1)
-    if (!local || !view.attachments?.length) return view
+    if (!onDevice(openState) || !view.attachments?.length) return view
     // An image the previous client stored without a thumbnail shows its
     // bytes; others load them when opened in the gallery.
     return {
@@ -467,7 +451,7 @@ export function useThread(
         isLocalOnly: isLocalChat,
         pendingSave: !!id && unsaved === id,
         model,
-        projectId: local ? undefined : (projectId ?? undefined),
+        projectId: onDevice(openState) ? undefined : (projectId ?? undefined),
         presetId: presetId ?? undefined,
         webSearchEnabled: webSearch,
       }
@@ -500,10 +484,8 @@ export function useThread(
     running,
     // The open chat takes turns once its settings load and, for a chat the
     // harness stores, once the content key is unlocked.
-    canSend: profileReady && (local || keyReady),
-    // A chat on this device changes its own copy; the harness changes a
-    // stored chat, and a temporary one is not stored at all.
-    canChangeMessages: !!chat.id && (local || !temporary),
+    canSend: profileReady && (onDevice(openState) || keyReady),
+    canChangeMessages: !!chat.id,
     queue,
     contextUsage: summary?.contextUsage ?? undefined,
     error: failure?.message || state.error?.message || '',
