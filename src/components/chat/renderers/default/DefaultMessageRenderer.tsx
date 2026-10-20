@@ -915,20 +915,26 @@ const DefaultMessageComponent = ({
             }`}
           >
             {!hideActions && !isEditing && message.content && (
-              <>
-                <MessageActions
+              <MessageActions
+                content={message.content}
+                isDarkMode={isDarkMode}
+              />
+            )}
+            {/* A chat that hides its actions may still be read aloud, as a
+                shared chat is. */}
+            {!isEditing &&
+              message.content &&
+              !isStreaming &&
+              !message.isThinking &&
+              !message.isError &&
+              message.id && (
+                <ReadAloudButton
+                  messageId={message.id}
                   content={message.content}
-                  isDarkMode={isDarkMode}
                 />
-                {!isStreaming &&
-                  !message.isThinking &&
-                  !message.isError &&
-                  message.id && (
-                    <ReadAloudButton
-                      messageId={message.id}
-                      content={message.content}
-                    />
-                  )}
+              )}
+            {!hideActions && !isEditing && message.content && (
+              <>
                 {/* Regenerate button - only on last assistant message */}
                 {isLastMessage && onRegenerateMessage && messageIndex > 0 && (
                   <div className="group/regen relative">

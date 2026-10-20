@@ -1,4 +1,5 @@
 import { useSessionFeature } from '@/services/harness/provider'
+import { speakText } from '@/services/harness/speech'
 import { speechPlayer } from '@/services/speech/player'
 import { speechSource } from '@/services/speech/stream'
 import { TfAudio, TfPlay, TfStop } from '@tinfoilsh/tinfoil-icons'
@@ -9,10 +10,14 @@ import { useSpeak } from '../../speech-context'
 export function ReadAloudButton({
   messageId,
   content,
+  variant = 'icon',
 }: {
-  messageId: string
-  // The reply's text; reading stops when it changes.
+  // A message of the chat shown, which its chat reads aloud. Without one,
+  // the content is read as plain text.
+  messageId?: string
+  // The text; reading stops when it changes.
   content: string
+  variant?: 'icon' | 'menu'
 }) {
   const [owner] = useState(() => Symbol('read-aloud'))
   const available = useSessionFeature('speech')
@@ -33,34 +38,39 @@ export function ReadAloudButton({
         ? 'Stop reading aloud'
         : status === 'paused'
           ? 'Resume reading aloud'
-          : 'Read aloud'
+          : variant === 'menu'
+            ? 'Read'
+            : 'Read aloud'
   const tooltipLabel =
     status === 'loading' ? 'Buffering audio — click to cancel' : label
 
   useEffect(() => () => speechPlayer.stop(owner), [owner, messageId, content])
 
+  const open = messageId
+    ? speak && ((signal: AbortSignal) => speak(messageId, signal))
+    : (signal: AbortSignal) => speakText(content, signal)
+
   // The harness reads aloud only when its session offers speech, and only a
   // message of a chat it can read.
-  if (!available || !speak) return null
+  if (!available || !open) return null
 
   return (
     <div className="relative flex items-center">
       <button
         type="button"
         aria-label={label}
+        title={variant === 'menu' ? tooltipLabel : undefined}
         onClick={() => {
           if (status === 'paused') speechPlayer.resume(owner)
           else if (active) speechPlayer.stop(owner)
-          else
-            speechPlayer.read(
-              owner,
-              speechSource((signal) => speak(messageId, signal)),
-            )
+          else speechPlayer.read(owner, speechSource(open))
         }}
-        className={`group/speech relative flex items-center whitespace-nowrap rounded px-2 py-2 transition-colors ${
+        className={`group/speech relative flex items-center whitespace-nowrap transition-colors ${variant === 'menu' ? 'gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium' : 'rounded px-2 py-2'} ${
           status === 'playing'
             ? 'animate-pulse bg-red-500/10 text-red-600 hover:bg-red-500/20 motion-reduce:animate-none dark:text-red-400'
-            : 'text-content-secondary hover:bg-surface-chat-background hover:text-content-primary'
+            : variant === 'menu'
+              ? 'text-content-primary hover:bg-surface-chat-background'
+              : 'text-content-secondary hover:bg-surface-chat-background hover:text-content-primary'
         }`}
       >
         {status === 'loading' ? (
@@ -75,12 +85,25 @@ export function ReadAloudButton({
         ) : (
           <TfAudio className="h-3.5 w-3.5" aria-hidden="true" />
         )}
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/speech:opacity-100 group-focus-visible/speech:opacity-100"
-        >
-          {tooltipLabel}
-        </span>
+        {variant === 'icon' && (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/speech:opacity-100 group-focus-visible/speech:opacity-100"
+          >
+            {tooltipLabel}
+          </span>
+        )}
+        {variant === 'menu' && (
+          <span>
+            {status === 'loading'
+              ? 'Cancel'
+              : status === 'playing'
+                ? 'Stop'
+                : status === 'paused'
+                  ? 'Resume'
+                  : 'Read'}
+          </span>
+        )}
       </button>
       {status === 'paused' && (
         <>

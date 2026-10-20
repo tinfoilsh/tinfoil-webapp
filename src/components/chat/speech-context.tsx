@@ -1,6 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react'
 
-// Asks the harness to read a message of the open chat aloud.
+// Asks the harness to read a message of the chat shown aloud.
 export type Speak = (
   messageId: string,
   signal: AbortSignal,

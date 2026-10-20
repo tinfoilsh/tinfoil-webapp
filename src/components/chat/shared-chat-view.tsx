@@ -1,6 +1,7 @@
 import type { BaseModel } from '@/config/models'
 import { ERROR_CODES } from '@/services/harness/protocol'
 import { sharedAttachment } from '@/services/harness/shares'
+import { speakText } from '@/services/harness/speech'
 import { HarnessError } from '@/services/harness/sse'
 import type { SharedThread } from '@/services/harness/types'
 import { messageView } from '@/services/harness/view-model'
@@ -9,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { DocumentTextProvider } from './document-text-context'
 import { ImageGalleryProvider } from './image-gallery-context'
 import { MessageRendererHost } from './message-renderer-host'
+import { SpeechProvider } from './speech-context'
 import type { Attachment } from './types'
 export function SharedChatView({
   chatData,
@@ -74,21 +76,33 @@ export function SharedChatView({
     },
     [chatData],
   )
+  // The harness reads a shared message's text, as it reads text a user
+  // selected.
+  const speak = useCallback(
+    (messageId: string, signal: AbortSignal) =>
+      speakText(
+        messages.find((message) => message.id === messageId)?.content ?? '',
+        signal,
+      ),
+    [messages],
+  )
   return (
     <ImageGalleryProvider messages={messages}>
       <DocumentTextProvider load={loadDocumentText}>
-        <div className="mx-auto w-full min-w-0 max-w-3xl px-4 pb-6 pt-8">
-          {messages.map((message, index) => (
-            <MessageRendererHost
-              key={message.id}
-              message={message}
-              messageIndex={index}
-              model={model}
-              isDarkMode={isDarkMode}
-              hideActions
-            />
-          ))}
-        </div>
+        <SpeechProvider speak={speak}>
+          <div className="mx-auto w-full min-w-0 max-w-3xl px-4 pb-6 pt-8">
+            {messages.map((message, index) => (
+              <MessageRendererHost
+                key={message.id}
+                message={message}
+                messageIndex={index}
+                model={model}
+                isDarkMode={isDarkMode}
+                hideActions
+              />
+            ))}
+          </div>
+        </SpeechProvider>
       </DocumentTextProvider>
     </ImageGalleryProvider>
   )

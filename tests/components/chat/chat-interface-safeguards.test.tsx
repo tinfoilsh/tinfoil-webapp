@@ -112,6 +112,9 @@ describe('a chat the safeguards flagged', () => {
     expect(
       screen.queryByRole('button', { name: 'Edit message' }),
     ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Read aloud' }),
+    ).not.toBeInTheDocument()
   })
 
   it('is a normal chat while it has no flag, without asking for flags itself', async () => {
@@ -126,6 +129,9 @@ describe('a chat the safeguards flagged', () => {
     expect(
       screen.getAllByRole('button', { name: 'Regenerate response' }).length,
     ).toBeGreaterThan(0)
+    expect(
+      screen.getByRole('button', { name: 'Read aloud' }),
+    ).toBeInTheDocument()
   })
 
   it('stops its reply in progress and its queued turns once its summary is flagged', async () => {

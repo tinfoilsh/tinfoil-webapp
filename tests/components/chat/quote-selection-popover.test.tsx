@@ -8,9 +8,25 @@ import {
 } from '@/components/chat/renderers/registry'
 import type { MessageRenderer } from '@/components/chat/renderers/types'
 import type { BaseModel } from '@/config/models'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { speechPlayer } from '@/services/speech/player'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { client, signIn } from '../../harness-fixture'
+import { FakeAudioContext } from '../../services/speech/fixtures'
+
+const audio = vi.hoisted(() => ({ context: vi.fn() }))
+vi.mock('@/utils/audio-context', () => ({
+  getAudioContextClass: () => audio.context,
+}))
+
 const frames = new Map<number, FrameRequestCallback>()
 let nextFrame = 0
 
@@ -122,6 +138,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  speechPlayer.stop()
   cleanup()
   resetRendererRegistry()
   window.getSelection()?.removeAllRanges()
@@ -180,6 +197,40 @@ describe('QuoteSelectionPopover', () => {
     expect(window.getSelection()!.toString()).toBe('Selected text')
     flushFrames()
     expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
+  })
+
+  it('asks the harness to read only the highlighted text, without a key', async () => {
+    signIn({ cloud: true })
+    const context = new FakeAudioContext()
+    audio.context.mockImplementation(function () {
+      return context
+    })
+    // Two samples at half scale.
+    client.stream.mockResolvedValue(
+      new Response(new Uint8Array([0, 64, 0, 192]), {
+        headers: { 'Content-Type': 'audio/pcm' },
+      }),
+    )
+    render(<Harness enabled text="Selected **text**" />)
+    selectText('Selected **text**', 9)
+    flushFrames()
+
+    const button = screen.getByRole('button', { name: 'Read' })
+    fireEvent.mouseDown(button)
+    fireEvent.click(button)
+
+    await waitFor(() => expect(context.scheduled).toHaveLength(1))
+    expect(Array.from(context.scheduled[0].buffer!.getChannelData())).toEqual([
+      0.5, -0.5,
+    ])
+    expect(client.stream).toHaveBeenCalledExactlyOnceWith(
+      '/v1/speech',
+      { text: '**text**' },
+      expect.any(AbortSignal),
+    )
+    expect(window.getSelection()?.toString()).toBe('**text**')
+    fireEvent.click(screen.getByRole('button', { name: 'Stop reading aloud' }))
+    expect(context.close).toHaveBeenCalledOnce()
   })
 
   it('keeps the wider toolbar inside the viewport near either edge', () => {

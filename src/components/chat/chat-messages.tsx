@@ -474,7 +474,7 @@ export function ChatMessages({
       loadImage={loadImage}
     >
       <DocumentTextProvider load={loadDocumentText}>
-        <SpeechProvider speak={speak}>
+        <SpeechProvider speak={readOnly ? undefined : speak}>
           {/* Not a live region: ChatAnnouncer reads each finished response once.
           role="log" implies aria-live="polite", which would read the
           response (and every message of a newly opened chat) a second time. */}
