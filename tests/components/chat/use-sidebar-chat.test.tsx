@@ -4,6 +4,67 @@ import { HarnessError } from '@/services/harness/sse'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 
+it('rejoins an ask under the thread the harness created for it', async () => {
+  const events = vi.mocked(harnessAPI().client.events)
+  events.mockImplementationOnce(async function* () {
+    yield {
+      id: 0,
+      event: { type: 'RUN_STARTED', threadId: 'ask-thread', runId: 'ask-run' },
+    }
+    yield {
+      id: 1,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'answer',
+        delta: 'Explanation',
+      },
+    }
+    throw new TypeError('connection closed')
+  })
+  events.mockImplementationOnce(async function* () {
+    yield {
+      id: 0,
+      event: { type: 'RUN_STARTED', threadId: 'ask-thread', runId: 'ask-run' },
+    }
+    yield {
+      id: 1,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'answer',
+        delta: 'Explanation',
+      },
+    }
+    yield {
+      id: 2,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'answer',
+        delta: ' continued',
+      },
+    }
+    yield {
+      id: 3,
+      event: { type: 'RUN_FINISHED', threadId: 'ask-thread', runId: 'ask-run' },
+    }
+  })
+  const { result } = renderHook(() =>
+    useSidebarChat({
+      context: async () => ({ threadId: 'source', local: true }),
+      options: {},
+    }),
+  )
+  act(() => result.current.askQuote('Selected text'))
+  await waitFor(() =>
+    expect(result.current.messages.map((m) => m.content)).toEqual([
+      'Explanation continued',
+    ]),
+  )
+  expect(events.mock.calls[1].slice(0, 2)).toEqual([
+    '/v1/threads/follow',
+    { threadId: 'ask-thread', runId: 'ask-run' },
+  ])
+})
+
 it('stops streaming a cancelled ask and keeps its partial answer', async () => {
   let streamSignal: AbortSignal | undefined
   let streamExited!: () => void

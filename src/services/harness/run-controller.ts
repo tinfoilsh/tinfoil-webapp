@@ -169,6 +169,7 @@ export class RunController {
     const version = this.generation
     const attached = () => version === this.generation
     let runId = 'runId' in input ? input.runId : undefined
+    let threadId = input.threadId
     let succeeded = false
     let view = this.view.get()
     try {
@@ -180,9 +181,15 @@ export class RunController {
         const shown = attached()
         if (!shown && !device) break
         const { event } = frame
+        if ('threadId' in event && event.threadId) threadId = event.threadId
         runId = runOf(event) ?? runId
         const base = shown ? this.view.get() : view
         const next = reduceEvent(base, frame, runId)
+        if (next === base) {
+          if (event.type === 'RUN_FINISHED')
+            succeeded = event.metadata?.cancelled !== true
+          continue
+        }
         // A replayed frame leaves the view as it was.
         if (next !== base) {
           this.reportQuota(event)
@@ -193,12 +200,25 @@ export class RunController {
         if (event.type === 'RUN_FINISHED')
           succeeded = event.metadata?.cancelled !== true
         if (event.type === 'RUN_STARTED') {
-          this.started(event.runId, input.threadId!, device, shown)
+          this.started(event.runId, threadId!, device, shown)
           if (shown)
             this.hooks.started?.({
               threadId: event.threadId,
               runId: event.runId,
             })
+        }
+        if (
+          device &&
+          event.type === 'STATE_DELTA' &&
+          event.runId &&
+          event.delta.some(
+            (patch) =>
+              patch.op === 'add' &&
+              patch.path === '/queue/-' &&
+              patch.value.queueId === event.runId,
+          )
+        ) {
+          this.settle(device)
         }
         if (!isTerminal(event)) continue
         if (device) await this.hooks.saved?.(device, event, attached())
@@ -219,7 +239,7 @@ export class RunController {
         try {
           follow = {
             ...(input.key ? { key: this.api.key() } : {}),
-            threadId: input.threadId!,
+            threadId: threadId!,
             runId,
           }
         } catch (refusal) {
