@@ -203,12 +203,13 @@ describe('import outcome across split files', () => {
     ])
   })
 
-  it('keeps earlier chats and names the file when a later file throws', () => {
+  it('keeps earlier chats and warnings and names the file when a later file throws', () => {
     const result = describeImportError(
       new ImportSequenceError(
         new Error('an import is already in progress'),
         1,
         4,
+        ['conversations-000.json skipped a project'],
       ),
       files,
     )
@@ -220,13 +221,19 @@ describe('import outcome across split files', () => {
         'conversations-001.json: an import is already in progress',
         '1 remaining file was not imported.',
       ],
+      warnings: ['conversations-000.json skipped a project'],
     })
   })
 
   it('reports a single file that throws by its message alone', () => {
     expect(
       describeImportError(
-        new ImportSequenceError(new Error('The export file is empty'), 0, 0),
+        new ImportSequenceError(
+          new Error('The export file is empty'),
+          0,
+          0,
+          [],
+        ),
         ['export.zip'],
       ),
     ).toEqual({
@@ -234,6 +241,7 @@ describe('import outcome across split files', () => {
       chatsImported: 0,
       projectsImported: 0,
       errors: ['The export file is empty'],
+      warnings: [],
     })
   })
 })

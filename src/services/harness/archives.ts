@@ -341,14 +341,16 @@ export interface ImportSequenceOptions {
 
 /**
  * A file of a split import could not be uploaded, started, or followed to
- * completion. Records which file, and how many chats were imported before
- * it failed, so a partly finished import is not reported as nothing.
+ * completion. Records which file, how many chats were imported before it
+ * failed, and what the chat service could not import as it was until then,
+ * so a partly finished import is not reported as nothing.
  */
 export class ImportSequenceError extends Error {
   constructor(
     cause: unknown,
     readonly fileIndex: number,
     readonly imported: number,
+    readonly warnings: string[],
   ) {
     super(cause instanceof Error ? cause.message : 'Failed to start import')
     this.name = 'ImportSequenceError'
@@ -448,7 +450,10 @@ export async function runImports(
       if (isLast || status?.status === 'failed')
         return { status, fileIndex, imported, interrupted: false, warnings }
     } catch (cause) {
-      throw new ImportSequenceError(cause, fileIndex, imported)
+      throw new ImportSequenceError(cause, fileIndex, imported, [
+        ...warnings,
+        ...(status?.warnings ?? []),
+      ])
     }
     imported += status?.imported ?? 0
   }

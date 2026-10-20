@@ -214,9 +214,9 @@ export function describeImportOutcome(
 }
 
 /**
- * Panel state for an import that threw. The chats imported before it
- * threw are still counted, and when a later file of a split export fails
- * the failing file is named.
+ * Panel state for an import that threw. The chats imported and the
+ * warnings reported before it threw are still shown, and when a later file
+ * of a split export fails the failing file is named.
  */
 export function describeImportError(
   err: unknown,
@@ -226,10 +226,10 @@ export function describeImportError(
     describeArchiveError(
       err instanceof ImportSequenceError ? err.cause : err,
     ) ?? (err instanceof Error ? err.message : 'Failed to start import')
-  if (!(err instanceof ImportSequenceError) || fileNames.length < 2) {
+  if (!(err instanceof ImportSequenceError)) {
     return {
       success: false,
-      chatsImported: err instanceof ImportSequenceError ? err.imported : 0,
+      chatsImported: 0,
       projectsImported: 0,
       errors: [message],
     }
@@ -238,7 +238,11 @@ export function describeImportError(
     success: false,
     chatsImported: err.imported,
     projectsImported: 0,
-    errors: fileFailureErrors(fileNames, err.fileIndex, message),
+    errors:
+      fileNames.length < 2
+        ? [message]
+        : fileFailureErrors(fileNames, err.fileIndex, message),
+    warnings: err.warnings,
   }
 }
 

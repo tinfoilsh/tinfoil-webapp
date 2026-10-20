@@ -265,7 +265,7 @@ describe('runImports', () => {
     )
     statuses = {
       'job-1': [
-        job('running'),
+        job('running', 0, { warnings: ['a chat had no messages'] }),
         ...Array.from({ length: 5 }, () => unreachable),
       ],
     }
@@ -280,13 +280,19 @@ describe('runImports', () => {
     ).catch((cause: unknown) => cause)
 
     expect(error).toBeInstanceOf(ImportSequenceError)
-    expect(error).toMatchObject({ fileIndex: 0, imported: 0 })
+    expect(error).toMatchObject({
+      fileIndex: 0,
+      imported: 0,
+      warnings: ['conversations-000.json had a note', 'a chat had no messages'],
+    })
     expect((error as Error).cause).toBe(unreachable)
     expect(client.multipart).toHaveBeenCalledOnce()
   })
 
-  it('keeps the chats earlier files imported when a later file cannot start', async () => {
-    statuses = { 'job-1': [job('completed', 4)] }
+  it('keeps the chats and warnings of earlier files when a later file cannot start', async () => {
+    statuses = {
+      'job-1': [job('completed', 4, { warnings: ['job-1 skipped a project'] })],
+    }
     const busy = new HarnessError(
       { code: 'UPSTREAM_REFUSED', message: 'an import is already in progress' },
       409,
@@ -294,7 +300,10 @@ describe('runImports', () => {
     client.multipart
       .mockImplementationOnce(async () => {
         jobs++
-        return importResponse([], { jobId: 'job-1', warnings: [] })
+        return importResponse([], {
+          jobId: 'job-1',
+          warnings: ['conversations-000.json had a note'],
+        })
       })
       .mockRejectedValueOnce(busy)
 
@@ -313,6 +322,10 @@ describe('runImports', () => {
       message: 'an import is already in progress',
       fileIndex: 1,
       imported: 4,
+      warnings: [
+        'conversations-000.json had a note',
+        'job-1 skipped a project',
+      ],
     })
     expect((error as Error).cause).toBe(busy)
   })
