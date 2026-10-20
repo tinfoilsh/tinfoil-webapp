@@ -81,11 +81,16 @@ function signIn({
   return api
 }
 
-function finished(threadId: string) {
-  return async function* (): AsyncGenerator<Frame> {
+// Each turn's run starts and finishes in the chat the turn names.
+function finishEachTurn() {
+  client.events.mockImplementation(async function* (
+    _path: string,
+    input: Turn,
+  ): AsyncGenerator<Frame> {
+    const threadId = input.threadId!
     yield { id: 0, event: { type: 'RUN_STARTED', threadId, runId: 'run-1' } }
     yield { id: 1, event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' } }
-  }
+  })
 }
 
 const turn = (call = 0) => client.events.mock.calls[call][1] as Turn
@@ -97,9 +102,7 @@ resetChatStoresAroundEachTest()
 describe('the default prompt of a new stored chat', () => {
   it('shows the default and leaves it to the harness to stamp', async () => {
     signIn({ cloud: true, profile: { defaultPromptPresetId: QUIET.id } })
-    client.events.mockImplementation((_path: string, input: Turn) =>
-      finished(input.threadId!)(),
-    )
+    finishEachTurn()
     const { result } = renderHook(() => useThread())
     await waitFor(() => expect(result.current.model).toBe('test-model'))
     expect(result.current.presetId).toBe(QUIET.id)
@@ -116,9 +119,7 @@ describe('the default prompt of a new stored chat', () => {
 
   it('names a prompt chosen instead, or none', async () => {
     signIn({ cloud: true, profile: { defaultPromptPresetId: QUIET.id } })
-    client.events.mockImplementation((_path: string, input: Turn) =>
-      finished(input.threadId!)(),
-    )
+    finishEachTurn()
     const { result } = renderHook(() => useThread())
     await waitFor(() => expect(result.current.model).toBe('test-model'))
 
@@ -136,9 +137,7 @@ describe('the default prompt of a new stored chat', () => {
 
   it("shows the default prompt's model and web search, and leaves them to the harness", async () => {
     signIn({ cloud: true, profile: { defaultPromptPresetId: RESEARCH.id } })
-    client.events.mockImplementation((_path: string, input: Turn) =>
-      finished(input.threadId!)(),
-    )
+    finishEachTurn()
     const { result } = renderHook(() => useThread())
 
     await waitFor(() => expect(result.current.model).toBe('deep-model'))
@@ -169,9 +168,7 @@ describe('the default prompt of a new stored chat', () => {
 
   it("sends a model chosen over the prompt's", async () => {
     signIn({ cloud: true, profile: { defaultPromptPresetId: RESEARCH.id } })
-    client.events.mockImplementation((_path: string, input: Turn) =>
-      finished(input.threadId!)(),
-    )
+    finishEachTurn()
     const { result } = renderHook(() => useThread())
     await waitFor(() => expect(result.current.model).toBe('deep-model'))
 
@@ -207,9 +204,7 @@ describe('the default prompt of a new stored chat', () => {
 describe('the default prompt of a new device chat', () => {
   it('is left to the harness, which makes the chat from its first turn', async () => {
     signIn({ cloud: false, profile: { defaultPromptPresetId: QUIET.id } })
-    client.events.mockImplementation((_path: string, input: Turn) =>
-      finished(input.threadId!)(),
-    )
+    finishEachTurn()
     const { result } = renderHook(() => useThread())
     await waitFor(() => expect(result.current.model).toBe('test-model'))
 
