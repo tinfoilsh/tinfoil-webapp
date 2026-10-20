@@ -146,14 +146,18 @@ export class HarnessAPI {
     requestSignal.throwIfAborted()
     return result
   }
-  // A keyless request whose response body streams, such as speech.
+  // A request whose response body streams, such as speech.
   async stream(
     path: HarnessRoute,
     input: object,
-    { signal }: Pick<RequestOptions, 'signal'> = {},
+    { signal, keyless = false }: RequestOptions = {},
   ): Promise<Response> {
-    const requestSignal = this.signal({ signal, keyless: true })
-    const response = await this.client.stream(path, input, requestSignal)
+    const requestSignal = this.signal({ signal, keyless })
+    const response = await this.client.stream(
+      path,
+      { ...this.keyed(keyless), ...input },
+      requestSignal,
+    )
     requestSignal.throwIfAborted()
     return response
   }

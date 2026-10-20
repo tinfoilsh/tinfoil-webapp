@@ -69,6 +69,12 @@ export interface ThreadStore {
     content: string,
   ): Promise<Thread | null>
   share(threadId: string): Promise<string>
+  // The audio of a message read aloud, as one stream.
+  speech(
+    threadId: string,
+    messageId: string,
+    signal: AbortSignal,
+  ): Promise<Response>
   // The key a turn and its run carry; reading it may refuse.
   runKey(): { key?: string }
   // A turn of the chat: the fields every turn has, and the action's own.
@@ -172,6 +178,8 @@ export function cloudThreads(
       })
       return url
     },
+    speech: (threadId, messageId, signal) =>
+      api.stream(ROUTES.speech, { threadId, messageId }, { signal }),
     runKey: () => ({ key: api.key() }),
     async prepareTurn(threadId, { defaults, fields, key }, settings) {
       const { first, presetChosen, presetId, projectId } = settings

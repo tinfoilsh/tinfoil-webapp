@@ -3,7 +3,7 @@ import { activateAPI, HarnessAPI } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import { SPEECH } from '@/services/speech/constants'
 import { speechErrorMessage } from '@/services/speech/errors'
-import { decodePcmStream, streamSpeech } from '@/services/speech/stream'
+import { decodePcmStream, speechSource } from '@/services/speech/stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
@@ -24,7 +24,6 @@ function bytes(...parts: number[][]): ReadableStream<Uint8Array> {
 }
 
 afterEach(() => {
-  vi.useRealTimers()
   vi.clearAllMocks()
 })
 
@@ -48,9 +47,7 @@ describe('PCM streaming', () => {
       },
     })
     const iterator = decodePcmStream(body, new AbortController().signal)
-    source.enqueue(
-      new Uint8Array(SPEECH.BLOCK_SAMPLES * SPEECH.BYTES_PER_SAMPLE + 2),
-    )
+    source.enqueue(new Uint8Array(SPEECH.BLOCK_SAMPLES * 2 + 2))
     expect((await iterator.next()).value).toHaveLength(SPEECH.BLOCK_SAMPLES)
     source.close()
     expect((await iterator.next()).value).toHaveLength(1)
@@ -77,56 +74,6 @@ describe('PCM streaming', () => {
     expect(cancel).toHaveBeenCalledOnce()
     expect(body.locked).toBe(false)
   })
-
-  it('accepts the audio limit and rejects the first excess sample', async () => {
-    const MAX_PCM_SAMPLES = 2_880_000
-    const BLOCK_BYTES = SPEECH.BLOCK_SAMPLES * SPEECH.BYTES_PER_SAMPLE
-    const signal = new AbortController().signal
-    let acceptedSamples = 0
-    const valid = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(
-          new Uint8Array(MAX_PCM_SAMPLES * SPEECH.BYTES_PER_SAMPLE),
-        )
-        controller.close()
-      },
-    })
-    for await (const part of decodePcmStream(valid, signal)) {
-      acceptedSamples += part.length
-    }
-    expect(acceptedSamples).toBe(MAX_PCM_SAMPLES)
-    expect(valid.locked).toBe(false)
-
-    const cancel = vi.fn()
-    let remainingBytes = (MAX_PCM_SAMPLES + 1) * SPEECH.BYTES_PER_SAMPLE
-    const body = new ReadableStream<Uint8Array>(
-      {
-        pull(controller) {
-          if (remainingBytes === 0) {
-            controller.close()
-            return
-          }
-          const byteCount = Math.min(BLOCK_BYTES, remainingBytes)
-          remainingBytes -= byteCount
-          controller.enqueue(new Uint8Array(byteCount))
-        },
-        cancel,
-      },
-      { highWaterMark: 0 },
-    )
-    await expect(
-      (async () => {
-        for await (const _part of decodePcmStream(
-          body,
-          new AbortController().signal,
-        )) {
-          /* Consume without retaining audio. */
-        }
-      })(),
-    ).rejects.toThrow('invalid-audio')
-    expect(cancel).toHaveBeenCalledOnce()
-    expect(body.locked).toBe(false)
-  })
 })
 
 describe('speech requests', () => {
@@ -139,47 +86,48 @@ describe('speech requests', () => {
       ),
       getVerificationDocument: vi.fn(),
     }
-    activateAPI(
-      new HarnessAPI(
-        new HarnessClient(
-          'https://harness.example/',
-          async () => 'clerk-session',
-          () => secure,
-        ),
-        'alice',
+    const api = new HarnessAPI(
+      new HarnessClient(
+        'https://harness.example/',
+        async () => 'clerk-session',
+        () => secure,
+      ),
+      'alice',
+    )
+    activateAPI(api)
+    // A chat kept on this device, which the harness reads without a key.
+    const speech = speechSource((signal) =>
+      api.stream(
+        '/v1/speech',
+        { local: true, thread: { id: 'chat' }, messageId: 'reply' },
+        { signal, keyless: true },
       ),
     )
-    return secure
+    return { secure, speech }
   }
 
-  it('asks the harness to read each chunk over the attested connection', async () => {
-    const secure = connect(
+  it('reads the one audio stream the harness answers over the attested connection', async () => {
+    const { secure, speech } = connect(
       () =>
-        new Response(bytes([0, 0]), {
-          headers: { 'Content-Type': 'audio/pcm' },
+        new Response(bytes([0, 64], [0, 192]), {
+          headers: { 'Content-Type': 'audio/pcm; rate=24000' },
         }),
     )
-    const chunks = [
-      'Here is the first part.',
-      'This continues the explanation.',
-    ]
     await expect(
-      Promise.all(
-        chunks.map((text) =>
-          collect(streamSpeech(text, new AbortController().signal)),
-        ),
-      ),
-    ).resolves.toEqual([[0], [0]])
-    expect(secure.fetch).toHaveBeenCalledTimes(2)
-    for (const [index, [url, init]] of secure.fetch.mock.calls.entries()) {
-      expect(url).toBe('https://harness.example/v1/speech')
-      expect(init?.method).toBe('POST')
-      expect(JSON.parse(init?.body as string)).toEqual({ text: chunks[index] })
-      expect(new Headers(init?.headers).get('Authorization')).toBe(
-        'Bearer clerk-session',
-      )
-      expect(init?.signal).toBeInstanceOf(AbortSignal)
-    }
+      collect(speech(new AbortController().signal)),
+    ).resolves.toEqual([0.5, -0.5])
+    expect(secure.fetch).toHaveBeenCalledOnce()
+    const [url, init] = secure.fetch.mock.calls[0]
+    expect(url).toBe('https://harness.example/v1/speech')
+    expect(init?.method).toBe('POST')
+    expect(JSON.parse(init?.body as string)).toEqual({
+      local: true,
+      thread: { id: 'chat' },
+      messageId: 'reply',
+    })
+    expect(new Headers(init?.headers).get('Authorization')).toBe(
+      'Bearer clerk-session',
+    )
   })
 
   it.each(['audio/wav', 'application/json'])(
@@ -194,11 +142,11 @@ describe('speech requests', () => {
         },
         cancel,
       })
-      connect(
+      const { speech } = connect(
         () => new Response(body, { headers: { 'Content-Type': mediaType } }),
       )
       await expect(
-        collect(streamSpeech('Hello.', new AbortController().signal)),
+        collect(speech(new AbortController().signal)),
       ).rejects.toMatchObject({ code: 'invalid-audio' })
       expect(cancel).toHaveBeenCalledOnce()
       expect(body.locked).toBe(false)
@@ -206,7 +154,7 @@ describe('speech requests', () => {
   )
 
   it('does not retry a refused request', async () => {
-    const secure = connect(
+    const { secure, speech } = connect(
       () =>
         new Response(
           JSON.stringify({
@@ -218,9 +166,9 @@ describe('speech requests', () => {
           { status: 503, headers: { 'Content-Type': 'application/json' } },
         ),
     )
-    const refusal = await collect(
-      streamSpeech('Hello.', new AbortController().signal),
-    ).catch((error: unknown) => error)
+    const refusal = await collect(speech(new AbortController().signal)).catch(
+      (error: unknown) => error,
+    )
     expect(refusal).toBeInstanceOf(HarnessError)
     expect(refusal).toMatchObject({ status: 503, code: 'TOOL_UNAVAILABLE' })
     expect(secure.fetch).toHaveBeenCalledOnce()
@@ -228,7 +176,7 @@ describe('speech requests', () => {
 
   it('does not send speech after cancellation while the connection is verified', async () => {
     let verified!: () => void
-    const secure = connect(
+    const { secure, speech } = connect(
       () =>
         new Response(bytes([0, 0]), {
           headers: { 'Content-Type': 'audio/pcm' },
@@ -240,7 +188,7 @@ describe('speech requests', () => {
       }),
     )
     const controller = new AbortController()
-    const result = collect(streamSpeech('Hello.', controller.signal))
+    const result = collect(speech(controller.signal))
     await vi.waitFor(() => expect(secure.ready).toHaveBeenCalledOnce())
     controller.abort()
     verified()
@@ -249,7 +197,7 @@ describe('speech requests', () => {
   })
 
   it('explains a rate limit by its status without exposing server details', async () => {
-    connect(
+    const { speech } = connect(
       () =>
         new Response(
           JSON.stringify({
@@ -258,30 +206,11 @@ describe('speech requests', () => {
           { status: 429, headers: { 'Content-Type': 'application/json' } },
         ),
     )
-    const result = collect(
-      streamSpeech('Hello.', new AbortController().signal),
-    ).catch(speechErrorMessage)
+    const result = collect(speech(new AbortController().signal)).catch(
+      speechErrorMessage,
+    )
     await expect(result).resolves.toBe(
       'Speech usage limit reached. Please try again later.',
     )
-  })
-
-  it('times out stalled response bodies, not just response headers', async () => {
-    vi.useFakeTimers()
-    const cancel = vi.fn()
-    connect(
-      () =>
-        new Response(new ReadableStream({ cancel }), {
-          headers: { 'Content-Type': 'audio/pcm' },
-        }),
-    )
-    const result = collect(streamSpeech('Hello.', new AbortController().signal))
-    const rejected = expect(result).rejects.toMatchObject({
-      name: 'TimeoutError',
-    })
-    await vi.advanceTimersByTimeAsync(SPEECH.REQUEST_TIMEOUT_MS)
-    await rejected
-    expect(cancel).toHaveBeenCalledOnce()
-    expect(vi.getTimerCount()).toBe(0)
   })
 })

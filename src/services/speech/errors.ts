@@ -1,7 +1,6 @@
 import { HarnessError } from '@/services/harness/sse'
 
-export type SpeechErrorCode =
-  'empty' | 'too-long' | 'unsupported' | 'invalid-audio' | 'interrupted'
+export type SpeechErrorCode = 'unsupported' | 'invalid-audio' | 'interrupted'
 
 export class SpeechError extends Error {
   constructor(public readonly code: SpeechErrorCode) {
@@ -16,10 +15,6 @@ export function speechErrorMessage(error: unknown): string {
   }
   if (error instanceof SpeechError) {
     switch (error.code) {
-      case 'empty':
-        return 'There is no readable text in this response.'
-      case 'too-long':
-        return 'This response is too long to read aloud.'
       case 'unsupported':
         return 'Audio playback is not supported in this browser.'
       case 'interrupted':

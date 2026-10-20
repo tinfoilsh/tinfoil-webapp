@@ -1,4 +1,5 @@
 import { DefaultMessageRenderer } from '@/components/chat/renderers/default/DefaultMessageRenderer'
+import { SpeechProvider } from '@/components/chat/speech-context'
 import type { Message, TimelineBlock } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
 import type {
@@ -503,8 +504,25 @@ describe('DefaultMessageRenderer message actions', () => {
 })
 
 describe('DefaultMessageRenderer read aloud', () => {
+  // A message of a chat the harness can read aloud.
+  const renderSpoken = (
+    message: Message,
+    props: { isLastMessage?: boolean; isStreaming?: boolean } = {},
+  ) =>
+    render(
+      <SpeechProvider speak={vi.fn()}>
+        <Renderer
+          message={{ id: 'reply-1', ...message }}
+          messageIndex={0}
+          model={model}
+          isDarkMode={false}
+          {...props}
+        />
+      </SpeechProvider>,
+    )
+
   it('offers read aloud only on completed assistant responses', () => {
-    renderMessage({
+    renderSpoken({
       role: 'assistant',
       content: 'Hello.',
       timestamp: new Date(),
@@ -520,7 +538,7 @@ describe('DefaultMessageRenderer read aloud', () => {
     { role: 'assistant' as const, content: 'Error.', isError: true },
     { role: 'assistant' as const, content: 'Thinking.', isThinking: true },
   ])('does not offer read aloud for $role / $content', (message) => {
-    renderMessage({ ...message, timestamp: new Date() })
+    renderSpoken({ ...message, timestamp: new Date() })
     expect(
       screen.queryByRole('button', { name: 'Read aloud' }),
     ).not.toBeInTheDocument()
@@ -529,19 +547,9 @@ describe('DefaultMessageRenderer read aloud', () => {
   it.each([true, false])(
     'does not offer speech while a response is streaming (last=%s)',
     (isLastMessage) => {
-      render(
-        <Renderer
-          message={{
-            role: 'assistant',
-            content: 'Partial.',
-            timestamp: new Date(),
-          }}
-          messageIndex={0}
-          model={model}
-          isDarkMode={false}
-          isLastMessage={isLastMessage}
-          isStreaming
-        />,
+      renderSpoken(
+        { role: 'assistant', content: 'Partial.', timestamp: new Date() },
+        { isLastMessage, isStreaming: true },
       )
       expect(
         screen.queryByRole('button', { name: 'Read aloud' }),

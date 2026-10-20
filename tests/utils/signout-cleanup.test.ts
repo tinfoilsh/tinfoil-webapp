@@ -26,11 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { controlledSpeech, FakeAudioContext } from '../services/speech/fixtures'
 
 const speechMocks = vi.hoisted(() => ({
-  stream: vi.fn(),
   AudioContext: vi.fn(),
-}))
-vi.mock('@/services/speech/stream', () => ({
-  streamSpeech: speechMocks.stream,
 }))
 vi.mock('@/utils/audio-context', () => ({
   getAudioContextClass: () => speechMocks.AudioContext,
@@ -211,8 +207,7 @@ describe('speech during cleanup', () => {
       speechMocks.AudioContext.mockImplementation(function () {
         return audio
       })
-      speechMocks.stream.mockImplementation(generation.stream)
-      speechPlayer.read(Symbol('private response'), 'Private response.')
+      speechPlayer.read(Symbol('private response'), generation.stream)
       await vi.waitFor(() => expect(generation.requests).toHaveLength(1))
       generation.requests[0].push(SPEECH.START_BUFFER_SECONDS)
       await vi.waitFor(() =>

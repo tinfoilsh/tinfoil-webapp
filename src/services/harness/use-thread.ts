@@ -21,7 +21,7 @@ import {
   type OpenChat,
   type PresetChoice,
 } from './open-chat'
-import { ROUTES } from './protocol'
+import { ERROR_CODES, ROUTES } from './protocol'
 import { useHarness } from './provider'
 import { initialChat } from './reducer'
 import { RunController } from './run-controller'
@@ -503,6 +503,16 @@ export function useThread(
     upload,
     loadImage: (attachment: UIAttachment, signal?: AbortSignal) =>
       openStore().image(open.get().id, attachment, signal),
+    // The audio of a message of the open chat, read aloud by the harness.
+    async speak(messageId: string, signal: AbortSignal): Promise<Response> {
+      const threadId = open.get().id
+      if (!threadId)
+        throw new HarnessError({
+          code: ERROR_CODES.threadNotFound,
+          message: 'This chat is not saved yet.',
+        })
+      return openStore().speech(threadId, messageId, signal)
+    },
     // A document's text: a stored chat's messages leave it out, and the
     // harness reads it from the chat; a chat on this device keeps it.
     documentText: (attachment: UIAttachment): Promise<string> =>

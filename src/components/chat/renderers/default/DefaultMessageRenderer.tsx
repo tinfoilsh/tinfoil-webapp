@@ -920,9 +920,15 @@ const DefaultMessageComponent = ({
                   content={message.content}
                   isDarkMode={isDarkMode}
                 />
-                {!isStreaming && !message.isThinking && !message.isError && (
-                  <ReadAloudButton content={message.content} />
-                )}
+                {!isStreaming &&
+                  !message.isThinking &&
+                  !message.isError &&
+                  message.id && (
+                    <ReadAloudButton
+                      messageId={message.id}
+                      content={message.content}
+                    />
+                  )}
                 {/* Regenerate button - only on last assistant message */}
                 {isLastMessage && onRegenerateMessage && messageIndex > 0 && (
                   <div className="group/regen relative">

@@ -13,6 +13,7 @@ import type {
   Turn,
 } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
+import { speechPlayer } from '@/services/speech/player'
 import {
   act,
   fireEvent,
@@ -21,8 +22,9 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn, testSession } from '../../harness-fixture'
+import { FakeAudioContext } from '../speech/fixtures'
 import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({
@@ -34,6 +36,10 @@ vi.mock('@/utils/error-handling', () => ({
   logWarning: vi.fn(),
 }))
 vi.mock('@/hooks/use-chat-print', () => ({ useChatPrint: () => undefined }))
+const audio = vi.hoisted(() => ({ context: vi.fn() }))
+vi.mock('@/utils/audio-context', () => ({
+  getAudioContextClass: () => audio.context,
+}))
 
 const THREAD_ID = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
 const models: BaseModel[] = [
@@ -148,6 +154,7 @@ function Conversation({ local }: { local: boolean }) {
       autoIntelligence="high"
       setAutoIntelligence={() => {}}
       onRegenerateMessage={(index) => void thread.regenerate(index)}
+      speak={thread.speak}
     />
   )
 }
@@ -447,6 +454,71 @@ describe('retrying after an error', () => {
     await act(() => result.current.send({ content: 'more' }))
 
     expect(getView().rateLimit).toEqual(rateLimit)
+  })
+})
+
+describe('reading a reply aloud', () => {
+  // The audio the harness answers with: two samples at half scale.
+  function playsAudio() {
+    const context = new FakeAudioContext()
+    audio.context.mockImplementation(function () {
+      return context
+    })
+    client.stream.mockImplementation(
+      async () =>
+        new Response(new Uint8Array([0, 64, 0, 192]), {
+          headers: { 'Content-Type': 'audio/pcm' },
+        }),
+    )
+    return context
+  }
+  afterEach(() => speechPlayer.stop())
+
+  async function readLastReply(context: FakeAudioContext) {
+    await screen.findByText('second answer')
+    const buttons = screen.getAllByRole('button', { name: 'Read aloud' })
+    expect(buttons).toHaveLength(2)
+    fireEvent.click(buttons[1])
+    await waitFor(() => expect(context.scheduled).toHaveLength(1))
+    expect(Array.from(context.scheduled[0].buffer!.getChannelData())).toEqual([
+      0.5, -0.5,
+    ])
+  }
+
+  it("asks the harness to read a stored chat's reply by its id", async () => {
+    signIn({ cloud: true, session })
+    client.post.mockImplementation(async (path: string) =>
+      path === '/v1/threads/get'
+        ? cloudThread()
+        : path === '/v1/threads/list'
+          ? { threads: [], nextCursor: null }
+          : {},
+    )
+    const context = playsAudio()
+    render(<Conversation local={false} />)
+
+    await readLastReply(context)
+
+    expect(client.stream).toHaveBeenCalledExactlyOnceWith(
+      '/v1/speech',
+      { key: KEY, threadId: THREAD_ID, messageId: 'a2' },
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('sends the chat a device keeps, without a key', async () => {
+    signIn({ cloud: false, session })
+    await localThreadStore('device').update(THREAD_ID, () => localThread())
+    const context = playsAudio()
+    render(<Conversation local />)
+
+    await readLastReply(context)
+
+    expect(client.stream).toHaveBeenCalledExactlyOnceWith(
+      '/v1/speech',
+      { local: true, thread: localThread(), messageId: 'a2' },
+      expect.any(AbortSignal),
+    )
   })
 })
 

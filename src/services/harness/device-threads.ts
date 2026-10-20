@@ -206,6 +206,16 @@ export function deviceThreads({
       })
       return url
     },
+    // The harness reads a message of the chat this device sends it.
+    async speech(threadId, messageId, signal) {
+      const thread = await store.get(threadId)
+      if (!thread) throw notOnDevice('chat')
+      return api.stream(
+        ROUTES.speech,
+        { local: true, thread, messageId },
+        { signal, keyless: true },
+      )
+    },
     runKey: () => ({}),
     // A turn carries the thread as stored and the profile instead of the
     // content key, which it never uses. The harness makes a new chat from

@@ -1,21 +1,22 @@
 import { useSessionFeature } from '@/services/harness/provider'
 import { speechPlayer } from '@/services/speech/player'
-import type { SpeechTextFormat } from '@/services/speech/text'
+import { speechSource } from '@/services/speech/stream'
 import { TfAudio, TfPlay, TfStop } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { PiSpinner } from 'react-icons/pi'
+import { useSpeak } from '../../speech-context'
 
 export function ReadAloudButton({
+  messageId,
   content,
-  textFormat = 'markdown',
-  variant = 'icon',
 }: {
+  messageId: string
+  // The reply's text; reading stops when it changes.
   content: string
-  textFormat?: SpeechTextFormat
-  variant?: 'icon' | 'menu'
 }) {
   const [owner] = useState(() => Symbol('read-aloud'))
   const available = useSessionFeature('speech')
+  const speak = useSpeak()
   const snapshot = useSyncExternalStore(
     speechPlayer.subscribe,
     speechPlayer.getSnapshot,
@@ -32,34 +33,34 @@ export function ReadAloudButton({
         ? 'Stop reading aloud'
         : status === 'paused'
           ? 'Resume reading aloud'
-          : variant === 'menu'
-            ? 'Read'
-            : 'Read aloud'
+          : 'Read aloud'
   const tooltipLabel =
     status === 'loading' ? 'Buffering audio — click to cancel' : label
 
-  useEffect(() => () => speechPlayer.stop(owner), [owner, content, textFormat])
+  useEffect(() => () => speechPlayer.stop(owner), [owner, messageId, content])
 
-  // The harness reads aloud only when its session offers speech.
-  if (!available) return null
+  // The harness reads aloud only when its session offers speech, and only a
+  // message of a chat it can read.
+  if (!available || !speak) return null
 
   return (
     <div className="relative flex items-center">
       <button
         type="button"
         aria-label={label}
-        title={variant === 'menu' ? tooltipLabel : undefined}
         onClick={() => {
           if (status === 'paused') speechPlayer.resume(owner)
           else if (active) speechPlayer.stop(owner)
-          else speechPlayer.read(owner, content, textFormat)
+          else
+            speechPlayer.read(
+              owner,
+              speechSource((signal) => speak(messageId, signal)),
+            )
         }}
-        className={`group/speech relative flex items-center whitespace-nowrap transition-colors ${variant === 'menu' ? 'gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium' : 'rounded px-2 py-2'} ${
+        className={`group/speech relative flex items-center whitespace-nowrap rounded px-2 py-2 transition-colors ${
           status === 'playing'
             ? 'animate-pulse bg-red-500/10 text-red-600 hover:bg-red-500/20 motion-reduce:animate-none dark:text-red-400'
-            : variant === 'menu'
-              ? 'text-content-primary hover:bg-surface-chat-background'
-              : 'text-content-secondary hover:bg-surface-chat-background hover:text-content-primary'
+            : 'text-content-secondary hover:bg-surface-chat-background hover:text-content-primary'
         }`}
       >
         {status === 'loading' ? (
@@ -74,25 +75,12 @@ export function ReadAloudButton({
         ) : (
           <TfAudio className="h-3.5 w-3.5" aria-hidden="true" />
         )}
-        {variant === 'icon' && (
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/speech:opacity-100 group-focus-visible/speech:opacity-100"
-          >
-            {tooltipLabel}
-          </span>
-        )}
-        {variant === 'menu' && (
-          <span>
-            {status === 'loading'
-              ? 'Cancel'
-              : status === 'playing'
-                ? 'Stop'
-                : status === 'paused'
-                  ? 'Resume'
-                  : 'Read'}
-          </span>
-        )}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/speech:opacity-100 group-focus-visible/speech:opacity-100"
+        >
+          {tooltipLabel}
+        </span>
       </button>
       {status === 'paused' && (
         <>

@@ -1,34 +1,40 @@
 import { ReadAloudButton } from '@/components/chat/renderers/components/ReadAloudButton'
+import { SpeechProvider } from '@/components/chat/speech-context'
 import { publish } from '@/services/harness/runtime'
 import { speechPlayer } from '@/services/speech/player'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { testSession } from '../../harness-fixture'
 import {
-  controlledSpeech,
+  controlledSpeak,
   FakeAudioContext,
 } from '../../services/speech/fixtures'
 
-const fakes = vi.hoisted(() => ({ stream: vi.fn(), context: vi.fn() }))
+const fakes = vi.hoisted(() => ({ context: vi.fn() }))
 vi.mock('@/services/speech/player', async (importOriginal) => {
   const original =
     await importOriginal<typeof import('@/services/speech/player')>()
   return {
     ...original,
-    speechPlayer: new original.SpeechPlayer(fakes.stream, fakes.context),
+    speechPlayer: new original.SpeechPlayer(fakes.context),
   }
 })
 
 describe('read aloud button', () => {
-  let generation: ReturnType<typeof controlledSpeech>
+  let speech: ReturnType<typeof controlledSpeak>
   let audio: FakeAudioContext
   beforeEach(() => {
-    generation = controlledSpeech()
+    speech = controlledSpeak()
     audio = new FakeAudioContext()
-    fakes.stream.mockReset().mockImplementation(generation.stream)
     fakes.context.mockReset().mockReturnValue(audio)
   })
   afterEach(() => act(() => speechPlayer.stop()))
+
+  const button = (content = 'Hello.') => (
+    <SpeechProvider speak={speech.speak}>
+      <ReadAloudButton messageId="reply-1" content={content} />
+    </SpeechProvider>
+  )
 
   it('is not offered by a harness without speech', () => {
     publish({
@@ -37,74 +43,66 @@ describe('read aloud button', () => {
         features: { ...testSession.features, speech: false },
       },
     })
-    const { container } = render(<ReadAloudButton content="Hello." />)
+    const { container } = render(button())
     expect(container).toBeEmptyDOMElement()
-    expect(fakes.stream).not.toHaveBeenCalled()
+  })
+
+  it('is not offered outside a chat the harness can read', () => {
+    const { container } = render(
+      <ReadAloudButton messageId="reply-1" content="Hello." />,
+    )
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('starts on click, exposes buffering and stop controls, and returns to idle', async () => {
-    render(<ReadAloudButton content="Hello." />)
-    expect(screen.getByRole('button', { name: 'Read aloud' })).not.toHaveClass(
-      'animate-pulse',
-      'text-red-600',
-    )
+    render(button())
     fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }))
     expect(
       screen.getByRole('button', { name: 'Cancel read aloud' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Cancel read aloud' }),
-    ).not.toHaveClass('animate-pulse', 'text-red-600')
-    expect(
       screen.getByText('Buffering audio — click to cancel'),
     ).toBeInTheDocument()
-    await waitFor(() => expect(generation.requests).toHaveLength(1))
+    await waitFor(() => expect(speech.responses).toHaveLength(1))
+    expect(speech.responses[0].messageId).toBe('reply-1')
     await act(async () => {
-      generation.requests[0].push(2)
-      generation.requests[0].finish()
+      speech.responses[0].push(2)
+      speech.responses[0].finish()
     })
-    const stopButton = screen.getByRole('button', {
+    const stopButton = await screen.findByRole('button', {
       name: 'Stop reading aloud',
     })
-    expect(screen.getByText('Stop reading aloud')).toBeInTheDocument()
-    expect(stopButton).toHaveClass(
-      'animate-pulse',
-      'text-red-600',
-      'dark:text-red-400',
-      'motion-reduce:animate-none',
-    )
+    expect(audio.scheduled.length).toBeGreaterThan(0)
     fireEvent.click(stopButton)
     expect(
       screen.getByRole('button', { name: 'Read aloud' }),
     ).toBeInTheDocument()
     expect(audio.close).toHaveBeenCalledOnce()
-    expect(screen.getByRole('button', { name: 'Read aloud' })).not.toHaveClass(
-      'animate-pulse',
-      'text-red-600',
-    )
   })
 
-  it('aborts pending generation when the message changes', async () => {
-    const view = render(<ReadAloudButton content="Original." />)
+  it('aborts the request when the message changes', async () => {
+    const view = render(button('Original.'))
     fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }))
-    await waitFor(() => expect(generation.requests).toHaveLength(1))
-    view.rerender(<ReadAloudButton content="Edited." />)
-    expect(generation.requests[0].signal.aborted).toBe(true)
+    await waitFor(() => expect(speech.responses).toHaveLength(1))
+    view.rerender(button('Edited.'))
+    expect(speech.responses[0].signal.aborted).toBe(true)
     expect(
       screen.getByRole('button', { name: 'Read aloud' }),
     ).toBeInTheDocument()
   })
 
   it.each(['resume', 'stop'])(
-    'can %s paused speech without generating it again',
+    'can %s paused speech without requesting it again',
     async (action) => {
-      render(<ReadAloudButton content="Hello." />)
+      render(button())
       fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }))
-      await waitFor(() => expect(generation.requests).toHaveLength(1))
+      await waitFor(() => expect(speech.responses).toHaveLength(1))
       await act(async () => {
-        generation.requests[0].push(2)
-        generation.requests[0].finish()
+        speech.responses[0].push(2)
+        speech.responses[0].finish()
       })
+      await screen.findByRole('button', { name: 'Stop reading aloud' })
+      const scheduled = audio.scheduled.length
       act(() => {
         audio.state = 'suspended'
         audio.onstatechange?.()
@@ -121,7 +119,7 @@ describe('read aloud button', () => {
             screen.getByRole('button', { name: 'Stop reading aloud' }),
           ).toHaveClass('animate-pulse'),
         )
-        expect(audio.scheduled).toHaveLength(1)
+        expect(audio.scheduled).toHaveLength(scheduled)
       } else {
         fireEvent.click(
           screen.getByRole('button', { name: 'Stop reading aloud' }),
@@ -131,31 +129,31 @@ describe('read aloud button', () => {
         ).toBeInTheDocument()
         expect(audio.close).toHaveBeenCalledOnce()
       }
-      expect(generation.requests).toHaveLength(1)
+      expect(speech.responses).toHaveLength(1)
     },
   )
 
-  it('aborts pending generation on unmount', async () => {
-    const view = render(<ReadAloudButton content="Original." />)
+  it('aborts the request on unmount', async () => {
+    const view = render(button())
     fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }))
-    await waitFor(() => expect(generation.requests).toHaveLength(1))
+    await waitFor(() => expect(speech.responses).toHaveLength(1))
     view.unmount()
-    expect(generation.requests[0].signal.aborted).toBe(true)
+    expect(speech.responses[0].signal.aborted).toBe(true)
   })
 
   it('shows a safe error and allows another attempt', async () => {
-    render(<ReadAloudButton content="Hello." />)
+    render(button())
     fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }))
-    await waitFor(() => expect(generation.requests).toHaveLength(1))
+    await waitFor(() => expect(speech.responses).toHaveLength(1))
     await act(async () => {
-      generation.requests[0].fail(new Error('private response text'))
+      speech.responses[0].fail(new Error('private response text'))
     })
-    expect(screen.getByRole('alert')).toHaveTextContent(
+    expect(await screen.findByRole('alert')).toHaveTextContent(
       'Could not read this response aloud.',
     )
     expect(screen.getByRole('alert')).not.toHaveTextContent('private')
     fakes.context.mockReturnValue(new FakeAudioContext())
     fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }))
-    await waitFor(() => expect(generation.requests).toHaveLength(2))
+    await waitFor(() => expect(speech.responses).toHaveLength(2))
   })
 })

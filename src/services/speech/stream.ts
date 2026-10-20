@@ -1,12 +1,11 @@
-import { ROUTES } from '@/services/harness/protocol'
-import { harnessAPI } from '@/services/harness/runtime'
 import { SPEECH } from './constants'
 import { SpeechError } from './errors'
 
-export type SpeechStream = (
-  text: string,
-  signal: AbortSignal,
-) => AsyncIterable<Float32Array>
+// Audio samples as they arrive, until the signal aborts.
+export type SpeechSource = (signal: AbortSignal) => AsyncIterable<Float32Array>
+
+// Asks the harness to read a reply aloud; it answers with one audio stream.
+export type OpenSpeech = (signal: AbortSignal) => Promise<Response>
 
 export async function* decodePcmStream(
   body: ReadableStream<Uint8Array>,
@@ -38,9 +37,7 @@ export async function* decodePcmStream(
             ? unsigned - SPEECH.PCM_SCALE * 2
             : unsigned) / SPEECH.PCM_SCALE
         lowByte = undefined
-        if (++total > SPEECH.MAX_CHUNK_AUDIO_SECONDS * SPEECH.SAMPLE_RATE) {
-          throw new SpeechError('invalid-audio')
-        }
+        total++
         if (used === block.length) {
           yield block
           signal.throwIfAborted()
@@ -59,37 +56,17 @@ export async function* decodePcmStream(
   }
 }
 
-export const streamSpeech: SpeechStream = async function* (text, signal) {
-  const controller = new AbortController()
-  const abort = () => controller.abort(signal.reason)
-  signal.addEventListener('abort', abort, { once: true })
-  const timeout = setTimeout(
-    () =>
-      controller.abort(
-        new DOMException('Speech request timed out', 'TimeoutError'),
-      ),
-    SPEECH.REQUEST_TIMEOUT_MS,
-  )
-  try {
+// The samples of the audio stream the harness answers a read-aloud request
+// with.
+export function speechSource(open: OpenSpeech): SpeechSource {
+  return async function* (signal) {
+    const response = await open(signal)
     signal.throwIfAborted()
-    // The harness reads the text with the voice and narration style the
-    // previous client asked the speech model for, over the attested
-    // connection, and streams the audio back as it is generated.
-    const response = await harnessAPI().stream(
-      ROUTES.speech,
-      { text },
-      { signal: controller.signal },
-    )
-    controller.signal.throwIfAborted()
     const mediaType = response.headers.get('content-type')?.split(';')[0].trim()
     if (mediaType !== 'audio/pcm' || !response.body) {
       await response.body?.cancel()
       throw new SpeechError('invalid-audio')
     }
-    yield* decodePcmStream(response.body, controller.signal)
-  } finally {
-    clearTimeout(timeout)
-    signal.removeEventListener('abort', abort)
-    controller.abort()
+    yield* decodePcmStream(response.body, signal)
   }
 }
