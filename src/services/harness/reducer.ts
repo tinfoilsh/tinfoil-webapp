@@ -329,6 +329,7 @@ export function reduceEvent(
             ...block,
             result: event.content,
             metadata: event.metadata,
+            ...(event.display ? { display: event.display } : {}),
           })) ?? next.messages,
       }
     case 'ACTIVITY_SNAPSHOT':
@@ -351,6 +352,7 @@ export function reduceEvent(
               ...(Array.isArray(activity.output)
                 ? { progress: activity.output }
                 : {}),
+              ...(event.display ? { display: event.display } : {}),
             }
           }) ?? next.messages,
       }

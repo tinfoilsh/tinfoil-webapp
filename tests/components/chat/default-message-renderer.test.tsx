@@ -1,6 +1,12 @@
 import { DefaultMessageRenderer } from '@/components/chat/renderers/default/DefaultMessageRenderer'
 import type { Message, TimelineBlock } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import type {
+  Annotation,
+  ToolDisplay,
+  Message as WireMessage,
+} from '@/services/harness/types'
+import { messageView } from '@/services/harness/view-model'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -607,66 +613,96 @@ describe('DefaultMessageRenderer work traces', () => {
     expect(screen.queryByText(/Worked/)).not.toBeInTheDocument()
   })
 
-  it.each([
-    { isStreaming: true, label: 'Searching the web...' },
-    { isStreaming: false, label: 'Search failed for "tinfoil"' },
-  ])(
-    'shows a search without a result while streaming=$isStreaming as $label',
-    ({ isStreaming, label }) => {
-      const { container } = render(
-        <Renderer
-          message={{
-            role: 'assistant',
-            content: '',
-            timestamp: new Date('2026-08-07T00:00:01.000Z'),
-            timeline: [
-              {
-                type: 'tool_call',
-                id: 'call-1',
-                toolCallId: 'call-1',
-                name: 'web_search',
-                arguments: '{"query":"tinfoil"}',
-              },
-            ],
-          }}
-          messageIndex={0}
-          model={model}
-          isDarkMode={false}
-          isLastMessage
-          isStreaming={isStreaming}
-        />,
-      )
-      expect(container).toHaveTextContent(label)
-      expect(container).not.toHaveTextContent('Searched the web')
-    },
-  )
-
-  it('shows a search the model called with null arguments as failed', () => {
-    const { container } = render(
+  // A reply that searched the web, as the harness streams and stores it.
+  const searchReply = (
+    display?: ToolDisplay,
+    annotations?: Annotation[],
+  ): WireMessage => ({
+    id: 'a1',
+    role: 'assistant',
+    createdAt: '2026-08-07T00:00:01.000Z',
+    timeline: [
+      {
+        id: 'call-1',
+        type: 'tool_call',
+        toolCallId: 'call-1',
+        name: 'web_search',
+        arguments: '{"query":"ignored"}',
+        ...(display ? { display } : {}),
+      },
+      {
+        id: 'c',
+        type: 'content',
+        content: 'See [Tinfoil](https://tinfoil.sh).',
+      },
+    ],
+    ...(annotations ? { annotations } : {}),
+  })
+  const renderReply = (message: WireMessage, isStreaming: boolean) =>
+    render(
       <Renderer
-        message={{
-          role: 'assistant',
-          content: '',
-          timestamp: new Date('2026-08-07T00:00:01.000Z'),
-          timeline: [
-            {
-              type: 'tool_call',
-              id: 'call-1',
-              toolCallId: 'call-1',
-              name: 'web_search',
-              arguments: 'null',
-              result: { error: 'A search query is required' },
-            },
-          ],
-        }}
+        message={messageView(message, isStreaming)}
         messageIndex={0}
         model={model}
         isDarkMode={false}
         isLastMessage
+        isStreaming={isStreaming}
       />,
     )
-    expect(container).toHaveTextContent('Search failed')
-    expect(container).not.toHaveTextContent('Search failed for')
+  const source = { url: 'https://tinfoil.sh', title: 'Tinfoil' }
+
+  it.each<{
+    display?: ToolDisplay
+    isStreaming: boolean
+    label: string
+  }>([
+    {
+      display: { query: 'tinfoil', status: 'completed', sources: [source] },
+      isStreaming: false,
+      label: 'Searched the web for "tinfoil"',
+    },
+    {
+      display: { query: 'tinfoil', status: 'running', sources: [] },
+      isStreaming: true,
+      label: 'Searching the web...',
+    },
+    {
+      display: { query: 'tinfoil', status: 'running', sources: [] },
+      isStreaming: false,
+      label: 'Search failed for "tinfoil"',
+    },
+    {
+      display: { query: 'tinfoil', status: 'failed', sources: [] },
+      isStreaming: false,
+      label: 'Search failed for "tinfoil"',
+    },
+    { isStreaming: true, label: 'Searching the web...' },
+    { isStreaming: false, label: 'Search failed' },
+  ])(
+    'shows a search as the harness reports it: $label',
+    ({ display, isStreaming, label }) => {
+      const { container } = renderReply(searchReply(display), isStreaming)
+      expect(container).toHaveTextContent(label)
+      expect(container).not.toHaveTextContent('ignored')
+    },
+  )
+
+  it('shows a link the reply cites as a citation', () => {
+    renderReply(
+      searchReply(
+        { query: 'tinfoil', status: 'completed', sources: [source] },
+        [{ type: 'url_citation', url_citation: source }],
+      ),
+      false,
+    )
+
+    expect(screen.getByRole('link', { name: 'tinfoil' })).toHaveAttribute(
+      'href',
+      'https://tinfoil.sh/',
+    )
+    expect(
+      screen.queryByRole('link', { name: 'Tinfoil' }),
+    ).not.toBeInTheDocument()
   })
 
   it('does not treat an earlier run as active when answer text follows it', () => {

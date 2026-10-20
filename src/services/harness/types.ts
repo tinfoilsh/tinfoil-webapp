@@ -48,6 +48,25 @@ export interface AttachmentDescriptor {
   base64?: string
 }
 
+// What a web search or page fetch shows, as the harness keeps it current.
+export interface ToolDisplay {
+  query?: string
+  url?: string
+  status: 'running' | 'completed' | 'failed'
+  sources: { url: string; title: string; snippet?: string }[]
+}
+
+// A reply's citation of a page, in the chat completions format.
+export interface Annotation {
+  type: 'url_citation'
+  url_citation: {
+    url: string
+    title: string
+    start_index?: number
+    end_index?: number
+  }
+}
+
 export interface TimelineBlock {
   id: string
   type: 'content' | 'thinking' | 'tool_call'
@@ -60,6 +79,7 @@ export interface TimelineBlock {
   metadata?: Json
   progress?: Json[]
   activity?: ToolActivity
+  display?: ToolDisplay
   resolvedAt?: string | number | null
   resolution?: { text: string; data?: Json } | null
 }
@@ -77,6 +97,7 @@ export interface Message {
   isError?: boolean
   isInterrupted?: boolean
   usage?: Json
+  annotations?: Annotation[]
 }
 
 export interface ThreadSummary {
@@ -109,7 +130,6 @@ export interface Thread extends ThreadSummary {
 
 export interface ThreadMessage extends Omit<Message, 'attachments'> {
   attachments?: AttachmentDescriptor[]
-  annotations?: Json
 }
 
 // A whole chat in the format the harness stores it in sync, a chat on this
@@ -329,18 +349,21 @@ export type HarnessEvent = { timestamp?: string } & (
       role?: 'tool'
       content?: Json
       metadata?: RecordValue
+      display?: ToolDisplay
     }
   | {
       type: 'ACTIVITY_SNAPSHOT'
       messageId: string
       activityType?: string
       content: ToolActivity
+      display?: ToolDisplay
     }
   | {
       type: 'ACTIVITY_DELTA'
       messageId: string
       activityType?: string
       patch: ActivityPatch[]
+      display?: ToolDisplay
     }
   | {
       type: 'RUN_FINISHED'

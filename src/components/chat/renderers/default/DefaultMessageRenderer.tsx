@@ -37,7 +37,6 @@ import { URLFetchProcess } from '../components/URLFetchProcess'
 import { WebSearchProcess } from '../components/WebSearchProcess'
 import { WorkProcess } from '../components/WorkProcess'
 import type { MessageRenderer, MessageRenderProps } from '../types'
-import { toDisplayTimeline } from './server-tool-blocks'
 import { isInvisibleBlock, segmentTimeline } from './timeline-segments'
 
 const hasVisibleAssistantMessage = (message: MessageRenderProps['message']) =>
@@ -113,13 +112,9 @@ const DefaultMessageComponent = ({
     }
     return map.size > 0 ? map : undefined
   }, [message.annotations])
-  const isStreamingLastMessage = !!isStreaming && !!isLastMessage
   const displayTimeline = React.useMemo(
-    () =>
-      isUser
-        ? []
-        : toDisplayTimeline(message.timeline ?? [], isStreamingLastMessage),
-    [isUser, message.timeline, isStreamingLastMessage],
+    () => (isUser ? [] : (message.timeline ?? [])),
+    [isUser, message.timeline],
   )
   const timelineSegments = React.useMemo(
     () => segmentTimeline(displayTimeline),

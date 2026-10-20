@@ -1836,6 +1836,88 @@ describe('cloud chats', () => {
     expect(result.current.status).toBe('idle')
   })
 
+  it('show a web search as the harness reports it while it streams', async () => {
+    signIn('alice', true)
+    client.post.mockImplementation(async (path: string) =>
+      path === '/v1/threads/list' ? { threads: [], nextCursor: null } : {},
+    )
+    const source = { url: 'https://example.com/doors', title: 'Doors' }
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    client.events.mockImplementation(async function* (
+      _path: string,
+      input: Turn,
+    ) {
+      const threadId = input.threadId!
+      const events: Frame['event'][] = [
+        { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+        {
+          type: 'TOOL_CALL_START',
+          toolCallId: 'call-1',
+          toolCallName: 'web_search',
+          parentMessageId: 'msg_reply',
+        },
+        {
+          type: 'TOOL_CALL_ARGS',
+          toolCallId: 'call-1',
+          delta: '{"query":"door"}',
+        },
+        {
+          type: 'ACTIVITY_SNAPSHOT',
+          messageId: 'act_call-1',
+          content: { toolCallId: 'call-1', progress: 0, output: [] },
+          display: { query: 'red doors', status: 'running', sources: [] },
+        },
+      ]
+      for (const [id, event] of events.entries()) yield { id, event }
+      await held
+      yield {
+        id: 4,
+        event: {
+          type: 'TOOL_CALL_RESULT',
+          toolCallId: 'call-1',
+          content: { results: [] },
+          display: {
+            query: 'red doors',
+            status: 'completed',
+            sources: [source],
+          },
+        },
+      }
+      yield {
+        id: 5,
+        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+      }
+    })
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+    let sending!: Promise<boolean | undefined> | undefined
+    act(() => {
+      sending = result.current.send({ content: 'Doors?' })
+    })
+    const search = () => result.current.chat.messages.at(-1)?.timeline?.[0]
+
+    await waitFor(() =>
+      expect(search()).toEqual({
+        type: 'web_search',
+        id: 'call-1',
+        state: { query: 'red doors', status: 'searching', sources: [] },
+      }),
+    )
+    await act(async () => {
+      release()
+      await sending
+    })
+
+    expect(search()).toEqual({
+      type: 'web_search',
+      id: 'call-1',
+      state: { query: 'red doors', status: 'completed', sources: [source] },
+    })
+  })
+
   it('are shared by id with the content key', async () => {
     signIn('alice', true)
     client.post.mockImplementation(async (path: string) =>
