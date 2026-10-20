@@ -2,6 +2,7 @@ import {
   SETTINGS_CLOUD_SYNC_ENABLED,
   USER_PREFS_LOCAL_PROFILE,
   USER_PREFS_LOCAL_PROFILE_UPGRADED,
+  USER_PREFS_PENDING_PROFILE_MERGE,
 } from '@/constants/storage-keys'
 import { storeRun } from '@/services/harness/device-threads'
 import { localThreadStore } from '@/services/harness/local-threads'
@@ -119,6 +120,27 @@ function summary(id: string): ThreadSummary {
     activityAt: '2026-01-01T00:00:00Z',
   }
 }
+
+it('keeps sync disabled if its pending profile merge cannot be stored', async () => {
+  const api = signIn()
+  await api.updateProfile({ nickname: 'Keep this name' })
+  const setItem = localStorage.setItem.bind(localStorage)
+  vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+    if (key === USER_PREFS_PENDING_PROFILE_MERGE)
+      throw new DOMException('Storage is full', 'QuotaExceededError')
+    setItem(key, value)
+  })
+  localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+  await expect(api.storageModeChanged()).rejects.toMatchObject({
+    name: 'QuotaExceededError',
+  })
+  expect(localStorage.getItem(SETTINGS_CLOUD_SYNC_ENABLED)).toBe('false')
+  expect(getView().profile.nickname).toBe('Keep this name')
+  expect(
+    JSON.parse(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)!),
+  ).toMatchObject({ nickname: 'Keep this name' })
+  expect(client.post).not.toHaveBeenCalled()
+})
 
 it('retries an unfinished profile merge after the page reloads', async () => {
   const local = {

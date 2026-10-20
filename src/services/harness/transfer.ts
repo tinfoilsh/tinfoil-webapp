@@ -61,7 +61,7 @@ async function cloudTranscript(
   )
   const thread = result?.thread
   if (
-    !result.revision ||
+    !result?.revision ||
     !thread ||
     typeof thread !== 'object' ||
     Array.isArray(thread) ||

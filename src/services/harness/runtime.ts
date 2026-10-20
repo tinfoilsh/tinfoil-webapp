@@ -374,7 +374,12 @@ export class HarnessAPI {
     this.lifetime.signal.throwIfAborted()
     this.changeTokens = undefined
     if (!this.cloud && this.userId && isCloudSyncEnabled()) {
-      localStorage.setItem(USER_PREFS_PENDING_PROFILE_MERGE, this.userId)
+      try {
+        localStorage.setItem(USER_PREFS_PENDING_PROFILE_MERGE, this.userId)
+      } catch (cause) {
+        localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'false')
+        throw cause
+      }
     }
     this.cloudSync = isCloudSyncEnabled()
     publish({ cloud: this.cloud })
