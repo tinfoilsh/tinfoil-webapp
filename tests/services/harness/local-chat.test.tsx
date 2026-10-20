@@ -1918,6 +1918,66 @@ describe('cloud chats', () => {
     expect(result.current.status).toBe('idle')
   })
 
+  it.each(['cancel', 'removeQueued', 'sendQueued'] as const)(
+    'report a refused content key from %s',
+    async (action) => {
+      const api = signIn('alice', true)
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/list')
+          return { threads: [], nextCursor: null }
+        throw new Error(`Unexpected ${path}`)
+      })
+      let release!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      client.events.mockImplementation(async function* (
+        _path: string,
+        input: Turn,
+      ) {
+        const threadId = input.threadId!
+        yield {
+          id: 0,
+          event: { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+        }
+        await held
+        yield {
+          id: 1,
+          event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+        }
+      })
+      const { result } = renderHook(() => useThread())
+      await waitFor(() => expect(result.current.model).toBe('test-model'))
+      let sending: Promise<unknown> | undefined
+      act(() => {
+        sending = result.current.send({ content: 'Long task' })
+      })
+      await waitFor(() => expect(result.current.running).toBe(true))
+      const refusal = new HarnessError({
+        code: 'KEY_REQUIRED',
+        message: 'Unlock your encryption key in Settings to continue.',
+      })
+      vi.mocked(api.key).mockImplementation(() => {
+        throw refusal
+      })
+
+      await act(() =>
+        (action === 'cancel'
+          ? result.current.cancel()
+          : result.current[action]('queued-1')
+        ).catch(result.current.report),
+      )
+
+      expect(result.current.errorDetail).toEqual(refusal.detail)
+      expect(result.current.running).toBe(true)
+      vi.mocked(api.key).mockReturnValue(KEY)
+      await act(async () => {
+        release()
+        await sending
+      })
+    },
+  )
+
   it('show a web search as the harness reports it while it streams', async () => {
     signIn('alice', true)
     client.post.mockImplementation(async (path: string) =>

@@ -186,7 +186,9 @@ export function chatTurns({
       return false
     })
   }
-  function cancel() {
+  // A refused content key rejects these actions instead of throwing, as
+  // their callers report a rejection.
+  async function cancel() {
     const state = controller.view.get()
     return controller.cancel({
       ...openStore().runKey(),
@@ -271,8 +273,9 @@ export function chatTurns({
     continueReply,
     reconnect,
     retry,
-    sendQueued: (queueId: string) => controller.sendQueued(queueInput(queueId)),
-    removeQueued: (queueId: string) =>
+    sendQueued: async (queueId: string) =>
+      controller.sendQueued(queueInput(queueId)),
+    removeQueued: async (queueId: string) =>
       controller.removeQueued(queueInput(queueId)),
   }
 }
