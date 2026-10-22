@@ -1,5 +1,6 @@
 export const CONSTANTS = {
   MOBILE_BREAKPOINT: 768,
+  INPUT_MIN_HEIGHT: '28px',
   // Welcome-screen composer: one comfortable line of text before it grows.
   WELCOME_INPUT_MIN_HEIGHT: '36px',
   // Maximum height of the chat input textarea before it scrolls internally

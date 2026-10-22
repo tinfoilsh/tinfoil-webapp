@@ -167,7 +167,7 @@ export function ChatInterface({
   isLocalChatUrl = false,
   initialNewChatIsLocalOnly = false,
   suppressIntroModals = false,
-  inputMinHeight = '60px',
+  inputMinHeight = CONSTANTS.INPUT_MIN_HEIGHT,
 }: ChatInterfaceProps) {
   const {
     api,
