@@ -1,6 +1,6 @@
 import type { ChatList } from './chat-list'
 import { localSummary, type LocalThreadStore } from './local-threads'
-import type { OpenChat } from './open-chat'
+import type { OpenChat, OpenChatResult } from './open-chat'
 import { ROUTES } from './protocol'
 import type { RunController } from './run-controller'
 import type { HarnessAPI } from './runtime'
@@ -30,7 +30,7 @@ export interface ChatContext {
   openChat(
     threadId: string,
     options: { local?: boolean },
-  ): Promise<Thread | null>
+  ): Promise<OpenChatResult>
 }
 
 // The actions on a chat apart from its turns: renaming and its other

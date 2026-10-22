@@ -3,13 +3,18 @@ import { generateReverseId } from '@/utils/reverse-id'
 import { now } from './local-threads'
 import type { OpenAttachments } from './open-attachments'
 import { uploaded } from './open-attachments'
-import { presetIdOf, type OpenChat, type PresetChoice } from './open-chat'
+import {
+  presetIdOf,
+  type OpenChat,
+  type OpenChatResult,
+  type PresetChoice,
+} from './open-chat'
 import { ROUTES } from './protocol'
 import type { RunController } from './run-controller'
 import { getView, type HarnessAPI, type Profile } from './runtime'
 import type { Store } from './store'
 import type { ThreadStore, TurnSettings } from './thread-store'
-import type { Session, Thread, ThreadMessage, Turn } from './types'
+import type { Session, ThreadMessage, Turn } from './types'
 
 export interface TurnContext {
   api: HarnessAPI
@@ -30,7 +35,7 @@ export interface TurnContext {
   // A new chat names the route it will open under.
   claim(threadId: string): void
   // Opens the chat the route names again, when nothing else reconnects.
-  reopen(): Promise<Thread | null> | undefined
+  reopen(): Promise<OpenChatResult> | undefined
 }
 
 // The turns of the open chat: sending, regenerating, continuing, and what

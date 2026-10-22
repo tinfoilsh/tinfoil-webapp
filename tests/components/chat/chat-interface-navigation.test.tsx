@@ -1,6 +1,8 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
+import { localThreadStore } from '@/services/harness/local-threads'
 import type { Thread } from '@/services/harness/types'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { client, signIn } from '../../harness-fixture'
@@ -113,8 +115,45 @@ function open(firstResponse: Promise<Thread>) {
     }
     throw new Error(`Unexpected request: ${path}`)
   })
-  render(<ChatInterface suppressIntroModals />)
+  return render(<ChatInterface suppressIntroModals />)
 }
+
+it('opens the not-found view when a listed local chat has been deleted', async () => {
+  signIn({ cloud: false })
+  const chat = storedThread('deleted-chat', {
+    title: 'Deleted chat',
+    messages: [
+      {
+        id: 'deleted-message',
+        role: 'user',
+        createdAt: '2026-10-22T12:00:00Z',
+        content: 'Saved before deletion',
+      },
+    ],
+  })
+  await localThreadStore('device').add(chat)
+  const { rerender } = open(Promise.resolve(first))
+  const link = await screen.findByRole('link', { name: chat.title })
+  await indexedDBStorage.deleteChat(chat.id)
+  fireEvent.click(link)
+  await waitFor(() =>
+    expect(chatPage.router.push).toHaveBeenCalledWith(
+      '/chat/local/deleted-chat',
+      undefined,
+      { shallow: true },
+    ),
+  )
+  rerender(
+    <ChatInterface
+      initialChatId={chat.id}
+      isLocalChatUrl
+      suppressIntroModals
+    />,
+  )
+  expect(
+    await screen.findByRole('heading', { name: 'Chat not found' }),
+  ).toBeInTheDocument()
+})
 
 it('shows a sidebar selection before the chat request finishes', async () => {
   const pending = deferred<Thread>()

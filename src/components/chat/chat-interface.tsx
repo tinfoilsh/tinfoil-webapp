@@ -414,20 +414,21 @@ export function ChatInterface({
       !cloudSyncEnabled || !!chats.find((chat) => chat.id === id)?.isLocalOnly
     void thread
       .open(id, { local: isLocalOnly })
-      .then(
-        (loaded) =>
-          loaded &&
-          router.push(
-            getChatPath(loaded.id, {
-              isLocalOnly,
-              projectId: isLocalOnly
-                ? undefined
-                : (loaded.projectId ?? undefined),
-            }),
-            undefined,
-            { shallow: true },
-          ),
-      )
+      .then((result) => {
+        if (result.status === 'superseded') return
+        const projectId =
+          result.status === 'opened'
+            ? (result.thread.projectId ?? undefined)
+            : activeProject?.id
+        return router.push(
+          getChatPath(id, {
+            isLocalOnly,
+            projectId: isLocalOnly ? undefined : projectId,
+          }),
+          undefined,
+          { shallow: true },
+        )
+      })
       .catch(thread.report)
   }
   const deleteChat = (id: string) => {

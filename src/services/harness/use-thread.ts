@@ -18,6 +18,7 @@ import {
   onDevice,
   presetIdOf,
   type OpenChat,
+  type OpenChatResult,
   type PresetChoice,
 } from './open-chat'
 import { ERROR_CODES, ROUTES } from './protocol'
@@ -28,7 +29,7 @@ import { getView } from './runtime'
 import { HarnessError } from './sse'
 import { createStore, useStore } from './store'
 import { cloudThreads, type AskContext, type ThreadStore } from './thread-store'
-import type { AttachmentDescriptor, Thread } from './types'
+import type { AttachmentDescriptor } from './types'
 import { messageView, threadView } from './view-model'
 
 export interface ThreadRoute {
@@ -261,7 +262,7 @@ export function useThread(
   async function openChat(
     threadId: string,
     options: { local?: boolean } = {},
-  ): Promise<Thread | null> {
+  ): Promise<OpenChatResult> {
     const local = options.local ?? (!api.cloud || list.isOnDevice(threadId))
     reset()
     const shown = controller.track()
@@ -269,10 +270,10 @@ export function useThread(
     try {
       const store = local ? deviceStore : cloudStore
       const thread = await store.get(threadId)
-      if (!shown()) return null
+      if (!shown()) return { status: 'superseded' }
       if (!thread) {
         patch({ temporary: false, local, notFound: true })
-        return null
+        return { status: 'not-found' }
       }
       controller.view.set(initialChat(thread))
       patch({
@@ -287,13 +288,13 @@ export function useThread(
       // A run of the chat may still be live: one this page started, one a
       // reloaded page left behind, or one the harness names.
       const runId = store.liveRun(thread)
-      if (!runId) return thread
+      if (!runId) return { status: 'opened', thread }
       const { input, device: run } = await store.follow(threadId, runId)
-      if (!shown()) return null
+      if (!shown()) return { status: 'superseded' }
       void controller.run(ROUTES.follow, input, { device: run, quiet: !!run })
-      return thread
+      return { status: 'opened', thread }
     } catch (cause) {
-      if (!shown()) return null
+      if (!shown()) return { status: 'superseded' }
       throw cause
     } finally {
       if (shown()) patch({ loadingId: null })

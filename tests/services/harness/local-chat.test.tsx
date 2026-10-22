@@ -1,11 +1,11 @@
 import { localThreadStore } from '@/services/harness/local-threads'
+import type { OpenChatResult } from '@/services/harness/open-chat'
 import { HarnessError } from '@/services/harness/sse'
 import type {
   AttachmentDescriptor,
   Frame,
   Message,
   StoredThread,
-  Thread,
   ThreadMessage,
   Turn,
 } from '@/services/harness/types'
@@ -728,7 +728,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
       return read(id)
     })
     const { result } = renderHook(() => useThread())
-    let opening!: Promise<Thread | null>
+    let opening!: Promise<OpenChatResult>
     act(() => {
       opening = result.current.open(SEEDED_ID, { local: true })
     })
