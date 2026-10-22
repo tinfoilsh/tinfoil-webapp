@@ -25,7 +25,7 @@ import { ConfirmDialog } from '../../components/confirm-dialog'
 import { CONSTANTS } from '../../constants'
 import { hasVisibleAssistantMessage } from '../../hooks/streaming/interrupted-message'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
-import { isImeComposition } from '../../keyboard-utils'
+import { isImeComposition, isSubmitShortcut } from '../../keyboard-utils'
 import { CodeExecProcess } from '../components/CodeExecProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
@@ -591,11 +591,7 @@ const DefaultMessageComponent = ({
                 if (e.key === 'Enter' && isImeComposition(e)) {
                   return
                 }
-                if (
-                  e.key === 'Enter' &&
-                  !e.shiftKey &&
-                  (!enterToNewline || e.metaKey || e.ctrlKey)
-                ) {
+                if (isSubmitShortcut(e, enterToNewline)) {
                   e.preventDefault()
                   handleSubmitAssistantEdit()
                 } else if (e.key === 'Escape') {
@@ -784,11 +780,7 @@ const DefaultMessageComponent = ({
                       if (e.key === 'Enter' && isImeComposition(e)) {
                         return
                       }
-                      if (
-                        e.key === 'Enter' &&
-                        !e.shiftKey &&
-                        (!enterToNewline || e.metaKey || e.ctrlKey)
-                      ) {
+                      if (isSubmitShortcut(e, enterToNewline)) {
                         e.preventDefault()
                         handleSubmitEdit()
                       } else if (e.key === 'Escape') {

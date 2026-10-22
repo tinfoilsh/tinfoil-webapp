@@ -35,7 +35,7 @@ import {
 import { FilePreview, imageDataUrl } from './components/file-preview'
 import { CONSTANTS } from './constants'
 import { useEnterToNewline } from './hooks/use-enter-to-newline'
-import { isImeComposition } from './keyboard-utils'
+import { isImeComposition, isMobileDevice } from './keyboard-utils'
 import type { PromptPreset } from './prompts/types'
 import { RecordingWaveform } from './recording-waveform'
 import type { ProcessedDocument } from './renderers/types'
@@ -87,6 +87,10 @@ type ChatInputProps = {
 
 // Maximum number of characters displayed in the collapsed quote preview.
 const QUOTE_PREVIEW_MAX_LENGTH = 240
+
+// Wrapper the chat layout puts around the whole bottom input area, including
+// banners rendered outside this component.
+const INPUT_AREA_SELECTOR = '[data-chat-input-area]'
 
 const isDocumentSubmittable = (doc: ProcessedDocument) =>
   !doc.isUploading && !doc.isGeneratingDescription && !doc.isUnsupported
@@ -181,7 +185,7 @@ export function ChatInput({
       // attachment previews) so the cap adapts to what is actually shown,
       // e.g. the extra suggestions row on the initial query screen.
       const viewportHeight = window.visualViewport?.height ?? window.innerHeight
-      const inputArea = el.closest('[data-chat-input-area]')
+      const inputArea = el.closest(INPUT_AREA_SELECTOR)
       const chromeHeight = inputArea
         ? inputArea.getBoundingClientRect().height -
           el.getBoundingClientRect().height
@@ -435,6 +439,20 @@ export function ChatInput({
     const onViewportResize = () => scheduleResize(ownTextareaRef.current)
     vv.addEventListener('resize', onViewportResize)
     return () => vv.removeEventListener('resize', onViewportResize)
+  }, [scheduleResize])
+
+  // Recompute the height cap when anything else in the input area changes
+  // size (attachments, their upload status, banners), not only on the next
+  // keystroke. The textarea's own resizes also land here, but they settle
+  // after one pass because the cap does not depend on the textarea height.
+  useEffect(() => {
+    const inputArea = ownTextareaRef.current?.closest(INPUT_AREA_SELECTOR)
+    if (!inputArea || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() =>
+      scheduleResize(ownTextareaRef.current),
+    )
+    observer.observe(inputArea)
+    return () => observer.disconnect()
   }, [scheduleResize])
 
   // Focus textarea on initial mount only (not on remounts after sending)
@@ -1088,10 +1106,7 @@ export function ChatInput({
                     (!enterToNewline || e.metaKey || e.ctrlKey)
                   ) {
                     // On mobile, Enter should insert a newline, not submit
-                    const isMobile = /iPhone|iPad|iPod|Android/i.test(
-                      navigator.userAgent,
-                    )
-                    if (isMobile && !e.metaKey && !e.ctrlKey) {
+                    if (isMobileDevice() && !e.metaKey && !e.ctrlKey) {
                       return
                     }
                     e.preventDefault()
@@ -1434,12 +1449,7 @@ export function ChatInput({
                           handleSubmit(e)
                           // On iOS Safari, forcing blur here can lead to a "dead" touch region
                           // after the keyboard dismisses. Keep focus on mobile; desktop can blur.
-                          const isMobile =
-                            typeof navigator !== 'undefined' &&
-                            /iPhone|iPad|iPod|Android/i.test(
-                              navigator.userAgent,
-                            )
-                          if (!isMobile) {
+                          if (!isMobileDevice()) {
                             ownTextareaRef.current?.blur()
                           }
                         }
