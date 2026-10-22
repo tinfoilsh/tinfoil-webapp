@@ -10,6 +10,7 @@ const INITIAL_TURN_MESSAGE_COUNT = 2
 interface ChatHeaderProps {
   chat: Chat
   isStreaming: boolean
+  isLoading?: boolean
   /** Action buttons rendered at the trailing edge of the header. */
   actions: React.ReactNode
   leadingAction?: React.ReactNode
@@ -34,6 +35,7 @@ const toDate = (value?: Date | string): Date | null => {
 export function ChatHeader({
   chat,
   isStreaming,
+  isLoading = false,
   actions,
   leadingAction,
   notice,
@@ -103,22 +105,29 @@ export function ChatHeader({
         <div className="min-w-0 flex-1">
           <h1
             className="truncate font-aeonik text-sm font-medium text-content-primary"
-            title={chat.title}
+            title={isLoading ? undefined : chat.title}
           >
-            {chat.title}
+            {isLoading ? 'Loading chat…' : chat.title}
           </h1>
-          {metaItems.length > 0 && (
-            <p className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap font-aeonik-fono text-xs leading-none text-content-muted">
-              {metaItems.map((item, index) => (
-                <span
-                  key={index}
-                  className="flex flex-none items-center gap-1.5"
-                >
-                  {index > 0 && <span aria-hidden="true">·</span>}
-                  {item}
-                </span>
-              ))}
-            </p>
+          {isLoading ? (
+            <div
+              aria-hidden="true"
+              className="mt-0.5 h-3 w-20 animate-pulse rounded bg-surface-chat"
+            />
+          ) : (
+            metaItems.length > 0 && (
+              <p className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap font-aeonik-fono text-xs leading-none text-content-muted">
+                {metaItems.map((item, index) => (
+                  <span
+                    key={index}
+                    className="flex flex-none items-center gap-1.5"
+                  >
+                    {index > 0 && <span aria-hidden="true">·</span>}
+                    {item}
+                  </span>
+                ))}
+              </p>
+            )
           )}
         </div>
       </div>

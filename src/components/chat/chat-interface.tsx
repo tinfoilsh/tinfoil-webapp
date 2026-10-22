@@ -1136,7 +1136,7 @@ export function ChatInterface({
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [inputAreaHeight, setInputAreaHeight] = useState(0)
   const inputAreaObserver = useRef<ResizeObserver | null>(null)
-  const inputAreaRef = useCallback((node: HTMLDivElement | null) => {
+  const inputAreaRef = useCallback((node: HTMLFieldSetElement | null) => {
     inputAreaObserver.current?.disconnect()
     if (!node) return
     const measure = () =>
@@ -1171,7 +1171,9 @@ export function ChatInterface({
     }
   }, [currentChat.messages.length, isStreaming, showScrollButton])
   const showEmptyChatGrid =
-    currentChat.messages.length === 0 && !isWaitingForResponse
+    currentChat.messages.length === 0 &&
+    !isWaitingForResponse &&
+    !isChatHydrating
 
   if (!session && sessionError) {
     return (
@@ -1235,7 +1237,7 @@ export function ChatInterface({
     )
   }
 
-  const showChatHeader = currentChat.messages.length > 0 && !isChatHydrating
+  const showChatHeader = currentChat.messages.length > 0 || isChatHydrating
 
   const hideTopControlsOnMobile =
     windowWidth < CONSTANTS.MOBILE_BREAKPOINT &&
@@ -1314,6 +1316,7 @@ export function ChatInterface({
       )}
 
       {!!isSignedIn &&
+        !isChatHydrating &&
         canToggleTemporaryChat(currentChat) &&
         (() => {
           const hasMessages = currentChat.messages.length > 0
@@ -1948,6 +1951,7 @@ export function ChatInterface({
               <ChatHeader
                 chat={currentChat}
                 isStreaming={isStreaming}
+                isLoading={isChatHydrating}
                 actions={topControls}
                 leadingAction={sidebarToggle}
                 notice={
@@ -2102,17 +2106,16 @@ export function ChatInterface({
               </div>
             </div>
 
-            {/* Input Form - Show on mobile always, on desktop only when there are messages */}
+            {/* Input Form - Show on mobile always, on desktop for conversations and while they load */}
             {isClient &&
-              !isChatHydrating &&
-              (windowWidth < CONSTANTS.MOBILE_BREAKPOINT ||
-                currentChat.messages.length > 0) && (
-                <div
+              (windowWidth < CONSTANTS.MOBILE_BREAKPOINT || showChatHeader) && (
+                <fieldset
                   ref={inputAreaRef}
                   data-chat-input-area
-                  aria-busy={isForking || undefined}
+                  disabled={isChatHydrating}
+                  aria-busy={isForking || isChatHydrating || undefined}
                   className={cn(
-                    'pointer-events-none absolute inset-x-0 bottom-0 isolate z-20 px-4 pb-4',
+                    'pointer-events-none absolute inset-x-0 bottom-0 isolate z-20 min-w-0 px-4 pb-4',
                     // The fork overlay only covers the transcript; the
                     // composer lives in this sibling layer, so it goes
                     // inert here or a send could race the fork.
@@ -2190,6 +2193,7 @@ export function ChatInterface({
                         }}
                       />
                       <ChatInput
+                        key={isChatHydrating ? 'loading' : 'ready'}
                         input={input}
                         setInput={setInput}
                         handleSubmit={handleSubmit}
@@ -2214,7 +2218,7 @@ export function ChatInterface({
                           // With a preset active, the preset tab attached to
                           // the input card already opens the library; the
                           // mobile Prompts button would collide with it.
-                          !currentChat.messages.length && !activePreset ? (
+                          !showChatHeader && !activePreset ? (
                             <div className="mb-3 md:hidden">
                               <PromptPresetSuggestions
                                 activePreset={activePreset}
@@ -2224,7 +2228,7 @@ export function ChatInterface({
                             </div>
                           ) : undefined
                         }
-                        hasMessages={currentChat.messages.length > 0}
+                        hasMessages={showChatHeader}
                         modelSelectorButton={
                           models.length > 0 &&
                           selectedModel &&
@@ -2275,7 +2279,7 @@ export function ChatInterface({
                       />
                     </form>
                   )}
-                </div>
+                </fieldset>
               )}
           </div>
         </div>
