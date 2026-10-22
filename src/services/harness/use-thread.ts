@@ -4,7 +4,10 @@ import type {
   QueuedMessage,
   Attachment as UIAttachment,
 } from '@/components/chat/types'
-import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
+import {
+  ENCRYPTION_KEY_CHANGED_EVENT,
+  encryptionService,
+} from '@/services/encryption/encryption-service'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -431,7 +434,11 @@ export function useThread(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialId, keyReady, route.local])
   useEffect(() => {
+    let currentKey = encryptionService.getKey()
     const clear = () => {
+      const nextKey = encryptionService.getKey()
+      if (nextKey === currentKey) return
+      currentKey = nextKey
       clearCloud()
       if (onDevice(open.get())) return
       reset()

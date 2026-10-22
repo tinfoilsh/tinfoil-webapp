@@ -1,6 +1,12 @@
 import { chatEvents } from '@/services/storage/chat-events'
 import { logError } from '@/utils/error-handling'
 import { useCallback, useEffect, useState } from 'react'
+import {
+  clearChatListCache,
+  readChatListCache,
+  removeCachedChat,
+  writeChatListCache,
+} from './chat-list-cache'
 import type { LocalThreadStore } from './local-threads'
 import { ROUTES } from './protocol'
 import type { HarnessAPI } from './runtime'
@@ -51,40 +57,73 @@ export function useChatList({
   revision?: string
 }) {
   const [lists] = useState(() => {
-    const cloudThreads = createStore<ThreadSummary[]>([])
+    const cached = cloud ? readChatListCache(api.userId, projectId) : undefined
+    const scope = { projectId: projectId ?? null, restored: cloud }
+    const cloudThreads = createStore<ThreadSummary[]>(cached?.threads ?? [])
     const deviceThreads = createStore<ThreadSummary[]>([])
-    const pinnedThreads = createStore<ThreadSummary[]>([])
+    const pinnedThreads = createStore<ThreadSummary[]>(cached?.pinned ?? [])
     const cursor = createStore<string | null>(null)
     const cloudEdits = editsOf(cloudThreads)
     const pinnedEdits = editsOf(pinnedThreads)
     // Counts listings of the stored chats apart from the open chat, so that
     // opening a chat keeps the list and only the latest listing applies.
     const listing = { version: 0 }
+    const persist = () => {
+      if (!api.cloud || api.lifetime.signal.aborted || !scope.restored) return
+      writeChatListCache(api.userId, scope.projectId, {
+        threads: cloudThreads.get(),
+        pinned: pinnedThreads.get(),
+      })
+    }
     return {
       cloudThreads,
       deviceThreads,
       pinnedThreads,
       cursor,
       listing,
+      persist,
+      restore(projectId: string | null | undefined) {
+        const next = projectId ?? null
+        if (scope.restored && scope.projectId === next) return
+        listing.version++
+        scope.projectId = next
+        scope.restored = true
+        const cached = readChatListCache(api.userId, next)
+        cloudThreads.set(cached?.threads ?? [])
+        pinnedThreads.set(cached?.pinned ?? [])
+        cursor.set(null)
+      },
       cloud: {
         add(summary: ThreadSummary) {
-          cloudEdits.add(summary)
+          listing.version++
+          if (!scope.projectId || scope.projectId === summary.projectId)
+            cloudEdits.add(summary)
           if (summary.pinned) pinnedEdits.add(summary)
+          persist()
         },
         replace(summary: ThreadSummary) {
-          cloudEdits.replace(summary)
+          listing.version++
+          if (!scope.projectId || scope.projectId === summary.projectId)
+            cloudEdits.replace(summary)
+          else cloudEdits.remove(summary.id)
           if (summary.pinned) pinnedEdits.add(summary)
           else pinnedEdits.remove(summary.id)
+          persist()
         },
         remove(id: string) {
+          listing.version++
           cloudEdits.remove(id)
           pinnedEdits.remove(id)
+          removeCachedChat(api.userId, id)
+          persist()
         },
       },
       device: editsOf(deviceThreads),
       // The stored chats are not listed, as once cloud sync is off.
       clearCloud() {
         listing.version++
+        scope.restored = false
+        clearChatListCache(api.userId)
         cloudThreads.set([])
         pinnedThreads.set([])
         cursor.set(null)
@@ -95,7 +134,9 @@ export function useChatList({
   })
   const refresh = useCallback(
     async (next?: string) => {
-      if (!cloud || !keyReady) return
+      if (!cloud) return
+      lists.restore(projectId)
+      if (!keyReady) return
       const version = next ? lists.listing.version : ++lists.listing.version
       const wanted = next
         ? PAGE_SIZE
@@ -134,6 +175,7 @@ export function useChatList({
       )
       lists.cursor.set(result.nextCursor)
       if (!next) lists.pinnedThreads.set(result.pinned ?? [])
+      lists.persist()
     },
     [api, cloud, keyReady, projectId, lists],
   )
