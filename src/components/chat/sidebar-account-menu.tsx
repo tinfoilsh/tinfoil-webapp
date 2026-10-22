@@ -13,7 +13,7 @@ import {
   TfExternalLink,
   TfPerson,
   TfQuestionMarkCircle,
-  TfRefresh1,
+  TfRefreshTwoArrows,
   TfSetting,
   TfShieldCheck,
 } from '@tinfoilsh/tinfoil-icons'
@@ -534,7 +534,7 @@ export function SidebarAccountMenu({
                     aria-hidden="true"
                   />
                 ) : (
-                  <TfRefresh1 className="h-4 w-4" aria-hidden="true" />
+                  <TfRefreshTwoArrows className="h-4 w-4" aria-hidden="true" />
                 )}
                 <span className="flex-1">Sync now</span>
                 <span

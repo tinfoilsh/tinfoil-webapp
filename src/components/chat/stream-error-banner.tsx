@@ -2,7 +2,11 @@
 
 import type { StreamErrorInfo } from '@/components/chat/hooks/use-chat-streams'
 import { cn } from '@/components/ui/utils'
-import { TfBoxX, TfChevronDown, TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfBoxX,
+  TfChevronDown,
+  TfRefreshTwoArrows,
+} from '@tinfoilsh/tinfoil-icons'
 import { useState, useSyncExternalStore } from 'react'
 
 interface StreamErrorBannerProps {
@@ -231,7 +235,7 @@ export function StreamErrorBanner({
                   'cursor-default opacity-50 hover:bg-transparent',
               )}
             >
-              <TfRefresh1 className="h-3.5 w-3.5" aria-hidden="true" />
+              <TfRefreshTwoArrows className="h-3.5 w-3.5" aria-hidden="true" />
               {retryDisabled ? 'Offline' : retryLabel}
             </button>
           )}
