@@ -64,14 +64,22 @@ function flushFrames() {
   for (const callback of callbacks) callback(performance.now())
 }
 
-// Height of everything in the input area except the textarea.
-let chromeHeight = 0
+// Simulated layout of the input area outside the textarea: a fixed toolbar
+// and padding, plus a row for attachment previews while one is rendered.
+const BASE_CHROME_HEIGHT_PX = 150
+const ATTACHMENT_ROW_HEIGHT_PX = 100
+const ATTACHMENT_NAME = 'photo.png'
 
 const textareaHeight = (textarea: HTMLTextAreaElement | null) =>
   Number.parseFloat(textarea?.style.height ?? '') || 0
 
+const chromeHeight = (inputArea: Element) =>
+  BASE_CHROME_HEIGHT_PX +
+  (inputArea.querySelector(`[aria-label="Remove ${ATTACHMENT_NAME}"]`)
+    ? ATTACHMENT_ROW_HEIGHT_PX
+    : 0)
+
 beforeEach(() => {
-  chromeHeight = 0
   vi.stubGlobal('ResizeObserver', FakeResizeObserver)
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     const id = nextFrameId++
@@ -91,7 +99,8 @@ beforeEach(() => {
         this instanceof HTMLTextAreaElement
           ? textareaHeight(this)
           : this.hasAttribute('data-chat-input-area')
-            ? chromeHeight + textareaHeight(this.querySelector('textarea'))
+            ? chromeHeight(this) +
+              textareaHeight(this.querySelector('textarea'))
             : 0
       return {
         height,
@@ -142,18 +151,17 @@ function ChatInputInArea(
 
 describe('ChatInput height cap', () => {
   it('shrinks the text box when an attachment grows the input area', () => {
-    chromeHeight = 150
     const { container, rerender } = render(<ChatInputInArea />)
     flushFrames()
     const textarea = screen.getByRole('textbox')
     expect(textarea.style.height).toBe('226px')
 
-    chromeHeight = 250
     rerender(
       <ChatInputInArea
         processedDocuments={[
-          { id: 'photo-1', name: 'photo.png', time: new Date() },
+          { id: 'photo-1', name: ATTACHMENT_NAME, time: new Date() },
         ]}
+        removeDocument={vi.fn()}
       />,
     )
     notifyResize(container.querySelector('[data-chat-input-area]')!)
