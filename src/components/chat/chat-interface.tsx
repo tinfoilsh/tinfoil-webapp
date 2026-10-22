@@ -219,8 +219,11 @@ export function ChatInterface({
     model: selectedModel,
     presetId: activePresetId,
   } = thread
+  // A selected chat owns its URL change until the router finishes.
+  const selectionNavigation = useRef<symbol | null>(null)
   useEffect(() => {
     if (
+      selectionNavigation.current ||
       isChatHydrating ||
       !currentChat.id ||
       currentChat.isTemporary ||
@@ -394,6 +397,7 @@ export function ChatInterface({
   const canChat = thread.canSend
   const reloadChats = () => thread.refresh()
   const createNewChat = (isLocalOnly = false, fromUserAction = true) => {
+    selectionNavigation.current = null
     thread.newChat({ local: isLocalOnly })
     setInput('')
     setQuote(null)
@@ -408,6 +412,8 @@ export function ChatInterface({
     )
   }
   const handleChatSelect = (id: string) => {
+    const selection = Symbol()
+    selectionNavigation.current = selection
     setProcessedDocuments([])
     setQuote(null)
     const isLocalOnly =
@@ -415,7 +421,11 @@ export function ChatInterface({
     void thread
       .open(id, { local: isLocalOnly })
       .then((result) => {
-        if (result.status === 'superseded') return
+        if (
+          selectionNavigation.current !== selection ||
+          result.status === 'superseded'
+        )
+          return
         const projectId =
           result.status === 'opened'
             ? (result.thread.projectId ?? undefined)
@@ -429,7 +439,13 @@ export function ChatInterface({
           { shallow: true },
         )
       })
-      .catch(thread.report)
+      .catch((cause) => {
+        if (selectionNavigation.current === selection) thread.report(cause)
+      })
+      .finally(() => {
+        if (selectionNavigation.current === selection)
+          selectionNavigation.current = null
+      })
   }
   const deleteChat = (id: string) => {
     void thread.remove(id).catch(thread.report)

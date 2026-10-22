@@ -104,7 +104,7 @@ beforeEach(() => {
   signIn({ cloud: true })
 })
 
-function open(firstResponse: Promise<Thread>) {
+function open(firstResponse: Promise<Thread>, initialChatId?: string) {
   client.post.mockImplementation(async (path, input) => {
     if (path === '/v1/threads/list')
       return { threads: [first, second], nextCursor: null }
@@ -115,8 +115,51 @@ function open(firstResponse: Promise<Thread>) {
     }
     throw new Error(`Unexpected request: ${path}`)
   })
-  return render(<ChatInterface suppressIntroModals />)
+  return render(
+    <ChatInterface initialChatId={initialChatId} suppressIntroModals />,
+  )
 }
+
+it('starts only one navigation while an unvisited chat route loads', async () => {
+  const navigation = deferred<boolean>()
+  chatPage.router.push.mockReturnValue(navigation.promise)
+  open(Promise.resolve(first), first.id)
+  await screen.findByText('First conversation')
+  chatPage.router.replace.mockClear()
+
+  fireEvent.click(screen.getByRole('link', { name: second.title }))
+  await screen.findByText('Second conversation')
+  expect(chatPage.router.push).toHaveBeenCalledExactlyOnceWith(
+    '/chat/second-chat',
+    undefined,
+    { shallow: true },
+  )
+  expect(chatPage.router.replace).not.toHaveBeenCalled()
+  await act(async () => navigation.resolve(true))
+})
+
+it('ignores a superseded route failure after another chat is selected', async () => {
+  const navigation = deferred<boolean>()
+  chatPage.router.push.mockReturnValueOnce(navigation.promise)
+  open(Promise.resolve(first), first.id)
+  await screen.findByText('First conversation')
+  fireEvent.click(screen.getByRole('link', { name: second.title }))
+  await screen.findByText('Second conversation')
+  fireEvent.click(screen.getByRole('link', { name: first.title }))
+  await screen.findByText('First conversation')
+  await waitFor(() =>
+    expect(chatPage.router.push).toHaveBeenLastCalledWith(
+      '/chat/first-chat',
+      undefined,
+      { shallow: true },
+    ),
+  )
+  await act(async () => navigation.reject(new Error('Previous route canceled')))
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+    first.title,
+  )
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
 
 it('opens the not-found view when a listed local chat has been deleted', async () => {
   signIn({ cloud: false })
