@@ -27,7 +27,10 @@ export interface ChatContext {
   // Chats moving between the cloud and this device, and their moves.
   moving: Map<string, Promise<unknown>>
   reset(): void
-  openChat(threadId: string, options: { local?: boolean }): Promise<void>
+  openChat(
+    threadId: string,
+    options: { local?: boolean },
+  ): Promise<Thread | null>
 }
 
 // The actions on a chat apart from its turns: renaming and its other

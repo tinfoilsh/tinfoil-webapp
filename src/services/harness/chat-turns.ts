@@ -9,7 +9,7 @@ import type { RunController } from './run-controller'
 import { getView, type HarnessAPI, type Profile } from './runtime'
 import type { Store } from './store'
 import type { ThreadStore, TurnSettings } from './thread-store'
-import type { Session, ThreadMessage, Turn } from './types'
+import type { Session, Thread, ThreadMessage, Turn } from './types'
 
 export interface TurnContext {
   api: HarnessAPI
@@ -30,7 +30,7 @@ export interface TurnContext {
   // A new chat names the route it will open under.
   claim(threadId: string): void
   // Opens the chat the route names again, when nothing else reconnects.
-  reopen(): Promise<void> | undefined
+  reopen(): Promise<Thread | null> | undefined
 }
 
 // The turns of the open chat: sending, regenerating, continuing, and what
@@ -137,7 +137,7 @@ export function chatTurns({
     const threads = openStore()
     if (threads.local && controller.startingThread() !== undefined) return
     const current = open.get()
-    if (current.id && moving.has(current.id)) return
+    if (current.loadingId || (current.id && moving.has(current.id))) return
     patch({ failure: null })
     attachments.rememberSent(fields.attachments)
     let key: { key?: string }

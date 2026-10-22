@@ -221,6 +221,7 @@ export function ChatInterface({
   } = thread
   useEffect(() => {
     if (
+      isChatHydrating ||
       !currentChat.id ||
       currentChat.isTemporary ||
       currentChat.pendingSave ||
@@ -236,6 +237,7 @@ export function ChatInterface({
         .replace(path, undefined, { shallow: true })
         .catch(thread.report)
   }, [
+    isChatHydrating,
     currentChat.id,
     currentChat.isTemporary,
     currentChat.isLocalOnly,
@@ -412,15 +414,19 @@ export function ChatInterface({
       !cloudSyncEnabled || !!chats.find((chat) => chat.id === id)?.isLocalOnly
     void thread
       .open(id, { local: isLocalOnly })
-      .then(() =>
-        router.push(
-          getChatPath(id, {
-            isLocalOnly,
-            projectId: isLocalOnly ? undefined : activeProject?.id,
-          }),
-          undefined,
-          { shallow: true },
-        ),
+      .then(
+        (loaded) =>
+          loaded &&
+          router.push(
+            getChatPath(loaded.id, {
+              isLocalOnly,
+              projectId: isLocalOnly
+                ? undefined
+                : (loaded.projectId ?? undefined),
+            }),
+            undefined,
+            { shallow: true },
+          ),
       )
       .catch(thread.report)
   }

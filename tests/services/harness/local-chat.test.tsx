@@ -5,6 +5,7 @@ import type {
   Frame,
   Message,
   StoredThread,
+  Thread,
   ThreadMessage,
   Turn,
 } from '@/services/harness/types'
@@ -508,7 +509,12 @@ describe('local chats of a signed-in account without cloud sync', () => {
     )
     await waitFor(() => expect(hook.result.current.model).toBe('test-model'))
     if (initialId)
-      await waitFor(() => expect(hook.result.current.chat.id).toBe(initialId))
+      await waitFor(() =>
+        expect(hook.result.current).toMatchObject({
+          chat: { id: initialId },
+          loading: false,
+        }),
+      )
     let sending!: Promise<boolean | undefined> | undefined
     act(() => {
       sending = hook.result.current.send({ content: 'Q' })
@@ -722,7 +728,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
       return read(id)
     })
     const { result } = renderHook(() => useThread())
-    let opening!: Promise<void>
+    let opening!: Promise<Thread | null>
     act(() => {
       opening = result.current.open(SEEDED_ID, { local: true })
     })
@@ -736,6 +742,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     })
 
     expect(result.current.chat.isBlankChat).toBe(true)
+    expect(result.current.loading).toBe(false)
     expect(client.events).not.toHaveBeenCalled()
   })
 
@@ -1705,7 +1712,12 @@ describe('cloud chats', () => {
         throw new Error(`Unexpected ${path}`)
       })
       const hook = renderHook(() => useThread(stored.id))
-      await waitFor(() => expect(hook.result.current.chat.id).toBe(stored.id))
+      await waitFor(() =>
+        expect(hook.result.current).toMatchObject({
+          chat: { id: stored.id },
+          loading: false,
+        }),
+      )
       return hook
     }
 
@@ -1842,7 +1854,12 @@ describe('cloud chats', () => {
       throw new Error(`Unexpected ${path}`)
     })
     const { result } = renderHook(() => useThread('cloud-a'))
-    await waitFor(() => expect(result.current.chat.id).toBe('cloud-a'))
+    await waitFor(() =>
+      expect(result.current).toMatchObject({
+        chat: { id: 'cloud-a' },
+        loading: false,
+      }),
+    )
 
     await act(async () => {
       releaseList()
@@ -1934,7 +1951,12 @@ describe('cloud chats', () => {
       }
     })
     const { result } = renderHook(() => useThread(stored.id))
-    await waitFor(() => expect(result.current.chat.id).toBe(stored.id))
+    await waitFor(() =>
+      expect(result.current).toMatchObject({
+        chat: { id: stored.id },
+        loading: false,
+      }),
+    )
     let sending: Promise<unknown> | undefined
     act(() => {
       sending = result.current.send({ content: 'More' })

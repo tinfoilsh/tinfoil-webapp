@@ -380,7 +380,12 @@ it('accepts more than one queued message in a device chat', async () => {
   const { result } = renderHook(() =>
     useThread('device', null, { local: true }),
   )
-  await waitFor(() => expect(result.current.chat.id).toBe('device'))
+  await waitFor(() =>
+    expect(result.current).toMatchObject({
+      chat: { id: 'device' },
+      loading: false,
+    }),
+  )
   const pending: (Promise<unknown> | undefined)[] = []
   try {
     act(() => {

@@ -12,7 +12,7 @@ export interface OpenChat {
   // first stores it. Its route waits, since opening the route before then
   // would find nothing.
   unsaved: string | null
-  loading: boolean
+  loadingId: string | null
   notFound: boolean
   model: string
   // An action that failed. The open chat's run reports how it ended in the

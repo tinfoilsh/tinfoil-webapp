@@ -28,7 +28,7 @@ import { getView } from './runtime'
 import { HarnessError } from './sse'
 import { createStore, useStore } from './store'
 import { cloudThreads, type AskContext, type ThreadStore } from './thread-store'
-import type { AttachmentDescriptor } from './types'
+import type { AttachmentDescriptor, Thread } from './types'
 import { messageView, threadView } from './view-model'
 
 export interface ThreadRoute {
@@ -52,7 +52,7 @@ export function useThread(
         temporary: false,
         local: !cloud || !!route.local || !!route.newChatLocal,
         unsaved: null,
-        loading: false,
+        loadingId: null,
         notFound: false,
         model: '',
         failure: null,
@@ -160,6 +160,7 @@ export function useThread(
     open.update((o) => ({
       ...o,
       id: null,
+      loadingId: null,
       failure: null,
       notFound: false,
       unsaved: null,
@@ -257,18 +258,21 @@ export function useThread(
     },
     gone: (threadId) => showStored(threadId).catch(report),
   }
-  async function openChat(threadId: string, options: { local?: boolean } = {}) {
+  async function openChat(
+    threadId: string,
+    options: { local?: boolean } = {},
+  ): Promise<Thread | null> {
     const local = options.local ?? (!api.cloud || list.isOnDevice(threadId))
     reset()
     const shown = controller.track()
-    patch({ loading: true })
+    patch({ loadingId: threadId, temporary: false, local })
     try {
       const store = local ? deviceStore : cloudStore
       const thread = await store.get(threadId)
-      if (!shown()) return
+      if (!shown()) return null
       if (!thread) {
         patch({ temporary: false, local, notFound: true })
-        return
+        return null
       }
       controller.view.set(initialChat(thread))
       patch({
@@ -283,12 +287,16 @@ export function useThread(
       // A run of the chat may still be live: one this page started, one a
       // reloaded page left behind, or one the harness names.
       const runId = store.liveRun(thread)
-      if (!runId) return
+      if (!runId) return thread
       const { input, device: run } = await store.follow(threadId, runId)
-      if (!shown()) return
+      if (!shown()) return null
       void controller.run(ROUTES.follow, input, { device: run, quiet: !!run })
+      return thread
+    } catch (cause) {
+      if (!shown()) return null
+      throw cause
     } finally {
-      if (shown()) patch({ loading: false })
+      if (shown()) patch({ loadingId: null })
     }
   }
   const actions = chatActions({
@@ -333,7 +341,7 @@ export function useThread(
       !keyReady ||
       onDevice(open.get()) ||
       !open.get().id ||
-      open.get().loading ||
+      open.get().loadingId ||
       open.get().unsaved === open.get().id ||
       state.status !== 'idle'
     )
@@ -511,7 +519,15 @@ export function useThread(
       (listed.id === id && running ? state.runId : undefined)
     return runId ? { ...listed, activeRun: { runId } } : listed
   }
-  const summary = state.snapshot.thread
+  const summary =
+    state.snapshot.thread ??
+    (openState.loadingId
+      ? (isLocalChat
+          ? list.deviceListed
+          : [...list.cloudListed, ...list.pinnedListed]
+        ).find((thread) => thread.id === openState.loadingId)
+      : undefined)
+  const selectedId = openState.loadingId ?? id
   const chat: Chat = summary
     ? {
         ...threadView(summary, messages),
@@ -523,11 +539,11 @@ export function useThread(
         presetId: presetId ?? undefined,
       }
     : {
-        id: id ?? '',
-        title: 'New Chat',
+        id: selectedId ?? '',
+        title: openState.loadingId ? 'Loading chat…' : 'New Chat',
         messages,
         createdAt: new Date(),
-        isBlankChat: !id,
+        isBlankChat: !selectedId,
         isTemporary: temporary,
         isLocalOnly: isLocalChat,
         pendingSave: !!id && unsaved === id,
@@ -572,14 +588,15 @@ export function useThread(
     setTemporary: (next: boolean) => patch({ temporary: next }),
     local: isLocalChat,
     cloud,
-    loading: openState.loading,
+    loading: openState.loadingId !== null,
     notFound: openState.notFound,
     status: state.status,
     running,
     // The open chat takes turns once its settings load and, for a chat the
     // harness stores, once the content key is unlocked.
-    canSend: profileReady && (onDevice(openState) || keyReady),
-    canChangeMessages: !!chat.id,
+    canSend:
+      !openState.loadingId && profileReady && (onDevice(openState) || keyReady),
+    canChangeMessages: !openState.loadingId && !!chat.id,
     queue,
     contextUsage: summary?.contextUsage ?? undefined,
     error: failure?.message || state.error?.message || '',

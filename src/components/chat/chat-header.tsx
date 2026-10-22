@@ -107,7 +107,7 @@ export function ChatHeader({
             className="truncate font-aeonik text-sm font-medium text-content-primary"
             title={isLoading ? undefined : chat.title}
           >
-            {isLoading ? 'Loading chat…' : chat.title}
+            {chat.title}
           </h1>
           {isLoading ? (
             <div
