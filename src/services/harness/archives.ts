@@ -48,7 +48,14 @@ const EXPORT_FILENAMES: Record<ExportFormat, string> = {
 
 // The chats the account keeps on this device. Archives are for subscribers,
 // so a signed-out visitor's tab has none to send or receive.
-const deviceStore = () => localThreadStore('device')
+const deviceStore = (api: HarnessAPI) => {
+  if (!api.userId)
+    throw new HarnessError({
+      code: ERROR_CODES.unauthenticated,
+      message: 'Sign in to import or export chats.',
+    })
+  return localThreadStore('device')
+}
 
 // Reads an archive as it arrives, reporting the bytes received so far.
 async function receive(
@@ -101,7 +108,7 @@ export async function exportArchive(
   const key = cloud ? api.key() : undefined
   const form = new FormData()
   form.append('options', JSON.stringify({ format, ...(key ? { key } : {}) }))
-  const store = deviceStore()
+  const store = deviceStore(api)
   // A fork keeps the attachments of its chat, whose originals go once.
   const sent = new Set<string>()
   let chats = 0
@@ -307,7 +314,7 @@ async function importFile(
     signal,
     keyless: !key,
   })
-  const store = deviceStore()
+  const store = deviceStore(api)
   let stored = 0
   let skipped = 0
   for await (const line of importLines(response)) {
