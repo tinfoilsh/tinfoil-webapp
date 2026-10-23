@@ -98,7 +98,6 @@ export function SharedChatView({
                 messageIndex={index}
                 model={model}
                 isDarkMode={isDarkMode}
-                hideActions
               />
             ))}
           </div>

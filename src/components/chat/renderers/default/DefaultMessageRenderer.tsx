@@ -909,8 +909,8 @@ const DefaultMessageComponent = ({
                 />
               </>
             )}
-            {/* A chat that hides its actions may still be read aloud, as a
-                shared chat is. */}
+            {/* Whether a reply can be read aloud depends on its chat's
+                speech provider, not on whether its other actions show. */}
             {!isEditing &&
               message.content &&
               !isStreaming &&
