@@ -33,8 +33,9 @@ type ShareModalProps = {
   chatTitle?: string
   chatCreatedAt?: Date
   chatId?: string
-  // Creates the chat's share link and returns it.
-  share: (chatId: string) => Promise<string>
+  // Creates the chat's share link and returns it. A signed-out visitor
+  // cannot create one, nor read whether the chat is shared.
+  share?: (chatId: string) => Promise<string>
   // Reads the text of a document whose message does not carry it, so the
   // markdown includes it.
   loadDocumentText?: LoadDocumentText
@@ -79,6 +80,7 @@ function ShareModalContent({
   const isBusy = isUploading || isRevoking
   const canChangeSharing = !isBusy && !isCheckingShare && hasShare !== null
   const showShareEnabled = hasShare !== null && isShareEnabled
+  const canCreateLinks = !!share
 
   useEffect(() => {
     isMountedRef.current = true
@@ -91,6 +93,11 @@ function ShareModalContent({
     if (!isOpen) return
     if (!chatId) {
       setHasShare(false)
+      setIsCheckingShare(false)
+      return
+    }
+    if (!canCreateLinks) {
+      setHasShare(null)
       setIsCheckingShare(false)
       return
     }
@@ -114,7 +121,7 @@ function ShareModalContent({
     return () => {
       ignore = true
     }
-  }, [chatId, isOpen, statusRetry])
+  }, [chatId, isOpen, statusRetry, canCreateLinks])
 
   // Reset modal state when chatId changes (different chat)
   useEffect(() => {
@@ -314,7 +321,7 @@ function ShareModalContent({
   }
 
   const handleShareLink = async () => {
-    if (!canChangeSharing) return
+    if (!canChangeSharing || !share) return
     if (!chatId) {
       toast({
         title: 'Share failed',

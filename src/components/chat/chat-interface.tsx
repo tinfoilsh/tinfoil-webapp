@@ -466,8 +466,7 @@ export function ChatInterface({
   const canChangeMessages = thread.canChangeMessages
   const canFork =
     !!currentChat.id && !currentChat.isTemporary && !currentChat.isBlankChat
-  const canShare =
-    !!isSignedIn && !currentChat.isTemporary && currentChat.messages.length > 0
+  const canShare = !currentChat.isTemporary && currentChat.messages.length > 0
   const canChat = thread.canSend && !historyProblem
   const reloadChats = () => thread.refresh()
   const loadEarlierMessages = () =>
@@ -1492,7 +1491,8 @@ export function ChatInterface({
         })()}
 
       {/* Share button - a signed-in user shares a chat the harness stores,
-          or one kept on this device when the harness seals local shares */}
+          or one kept on this device when the harness seals local shares. A
+          signed-out visitor can copy the chat's markdown. */}
       {canShare && (
         <button
           type="button"
@@ -1962,7 +1962,7 @@ export function ChatInterface({
           chatTitle={currentChat.title}
           chatCreatedAt={currentChat.createdAt}
           chatId={currentChat.id}
-          share={thread.share}
+          share={isSignedIn ? thread.share : undefined}
           loadDocumentText={thread.documentText}
         />
       )}
