@@ -513,7 +513,7 @@ function ShareModalContent({
                         <p className="text-sm text-content-secondary">
                           {isRevoking
                             ? 'Revoking share link...'
-                            : 'Disabling sharing deactivates existing links. Copies already saved by recipients cannot be removed.'}
+                            : 'Disabling sharing deactivates existing links.'}
                         </p>
 
                         {hasShare && !shareUrl && (
