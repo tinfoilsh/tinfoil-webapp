@@ -333,3 +333,31 @@ it('keeps a stored chat marked running after moving to another chat', async () =
   )
   runs.end()
 })
+
+// The chats the sidebar lists, top to bottom.
+const listedOrder = () =>
+  screen
+    .getAllByRole('link')
+    .map((link) => link.getAttribute('href'))
+    .filter((href) => href?.startsWith('/chat/'))
+
+it('moves a chat to the top of the list as soon as a message is sent', async () => {
+  signIn({ cloud: true })
+  const runs = scriptRuns()
+  const older = cloudChat('older-chat', 'Older chat', '2026-10-20T12:00:00Z')
+  const newer = cloudChat('newer-chat', 'Newer chat', '2026-10-22T12:00:00Z')
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list')
+      return { threads: [summaryOf(newer), summaryOf(older)], nextCursor: null }
+    if (path === '/v1/threads/get') return structuredClone(older)
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  render(<ChatInterface initialChatId={older.id} suppressIntroModals />)
+  await screen.findByText('Older chat conversation')
+  expect(listedOrder()).toEqual(['/chat/newer-chat', '/chat/older-chat'])
+
+  // The harness starts no reply, so the list cannot have reported one.
+  await send('More please')
+  expect(listedOrder()).toEqual(['/chat/older-chat', '/chat/newer-chat'])
+  runs.end()
+})

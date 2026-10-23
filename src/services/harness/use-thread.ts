@@ -579,6 +579,18 @@ export function useThread(
       (listed.id === id && running ? state.runId : undefined)
     return runId ? { ...listed, activeRun: { runId } } : listed
   }
+  // The open chat is as recent as the latest message it shows, as one just
+  // sent, before the list reports it.
+  let shownActivity = 0
+  for (const message of state.messages) {
+    const at = Date.parse(message.createdAt)
+    if (at > shownActivity) shownActivity = at
+  }
+  const recent = (listed: Chat): Chat =>
+    listed.id === id &&
+    shownActivity > new Date(listed.activityAt ?? listed.createdAt).getTime()
+      ? { ...listed, activityAt: new Date(shownActivity).toISOString() }
+      : listed
   const summary =
     state.snapshot.thread ??
     (openState.loadingId
@@ -641,7 +653,7 @@ export function useThread(
         isLocalOnly: true,
       })),
     ]
-      .map(liveRun)
+      .map((listed) => recent(liveRun(listed)))
       .sort(
         (a, b) =>
           new Date(b.activityAt ?? b.createdAt).getTime() -
