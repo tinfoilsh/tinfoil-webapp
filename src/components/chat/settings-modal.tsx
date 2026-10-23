@@ -931,8 +931,9 @@ export function SettingsModal({
   const [exportType, setExportType] = useState<'chats' | 'projects' | null>(
     null,
   )
+  // What the last projects export did, shown under its button.
   const [projectExportResult, setProjectExportResult] = useState<{
-    error: string
+    message: string
   } | null>(null)
 
   // Danger zone state
@@ -1728,14 +1729,31 @@ export function SettingsModal({
     setExportType('projects')
     setProjectExportResult(null)
     try {
-      await exportClaudeProjects()
-    } catch (cause) {
+      const { projects, documents } = await exportClaudeProjects()
       setProjectExportResult({
-        error:
-          describeArchiveError(cause) ??
-          (cause instanceof Error
-            ? cause.message
-            : 'Unable to export projects.'),
+        message: `Exported ${projects} project${projects !== 1 ? 's' : ''} and ${documents} document${documents !== 1 ? 's' : ''}.`,
+      })
+      toast(
+        projects === 0
+          ? {
+              title: 'No projects exported',
+              description: 'You have no projects to export yet.',
+              variant: 'destructive',
+            }
+          : {
+              title: 'Export complete',
+              description: `Exported ${projects} project${projects !== 1 ? 's' : ''} for Claude.`,
+            },
+      )
+    } catch (cause) {
+      const message =
+        describeArchiveError(cause) ??
+        (cause instanceof Error ? cause.message : 'Unable to export projects.')
+      setProjectExportResult({ message })
+      toast({
+        title: 'Export failed',
+        description: message,
+        variant: 'destructive',
       })
     } finally {
       setIsExporting(false)
@@ -3987,7 +4005,7 @@ ${encryptionKey.replace('key_', '')}
                             className="space-y-1 font-aeonik-fono text-xs text-content-muted"
                             role="status"
                           >
-                            <div>{projectExportResult.error}</div>
+                            <div>{projectExportResult.message}</div>
                           </div>
                         )}
                       </div>

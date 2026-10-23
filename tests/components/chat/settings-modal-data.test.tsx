@@ -316,6 +316,88 @@ describe('exporting chats from the Data tab', () => {
       '/v1/export',
       { format: 'claude-projects', key: KEY },
     ])
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Export failed',
+      description:
+        'The chat service is busy with other archives. Try again shortly.',
+      variant: 'destructive',
+    })
+    expect(downloads).toEqual([])
+  })
+
+  // Claude's projects.json, as the chat service writes it.
+  const claudeProject = (uuid: string, docs: string[]) => ({
+    uuid,
+    name: uuid,
+    description: '',
+    prompt_template: '',
+    created_at: '2026-04-01T09:00:00.000Z',
+    updated_at: '2026-04-01T09:00:00.000Z',
+    docs: docs.map((filename) => ({
+      uuid: `${uuid}-${filename}`,
+      filename,
+      content: `The text of ${filename}`,
+      created_at: '2026-04-01T09:00:00.000Z',
+    })),
+  })
+
+  async function exportProjects(projects: unknown) {
+    connect({ cloud: true })
+    client.multipart.mockResolvedValue(
+      new Response(JSON.stringify(projects), {
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    renderData({ isPremium: true })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Export Projects for Claude' }),
+    )
+    await waitFor(() => expect(page.toast).toHaveBeenCalled())
+  }
+
+  it('saves the projects for Claude and says how many were exported', async () => {
+    const projects = [
+      claudeProject('garden', ['beds.md', 'seeds.md']),
+      claudeProject('kitchen', ['pantry.md']),
+    ]
+    await exportProjects(projects)
+
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Export complete',
+      description: 'Exported 2 projects for Claude.',
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Exported 2 projects and 3 documents.',
+    )
+    expect(downloads.map(({ name }) => name)).toEqual(['projects.json'])
+    expect(JSON.parse(await downloads[0].blob.text())).toEqual(projects)
+  })
+
+  it('saves nothing and reports an export for Claude that is not a project list', async () => {
+    await exportProjects({ projects: [] })
+
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Export failed',
+      description: 'The chat service returned an invalid export.',
+      variant: 'destructive',
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'The chat service returned an invalid export.',
+    )
+    expect(downloads).toEqual([])
+  })
+
+  it('saves nothing when there are no projects to export for Claude', async () => {
+    await exportProjects([])
+
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'No projects exported',
+      description: 'You have no projects to export yet.',
+      variant: 'destructive',
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Exported 0 projects and 0 documents.',
+    )
     expect(downloads).toEqual([])
   })
 })

@@ -124,8 +124,39 @@ export async function exportArchive(
   return true
 }
 
-// The chat service writes the Claude-compatible projects.json.
-export async function exportClaudeProjects(signal?: AbortSignal) {
+// What a Claude projects export holds.
+export interface ClaudeProjectsExport {
+  projects: number
+  documents: number
+}
+
+function countClaudeProjects(text: string): ClaudeProjectsExport {
+  let projects: unknown
+  try {
+    projects = JSON.parse(text)
+  } catch {
+    projects = null
+  }
+  if (!Array.isArray(projects))
+    throw new HarnessError({
+      code: ERROR_CODES.invalidStream,
+      message: 'The chat service returned an invalid export.',
+    })
+  return {
+    projects: projects.length,
+    documents: projects.reduce<number>(
+      (count, project) =>
+        count + (Array.isArray(project?.docs) ? project.docs.length : 0),
+      0,
+    ),
+  }
+}
+
+// The chat service writes the Claude-compatible projects.json, which is
+// saved unless it holds no projects.
+export async function exportClaudeProjects(
+  signal?: AbortSignal,
+): Promise<ClaudeProjectsExport> {
   const api = harnessAPI()
   const form = new FormData()
   form.append(
@@ -135,7 +166,9 @@ export async function exportClaudeProjects(signal?: AbortSignal) {
   const response = await api.multipart(ROUTES.export, form, { signal })
   const blob = await response.blob()
   signal?.throwIfAborted()
-  saveDownload(blob, 'projects.json')
+  const exported = countClaudeProjects(await blob.text())
+  if (exported.projects > 0) saveDownload(blob, 'projects.json')
+  return exported
 }
 
 export type ImportTarget = 'cloud' | 'device'
