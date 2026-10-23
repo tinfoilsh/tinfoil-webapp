@@ -72,6 +72,7 @@ it('rejoins an ask under the thread the harness created for it', async () => {
   act(() => result.current.askQuote('Selected text'))
   await waitFor(() =>
     expect(result.current.messages.map((m) => m.content)).toEqual([
+      '',
       'Explanation continued',
     ]),
   )
@@ -124,7 +125,10 @@ it('stops streaming a cancelled ask and keeps its partial answer', async () => {
   )
   act(() => result.current.askQuote('What does this mean?'))
   await waitFor(() =>
-    expect(result.current.messages.map((m) => m.content)).toEqual(['It means']),
+    expect(result.current.messages.map((m) => m.content)).toEqual([
+      '',
+      'It means',
+    ]),
   )
   expect(result.current.isStreaming).toBe(true)
 
@@ -135,7 +139,10 @@ it('stops streaming a cancelled ask and keeps its partial answer', async () => {
   await exited
   expect(result.current.isStreaming).toBe(false)
   expect(result.current.loadingState).toBe('idle')
-  expect(result.current.messages.map((m) => m.content)).toEqual(['It means'])
+  expect(result.current.messages.map((m) => m.content)).toEqual([
+    '',
+    'It means',
+  ])
   expect(vi.mocked(harnessAPI().client.post)).toHaveBeenCalledWith(
     '/v1/threads/cancel',
     expect.objectContaining({ threadId: 'thread-1', runId: 'run-1' }),
@@ -173,6 +180,12 @@ it('shows why an ask failed before the harness sent any message, and the quota i
 
   await waitFor(() =>
     expect(result.current.messages).toEqual([
+      {
+        role: 'user',
+        content: '',
+        quote: 'What does this mean?',
+        timestamp: expect.any(Date),
+      },
       {
         role: 'assistant',
         content: 'Error: The daily limit is reached',
@@ -214,6 +227,12 @@ it('shows why the chat an ask reads could not be read, and sends no turn', async
 
   await waitFor(() =>
     expect(result.current.messages).toEqual([
+      {
+        role: 'user',
+        content: '',
+        quote: 'What does this mean?',
+        timestamp: expect.any(Date),
+      },
       {
         role: 'assistant',
         content: 'Error: The chat database is unavailable',

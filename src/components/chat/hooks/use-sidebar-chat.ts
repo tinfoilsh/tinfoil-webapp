@@ -28,7 +28,9 @@ export function useSidebarChat({
   const { api } = useHarness()
   const [controller] = useState(() => new RunController(api))
   const state = useStore(controller.view)
-  const [quote, setQuote] = useState<string | null>(null)
+  // The ask's question: the quoted selection, shown as a quote from the
+  // moment it is asked.
+  const [question, setQuestion] = useState<Message | null>(null)
   // Why the thread the ask reads could not be read, which no stream reports.
   const [contextError, setContextError] = useState<string | null>(null)
   // The ask's run, which the harness runs as a thread of its own, and the
@@ -40,13 +42,18 @@ export function useSidebarChat({
   const reset = () => {
     controller.reset()
     asked.current = {}
-    setQuote(null)
+    setQuestion(null)
     setContextError(null)
   }
   useEffect(() => () => controller.reset(), [controller])
   const askQuote = (text: string) => {
     reset()
-    setQuote(text)
+    setQuestion({
+      role: 'user',
+      content: '',
+      quote: text,
+      timestamp: new Date(),
+    })
     controller.view.update((state) => ({ ...state, status: 'submitting' }))
     const shown = controller.track()
     void (async () => {
@@ -97,16 +104,23 @@ export function useSidebarChat({
   )
   return {
     messages: [
-      ...state.messages.map((m, index) =>
-        messageView(
-          m,
-          isStreaming && index === state.messages.length - 1,
-          state.summaries,
-        ),
+      ...(question ? [question] : []),
+      // The question stands for the ask's message, which the harness returns
+      // with the quote as its content.
+      ...state.messages.flatMap((m, index) =>
+        m.role === 'user'
+          ? []
+          : [
+              messageView(
+                m,
+                isStreaming && index === state.messages.length - 1,
+                state.summaries,
+              ),
+            ],
       ),
       ...(failure ? [failure] : []),
     ],
-    quote,
+    quote: question?.quote ?? null,
     loadingState: (isStreaming ? 'streaming' : 'idle') as LoadingState,
     isWaitingForResponse:
       isStreaming && !state.messages.some((m) => m.role === 'assistant'),
