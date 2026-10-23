@@ -17,11 +17,21 @@ export const acceptOf = (groups: readonly FileGroup[] | undefined) =>
 // when its contents are text.
 const TEXT_EXTENSION = '.txt'
 
-// A limit of whole megabytes reads as the app always wrote it, such as 33MB.
-const limitLabel = (bytes: number) =>
-  bytes % BYTES_PER_MB === 0
-    ? `${bytes / BYTES_PER_MB}MB`
-    : formatFileSize(bytes)
+// The megabyte the app has always allowed over the limit it states for
+// files other than text, so a file of about 32.5MB fits under 32MB.
+const STATED_LIMIT_ALLOWANCE_MB = 1
+
+// A limit of whole megabytes reads as the app always wrote it: 50MB for
+// text, and 32MB for other files the harness takes up to 33MB of.
+const limitLabel = (bytes: number, text: boolean) => {
+  if (bytes % BYTES_PER_MB !== 0) return formatFileSize(bytes)
+  const megabytes = bytes / BYTES_PER_MB
+  const stated =
+    text || megabytes <= STATED_LIMIT_ALLOWANCE_MB
+      ? megabytes
+      : megabytes - STATED_LIMIT_ALLOWANCE_MB
+  return `${stated}MB`
+}
 
 // Refuses a picked file before it uploads: one larger than its group takes,
 // or one of a type no group names when no group takes text.
@@ -39,10 +49,14 @@ export function checkUpload(file: File, groups: readonly FileGroup[]) {
       415,
     )
   if (file.size <= group.maxBytes) return group
+  const text = group.accept.includes(TEXT_EXTENSION)
+  const limit = limitLabel(group.maxBytes, text)
   throw new HarnessError(
     {
       code: ERROR_CODES.attachmentTooLarge,
-      message: `File size exceeds the limit of ${limitLabel(group.maxBytes)}.`,
+      message: text
+        ? `Text file exceeds the limit of ${limit}.`
+        : `File size exceeds the limit of ${limit}.`,
     },
     413,
   )

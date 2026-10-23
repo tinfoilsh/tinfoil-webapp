@@ -920,32 +920,42 @@ it('uploads a file of an unlisted type and marks one the harness cannot read', a
   expect(screen.queryByText('Unsupported format')).not.toBeInTheDocument()
 })
 
-it('explains a file over its size limit before uploading it', async () => {
-  const limit = 2 * 1024 * 1024
-  signIn({
-    session: {
-      ...testSession,
-      composer: {
-        ...testSession.composer,
-        attachments: [{ accept: ['.pdf'], maxBytes: limit }],
+const MB = 1024 * 1024
+it.each([
+  ['report.pdf', 33 * MB, 'File size exceeds the limit of 32MB.'],
+  ['notes.md', 50 * MB, 'Text file exceeds the limit of 50MB.'],
+])(
+  'explains %s over its size limit before uploading it',
+  async (name, limit, explanation) => {
+    signIn({
+      session: {
+        ...testSession,
+        composer: {
+          ...testSession.composer,
+          // The harness's limits for text and for documents.
+          attachments: [
+            { accept: ['.txt', '.md'], maxBytes: 50 * MB },
+            { accept: ['.pdf'], maxBytes: 33 * MB },
+          ],
+        },
       },
-    },
-  })
-  render(
-    <>
-      {view()}
-      <Toaster />
-    </>,
-  )
-  await screen.findByRole('textbox', { name: 'Message' })
+    })
+    render(
+      <>
+        {view()}
+        <Toaster />
+      </>,
+    )
+    await screen.findByRole('textbox', { name: 'Message' })
+    const file = new File(['too large'], name)
+    Object.defineProperty(file, 'size', { value: limit + 1 })
 
-  fireEvent.change(document.querySelector('input[type="file"]')!, {
-    target: { files: [new File([new Uint8Array(limit + 1)], 'report.pdf')] },
-  })
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: { files: [file] },
+    })
 
-  expect(await screen.findByText('Processing failed')).toBeInTheDocument()
-  expect(
-    screen.getByText('File size exceeds the limit of 2MB.'),
-  ).toBeInTheDocument()
-  expect(client.upload).not.toHaveBeenCalled()
-})
+    expect(await screen.findByText('Processing failed')).toBeInTheDocument()
+    expect(screen.getByText(explanation)).toBeInTheDocument()
+    expect(client.upload).not.toHaveBeenCalled()
+  },
+)
