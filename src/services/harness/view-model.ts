@@ -4,6 +4,7 @@ import type {
   Message,
   TimelineBlock,
 } from '@/components/chat/types'
+import { DEFAULT_CHAT_TITLE, PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { WIDGET_PREFIX } from './protocol'
 import type {
   ThreadSummary,
@@ -212,7 +213,12 @@ export function threadView(
 ): Chat {
   return {
     id: thread.id,
-    title: thread.title,
+    // A chat waiting for its generated title shows the default one.
+    title:
+      thread.titleState === 'placeholder' &&
+      thread.title === PLACEHOLDER_CHAT_TITLE
+        ? DEFAULT_CHAT_TITLE
+        : thread.title,
     titleState: thread.titleState,
     createdAt: new Date(thread.createdAt),
     updatedAt: thread.updatedAt,

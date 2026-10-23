@@ -1,3 +1,4 @@
+import { DEFAULT_CHAT_TITLE } from '@/constants/chat'
 import { localThreadStore } from '@/services/harness/local-threads'
 import type { OpenChatResult } from '@/services/harness/open-chat'
 import { HarnessError } from '@/services/harness/sse'
@@ -281,7 +282,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     const threadId = turn().threadId!
     expect(result.current.chats[0]).toMatchObject({
       id: threadId,
-      title: 'New Chat',
+      title: DEFAULT_CHAT_TITLE,
       isLocalOnly: true,
       messageCount: 1,
     })

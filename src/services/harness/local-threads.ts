@@ -1,4 +1,5 @@
 import type { Chat } from '@/components/chat/types'
+import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { chatEvents } from '@/services/storage/chat-events'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import {
@@ -78,7 +79,7 @@ export function newThread(id: string): StoredThread {
   const createdAt = now()
   return {
     id,
-    title: 'New Chat',
+    title: PLACEHOLDER_CHAT_TITLE,
     titleState: 'placeholder',
     createdAt,
     updatedAt: createdAt,
