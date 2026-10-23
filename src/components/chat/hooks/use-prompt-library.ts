@@ -135,7 +135,7 @@ export function usePromptLibrary() {
     },
     duplicatePreset: (id: string) => {
       const p = allPresets.find((p) => p.id === id)
-      return p ? createUserPreset({ ...p, name: `${p.name} copy` }) : null
+      return p ? createUserPreset({ ...p, name: `${p.name} (copy)` }) : null
     },
     favoritePresets,
     isFavorite: (id: string) => favoritePresetIds.includes(id),
