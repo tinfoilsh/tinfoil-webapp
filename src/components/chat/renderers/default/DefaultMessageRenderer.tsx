@@ -11,7 +11,7 @@ import {
   TfCopy,
   TfFork,
   TfLockLocked,
-  TfRefresh1,
+  TfRefreshTwoArrows,
   TfTrash,
   TfWriting,
 } from '@tinfoilsh/tinfoil-icons'
@@ -19,7 +19,7 @@ import React, { memo, useState, type JSX } from 'react'
 import { ConfirmDialog } from '../../components/confirm-dialog'
 import { CONSTANTS } from '../../constants'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
-import { isImeComposition } from '../../keyboard-utils'
+import { isImeComposition, isSubmitShortcut } from '../../keyboard-utils'
 import { CodeExecProcess } from '../components/CodeExecProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
@@ -543,11 +543,7 @@ const DefaultMessageComponent = ({
                 if (e.key === 'Enter' && isImeComposition(e)) {
                   return
                 }
-                if (
-                  e.key === 'Enter' &&
-                  !e.shiftKey &&
-                  (!enterToNewline || e.metaKey || e.ctrlKey)
-                ) {
+                if (isSubmitShortcut(e, enterToNewline)) {
                   e.preventDefault()
                   handleSubmitAssistantEdit()
                 } else if (e.key === 'Escape') {
@@ -686,11 +682,7 @@ const DefaultMessageComponent = ({
                       if (e.key === 'Enter' && isImeComposition(e)) {
                         return
                       }
-                      if (
-                        e.key === 'Enter' &&
-                        !e.shiftKey &&
-                        (!enterToNewline || e.metaKey || e.ctrlKey)
-                      ) {
+                      if (isSubmitShortcut(e, enterToNewline)) {
                         e.preventDefault()
                         handleSubmitEdit()
                       } else if (e.key === 'Escape') {
@@ -769,7 +761,10 @@ const DefaultMessageComponent = ({
                           aria-label="Regenerate response"
                           className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                         >
-                          <TfRefresh1 className="h-4 w-4" aria-hidden="true" />
+                          <TfRefreshTwoArrows
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          />
                         </button>
                         <span
                           aria-hidden="true"
@@ -909,7 +904,10 @@ const DefaultMessageComponent = ({
                       aria-label="Regenerate response"
                       className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
                     >
-                      <TfRefresh1 className="h-3.5 w-3.5" aria-hidden="true" />
+                      <TfRefreshTwoArrows
+                        className="h-3.5 w-3.5"
+                        aria-hidden="true"
+                      />
                     </button>
                     <span
                       aria-hidden="true"

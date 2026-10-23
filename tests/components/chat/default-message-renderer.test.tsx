@@ -9,7 +9,7 @@ import type {
 } from '@/services/harness/types'
 import { messageView } from '@/services/harness/view-model'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 
 const model = {
   id: 'current-model',
@@ -503,6 +503,111 @@ describe('DefaultMessageRenderer message actions', () => {
 
     fireEvent.keyDown(document, { key: 'Tab' })
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+})
+
+describe('DefaultMessageRenderer edit keyboard shortcuts', () => {
+  const IPHONE_USER_AGENT =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+  const messageIndex = 3
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  describe.each<{
+    name: string
+    openEditor: (onSave: Mock) => HTMLElement
+  }>([
+    {
+      name: 'user message',
+      openEditor: (onSave) => {
+        render(
+          <Renderer
+            message={{
+              role: 'user',
+              content: 'Original question',
+              timestamp: new Date('2026-08-07T00:00:00.000Z'),
+            }}
+            messageIndex={messageIndex}
+            model={model}
+            isDarkMode={false}
+            onEditMessage={onSave}
+          />,
+        )
+        fireEvent.click(screen.getByRole('button', { name: 'Edit message' }))
+        return screen.getByRole('textbox', { name: 'Edit message' })
+      },
+    },
+    {
+      name: 'assistant response',
+      openEditor: (onSave) => {
+        render(
+          <Renderer
+            message={{
+              role: 'assistant',
+              content: 'Original answer',
+              timestamp: new Date('2026-08-07T00:00:01.000Z'),
+              timeline: [
+                {
+                  type: 'content',
+                  id: 'content-0',
+                  content: 'Original answer',
+                },
+              ],
+            }}
+            messageIndex={messageIndex}
+            model={model}
+            isDarkMode={false}
+            onEditAssistantMessage={onSave}
+          />,
+        )
+        openMoreActions()
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Edit response' }))
+        return screen.getByRole('textbox', { name: 'Edit response' })
+      },
+    },
+  ])('$name editor', ({ openEditor }) => {
+    const openEditorWithRevision = () => {
+      const onSave = vi.fn()
+      const textbox = openEditor(onSave)
+      fireEvent.change(textbox, { target: { value: 'Revised text' } })
+      return { onSave, textbox }
+    }
+
+    it('saves on plain Enter on desktop', () => {
+      const { onSave, textbox } = openEditorWithRevision()
+
+      fireEvent.keyDown(textbox, { key: 'Enter' })
+
+      expect(onSave).toHaveBeenCalledExactlyOnceWith(
+        messageIndex,
+        'Revised text',
+      )
+    })
+
+    it('inserts a new line on plain Enter on phones', () => {
+      vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE_USER_AGENT)
+      const { onSave, textbox } = openEditorWithRevision()
+
+      const notCancelled = fireEvent.keyDown(textbox, { key: 'Enter' })
+
+      expect(notCancelled).toBe(true)
+      expect(onSave).not.toHaveBeenCalled()
+      expect(textbox).toBeInTheDocument()
+    })
+
+    it('saves on Cmd+Enter on phones', () => {
+      vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE_USER_AGENT)
+      const { onSave, textbox } = openEditorWithRevision()
+
+      fireEvent.keyDown(textbox, { key: 'Enter', metaKey: true })
+
+      expect(onSave).toHaveBeenCalledExactlyOnceWith(
+        messageIndex,
+        'Revised text',
+      )
+    })
   })
 })
 
