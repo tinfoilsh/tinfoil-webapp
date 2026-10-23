@@ -1086,6 +1086,45 @@ describe('DefaultMessageRenderer work traces', () => {
     )
   })
 
+  it('times a cut-off read as long as it ran when it follows another read', () => {
+    const fetch = (id: string, startedAt: number, endedAt?: number) => ({
+      id,
+      type: 'tool_call' as const,
+      toolCallId: id,
+      name: 'web_fetch',
+      arguments: JSON.stringify({ urls: [`https://${id}.example/`] }),
+      complete: true,
+      startedAt,
+      endedAt,
+    })
+    renderReply(
+      {
+        id: 'a1',
+        role: 'assistant',
+        createdAt: '2026-08-07T00:00:01.000Z',
+        content: 'Read them.',
+        timeline: [
+          {
+            id: 't',
+            type: 'thinking',
+            content: 'Reading both.',
+            startedAt: 500,
+            endedAt: 900,
+            duration: 0.4,
+          },
+          fetch('first', 1_000, 4_000),
+          fetch('second', 5_000),
+          { id: 'c', type: 'content', content: 'Read them.' },
+        ],
+      },
+      false,
+    )
+
+    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
+      'Worked for 4.5 seconds',
+    )
+  })
+
   it('shows nothing of the code an older chat ran, unlike a retired widget', () => {
     renderReply(
       {

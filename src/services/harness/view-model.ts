@@ -84,7 +84,12 @@ function mergedReads(timeline: TimelineBlock[]): TimelineBlock[] {
       ...last,
       fetches: [...last.fetches, ...block.fetches],
       startedAt: bound(Math.min, last.startedAt, block.startedAt),
-      endedAt: bound(Math.max, last.endedAt, block.endedAt),
+      // A read that never ended counts until it started, as it does alone.
+      endedAt: bound(
+        Math.max,
+        last.endedAt ?? last.startedAt,
+        block.endedAt ?? block.startedAt,
+      ),
     }
   }
   return merged
