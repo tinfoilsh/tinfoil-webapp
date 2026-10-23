@@ -6,6 +6,7 @@ import {
   USER_PREFS_LOCAL_PROFILE,
 } from '@/constants/storage-keys'
 import { getView, harnessAPI, publish } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import {
   act,
   fireEvent,
@@ -24,6 +25,7 @@ const signOut = vi.hoisted(() => vi.fn(async () => {}))
 
 vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: toasts }),
+  toast: toasts,
 }))
 
 vi.mock('@clerk/react', () => ({
@@ -569,6 +571,50 @@ describe('settings personalization', () => {
     expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Samantha')
     expect(screen.getAllByRole('button', { name: 'Save' })).not.toHaveLength(0)
     expect(getView().profile.nickname).toBe('Sam')
+  })
+
+  it.each([
+    {
+      action: 'saved details',
+      act: () => {
+        fireEvent.change(screen.getByPlaceholderText('Nickname'), {
+          target: { value: 'Samantha' },
+        })
+        fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+      },
+    },
+    {
+      action: 'turning personalization off',
+      act: () =>
+        fireEvent.click(
+          screen.getByRole('checkbox', { name: 'Personalize responses' }),
+        ),
+    },
+  ])('says when the chat service refuses $action', async ({ act }) => {
+    const saved = { nickname: 'Sam', isUsingPersonalization: true }
+    signIn({ cloud: true, profile: saved })
+    toasts.mockReset()
+    client.post.mockImplementation(async (path: string) => {
+      if (path !== '/v1/profile/update')
+        throw new Error(`Unexpected harness request: ${path}`)
+      throw new HarnessError(
+        { code: 'UPSTREAM_ERROR', message: 'Storage unavailable' },
+        502,
+      )
+    })
+    render(<Harness initialTab="personalization" isClient />)
+
+    act()
+
+    await waitFor(() =>
+      expect(toasts).toHaveBeenCalledExactlyOnceWith({
+        title: 'Failed to save settings',
+        description: 'Please try again.',
+        variant: 'destructive',
+      }),
+    )
+    expect(getView().profile).toEqual(saved)
+    expect(getView().error).toBeUndefined()
   })
 
   it('keeps an edit made while a save is in flight', async () => {

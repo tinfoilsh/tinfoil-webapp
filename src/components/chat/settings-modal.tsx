@@ -27,7 +27,11 @@ import {
   describeImportFailure,
 } from '@/services/harness/import-failure-copy'
 import { deleteAllProjects } from '@/services/harness/projects'
-import { useHarness, useProfileSetting } from '@/services/harness/provider'
+import {
+  reportProfileError,
+  useHarness,
+  useProfileSetting,
+} from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
 import { useLocalChatsSetting } from '@/services/harness/storage-mode'
 import { validateCurrentPrimaryKey } from '@/services/keys/cloud-key-preflight'
@@ -1063,7 +1067,7 @@ export function SettingsModal({
           ),
         ),
       )
-      .catch(reportHarnessError)
+      .catch(reportProfileError)
   }
 
   // Handle individual field changes. Edits are buffered locally and only
@@ -1112,7 +1116,7 @@ export function SettingsModal({
     if (!isClient) return
     void api
       .updateProfile({ isUsingPersonalization: enabled })
-      .catch(reportHarnessError)
+      .catch(reportProfileError)
   }
 
   const handleClearPersonalization = () => {
