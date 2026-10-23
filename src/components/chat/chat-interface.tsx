@@ -1421,8 +1421,7 @@ export function ChatInterface({
         </Link>
       )}
 
-      {!!isSignedIn &&
-        !isChatHydrating &&
+      {!isChatHydrating &&
         canToggleTemporaryChat(currentChat) &&
         (() => {
           const hasMessages = currentChat.messages.length > 0
