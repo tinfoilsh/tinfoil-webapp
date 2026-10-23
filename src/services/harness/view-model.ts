@@ -41,13 +41,14 @@ function parsed(text = ''): unknown {
 }
 
 // The pages a fetch reads, as its arguments name them; while they stream,
-// the page the harness reports.
+// the page the harness reports, if it reported one yet.
 function fetchedUrls(block: WireBlock): string[] {
   const args = parsed(block.arguments)
   const urls = (isRecord(args) ? [args.urls, args.url].flat() : []).filter(
     (url): url is string => typeof url === 'string' && url !== '',
   )
-  return urls.length ? urls : [block.display?.url ?? '']
+  if (urls.length) return urls
+  return block.display?.url ? [block.display.url] : []
 }
 
 // The pages a fetch's result lists as not read.
@@ -97,8 +98,8 @@ function mergedReads(timeline: TimelineBlock[]): TimelineBlock[] {
 
 // A web search or page fetch shows what the harness reports of it. A call
 // it reports nothing of yet runs while its reply streams; one still running
-// once the reply stopped was cut off.
-function toolBlock(block: WireBlock, streaming: boolean): TimelineBlock {
+// once the reply stopped was cut off. A fetch shows once it names a page.
+function toolBlock(block: WireBlock, streaming: boolean): TimelineBlock | null {
   const toolCallId = block.toolCallId ?? block.id
   const { display } = block
   const status = streaming
@@ -119,12 +120,14 @@ function toolBlock(block: WireBlock, streaming: boolean): TimelineBlock {
       ...timing,
     }
   if (block.name === 'web_fetch') {
+    const urls = fetchedUrls(block)
+    if (!urls.length) return null
     const unread = unreadUrls(block.result)
     return {
       type: 'url_fetches',
       id: block.id,
       ...timing,
-      fetches: fetchedUrls(block).map((url, index) => ({
+      fetches: urls.map((url, index) => ({
         id: index ? `${toolCallId}-${index}` : toolCallId,
         url,
         status:
@@ -190,7 +193,7 @@ export function messageView(
     // A tool that is neither a search nor a widget, as the code an older
     // chat ran, has no view.
     if (!isShownTool(block.name)) return []
-    return toolBlock(block, streaming)
+    return toolBlock(block, streaming) ?? []
   })
   const timeline = mergedReads(views)
   return {

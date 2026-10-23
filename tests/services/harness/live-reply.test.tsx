@@ -220,6 +220,67 @@ describe('a streamed reply', () => {
     ).toBeInTheDocument()
   })
 
+  it('shows a page read once its arguments name the page', async () => {
+    let name!: () => void
+    const named = new Promise<void>((resolve) => {
+      name = resolve
+    })
+    let finish!: () => void
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    client.events.mockImplementation(async function* (_path, input) {
+      const threadId = input.threadId as string
+      const events: Frame['event'][] = [
+        { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+        { type: 'TEXT_MESSAGE_CHUNK', messageId: 'm1', delta: 'Reading.' },
+        {
+          type: 'TOOL_CALL_START',
+          parentMessageId: 'm1',
+          toolCallId: 'read-1',
+          toolCallName: 'web_fetch',
+        },
+        { type: 'TOOL_CALL_ARGS', toolCallId: 'read-1', delta: '{"url": "ht' },
+      ]
+      for (const [id, event] of events.entries()) yield { id, event }
+      await named
+      yield {
+        id: events.length,
+        event: {
+          type: 'TOOL_CALL_ARGS',
+          toolCallId: 'read-1',
+          delta: 'tps://docs.example/page"}',
+        },
+      }
+      await finished
+      yield {
+        id: events.length + 1,
+        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+      }
+    })
+    render(<Conversation />)
+    let sending!: Promise<unknown>
+    act(() => {
+      sending = send!()
+    })
+
+    expect(await screen.findByText('Reading.')).toBeInTheDocument()
+    expect(screen.queryByText(/^Reading \d+ link/)).not.toBeInTheDocument()
+    expect(
+      client.post.mock.calls.filter(
+        ([path]) => path === '/v1/metadata/favicon',
+      ),
+    ).toEqual([])
+
+    await act(async () => name())
+    expect(await screen.findByText('Reading 1 link')).toBeInTheDocument()
+
+    await act(async () => {
+      finish()
+      await sending
+    })
+  })
+
   it('shows links to the pages it found as citations while it streams', async () => {
     let finish!: () => void
     const sending = sendReply(
