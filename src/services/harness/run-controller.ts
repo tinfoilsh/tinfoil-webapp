@@ -1,4 +1,5 @@
 import type { ImagesById, LocalThreadStore, Originals } from './local-threads'
+import { scopedTurn } from './prompt-cache-secret'
 import { ERROR_CODES, ROUTES, type RunRoute } from './protocol'
 import {
   initialChat,
@@ -187,10 +188,11 @@ export class RunController {
     let threadId = input.threadId
     let succeeded = false
     let view = this.view.get()
+    const sent = 'kind' in input ? scopedTurn(input, this.api.userId) : input
     try {
       for await (const frame of this.api.client.events(
         route,
-        input,
+        sent,
         this.api.signal({ signal: controller.signal, keyless: !input.key }),
       )) {
         const shown = attached()

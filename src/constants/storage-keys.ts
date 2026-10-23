@@ -28,6 +28,9 @@ export const AUTH_SIGNOUT_REQUESTED_AT = 'tinfoil-auth-signout-requested-at'
 // --- localStorage: Sidebar cache --------------------------------------------
 export const CLOUD_CHAT_LIST_CACHE_PREFIX = 'tinfoil-cloud-chat-list-v1'
 
+// --- localStorage: Prompt cache scope ---------------------------------------
+export const PROMPT_CACHE_SECRET_PREFIX = 'tinfoil-prompt-cache-secret-v1'
+
 // --- localStorage: App settings --------------------------------------------
 export const SETTINGS_CLOUD_SYNC_ENABLED = 'tinfoil-settings-cloud-sync-enabled'
 export const SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED =
