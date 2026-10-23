@@ -63,6 +63,9 @@ describe('Tinfoil passkey manager configuration', () => {
     expect(new TextDecoder().decode(TINFOIL_PASSKEY_PROFILE.prfSalt)).toBe(
       'tinfoil-chat-key-encryption',
     )
+    expect(new TextDecoder().decode(TINFOIL_PASSKEY_PROFILE.hkdfInfo)).toBe(
+      'tinfoil-chat-kek-v1',
+    )
   })
 
   it('preserves existing cache and local credential storage keys', () => {
