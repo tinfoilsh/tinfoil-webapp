@@ -10,6 +10,8 @@ import {
   type ProjectContextValue,
   type UploadingFile,
 } from './project-context'
+// The name a project shows until it loads.
+const LOADING_PROJECT_NAME = 'Loading...'
 export function ProjectProvider({
   children,
   initialProjectId,
@@ -27,8 +29,11 @@ export function ProjectProvider({
   const [projectDocuments, setProjectDocuments] = useState<ProjectDocument[]>(
     [],
   )
+  // A project's route shows it loading until the content key opens it.
   const [loadingProject, setLoadingProject] = useState<LoadingProject | null>(
-    null,
+    initialProjectId
+      ? { id: initialProjectId, name: LOADING_PROJECT_NAME }
+      : null,
   )
   const [error, setError] = useState<string | null>(null)
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
@@ -49,7 +54,7 @@ export function ProjectProvider({
       if (!hasPremiumAccessRef.current) return false
       openProjectId.current = id
       const version = ++generation.current
-      setLoadingProject({ id, name: name ?? 'Loading…' })
+      setLoadingProject({ id, name: name ?? LOADING_PROJECT_NAME })
       try {
         const project = await projects.getProject(api, id)
         if (
@@ -123,8 +128,12 @@ export function ProjectProvider({
   useEffect(() => {
     if (!isSubscriptionLoading && !chat_subscription_active) exitProjectMode()
   }, [chat_subscription_active, isSubscriptionLoading, exitProjectMode])
+  const keyWasReady = useRef(keyReady)
   useEffect(() => {
-    if (!keyReady) exitProjectMode()
+    // A project closes once the key is lost; the route's project waits for
+    // the key to arrive.
+    if (!keyReady && keyWasReady.current) exitProjectMode()
+    keyWasReady.current = keyReady
     const tracker = generation
     return () => {
       tracker.current++
