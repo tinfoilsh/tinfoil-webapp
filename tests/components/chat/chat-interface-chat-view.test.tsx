@@ -1,6 +1,7 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProjectProvider } from '@/components/project/project-provider'
 import { localThreadStore } from '@/services/harness/local-threads'
+import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type {
   Frame,
@@ -484,4 +485,19 @@ it('explains a chat that failed to load once and offers a new chat', async () =>
   expect(chatPage.router.push).toHaveBeenCalledExactlyOnceWith('/', undefined, {
     shallow: true,
   })
+})
+
+it('explains a chat service that could not start without its raw error', async () => {
+  signIn()
+  publish({
+    session: undefined,
+    error: 'harness: dial tcp 10.0.0.7:443: connection refused',
+  })
+  render(view())
+
+  await screen.findByRole('heading', { name: 'Something went wrong' })
+  expect(screen.getByRole('alert')).toHaveTextContent(
+    "Tinfoil Chat is experiencing some technical difficulties. We're working on resolving it. Please try again later.",
+  )
+  expect(screen.queryByText(/connection refused/)).not.toBeInTheDocument()
 })

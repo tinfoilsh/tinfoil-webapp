@@ -1352,7 +1352,8 @@ export function ChatInterface({
             Something went wrong
           </h2>
           <p role="alert" className="mb-6 text-content-secondary">
-            {sessionError}
+            Tinfoil Chat is experiencing some technical difficulties. We&apos;re
+            working on resolving it. Please try again later.
           </p>
           <button
             onClick={() => window.location.reload()}
