@@ -669,3 +669,53 @@ it('keeps the address of the open chat when another chat is deleted', async () =
   expect(chatPage.router.push).not.toHaveBeenCalled()
   expect(screen.getByText('Alpha chat conversation')).toBeInTheDocument()
 })
+
+it('lists the 20 most recently pinned favorites, newest first', async () => {
+  signIn({ cloud: true })
+  const name = (n: number) => `chat-${String(n).padStart(2, '0')}`
+  // Pinned from 1 to 21, while 1 was active last; 22 is not pinned yet.
+  const pinned = Array.from({ length: 21 }, (_, index) =>
+    summaryOf(
+      cloudChat(
+        name(index + 1),
+        `Pinned ${index + 1}`,
+        new Date(Date.UTC(2026, 9, 21, 12, 0, 21 - index)).toISOString(),
+        { pinned: true },
+      ),
+    ),
+  )
+  const unpinned = summaryOf(
+    cloudChat(name(22), 'Unpinned 22', '2026-10-22T12:00:00Z'),
+  )
+  const pin = deferred<unknown>()
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/threads/list')
+      return { threads: [unpinned, ...pinned], pinned, nextCursor: null }
+    if (
+      path === '/v1/threads/update' &&
+      (input as { id: string }).id === unpinned.id
+    )
+      return pin.promise
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  render(<ChatInterface suppressIntroModals />)
+  const listed = (await row('Unpinned 22')).closest(
+    '[role="listitem"]',
+  ) as HTMLElement
+  fireEvent.click(
+    within(listed).getByRole('button', { name: 'Pin to Favorites' }),
+  )
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Favorites', expanded: false }),
+  )
+  const favorites = () =>
+    within(document.getElementById('sidebar-favorites-panel')!)
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'))
+  const expected = [22, ...Array.from({ length: 19 }, (_, index) => 21 - index)]
+  await waitFor(() =>
+    expect(favorites()).toEqual(expected.map((n) => `/chat/${name(n)}`)),
+  )
+  await act(async () => pin.resolve({ ...unpinned, pinned: true }))
+  expect(favorites()).toEqual(expected.map((n) => `/chat/${name(n)}`))
+})

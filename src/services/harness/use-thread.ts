@@ -623,6 +623,11 @@ export function useThread(
     shownRun,
     shownActivity,
   ])
+  // The favorites, the most recently pinned first.
+  const favoriteIds = useMemo(
+    () => (cloud ? pinnedListed.map((thread) => thread.id).reverse() : []),
+    [cloud, pinnedListed],
+  )
   const summary =
     state.snapshot.thread ??
     (openState.loadingId
@@ -672,6 +677,7 @@ export function useThread(
   return {
     chat,
     chats,
+    favoriteIds,
     model,
     setModel: (next: string) => patch({ model: next, modelChosen: true }),
     presetId,

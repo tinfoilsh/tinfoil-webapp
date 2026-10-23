@@ -697,7 +697,10 @@ export function ChatInterface({
   const removeQueuedMessage = (id: string) => {
     void thread.removeQueued(id).catch(thread.report)
   }
-  const favoriteChats = chats.filter((c) => c.pinned)
+  const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
+  const favoriteChats = thread.favoriteIds
+    .flatMap((id) => chatsById.get(id) ?? [])
+    .slice(0, CONSTANTS.MAX_FAVORITE_CHATS)
   const pinnedChatIds = favoriteChats.map((c) => c.id)
   const unpinChat = (id: string) => {
     void thread

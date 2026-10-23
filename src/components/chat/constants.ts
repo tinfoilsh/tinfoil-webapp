@@ -57,6 +57,8 @@ export const CONSTANTS = {
   SIDEBAR_MENU_HOVER_TOLERANCE_PX: 48,
   // Recent chats listed in the search modal before a term is typed.
   SEARCH_RECENT_CHAT_COUNT: 8,
+  // Favorites the sidebar lists, the most recently pinned first.
+  MAX_FAVORITE_CHATS: 20,
   // Height of a pinned sidebar section header (Projects/Chats). The Chats
   // header offsets by this amount so it stacks below the pinned Projects
   // header while scrolling.

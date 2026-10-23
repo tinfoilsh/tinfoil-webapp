@@ -106,7 +106,19 @@ export function useChatList({
       error: null,
     })
     const cloudEdits = editsOf(cloudThreads)
-    const pinnedEdits = editsOf(pinnedThreads)
+    // The favorites in the order they were pinned, as the harness lists
+    // them: a new one is the last, and one already listed keeps its place.
+    const pinnedEdits: ListEdits = {
+      ...editsOf(pinnedThreads),
+      add: (summary) =>
+        pinnedThreads.update((listed) =>
+          listed.some((thread) => thread.id === summary.id)
+            ? listed.map((thread) =>
+                thread.id === summary.id ? summary : thread,
+              )
+            : [...listed, summary],
+        ),
+    }
     // Counts listings of the stored chats apart from the open chat, so that
     // opening a chat keeps the list and only the latest listing applies.
     const listing = { version: 0 }
