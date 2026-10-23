@@ -2,7 +2,7 @@
 
 import { cn } from '@/components/ui/utils'
 import { useChatSearch, useChatsOutsideProjects } from '@/hooks/use-chat-search'
-import { threadView } from '@/services/harness/view-model'
+import { chatTitle, threadView } from '@/services/harness/view-model'
 import type { Project } from '@/types/project'
 import { isSearchableChat } from '@/utils/chat-search-visibility'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
@@ -136,7 +136,7 @@ export function ChatSearchModal({
         ? []
         : search.results.map((result) => ({
             id: result.id,
-            title: result.title,
+            title: chatTitle(result),
             updatedAt: result.updatedAt,
             activityAt: result.activityAt,
             projectId: result.projectId ?? undefined,

@@ -207,18 +207,21 @@ export function messageView(
     isInterrupted: message.isInterrupted,
   }
 }
+// A chat waiting for its generated title shows the default one.
+export const chatTitle = ({
+  title,
+  titleState,
+}: Pick<ThreadSummary, 'title' | 'titleState'>) =>
+  titleState === 'placeholder' && title === PLACEHOLDER_CHAT_TITLE
+    ? DEFAULT_CHAT_TITLE
+    : title
 export function threadView(
   thread: ThreadSummary,
   messages: Message[] = [],
 ): Chat {
   return {
     id: thread.id,
-    // A chat waiting for its generated title shows the default one.
-    title:
-      thread.titleState === 'placeholder' &&
-      thread.title === PLACEHOLDER_CHAT_TITLE
-        ? DEFAULT_CHAT_TITLE
-        : thread.title,
+    title: chatTitle(thread),
     titleState: thread.titleState,
     createdAt: new Date(thread.createdAt),
     updatedAt: thread.updatedAt,
