@@ -133,6 +133,25 @@ it('offers to unlock instead of listing cached chats the refused key cannot open
   ).not.toBeInTheDocument()
 })
 
+it('leaves cached favorites out of the sidebar and search while the key is refused', async () => {
+  signIn({ cloud: true, locked: true })
+  const cached = {
+    ...storedThread('cached-favorite', {
+      title: 'Cached favorite',
+      titleState: 'generated',
+      pinned: true,
+    }),
+    messageCount: 2,
+  }
+  writeChatListCache('alice', null, { threads: [cached], pinned: [cached] })
+  render(<ChatInterface suppressIntroModals />)
+  await screen.findByRole('button', { name: 'Unlock' })
+
+  fireEvent.keyDown(window, { key: 'k', metaKey: true })
+  await screen.findByRole('dialog')
+  expect(screen.queryByText('Cached favorite')).not.toBeInTheDocument()
+})
+
 it('offers to load the chats again after the profile fails to load', async () => {
   signIn({ cloud: true })
   const chat: ThreadSummary = {

@@ -594,6 +594,8 @@ export function useThread(
   }
   const shownRun = running ? state.runId : undefined
   const { cloudListed, pinnedListed, deviceListed } = list
+  // Stored chats a refused key cannot open are left out, cached or not.
+  const listsCloud = cloud && !keyLocked
   // The same list while nothing it shows changes, so a title the user just
   // typed is not animated in again.
   const chats = useMemo(() => {
@@ -612,7 +614,7 @@ export function useThread(
         ? { ...listed, activityAt: new Date(shownActivity).toISOString() }
         : listed
     return [
-      ...(cloud
+      ...(listsCloud
         ? [
             ...cloudListed,
             ...pinnedListed.filter(
@@ -632,7 +634,7 @@ export function useThread(
           new Date(a.activityAt ?? a.createdAt).getTime(),
       )
   }, [
-    cloud,
+    listsCloud,
     cloudListed,
     pinnedListed,
     deviceListed,
@@ -643,8 +645,8 @@ export function useThread(
   ])
   // The favorites, the most recently pinned first.
   const favoriteIds = useMemo(
-    () => (cloud ? pinnedListed.map((thread) => thread.id).reverse() : []),
-    [cloud, pinnedListed],
+    () => (listsCloud ? pinnedListed.map((thread) => thread.id).reverse() : []),
+    [listsCloud, pinnedListed],
   )
   const summary =
     state.snapshot.thread ??
