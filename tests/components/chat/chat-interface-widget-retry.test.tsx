@@ -97,16 +97,20 @@ afterEach(() => {
 })
 
 // Opens the chat, whose widget's retry run the harness answers with `run`.
-async function openChat(run?: () => AsyncGenerator<Frame>) {
+async function openChat(
+  run?: () => AsyncGenerator<Frame>,
+  opened: Thread = thread,
+  failure = "Couldn't display message compose",
+) {
   signIn({ cloud: true })
   client.post.mockImplementation(async (path: string) => {
-    if (path === '/v1/threads/get') return structuredClone(thread)
+    if (path === '/v1/threads/get') return structuredClone(opened)
     if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
     throw new Error(`Unexpected ${path}`)
   })
   if (run) client.events.mockImplementation(run)
   render(<ChatInterface initialChatId={THREAD_ID} />)
-  await screen.findByText("Couldn't display message compose")
+  await screen.findByText(failure)
 }
 
 const clickRetry = () =>
@@ -116,8 +120,11 @@ const clickRetry = () =>
 
 // Opens the chat, and retries its widget with a harness that answers the
 // retry's run with `run`.
-async function retryWidget(run: () => AsyncGenerator<Frame>) {
-  await openChat(run)
+async function retryWidget(
+  run: () => AsyncGenerator<Frame>,
+  ...opened: [Thread, string] | []
+) {
+  await openChat(run, ...opened)
   await clickRetry()
   expect(client.events).toHaveBeenCalledExactlyOnceWith(
     '/v1/threads/turn',
@@ -198,6 +205,73 @@ describe('retrying a widget on the chat page', () => {
     expect(
       screen.queryByText("Couldn't display message compose"),
     ).not.toBeInTheDocument()
+  })
+
+  it('shows the page a retried link preview read', async () => {
+    const [question, reply] = thread.messages
+    const linkThread: Thread = {
+      ...thread,
+      messages: [
+        question,
+        {
+          ...reply,
+          timeline: [
+            {
+              id: 'w1',
+              type: 'tool_call',
+              toolCallId: 'w1',
+              name: 'render_link_preview',
+              arguments: '{}',
+              complete: true,
+              result: { status: 'error' },
+              invalidArguments: true,
+            },
+            { id: 'c1', type: 'content', content: 'Here it is.' },
+          ],
+        },
+      ],
+    }
+    await retryWidget(
+      async function* (): AsyncGenerator<Frame> {
+        const events: Frame['event'][] = [
+          { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-retry' },
+          {
+            type: 'TOOL_CALL_START',
+            parentMessageId: 'a1',
+            toolCallId: 'w1',
+            toolCallName: 'render_link_preview',
+          },
+          {
+            type: 'TOOL_CALL_ARGS',
+            toolCallId: 'w1',
+            delta: JSON.stringify({ url: 'https://example.com/post' }),
+          },
+          { type: 'TOOL_CALL_END', toolCallId: 'w1' },
+          {
+            type: 'TOOL_CALL_RESULT',
+            toolCallId: 'w1',
+            messageId: 'msg_result',
+            role: 'tool',
+            content: {
+              url: 'https://example.com/post',
+              title: 'Example post',
+              description: 'What the page says about itself',
+              siteName: 'Example',
+              image: null,
+            },
+          },
+          { type: 'RUN_FINISHED', threadId: THREAD_ID, runId: 'run-retry' },
+        ]
+        for (const [id, event] of events.entries()) yield { id, event }
+      },
+      linkThread,
+      "Couldn't display link preview",
+    )
+
+    expect(
+      await screen.findByText('What the page says about itself'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Example post')).toBeInTheDocument()
   })
 
   it('keeps the model that wrote the reply once its widget is redrawn', async () => {

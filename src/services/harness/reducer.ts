@@ -236,12 +236,14 @@ export const runErrorOf = (
 })
 
 // The events of a widget's retry that the chat applies: the call redrawn
-// from its new arguments. The run reports the reply it redrew as its own,
-// under the model the chat has now.
+// from its new arguments, and what the call read for them, as a link
+// preview's page. The run reports the reply it redrew as its own, under the
+// model the chat has now.
 const WIDGET_RETRY_EVENTS: ReadonlySet<HarnessEvent['type']> = new Set([
   'TOOL_CALL_START',
   'TOOL_CALL_ARGS',
   'TOOL_CALL_END',
+  'TOOL_CALL_RESULT',
 ])
 
 // Applies one frame of a run. A frame the state applied already, as when a
