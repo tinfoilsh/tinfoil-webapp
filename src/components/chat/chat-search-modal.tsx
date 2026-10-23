@@ -105,6 +105,7 @@ export function ChatSearchModal({
   const savedChats = useMemo(() => chats.filter(isSearchableChat), [chats])
   const outsideProjects = useChatsOutsideProjects(
     isOpen && searchEnabled && projectScoped,
+    CONSTANTS.SEARCH_RECENT_CHAT_COUNT,
   )
 
   const recentChats = useMemo(

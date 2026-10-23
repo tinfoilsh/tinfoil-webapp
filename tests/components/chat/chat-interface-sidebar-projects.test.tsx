@@ -173,7 +173,7 @@ it("leaves a deleted open project chat for the project's new chat", async () => 
   )
 })
 
-it('lists recent chats outside projects in search opened in a project', async () => {
+it('lists recent chats outside projects in search opened in a project, past pages of project chats', async () => {
   const inProject = projectChat('project-chat', 'Project discussion')
   const outside = {
     ...summaryOf(projectChat('outside-chat', 'Outside discussion')),
@@ -183,14 +183,20 @@ it('lists recent chats outside projects in search opened in a project', async ()
     if (path === '/v1/projects/list')
       return { projects: [project], nextCursor: null }
     if (path === '/v1/projects/get') return project
-    if (path === '/v1/threads/list')
-      return {
-        threads: (input as { projectId?: string }).projectId
-          ? [summaryOf(inProject)]
-          : [summaryOf(inProject), outside],
-        pinned: [],
-        nextCursor: null,
+    if (path === '/v1/threads/list') {
+      const { projectId, cursor } = input as {
+        projectId?: string
+        cursor?: string
       }
+      // Every chat but the oldest is in the project.
+      if (projectId || !cursor)
+        return {
+          threads: [summaryOf(inProject)],
+          pinned: [],
+          nextCursor: projectId ? null : 'older',
+        }
+      return { threads: [outside], pinned: [], nextCursor: null }
+    }
     throw new Error(`Unexpected request: ${path}`)
   })
   render(
@@ -212,5 +218,10 @@ it('lists recent chats outside projects in search opened in a project', async ()
     client.post.mock.calls
       .filter(([path]) => path === '/v1/threads/list')
       .map(([, input]) => input),
-  ).toContainEqual({ key: KEY, limit: 100 })
+  ).toEqual(
+    expect.arrayContaining([
+      { key: KEY, limit: 100 },
+      { key: KEY, limit: 100, cursor: 'older' },
+    ]),
+  )
 })

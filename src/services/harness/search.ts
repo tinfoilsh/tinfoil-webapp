@@ -23,15 +23,27 @@ export const searchChats = (
     { signal },
   )
 
-// Chats read to find the most recent ones outside any project.
+// Chats read at a time to find the most recent ones outside any project.
 const RECENT_LIMIT = 100
 
-// The account's stored chats from the latest, in every project and none.
-export const latestChats = async (api: HarnessAPI, signal?: AbortSignal) =>
-  (
-    await api.post<{ threads: ThreadSummary[] }>(
-      ROUTES.list,
-      { limit: RECENT_LIMIT },
-      { signal },
-    )
-  ).threads
+// The account's latest `count` stored chats outside any project, read page
+// by page from its chats in every project and none.
+export async function latestChatsOutsideProjects(
+  api: HarnessAPI,
+  count: number,
+  signal?: AbortSignal,
+) {
+  const found: ThreadSummary[] = []
+  let cursor: string | null = null
+  do {
+    const page: { threads: ThreadSummary[]; nextCursor: string | null } =
+      await api.post(
+        ROUTES.list,
+        { limit: RECENT_LIMIT, ...(cursor ? { cursor } : {}) },
+        { signal },
+      )
+    found.push(...page.threads.filter((thread) => !thread.projectId))
+    cursor = page.nextCursor
+  } while (cursor && found.length < count)
+  return found.slice(0, count)
+}

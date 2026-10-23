@@ -1,6 +1,9 @@
 import { useHarness } from '@/services/harness/provider'
 import type { HarnessAPI } from '@/services/harness/runtime'
-import { latestChats, searchChats } from '@/services/harness/search'
+import {
+  latestChatsOutsideProjects,
+  searchChats,
+} from '@/services/harness/search'
 import type { ThreadSummary } from '@/services/harness/types'
 import { logError } from '@/utils/error-handling'
 import { useEffect, useState } from 'react'
@@ -99,9 +102,9 @@ export function useChatSearch(
 
 const NO_CHATS: ThreadSummary[] = []
 
-// The stored chats outside any project, for a search opened in a project,
-// whose chat list holds only that project's chats.
-export function useChatsOutsideProjects(enabled: boolean) {
+// The latest `count` stored chats outside any project, for a search opened
+// in a project, whose chat list holds only that project's chats.
+export function useChatsOutsideProjects(enabled: boolean, count: number) {
   const { api, keyReady } = useHarness()
   const [listed, setListed] = useState<{
     api: HarnessAPI
@@ -111,13 +114,10 @@ export function useChatsOutsideProjects(enabled: boolean) {
   useEffect(() => {
     if (!active) return
     const controller = new AbortController()
-    void latestChats(api, controller.signal)
+    void latestChatsOutsideProjects(api, count, controller.signal)
       .then((threads) => {
         if (controller.signal.aborted) return
-        setListed({
-          api,
-          threads: threads.filter((thread) => !thread.projectId),
-        })
+        setListed({ api, threads })
       })
       .catch((cause) => {
         if (controller.signal.aborted) return
@@ -127,6 +127,6 @@ export function useChatsOutsideProjects(enabled: boolean) {
         })
       })
     return () => controller.abort()
-  }, [api, active])
+  }, [api, active, count])
   return active && listed?.api === api ? listed.threads : NO_CHATS
 }
