@@ -2,6 +2,7 @@ import { ChatInterface } from '@/components/chat/chat-interface'
 import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
 import { localThreadStore } from '@/services/harness/local-threads'
+import { publish } from '@/services/harness/runtime'
 import type {
   Frame,
   HarnessEvent,
@@ -9,7 +10,14 @@ import type {
   ThreadSummary,
   Turn,
 } from '@/services/harness/types'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { client, signIn } from '../../harness-fixture'
 import {
@@ -187,6 +195,141 @@ it('lists a new chat on this device as Untitled once it is sent', async () => {
   ).not.toBeInTheDocument()
   expect((await localThreadStore('device').get(threadId))?.title).toBe(
     PLACEHOLDER_CHAT_TITLE,
+  )
+  runs.end()
+})
+
+it('lists a new stored chat while its first reply streams, then once', async () => {
+  signIn({ cloud: true })
+  const runs = scriptRuns()
+  let listed: ThreadSummary[] = []
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list')
+      return { threads: listed, nextCursor: null }
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  render(<ChatInterface suppressIntroModals />)
+  await send('Explain this to me')
+  await waitFor(() => expect(runs.turns).toHaveLength(1))
+  const threadId = runs.turns[0].threadId!
+  const started = '2026-10-22T12:00:00Z'
+  const created = summaryOf(
+    cloudChat(threadId, PLACEHOLDER_CHAT_TITLE, started, {
+      titleState: 'placeholder',
+      activeRun: { runId: 'reply', expiresAt: '2026-10-22T12:10:00Z' },
+    }),
+  )
+  runs.emit(
+    { type: 'RUN_STARTED', threadId, runId: 'reply' },
+    { type: 'STATE_SNAPSHOT', snapshot: { thread: created, queue: [] } },
+    { type: 'TEXT_MESSAGE_CHUNK', messageId: 'answer', delta: 'Here it is.' },
+  )
+  await screen.findByText('Here it is.')
+  const untitled = await row('Untitled')
+  expect(untitled).toHaveAttribute('href', `/chat/${threadId}`)
+  expect(untitled).toHaveAttribute('aria-current', 'page')
+  expect(within(untitled).getByText('Generating response')).toBeInTheDocument()
+
+  runs.emit({
+    type: 'STATE_DELTA',
+    threadId,
+    delta: [
+      { op: 'replace', path: '/thread/title', value: 'Explaining things' },
+      { op: 'replace', path: '/thread/titleState', value: 'generated' },
+    ],
+  })
+  // The title types itself over the placeholder.
+  await waitFor(() =>
+    expect(
+      screen.getByRole('link', { current: 'page' }).textContent,
+    ).not.toMatch(/^Untitled/),
+  )
+  expect(
+    screen.queryByRole('link', { name: /^Explaining things/ }),
+  ).not.toBeInTheDocument()
+  const titled = await screen.findByRole(
+    'link',
+    { name: /^Explaining things/ },
+    { timeout: 3000 },
+  )
+
+  const finished = {
+    ...created,
+    title: 'Explaining things',
+    titleState: 'generated' as const,
+    messageCount: 2,
+    activeRun: null,
+  }
+  listed = [finished]
+  runs.emit(
+    { type: 'STATE_SNAPSHOT', snapshot: { thread: finished, queue: [] } },
+    { type: 'RUN_FINISHED', threadId, runId: 'reply' },
+  )
+  await waitFor(() =>
+    expect(
+      within(titled).queryByText('Generating response'),
+    ).not.toBeInTheDocument(),
+  )
+  await waitFor(() =>
+    expect(
+      client.post.mock.calls.filter(([path]) => path === '/v1/threads/list'),
+    ).toHaveLength(2),
+  )
+  expect(screen.getAllByRole('link', { name: /^Explaining things/ })).toEqual([
+    titled,
+  ])
+  runs.end()
+})
+
+it('keeps a stored chat marked running after moving to another chat', async () => {
+  signIn({ cloud: true })
+  const runs = scriptRuns()
+  const older = cloudChat('older-chat', 'Older chat', '2026-10-20T12:00:00Z')
+  const newer = cloudChat('newer-chat', 'Newer chat', '2026-10-22T12:00:00Z')
+  let listed = [summaryOf(newer), summaryOf(older)]
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/threads/list')
+      return { threads: listed, nextCursor: null }
+    if (path === '/v1/threads/get') {
+      const { id } = input as { id: string }
+      return structuredClone(id === older.id ? older : newer)
+    }
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  render(<ChatInterface initialChatId={older.id} suppressIntroModals />)
+  await screen.findByText('Older chat conversation')
+  await send('More please')
+  await waitFor(() => expect(runs.turns).toHaveLength(1))
+  const running = {
+    ...summaryOf(older),
+    activityAt: '2026-10-22T13:00:00Z',
+    messageCount: 2,
+    activeRun: { runId: 'reply', expiresAt: '2026-10-22T13:10:00Z' },
+  }
+  runs.emit(
+    { type: 'RUN_STARTED', threadId: older.id, runId: 'reply' },
+    { type: 'STATE_SNAPSHOT', snapshot: { thread: running, queue: [] } },
+  )
+  const olderRow = await row('Older chat')
+  await waitFor(() =>
+    expect(within(olderRow).getByText('Generating response')).toBeVisible(),
+  )
+
+  fireEvent.click(await row('Newer chat'))
+  await screen.findByText('Newer chat conversation')
+  expect(
+    within(await row('Older chat')).getByText('Generating response'),
+  ).toBeInTheDocument()
+
+  // The list reports the reply finished.
+  listed = [{ ...running, activeRun: null }, summaryOf(newer)]
+  await act(async () => publish({ chatRevision: 'reply-finished' }))
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole('link', { name: /^Older chat/ })).queryByText(
+        'Generating response',
+      ),
+    ).not.toBeInTheDocument(),
   )
   runs.end()
 })

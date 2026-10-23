@@ -15,6 +15,7 @@ import type {
   HarnessErrorBody,
   HarnessEvent,
   TerminalEvent,
+  ThreadSummary,
   Turn,
 } from './types'
 
@@ -69,6 +70,9 @@ export interface RunHooks {
   started?(run: { threadId?: string; runId: string }): void
   // The harness accepted a stored chat's turn, which stored a new chat.
   accepted?(threadId: string): void
+  // The run the view shows changed the chat's summary, as when it started,
+  // titled the chat or ended.
+  summary?(thread: ThreadSummary): void
   // A device run's final event returns the thread to store.
   saved?(run: DeviceRun, event: TerminalEvent, attached: boolean): Promise<void>
   // A run ended, which may have changed the chat list.
@@ -214,6 +218,12 @@ export class RunController {
                 runId: event.runId,
               })
           }
+          if (
+            shown &&
+            next.snapshot.thread &&
+            next.snapshot.thread !== base.snapshot.thread
+          )
+            this.hooks.summary?.(next.snapshot.thread)
         }
         if (options.submission?.cancelled && runId) {
           await this.api.post(

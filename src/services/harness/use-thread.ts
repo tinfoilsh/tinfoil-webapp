@@ -234,6 +234,12 @@ export function useThread(
   }
   controller.hooks = {
     accepted: markSaved,
+    // The chat list shows a stored chat as its run reports it.
+    summary(thread) {
+      const current = open.get()
+      if (!onDevice(current) && current.id === thread.id)
+        list.cloud.reported(thread)
+    },
     async saved(run, event, attached) {
       try {
         const saved = await storeRun(

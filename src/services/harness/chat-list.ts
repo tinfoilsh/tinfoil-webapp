@@ -136,6 +136,22 @@ export function useChatList({
           persist()
           if (!loadState.get().loaded) edits.update((version) => version + 1)
         },
+        // A stored chat as the open chat's run reports it, which is newer
+        // than the listed copy: a new chat joins the list, and a chat whose
+        // reply goes on stays marked running until the list is read again.
+        // The listed favorites still decide whether it is one.
+        reported(summary: ThreadSummary) {
+          listing.version++
+          const pinned = pinnedThreads
+            .get()
+            .some((thread) => thread.id === summary.id)
+          const shown = { ...summary, pinned }
+          if (!scope.projectId || scope.projectId === summary.projectId)
+            cloudEdits.add(shown)
+          if (pinned) pinnedEdits.replace(shown)
+          persist()
+          if (!loadState.get().loaded) edits.update((version) => version + 1)
+        },
       },
       device: editsOf(deviceThreads),
       // The stored chats are not listed, as once cloud sync is off.
