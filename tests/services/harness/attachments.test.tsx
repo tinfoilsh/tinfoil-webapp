@@ -184,7 +184,7 @@ describe('picking a file to attach', () => {
     },
     { name: 'notes.v2.txt', size: 2000, refused: null },
     {
-      name: 'report.pdf',
+      name: 'notes.txt',
       size: 2001,
       refused: 413,
       message: 'Text file exceeds the limit of 2.0 KB.',

@@ -18,7 +18,8 @@ export const acceptOf = (groups: readonly FileGroup[] | undefined) =>
 const TEXT_EXTENSION = '.txt'
 
 // The megabyte the app has always allowed over the limit it states for
-// files other than text, so a file of about 32.5MB fits under 32MB.
+// files other than text: it states 32MB, and a file of about 32.5MB still
+// fits under the 33MB the harness takes.
 const STATED_LIMIT_ALLOWANCE_MB = 1
 
 // A limit of whole megabytes reads as the app always wrote it: 50MB for
