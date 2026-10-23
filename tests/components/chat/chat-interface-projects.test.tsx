@@ -35,7 +35,10 @@ import { chatPage } from './chat-page-mocks'
 
 const page = vi.hoisted(() => ({ toast: vi.fn() }))
 
-vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
+vi.mock('@clerk/react', async () => ({
+  ...(await import('./chat-page-mocks')).clerk,
+  useReverification: (callback: unknown) => callback,
+}))
 vi.mock('next/router', async () => (await import('./chat-page-mocks')).router)
 vi.mock('next/head', async () => (await import('./chat-page-mocks')).head)
 // Lazy UI renders once loaded, so the Add to project prompt can be answered;
@@ -849,4 +852,45 @@ it('leaves the address of a linked project while the key is refused, instead of 
     screen.queryByRole('heading', { name: 'Loading...' }),
   ).not.toBeInTheDocument()
   expect(requested('/v1/projects/get')).toEqual([])
+})
+
+it('keeps a chat outside every project open when all projects are deleted', async () => {
+  routes['/v1/threads/get'] = () =>
+    structuredClone({
+      ...openProjectChat,
+      id: mainChat.id,
+      title: mainChat.title,
+      projectId: null,
+    })
+  routes['/v1/projects/delete-all'] = () => ({ deleted: 1 })
+  render(routeView({ chatId: mainChat.id }))
+  await screen.findByText('What did the survey find?')
+  chatPage.router.replace.mockClear()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Close sidebar' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+  const settings = await screen.findByRole('dialog', { name: 'Settings' })
+  fireEvent.click(within(settings).getAllByRole('button', { name: 'Data' })[0])
+  fireEvent.click(
+    within(settings).getByRole('button', { name: 'Delete all projects' }),
+  )
+  fireEvent.change(
+    within(settings).getByPlaceholderText('delete all projects'),
+    { target: { value: 'delete all projects' } },
+  )
+  fireEvent.click(
+    within(settings).getByRole('button', {
+      name: 'Yes, delete all my projects',
+    }),
+  )
+
+  await waitFor(() =>
+    expect(page.toast).toHaveBeenCalledWith({
+      title: 'All projects deleted',
+      description: 'Deleted 1 project.',
+    }),
+  )
+  expect(screen.getByText('What did the survey find?')).toBeInTheDocument()
+  expect(chatPage.router.replace).not.toHaveBeenCalled()
+  expect(chatPage.router.push).not.toHaveBeenCalled()
 })

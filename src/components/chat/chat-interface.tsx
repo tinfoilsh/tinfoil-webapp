@@ -2266,6 +2266,9 @@ export function ChatInterface({
           onDeleteAllChats={thread.removeAll}
           onAllChatsDeleted={() => createNewChat()}
           onAllProjectsDeleted={() => {
+            // Only a chat in a project closes with the projects.
+            if (!activeProject && !loadingProject && !currentChat.projectId)
+              return
             exitProjectMode()
             thread.newChat()
             void router.replace('/')
