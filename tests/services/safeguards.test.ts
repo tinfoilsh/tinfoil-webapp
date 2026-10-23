@@ -58,15 +58,14 @@ describe('safeguards store', () => {
     resetSafeguards()
   })
 
-  it('loads flagged chats and indexes them by conversation id', async () => {
-    expect(getSafeguardsSnapshot().hasLoaded).toBe(false)
+  it('loads flagged chats and the suspension policy', async () => {
+    expect(getSafeguardsSnapshot().policy).toBeNull()
     mockSafeguardsResponse()
 
     await refreshSafeguards()
 
     const snapshot = getSafeguardsSnapshot()
     expect(snapshot.status).toBe('ready')
-    expect(snapshot.hasLoaded).toBe(true)
     expect(snapshot.policy).toEqual({
       inWindow: 1,
       windowHours: 168,
@@ -78,7 +77,6 @@ describe('safeguards store', () => {
       'chat-b',
       '',
     ])
-    expect(snapshot.flaggedChatIds).toEqual({ 'chat-a': true, 'chat-b': true })
     expect(fetch).toHaveBeenCalledWith(
       SAFEGUARDS_URL,
       expect.objectContaining({
@@ -100,7 +98,6 @@ describe('safeguards store', () => {
 
     const snapshot = getSafeguardsSnapshot()
     expect(snapshot.status).toBe('error')
-    expect(snapshot.hasLoaded).toBe(true)
     expect(snapshot.flaggedChats).toHaveLength(3)
   })
 
@@ -121,7 +118,6 @@ describe('safeguards store', () => {
 
     const snapshot = getSafeguardsSnapshot()
     expect(snapshot.status).toBe('error')
-    expect(snapshot.hasLoaded).toBe(false)
     expect(snapshot.policy).toBeNull()
     expect(snapshot.flaggedChats).toEqual([])
   })

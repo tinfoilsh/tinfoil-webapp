@@ -1,11 +1,9 @@
 import { PROJECTS_CHANGED } from '@/hooks/use-projects'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
+import { checkUpload } from '@/services/harness/composer'
+import * as projects from '@/services/harness/projects'
 import { useHarness } from '@/services/harness/provider'
-import type {
-  Project,
-  ProjectContextUsage,
-  ProjectDocument,
-} from '@/types/project'
+import type { Project, ProjectDocument } from '@/types/project'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ProjectContext,
@@ -13,14 +11,6 @@ import {
   type ProjectContextValue,
   type UploadingFile,
 } from './project-context'
-const emptyUsage: ProjectContextUsage = {
-  systemInstructions: 0,
-  documents: [],
-  memory: 0,
-  totalUsed: 0,
-  modelLimit: 0,
-  availableForChat: 0,
-}
 export function ProjectProvider({
   children,
   initialProjectId,
@@ -28,7 +18,7 @@ export function ProjectProvider({
   children: ReactNode
   initialProjectId?: string | null
 }) {
-  const { api, keyReady } = useHarness()
+  const { api, keyReady, session } = useHarness()
   const { isLoading: isSubscriptionLoading, chat_subscription_active } =
     useSubscriptionStatus()
   const hasPremiumAccess = !isSubscriptionLoading && chat_subscription_active
@@ -38,7 +28,6 @@ export function ProjectProvider({
   const [projectDocuments, setProjectDocuments] = useState<ProjectDocument[]>(
     [],
   )
-  const [usage, setUsage] = useState(emptyUsage)
   const [loadingProject, setLoadingProject] = useState<LoadingProject | null>(
     null,
   )
@@ -61,12 +50,7 @@ export function ProjectProvider({
       const version = ++generation.current
       setLoadingProject({ id, name: name ?? 'Loading…' })
       try {
-        const project = await api.post<
-          Project & {
-            documents: ProjectDocument[]
-            contextUsage: ProjectContextUsage
-          }
-        >('/v1/projects/get', { id })
+        const project = await projects.getProject(api, id)
         if (
           version !== generation.current ||
           !hasPremiumAccessRef.current ||
@@ -75,7 +59,6 @@ export function ProjectProvider({
           return false
         setActiveProject(project)
         setProjectDocuments(project.documents)
-        setUsage(project.contextUsage)
         setError(null)
         return true
       } catch (cause) {
@@ -97,7 +80,6 @@ export function ProjectProvider({
     setProjectDocuments([])
     setLoadingProject(null)
     setUploadingFiles([])
-    setUsage(emptyUsage)
   }, [])
   useEffect(() => {
     if (initialProjectId && keyReady && hasPremiumAccess)
@@ -133,40 +115,28 @@ export function ProjectProvider({
     exitProjectMode,
     createProject: async (data) => {
       requirePremiumAccess()
-      const project = await api.post<Project>(
-        '/v1/projects/create',
-        data as unknown as Record<string, unknown>,
-      )
+      const project = await projects.createProject(api, data)
       changed()
       return project
     },
     updateProject: async (id, data) => {
       requirePremiumAccess()
-      const { memory, ...patch } = data
-      await api.post('/v1/projects/update', { id, ...patch })
-      if (memory)
-        await api.post('/v1/projects/memory/update', {
-          projectId: id,
-          facts: memory,
-        })
+      await projects.updateProject(api, id, data)
       await reloadProject(id)
       changed()
     },
     deleteProject: async (id) => {
       requirePremiumAccess()
-      await api.post('/v1/projects/delete', { id })
+      await projects.deleteProject(api, id)
       if (activeProject?.id === id) exitProjectMode()
       changed()
     },
     uploadDocument: async (file) => {
       requirePremiumAccess()
       if (!activeProject) throw new Error('Select a project first.')
+      if (session) checkUpload(file, session.composer.projectDocuments)
       const projectId = activeProject.id
-      const doc = await api.upload<ProjectDocument>(
-        '/v1/projects/documents/upload',
-        file,
-        { projectId },
-      )
+      const doc = await projects.uploadProjectDocument(api, projectId, file)
       await reloadProject(projectId)
       return doc
     },
@@ -174,34 +144,16 @@ export function ProjectProvider({
       requirePremiumAccess()
       if (!activeProject) return
       const projectId = activeProject.id
-      await api.post('/v1/projects/documents/delete', {
-        projectId,
-        documentId,
-      })
+      await projects.deleteProjectDocument(api, projectId, documentId)
       await reloadProject(projectId)
     },
     refreshDocuments,
-    updateProjectMemory: async (facts) => {
-      requirePremiumAccess()
-      if (!activeProject) return
-      const projectId = activeProject.id
-      const result = await api.post<{ facts: Project['memory'] }>(
-        '/v1/projects/memory/update',
-        { projectId, facts },
-      )
-      setActiveProject((current) =>
-        current?.id === projectId
-          ? { ...current, memory: result.facts }
-          : current,
-      )
-    },
     addUploadingFile: (file) =>
       setUploadingFiles((previous) => [...previous, file]),
     removeUploadingFile: (id) =>
       setUploadingFiles((previous) =>
         previous.filter((file) => file.id !== id),
       ),
-    getContextUsage: () => (hasPremiumAccess ? usage : emptyUsage),
   }
   return (
     <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>

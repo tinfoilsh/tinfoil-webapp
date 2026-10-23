@@ -86,7 +86,13 @@ describe('IndexedDBStorage account reset', () => {
     const names = Array.from(seeded.objectStoreNames)
     const seed = seeded.transaction(names, 'readwrite')
     for (const name of names)
-      seed.objectStore(name).put({ id: 'seed', cacheKey: 'seed', userId: 'u' })
+      seed.objectStore(name).put({
+        id: 'seed',
+        cacheKey: 'seed',
+        userId: 'u',
+        chatId: 'seed',
+        attachmentId: 'seed',
+      })
     await new Promise((resolve) => (seed.oncomplete = resolve))
     seeded.close()
     const before = await countRows()

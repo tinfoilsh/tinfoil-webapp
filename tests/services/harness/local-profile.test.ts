@@ -7,14 +7,17 @@ import {
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
   USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
   USER_PREFS_LOCAL_PROFILE,
+  USER_PREFS_LOCAL_PROFILE_UPGRADED,
   USER_PREFS_NICKNAME,
   USER_PREFS_PERSONALIZATION_ENABLED,
   USER_PREFS_TRAITS,
 } from '@/constants/storage-keys'
-import { loadLocalProfile, turnProfile } from '@/services/harness/local-profile'
+import { loadLocalProfile } from '@/services/harness/local-profile'
+import { useHarness } from '@/services/harness/provider'
 import { getView } from '@/services/harness/runtime'
+import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { client, KEY, signIn } from '../../harness-fixture'
+import { client, KEY, signIn, testSession } from '../../harness-fixture'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -54,6 +57,7 @@ describe('loadLocalProfile', () => {
       reasoningEffort: 'high',
       thinkingEnabled: false,
       themeMode: 'dark',
+      chatFont: 'comic',
       defaultPromptPresetId: 'p1',
       customPromptPresets: [
         {
@@ -77,42 +81,6 @@ describe('loadLocalProfile', () => {
     localStorage.setItem(USER_PREFS_NICKNAME, 'Changed by the old client')
     expect(loadLocalProfile().nickname).toBe('Sam')
   })
-
-  it.each([
-    { id: 'p1', name: '' },
-    { id: 'p1', name: 'Editor', webSearchEnabled: 'yes' },
-  ])('drops presets the harness would refuse: %j', (preset) => {
-    localStorage.setItem(
-      USER_PREFS_CUSTOM_PROMPT_PRESETS,
-      JSON.stringify([preset]),
-    )
-    expect(loadLocalProfile()).toEqual({})
-    expect(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)).toBeNull()
-  })
-})
-
-describe('turnProfile', () => {
-  it('sends only valid prompt settings', () => {
-    expect(
-      turnProfile({
-        nickname: 'Sam',
-        language: 'French',
-        traits: ['direct', 3],
-        reasoningEffort: 'extreme',
-        autoIntelligence: 'max',
-        thinkingEnabled: 'yes',
-        webSearchEnabled: false,
-        sandboxEnabled: true,
-        themeMode: 'dark',
-        hasSeenOnboarding: true,
-      }),
-    ).toEqual({
-      nickname: 'Sam',
-      language: 'French',
-      autoIntelligence: 'max',
-      webSearchEnabled: false,
-    })
-  })
 })
 
 describe('profile storage modes', () => {
@@ -121,6 +89,7 @@ describe('profile storage modes', () => {
       USER_PREFS_LOCAL_PROFILE,
       JSON.stringify({ nickname: 'Local Sam' }),
     )
+    localStorage.setItem(USER_PREFS_LOCAL_PROFILE_UPGRADED, 'true')
     const api = signIn()
 
     await api.refreshProfile()
@@ -140,6 +109,108 @@ describe('profile storage modes', () => {
     expect(JSON.parse(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)!)).toEqual(
       { nickname: 'Local Sam', language: 'German' },
     )
+  })
+
+  it("shows the session's defaults for settings a profile leaves unset", () => {
+    signIn({
+      session: {
+        ...testSession,
+        profileDefaults: { piiCheckEnabled: true, genUIEnabled: true },
+      },
+      profile: { genUIEnabled: false },
+    })
+
+    const { result } = renderHook(() => useHarness().profile)
+
+    expect(result.current).toEqual({
+      piiCheckEnabled: true,
+      genUIEnabled: false,
+    })
+    expect(getView().profile).toEqual({ genUIEnabled: false })
+  })
+
+  it('upgrades the settings kept on this device through the harness once', async () => {
+    const stored = {
+      isUsingCustomPrompt: true,
+      customSystemPrompt: 'Answer in French.',
+    }
+    const upgraded = {
+      isUsingCustomPrompt: false,
+      customSystemPrompt: '',
+      defaultPromptPresetId: 'user:migrated-custom-prompt',
+      customPromptPresets: [
+        {
+          id: 'user:migrated-custom-prompt',
+          name: 'My default prompt',
+          systemPrompt: 'Answer in French.',
+        },
+      ],
+    }
+    localStorage.setItem(USER_PREFS_LOCAL_PROFILE, JSON.stringify(stored))
+    const api = signIn()
+    client.post.mockResolvedValueOnce({ profile: upgraded })
+
+    await api.refreshProfile()
+
+    expect(getView().profile).toEqual(upgraded)
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/profile/upgrade',
+      { profile: stored },
+      expect.any(AbortSignal),
+    )
+    expect(JSON.parse(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)!)).toEqual(
+      upgraded,
+    )
+    expect(localStorage.getItem(USER_PREFS_LOCAL_PROFILE_UPGRADED)).toBe('true')
+
+    await api.refreshProfile()
+    expect(client.post).toHaveBeenCalledTimes(1)
+  })
+
+  it('upgrades settings changed during an upgrade on a later load', async () => {
+    localStorage.setItem(
+      USER_PREFS_LOCAL_PROFILE,
+      JSON.stringify({ nickname: 'Sam' }),
+    )
+    const api = signIn()
+    let answer!: (value: unknown) => void
+    client.post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve
+        }),
+    )
+    const refreshing = api.refreshProfile()
+    await vi.waitFor(() => expect(client.post).toHaveBeenCalledTimes(1))
+    await api.updateProfile({ language: 'German' })
+
+    answer({ profile: { nickname: 'Sam', themeMode: 'system' } })
+    await refreshing
+
+    expect(JSON.parse(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)!)).toEqual(
+      { nickname: 'Sam', language: 'German' },
+    )
+    expect(localStorage.getItem(USER_PREFS_LOCAL_PROFILE_UPGRADED)).toBeNull()
+    const upgraded = {
+      nickname: 'Sam',
+      language: 'German',
+      themeMode: 'system',
+    }
+    client.post.mockResolvedValueOnce({ profile: upgraded })
+
+    await api.refreshProfile()
+
+    expect(client.post).toHaveBeenCalledTimes(2)
+    expect(client.post).toHaveBeenLastCalledWith(
+      '/v1/profile/upgrade',
+      { profile: { nickname: 'Sam', language: 'German' } },
+      expect.any(AbortSignal),
+    )
+    expect(getView().profile).toEqual(upgraded)
+    expect(JSON.parse(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)!)).toEqual(
+      upgraded,
+    )
+    expect(localStorage.getItem(USER_PREFS_LOCAL_PROFILE_UPGRADED)).toBe('true')
   })
 
   it('reads a cloud account’s settings from the harness and keeps them when sync is turned off', async () => {

@@ -1,7 +1,8 @@
 import { SecureClient } from 'tinfoil'
 import { AnonymousCredentialCache } from './anonymous-credential'
+import { ERROR_CODES, type HarnessRoute, type RunRoute } from './protocol'
 import { HarnessError, readEvents } from './sse'
-import type { Frame, HarnessErrorBody, Session, Turn } from './types'
+import type { FollowInput, Frame, HarnessErrorBody, Turn } from './types'
 
 const harnessRepo = 'tinfoilsh/confidential-tinfoil-harness'
 // An attestation that has not finished by then is abandoned: the request
@@ -17,10 +18,6 @@ export class HarnessClient {
   private readonly origin: string
   private readonly anonymous = new AnonymousCredentialCache()
   private secure: Transport
-
-  get anonymousRateLimit() {
-    return this.anonymous.rateLimit
-  }
 
   dispose() {
     this.anonymous.dispose()
@@ -42,7 +39,7 @@ export class HarnessClient {
       parsed.hash
     ) {
       throw new HarnessError({
-        code: 'CONFIGURATION',
+        code: ERROR_CODES.configuration,
         message: 'Configure an HTTPS origin for the chat service.',
       })
     }
@@ -61,7 +58,7 @@ export class HarnessClient {
             if (this.secure === secure) this.secure = this.createTransport()
             reject(
               new HarnessError({
-                code: 'CONNECTION',
+                code: ERROR_CODES.connection,
                 message:
                   'The chat service could not be verified in time. Check your connection and try again.',
               }),
@@ -78,24 +75,14 @@ export class HarnessClient {
   }
 
   private async request(
-    path: string,
+    path: HarnessRoute,
     body: string | FormData,
     signal?: AbortSignal,
-    lastEventId?: number,
   ): Promise<Response> {
     if (!/^\/v1\/(?:[a-z-]+\/)*[a-z-]+$/.test(path)) {
       throw new HarnessError({
-        code: 'BAD_REQUEST',
+        code: ERROR_CODES.badRequest,
         message: 'Invalid chat service path.',
-      })
-    }
-    if (
-      lastEventId !== undefined &&
-      (!Number.isSafeInteger(lastEventId) || lastEventId < 0)
-    ) {
-      throw new HarnessError({
-        code: 'BAD_REQUEST',
-        message: 'Invalid run cursor.',
       })
     }
     signal?.throwIfAborted()
@@ -114,8 +101,6 @@ export class HarnessClient {
       if (typeof body === 'string')
         headers.set('Content-Type', 'application/json')
       if (token) headers.set('Authorization', `Bearer ${token}`)
-      if (lastEventId !== undefined)
-        headers.set('Last-Event-ID', String(lastEventId))
       const response = await this.secure.fetch(this.origin + path, {
         method: 'POST',
         headers,
@@ -135,14 +120,17 @@ export class HarnessClient {
         } else token = await this.getToken({ skipCache: true })
         if (!token)
           throw new HarnessError(
-            { code: 'UNAUTHENTICATED', message: 'Sign in again to continue.' },
+            {
+              code: ERROR_CODES.unauthenticated,
+              message: 'Sign in again to continue.',
+            },
             401,
           )
         continue
       }
       if (!response.ok) {
         let detail: HarnessErrorBody = {
-          code: 'UPSTREAM_REFUSED',
+          code: ERROR_CODES.upstreamRefused,
           message: 'The chat service could not complete the request.',
         }
         const value: unknown = await response.json().catch(() => null)
@@ -158,20 +146,21 @@ export class HarnessClient {
           typeof value.error.message === 'string'
         )
           detail = value.error as HarnessErrorBody
-        if (anonymous && detail.code === 'QUOTA_EXHAUSTED')
-          this.anonymous.exhausted()
         throw new HarnessError(detail, response.status)
       }
       return response
     }
     throw new HarnessError(
-      { code: 'UNAUTHENTICATED', message: 'Sign in again to continue.' },
+      {
+        code: ERROR_CODES.unauthenticated,
+        message: 'Sign in again to continue.',
+      },
       401,
     )
   }
 
   async post<T>(
-    path: string,
+    path: HarnessRoute,
     input: unknown,
     signal?: AbortSignal,
   ): Promise<T> {
@@ -179,11 +168,8 @@ export class HarnessClient {
       await this.request(path, JSON.stringify(input), signal)
     ).json() as Promise<T>
   }
-  session(signal?: AbortSignal) {
-    return this.post<Session>('/v1/session', {}, signal)
-  }
   async upload<T>(
-    path: string,
+    path: HarnessRoute,
     file: File,
     fields: Record<string, string>,
     signal?: AbortSignal,
@@ -194,7 +180,7 @@ export class HarnessClient {
     return (await this.request(path, form, signal)).json() as Promise<T>
   }
   async download(
-    path: string,
+    path: HarnessRoute,
     input: unknown,
     signal?: AbortSignal,
   ): Promise<Blob> {
@@ -204,24 +190,19 @@ export class HarnessClient {
   // audio. Aborting the signal ends the body; the caller cancels it when it
   // stops reading early.
   async stream(
-    path: string,
+    path: HarnessRoute,
     input: unknown,
     signal?: AbortSignal,
   ): Promise<Response> {
     return this.request(path, JSON.stringify(input), signal)
   }
+  // A run's events. Following a run replays it from its first frame.
   async *events(
-    path: '/v1/threads/turn' | '/v1/threads/follow',
-    input: Turn | { key?: string; threadId: string; runId: string },
+    path: RunRoute,
+    input: Turn | FollowInput,
     signal?: AbortSignal,
-    lastEventId?: number,
   ): AsyncGenerator<Frame> {
-    const response = await this.request(
-      path,
-      JSON.stringify(input),
-      signal,
-      lastEventId,
-    )
+    const response = await this.request(path, JSON.stringify(input), signal)
     if (
       !response.headers
         .get('Content-Type')
@@ -230,24 +211,10 @@ export class HarnessClient {
       !response.body
     ) {
       throw new HarnessError({
-        code: 'INVALID_STREAM',
+        code: ERROR_CODES.invalidStream,
         message: 'The chat service did not return an event stream.',
       })
     }
-    for await (const frame of readEvents(response.body)) {
-      // Refresh issuance metadata after a run. A started run is never
-      // replayed automatically when a downstream credential expires.
-      if (
-        frame.event.type === 'RUN_ERROR' &&
-        frame.event.code === 'QUOTA_EXHAUSTED'
-      )
-        this.anonymous.exhausted()
-      if (
-        frame.event.type === 'RUN_FINISHED' ||
-        frame.event.type === 'RUN_ERROR'
-      )
-        this.anonymous.invalidate()
-      yield frame
-    }
+    yield* readEvents(response.body)
   }
 }

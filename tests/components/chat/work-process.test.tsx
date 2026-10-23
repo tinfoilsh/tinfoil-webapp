@@ -3,12 +3,9 @@ import {
   getWorkDurationSeconds,
   type WorkBlock,
 } from '@/components/chat/renderers/components/WorkProcess'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { client } from '../../harness-fixture'
-
-const summarize = vi.hoisted(() => vi.fn())
-vi.mock('@/services/inference/summary-client', () => ({ summarize }))
 
 const thinking = (
   id: string,
@@ -46,8 +43,6 @@ const renderWork = (blocks: WorkBlock[], isActive = false) =>
 const getHeader = () => screen.getAllByRole('button')[0]
 
 beforeEach(() => {
-  summarize.mockReset()
-  summarize.mockResolvedValue('')
   // Sources show their site's favicon, which these sites lack.
   client.post.mockImplementation(async (path: string) => {
     if (path !== '/v1/metadata/favicon')
@@ -132,15 +127,6 @@ describe('WorkProcess once the run has finished', () => {
     ])
     expect(getHeader()).toHaveTextContent('Worked through 3 steps')
   })
-
-  it('does not call the summarizer for thinking in a finished run', async () => {
-    renderWork([
-      thinking('t0', { content: longThought, isThinking: true }),
-      search('s1'),
-    ])
-    await act(async () => {})
-    expect(summarize).not.toHaveBeenCalled()
-  })
 })
 
 describe('WorkProcess while the run is active', () => {
@@ -206,71 +192,21 @@ describe('WorkProcess while the run is active', () => {
     expect(getHeader()).toHaveTextContent(/^Working$/)
   })
 
-  it('surfaces the live thinking summary in the header and shares it with the step', async () => {
-    summarize.mockResolvedValue('Weighing the tradeoffs')
-
+  it("shows the active thought's summary in the header and in its step", () => {
     renderWork(
       [
         search('s0'),
-        thinking('t1', { content: longThought, isThinking: true }),
+        thinking('t1', {
+          content: longThought,
+          isThinking: true,
+          summary: 'Weighing the tradeoffs',
+        }),
       ],
       true,
     )
-    const header = getHeader()
-    expect(header).toHaveTextContent('Thinking')
 
-    await act(async () => {
-      await Promise.resolve()
-    })
-
-    expect(summarize).toHaveBeenCalledTimes(1)
-    expect(summarize).toHaveBeenCalledWith({
-      content: longThought,
-      style: 'thoughts_summary',
-    })
-    expect(header).toHaveTextContent('Weighing the tradeoffs')
-    // The nested ThoughtProcess shows the same summary without its own call.
+    expect(getHeader()).toHaveTextContent('Weighing the tradeoffs')
     expect(screen.getAllByText('Weighing the tradeoffs')).toHaveLength(2)
-    expect(summarize).toHaveBeenCalledTimes(1)
-  })
-
-  it('discards a summary that lands after its thinking block has closed', async () => {
-    let resolveSummary!: (value: string) => void
-    summarize.mockReturnValue(
-      new Promise<string>((resolve) => {
-        resolveSummary = resolve
-      }),
-    )
-
-    const { rerender } = renderWork(
-      [
-        search('s0'),
-        thinking('t1', { content: longThought, isThinking: true }),
-      ],
-      true,
-    )
-    await act(async () => {})
-    expect(summarize).toHaveBeenCalledTimes(1)
-
-    // The first thought closes and a second one opens while the request is
-    // still pending for the first.
-    rerender(
-      <WorkProcess
-        blocks={[
-          search('s0'),
-          thinking('t1', { content: longThought }),
-          thinking('t2', { content: 'Fresh start', isThinking: true }),
-        ]}
-        isActive
-        isDarkMode={false}
-      />,
-    )
-    await act(async () => {
-      resolveSummary('Stale summary of the first thought')
-    })
-
-    expect(getHeader()).toHaveTextContent('Thinking')
-    expect(screen.queryByText('Stale summary of the first thought')).toBeNull()
   })
 
   it('settles into "Worked for" once the run completes', () => {

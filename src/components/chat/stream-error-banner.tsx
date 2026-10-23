@@ -2,6 +2,7 @@
 
 import { cn } from '@/components/ui/utils'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
+import { ERROR_CODES } from '@/services/harness/protocol'
 import {
   TfBoxX,
   TfChevronDown,
@@ -39,6 +40,7 @@ type ErrorKind =
   | 'auth'
   | 'rate-limit'
   | 'busy'
+  | 'queue-full'
   | 'context-length'
   | 'too-large'
   | 'model'
@@ -92,6 +94,12 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
     title: 'Too many requests right now',
     suggestion:
       'Wait a moment, then resend your message. Your message was not lost.',
+  },
+  'queue-full': {
+    kind: 'queue-full',
+    title: 'Too many messages are waiting in this chat',
+    suggestion:
+      'Wait for a queued message to be sent, then resend yours. Your message was not lost.',
   },
   'too-large': {
     kind: 'too-large',
@@ -166,28 +174,30 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
   // A document conversion failure carries the document service's fixed
   // explanation, which describes nothing in the file.
   if (error.upstreamCode?.startsWith('document_'))
-    return error.code === 'RATE_LIMITED'
+    return error.code === ERROR_CODES.rateLimited
       ? {
           ...CLASSIFICATIONS.busy,
           title: 'The document service is busy',
         }
       : { ...CLASSIFICATIONS.document, suggestion: error.message }
   switch (error.code) {
-    case 'UNAUTHENTICATED':
+    case ERROR_CODES.unauthenticated:
       return CLASSIFICATIONS.auth
-    case 'QUOTA_EXHAUSTED':
+    case ERROR_CODES.quotaExhausted:
       return quotaClassification(error)
-    case 'RATE_LIMITED':
+    case ERROR_CODES.rateLimited:
       return CLASSIFICATIONS.busy
-    case 'CONTEXT_TOO_LARGE':
+    case ERROR_CODES.queueFull:
+      return CLASSIFICATIONS['queue-full']
+    case ERROR_CODES.contextTooLarge:
       return CLASSIFICATIONS['context-length']
-    case 'THREAD_TOO_LARGE':
+    case ERROR_CODES.threadTooLarge:
       return CLASSIFICATIONS['too-large']
-    case 'MODEL_UNAVAILABLE':
+    case ERROR_CODES.modelUnavailable:
       return CLASSIFICATIONS.model
     case undefined:
-    case 'STREAM_INTERRUPTED':
-    case 'CONNECTION':
+    case ERROR_CODES.streamInterrupted:
+    case ERROR_CODES.connection:
       return CLASSIFICATIONS.connection
     default:
       return CLASSIFICATIONS.server
@@ -234,7 +244,7 @@ export function StreamErrorBanner({
   // like it might just reconnect). While offline the resend is gated —
   // it would only burn the automatic in-request retries and fail again.
   const isConnectionError = kind === 'connection'
-  const isResend = isConnectionError || kind === 'busy'
+  const isResend = isConnectionError || kind === 'busy' || kind === 'queue-full'
   // A request refused for an exhausted quota or the chat's size fails
   // identically until that changes, so a retry button is just an invitation
   // to frustration.

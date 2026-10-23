@@ -1,11 +1,10 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
-import { authTokenManager } from '@/services/auth'
+import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Thread } from '@/services/harness/types'
-import { resetSafeguards } from '@/services/safeguards'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
-import { safeguardFlags, stubSafeguardFlags } from './chat-interface-fixture'
+import { refuseFetch } from './chat-interface-fixture'
 
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
 vi.mock('next/router', async () => (await import('./chat-page-mocks')).router)
@@ -70,8 +69,7 @@ const thread: Thread = {
   ],
 }
 
-let flags: { conversation_id: string }[]
-let flagsResponse: (() => Promise<Response>) | undefined
+let fetch: Mock
 
 function composer() {
   return screen.getByRole('textbox', { name: /message/i })
@@ -84,12 +82,7 @@ function send(text: string) {
 }
 
 beforeEach(() => {
-  flags = []
-  flagsResponse = undefined
-  authTokenManager.initialize(async () => 'clerk-jwt')
-  stubSafeguardFlags(() =>
-    flagsResponse ? flagsResponse() : safeguardFlags(flags),
-  )
+  fetch = refuseFetch()
   signIn({ cloud: true })
   client.post.mockImplementation(async (path: string) => {
     if (path === '/v1/threads/get') return structuredClone(thread)
@@ -98,14 +91,14 @@ beforeEach(() => {
   })
 })
 
-afterEach(() => {
-  resetSafeguards()
-  authTokenManager.reset()
-})
-
 describe('a chat the safeguards flagged', () => {
   it('is read-only', async () => {
-    flags = [{ conversation_id: THREAD_ID }]
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/get')
+        return { ...structuredClone(thread), flagged: true }
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      throw new Error(`Unexpected ${path}`)
+    })
     render(<ChatInterface initialChatId={THREAD_ID} />)
 
     expect(
@@ -119,36 +112,48 @@ describe('a chat the safeguards flagged', () => {
     expect(
       screen.queryByRole('button', { name: 'Edit message' }),
     ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Read aloud' }),
+    ).not.toBeInTheDocument()
   })
 
-  it('is a normal chat while it has no flag', async () => {
+  it('is a normal chat while it has no flag, without asking for flags itself', async () => {
     render(<ChatInterface initialChatId={THREAD_ID} />)
 
     expect(await screen.findByText('Hello there')).toBeInTheDocument()
     await waitFor(() => expect(composer()).toBeInTheDocument())
+    expect(fetch).not.toHaveBeenCalled()
     expect(
       screen.queryByText('This chat was flagged by a safeguard model.'),
     ).not.toBeInTheDocument()
     expect(
       screen.getAllByRole('button', { name: 'Regenerate response' }).length,
     ).toBeGreaterThan(0)
+    expect(
+      screen.getByRole('button', { name: 'Read aloud' }),
+    ).toBeInTheDocument()
   })
 
-  it('stops its reply in progress and its queued turns once a flag arrives', async () => {
+  it('stops its reply in progress and its queued turns once its summary is flagged', async () => {
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/get')
         return {
           ...structuredClone(thread),
-          activeRun: { runId: 'run-1', lastEventId: 0 },
+          activeRun: { runId: 'run-1', expiresAt: '2026-04-01T10:00:00Z' },
         }
       if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
       if (['/v1/threads/cancel', '/v1/threads/queue/remove'].includes(path))
         return {}
       throw new Error(`Unexpected ${path}`)
     })
+    const { messages: _messages, hasOlder: _hasOlder, ...summary } = thread
     let release!: () => void
     const held = new Promise<void>((resolve) => {
       release = resolve
+    })
+    let flag!: () => void
+    const flagged = new Promise<void>((resolve) => {
+      flag = resolve
     })
     client.events.mockImplementationOnce(async function* () {
       const frames: Frame['event'][] = [
@@ -156,12 +161,23 @@ describe('a chat the safeguards flagged', () => {
         {
           type: 'STATE_SNAPSHOT',
           snapshot: {
-            thread: null,
+            thread: summary,
             queue: [{ queueId: 'queued-1', content: 'and then?' }],
           },
         },
       ]
       for (const [id, event] of frames.entries()) yield { id, event }
+      await flagged
+      yield {
+        id: 2,
+        event: {
+          type: 'STATE_SNAPSHOT',
+          snapshot: {
+            thread: { ...summary, flagged: true },
+            queue: [{ queueId: 'queued-1', content: 'and then?' }],
+          },
+        },
+      }
       await held
     })
     render(<ChatInterface initialChatId={THREAD_ID} />)
@@ -171,17 +187,14 @@ describe('a chat the safeguards flagged', () => {
         '/v1/threads/follow',
         expect.objectContaining({ runId: 'run-1' }),
         expect.any(AbortSignal),
-        undefined,
       ),
     )
+    await screen.findByText('and then?')
     expect(
       client.post.mock.calls.some(([path]) => path === '/v1/threads/cancel'),
     ).toBe(false)
 
-    flags = [{ conversation_id: THREAD_ID }]
-    act(() => {
-      window.dispatchEvent(new Event('focus'))
-    })
+    flag()
 
     expect(
       await screen.findByText('This chat was flagged by a safeguard model.'),
@@ -201,54 +214,23 @@ describe('a chat the safeguards flagged', () => {
     release()
   })
 
-  it('holds a send until the flags load, then sends it once', async () => {
-    let respond!: () => void
-    flagsResponse = () =>
-      new Promise((resolve) => {
-        respond = () => resolve(safeguardFlags(flags))
-      })
-    client.events.mockImplementation(async function* () {
-      yield {
-        id: 0,
-        event: { type: 'RUN_FINISHED', threadId: THREAD_ID, runId: 'run-2' },
-      }
+  it('becomes read-only when the harness refuses a turn as flagged', async () => {
+    client.events.mockImplementationOnce(async function* () {
+      throw new HarnessError(
+        { code: 'CHAT_FLAGGED', message: 'This chat was flagged.' },
+        403,
+      )
     })
     render(<ChatInterface initialChatId={THREAD_ID} />)
     await screen.findByText('Hello there')
     await waitFor(() => expect(composer()).toBeInTheDocument())
 
     send('Are you there?')
-    expect(client.events).not.toHaveBeenCalled()
-
-    flagsResponse = undefined
-    await act(async () => respond())
-
-    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
-    expect(client.events.mock.calls[0][1]).toMatchObject({
-      kind: 'send',
-      threadId: THREAD_ID,
-      content: 'Are you there?',
-    })
-  })
-
-  it('drops a held send when the loaded flags mark the chat', async () => {
-    let respond!: () => void
-    flagsResponse = () =>
-      new Promise((resolve) => {
-        respond = () => resolve(safeguardFlags(flags))
-      })
-    render(<ChatInterface initialChatId={THREAD_ID} />)
-    await screen.findByText('Hello there')
-    await waitFor(() => expect(composer()).toBeInTheDocument())
-
-    send('Are you there?')
-    flags = [{ conversation_id: THREAD_ID }]
-    flagsResponse = undefined
-    await act(async () => respond())
 
     expect(
       await screen.findByText('This chat was flagged by a safeguard model.'),
     ).toBeInTheDocument()
-    expect(client.events).not.toHaveBeenCalled()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(client.events).toHaveBeenCalledOnce()
   })
 })

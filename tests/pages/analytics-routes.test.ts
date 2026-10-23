@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest'
 describe('analyticsExcluded', () => {
   it.each([
     '/',
-    '/harness',
     '/newchat',
     '/newchat/',
     '/chat',

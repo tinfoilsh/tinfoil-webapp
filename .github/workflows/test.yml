@@ -22,7 +22,15 @@ jobs:
 
       - run: npm run test:typecheck
 
+      - name: Download the harness's widget declarations
+        run: >-
+          curl --fail --silent --show-error --location --retry 3
+          --output "$RUNNER_TEMP/widgets.json"
+          https://raw.githubusercontent.com/tinfoilsh/confidential-tinfoil-harness/main/widgets.json
+
       - run: npm run test:shuffle
+        env:
+          HARNESS_WIDGETS_JSON: ${{ runner.temp }}/widgets.json
 
       - run: npm run build
         env:

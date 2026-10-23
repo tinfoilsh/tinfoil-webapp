@@ -5,16 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
-const issuance = (key = 'free_first', remaining = 9) =>
+// The key and its expiry, the only fields of an issuance the browser reads.
+const issuance = (key = 'free_first') =>
   Response.json({
     key,
     is_free_tier: true,
     expires_at: new Date(Date.now() + 3_600_000).toISOString(),
-    rate_limit: {
-      max_requests: 10,
-      remaining,
-      resets_at: new Date(Date.now() + 3_600_000).toISOString(),
-    },
   })
 
 const controlplane = vi.fn<typeof fetch>()
@@ -68,21 +64,16 @@ describe('anonymous client credentials', () => {
         false,
       )
     }
-    expect(client.anonymousRateLimit).toMatchObject({
-      kind: 'free_daily',
-      remaining: 9,
-    })
     client.dispose()
-    expect(client.anonymousRateLimit).toBeUndefined()
   })
 
   it('refreshes an expired key and retries a rejected key once with the same turn body', async () => {
     const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now())
     const { client, secure } = setup()
-    await client.session()
+    await client.post('/v1/session', {})
     clock.mockReturnValue(clock() + 3_600_001)
     controlplane.mockImplementationOnce(async () => issuance('free_second'))
-    await client.session()
+    await client.post('/v1/session', {})
     expect(
       new Headers(secure.fetch.mock.calls[1][1].headers).get('Authorization'),
     ).toBe('Bearer free_second')
@@ -113,7 +104,9 @@ describe('anonymous client credentials', () => {
     secure.fetch.mockImplementation(
       async () => new Response('{}', { status: 401 }),
     )
-    await expect(client.session()).rejects.toMatchObject({ status: 401 })
+    await expect(client.post('/v1/session', {})).rejects.toMatchObject({
+      status: 401,
+    })
     expect(secure.fetch).toHaveBeenCalledTimes(2)
     expect(controlplane).toHaveBeenCalledTimes(2)
     secure.fetch.mockResolvedValueOnce(
@@ -128,7 +121,6 @@ describe('anonymous client credentials', () => {
       detail: { code: 'QUOTA_EXHAUSTED' },
     })
     expect(controlplane).toHaveBeenCalledTimes(2)
-    expect(client.anonymousRateLimit?.remaining).toBe(0)
     client.dispose()
   })
 
@@ -166,7 +158,7 @@ describe('anonymous client credentials', () => {
       if (!active) throw new DOMException('Account changed', 'AbortError')
       return null
     })
-    const request = client.session()
+    const request = client.post('/v1/session', {})
     await vi.waitFor(() => expect(controlplane).toHaveBeenCalledTimes(1))
     active = false
     resolve(issuance())
@@ -184,14 +176,13 @@ describe('anonymous client credentials', () => {
         }),
     )
     const { client, secure } = setup()
-    const request = client.session()
+    const request = client.post('/v1/session', {})
     await vi.waitFor(() => expect(controlplane).toHaveBeenCalledTimes(1))
     client.dispose()
     expect(controlplane.mock.calls[0][1]?.signal?.aborted).toBe(true)
     resolve(issuance())
     await expect(request).rejects.toMatchObject({ name: 'AbortError' })
     expect(secure.fetch).not.toHaveBeenCalled()
-    expect(client.anonymousRateLimit).toBeUndefined()
   })
 
   it('rejects malformed issuance before contacting the harness', async () => {
@@ -199,33 +190,36 @@ describe('anonymous client credentials', () => {
       Response.json({ key: 'free_forged', expires_at: 'invalid' }),
     )
     const { client, secure } = setup()
-    await expect(client.session()).rejects.toMatchObject({
+    await expect(client.post('/v1/session', {})).rejects.toMatchObject({
       detail: { code: 'UPSTREAM_REFUSED' },
     })
     expect(secure.fetch).not.toHaveBeenCalled()
     client.dispose()
   })
 
-  it('refreshes quota metadata after a completed run without replaying the run', async () => {
+  it('keeps the key after a run', async () => {
     const { client, secure } = setup()
     secure.fetch.mockResolvedValueOnce(
       new Response('data: {"type":"RUN_FINISHED"}\n\n', {
         headers: { 'Content-Type': 'text/event-stream' },
       }),
     )
+    const frames = []
     for await (const frame of client.events('/v1/threads/follow', {
       threadId: 't',
       runId: 'r',
     }))
-      expect(frame.event.type).toBe('RUN_FINISHED')
-    expect(secure.fetch).toHaveBeenCalledTimes(1)
-    controlplane.mockImplementationOnce(async () => issuance('free_first', 8))
-    await client.session()
-    expect(controlplane).toHaveBeenCalledTimes(2)
-    expect(client.anonymousRateLimit?.remaining).toBe(8)
-    expect(secure.fetch.mock.calls[1][0]).toBe(
-      'https://harness.example/v1/session',
-    )
+      frames.push(frame)
+    expect(frames).toEqual([{ event: { type: 'RUN_FINISHED' } }])
+
+    await client.post('/v1/session', {})
+
+    expect(controlplane).toHaveBeenCalledTimes(1)
+    expect(
+      secure.fetch.mock.calls.map(([, options]) =>
+        new Headers(options.headers).get('Authorization'),
+      ),
+    ).toEqual(['Bearer free_first', 'Bearer free_first'])
     client.dispose()
   })
 })

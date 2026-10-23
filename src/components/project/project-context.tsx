@@ -1,10 +1,8 @@
 'use client'
 
-import type { Fact } from '@/types/memory'
 import type {
   CreateProjectData,
   Project,
-  ProjectContextUsage,
   ProjectDocument,
   UpdateProjectData,
 } from '@/types/project'
@@ -46,11 +44,8 @@ export interface ProjectContextValue {
   uploadDocument: (file: File, content: string) => Promise<ProjectDocument>
   removeDocument: (docId: string) => Promise<void>
   refreshDocuments: () => Promise<void>
-  updateProjectMemory: (memory: Fact[]) => Promise<void>
   addUploadingFile: (file: UploadingFile) => void
   removeUploadingFile: (id: string) => void
-
-  getContextUsage: (modelContextLimit: number) => ProjectContextUsage
 }
 
 export const ProjectContext = createContext<ProjectContextValue | null>(null)

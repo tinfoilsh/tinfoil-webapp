@@ -48,6 +48,8 @@ export type TimelineThinkingBlock = TimelineTiming & {
   content: string
   isThinking: boolean
   duration?: number
+  // The chat service's live summary of the thinking while it goes on.
+  summary?: string
 }
 
 export type TimelineWebSearchBlock = TimelineTiming & {
@@ -69,7 +71,7 @@ export type TimelineContentBlock = {
 }
 
 // GenUI tool calls — one block per call. Arguments arrive as JSON-string
-// deltas during streaming; widgets can be resolved via the input surface.
+// deltas during streaming.
 export type TimelineToolCallBlock = {
   type: 'tool_call'
   id: string
@@ -77,16 +79,12 @@ export type TimelineToolCallBlock = {
   name: string
   // Accumulating JSON string from streamed argument deltas.
   arguments: string
-  // Set once a `surface: 'input'` widget has been resolved by the user.
-  resolvedAt?: number
   complete?: boolean
   result?: unknown
   metadata?: unknown
   progress?: unknown[]
-  resolution?: {
-    text: string
-    data?: unknown
-  }
+  // The harness found the stored arguments no longer match the widget.
+  invalidArguments?: boolean
 }
 
 // Code-execution tool call. Args are fully-formed (router emits a single
@@ -177,7 +175,9 @@ export type Message = {
 export type TitleState = 'placeholder' | 'generated' | 'manual'
 
 export type Chat = {
-  activeRun?: { runId: string; lastEventId: number } | null
+  activeRun?: { runId: string } | null
+  // The safeguards flagged the chat: it is read-only.
+  flagged?: boolean
   pinned?: boolean
   id: string
   title: string
@@ -190,16 +190,10 @@ export type Chat = {
   // key for the sidebar. Absent for chats that have never been
   // stored (blank chats kept purely in component state).
   updatedAt?: string
-  // Sync metadata - optional for backward compatibility
-  syncedAt?: number
-  locallyModified?: boolean
-  decryptionFailed?: boolean
-  dataCorrupted?: boolean
   // Blank chat flag - true for new chats that haven't been used yet
   isBlankChat?: boolean
   // Local-only flag - true for chats that should never sync to cloud
   isLocalOnly?: boolean
-  syncUserId?: string
   // Temporary flag - true for ephemeral chats that are never persisted anywhere
   isTemporary?: boolean
   // Pending save flag - true while initial save is in progress
@@ -217,8 +211,6 @@ export type Chat = {
   // default. Persisted with the chat and synced across devices (the iOS
   // app reads/writes the same field).
   webSearchEnabled?: boolean
-  // For code execution.
-  codeExecutionAccessToken?: string
 }
 
 export type LoadingState = 'idle' | 'loading' | 'streaming' | 'retrying'

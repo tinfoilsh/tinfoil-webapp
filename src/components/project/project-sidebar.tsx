@@ -33,7 +33,8 @@ import {
   UI_SIDEBAR_FAVORITES_EXPANDED,
 } from '@/constants/storage-keys'
 import { toast } from '@/hooks/use-toast'
-import type { Fact } from '@/types/memory'
+import { acceptOf } from '@/services/harness/composer'
+import { useHarness } from '@/services/harness/provider'
 import type { Project } from '@/types/project'
 import { logError } from '@/utils/error-handling'
 import { formatFileSize } from '@/utils/format-file-size'
@@ -78,9 +79,8 @@ interface ProjectChat {
   updatedAt?: string
   projectId?: string
   isBlankChat?: boolean
-  decryptionFailed?: boolean
-  dataCorrupted?: boolean
   isTemporary?: boolean
+  flagged?: boolean
 }
 
 interface ProjectOption {
@@ -106,7 +106,6 @@ interface ProjectSidebarProps {
   chats?: ProjectChat[]
   deleteChat?: (chatId: string) => void
   updateChatTitle?: (chatId: string, newTitle: string) => void
-  onEncryptionKeyClick?: () => void
   onRemoveChatFromProject?: (chatId: string) => Promise<void>
   onDeleteProjectChats?: (projectId: string) => Promise<void>
   onAddChatToProject?: (chatId: string) => Promise<void>
@@ -119,7 +118,6 @@ interface ProjectSidebarProps {
   onToggleFavorite?: (chat: ChatItemData) => void | Promise<void>
   onRemoveFavorite?: (chatId: string) => void
   onOpenFavorite?: (chat: ChatItemData) => void | Promise<void>
-  cloudSyncEnabled: boolean
   windowWidth: number
   isPremium?: boolean
   hasMore?: boolean
@@ -219,7 +217,6 @@ export function ProjectSidebar({
   chats: chatsProp,
   deleteChat,
   updateChatTitle,
-  onEncryptionKeyClick,
   onRemoveChatFromProject,
   onDeleteProjectChats,
   onAddChatToProject,
@@ -232,13 +229,13 @@ export function ProjectSidebar({
   onToggleFavorite,
   onRemoveFavorite,
   onOpenFavorite,
-  cloudSyncEnabled,
   windowWidth,
   isPremium = false,
   hasMore,
   onLoadMore,
 }: ProjectSidebarProps) {
   const { isSignedIn } = useAuth()
+  const { cloud: cloudSyncEnabled, session } = useHarness()
   const {
     draggingChatId,
     draggingChatSource,
@@ -250,7 +247,6 @@ export function ProjectSidebar({
     uploadDocument,
     removeDocument,
     updateProject,
-    updateProjectMemory,
     deleteProject,
     loading: contextLoading,
     uploadingFiles: contextUploadingFiles,
@@ -261,9 +257,6 @@ export function ProjectSidebar({
   const [isFavoritesExpanded, setIsFavoritesExpanded] = useState(false)
   const hasLoadedFavoritesExpandedRef = useRef(false)
   const [documentsExpanded, setDocumentsExpanded] = useState(false)
-  const [memoryExpanded, setMemoryExpanded] = useState(false)
-  const [memoryText, setMemoryText] = useState('')
-  const [memoryEdited, setMemoryEdited] = useState(false)
 
   const [editedName, setEditedName] = useState(project?.name ?? '')
   const [editedDescription, setEditedDescription] = useState(
@@ -358,52 +351,6 @@ export function ProjectSidebar({
       }
     }
   }, [isOpen])
-
-  // Sync memory text with project memory
-  const projectId = project?.id
-  const projectMemory = project?.memory
-  useEffect(() => {
-    if (projectId && !memoryEdited) {
-      setMemoryText((projectMemory || []).map((f) => f.fact).join('\n\n'))
-    }
-  }, [projectId, projectMemory, memoryEdited])
-
-  const handleMemoryChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setMemoryText(e.target.value)
-      setMemoryEdited(true)
-    },
-    [],
-  )
-
-  const handleMemorySave = useCallback(async () => {
-    if (!memoryEdited || !project) return
-
-    const newLines = memoryText
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-
-    const existingFacts = project.memory || []
-    const existingByFact = new Map(existingFacts.map((f) => [f.fact, f]))
-
-    const updatedFacts: Fact[] = newLines.map((line) => {
-      const existing = existingByFact.get(line)
-      if (existing) {
-        return existing
-      }
-      return {
-        id: crypto.randomUUID(),
-        fact: line,
-        date: new Date().toISOString(),
-        category: 'other',
-        confidence: 1,
-      }
-    })
-
-    await updateProjectMemory(updatedFacts)
-    setMemoryEdited(false)
-  }, [memoryEdited, memoryText, project, updateProjectMemory])
 
   const handleSaveSettings = useCallback(async () => {
     if (!project) return
@@ -612,9 +559,8 @@ export function ProjectSidebar({
       title: c.title,
       messageCount: c.messageCount,
       projectId: c.projectId,
-      decryptionFailed: c.decryptionFailed,
-      dataCorrupted: c.dataCorrupted,
       isTemporary: c.isTemporary,
+      flagged: c.flagged,
     }))
 
   const resolvedFavoriteChats = favoriteChats.filter(isResolvedFavoriteChat)
@@ -1282,7 +1228,7 @@ export function ProjectSidebar({
               className="hidden"
               onChange={handleFileUpload}
               disabled={contextLoading}
-              accept=".pdf,.docx,.xlsx,.pptx,.md,.html,.xhtml,.csv,.png,.jpg,.jpeg,.tiff,.bmp,.webp,.txt"
+              accept={acceptOf(session?.composer.projectDocuments)}
             />
 
             <AnimatePresence initial={false}>
@@ -1397,16 +1343,12 @@ export function ProjectSidebar({
                             />
                             <div className="min-w-0 flex-1">
                               <div className="truncate font-aeonik-fono text-xs text-content-primary">
-                                {doc.decryptionFailed
-                                  ? 'Unable to load document'
-                                  : doc.filename}
+                                {doc.filename}
                               </div>
                               <div className="font-aeonik-fono text-[10px] text-content-muted">
-                                {doc.decryptionFailed
-                                  ? 'Unavailable'
-                                  : !doc.content?.trim()
-                                    ? 'No readable content'
-                                    : formatFileSize(doc.sizeBytes)}
+                                {!doc.content?.trim()
+                                  ? 'No readable content'
+                                  : formatFileSize(doc.sizeBytes)}
                               </div>
                             </div>
                             <button

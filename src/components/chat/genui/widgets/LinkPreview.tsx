@@ -2,15 +2,8 @@ import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { Favicon } from '@/components/ui/favicon'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { TfExternalLink } from '@tinfoilsh/tinfoil-icons'
-import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
-
-const schema = z.object({
-  url: z.string(),
-  title: z.string(),
-})
-
-type Props = z.infer<typeof schema>
+import type { RenderLinkPreviewArgs as Props } from '../widget-args'
 
 interface ResolvedMetadata {
   title: string | null
@@ -86,7 +79,6 @@ function LinkPreview({
 
 export const widget = defineGenUIWidget({
   name: 'render_link_preview',
-  schema,
   render: (args, ctx) => (
     <LinkPreview
       {...args}

@@ -162,94 +162,67 @@ describe('usage reported by runs', () => {
 
   afterEach(cleanup)
 
-  function run(
-    runId: string,
-    snapshot: RateLimit,
-    spend?: { prompt_tokens: number; completion_tokens: number },
-  ) {
+  function run(runId: string, started: RateLimit, ended: Frame['event']) {
     return async function* (): AsyncGenerator<Frame> {
       const frames: Frame['event'][] = [
         { type: 'RUN_STARTED', threadId: 'thread-1', runId },
         {
           type: 'STATE_SNAPSHOT',
-          snapshot: { thread: null, queue: [], rateLimit: snapshot },
+          snapshot: { thread: null, queue: [], rateLimit: started },
         },
-        {
-          type: 'RUN_FINISHED',
-          threadId: 'thread-1',
-          runId,
-          metadata: {
-            rateLimit: snapshot as never,
-            ...(spend ? { usage: { ...spend, total_tokens: 0 } } : {}),
-          },
-        },
+        ended,
       ]
       for (const [id, event] of frames.entries()) yield { id, event }
     }
   }
 
-  it("counts a finished run's spend until a later report includes it", async () => {
+  it('shows the quota each run reports as it ends, as the harness counted it', async () => {
     render(<RateLimitUsage isPremium />)
     const { result } = renderHook(() => useThread())
 
     client.events.mockImplementationOnce(
       run('run-1', hourly(500_000), {
-        prompt_tokens: 100_000,
-        completion_tokens: 2_000,
+        type: 'RUN_FINISHED',
+        threadId: 'thread-1',
+        runId: 'run-1',
+        metadata: { rateLimit: hourly(600_000) },
       }),
     )
     await act(() => result.current.send({ content: 'first' }))
-    expect(getView().rateLimit).toEqual({
+    expect(getView().rateLimit).toEqual(hourly(600_000))
+    expect(screen.getByText('600K / 2M')).toBeInTheDocument()
+
+    // A later count may be lower, as when the harness refunds a stopped run.
+    client.events.mockImplementationOnce(
+      run('run-2', hourly(600_000), {
+        type: 'RUN_FINISHED',
+        threadId: 'thread-1',
+        runId: 'run-2',
+        metadata: { rateLimit: hourly(450_000) },
+      }),
+    )
+    await act(() => result.current.send({ content: 'second' }))
+    expect(getView().rateLimit).toEqual(hourly(450_000))
+    expect(screen.getByText('450K / 2M')).toBeInTheDocument()
+
+    const exhausted: RateLimit = {
       kind: 'hourly',
       resetsAt: '2026-07-24T11:00:00Z',
-      inputTokens: { max: 2_000_000, used: 600_000, remaining: 1_400_000 },
-      outputTokens: { max: 100_000, used: 3_000, remaining: 97_000 },
-    })
-    expect(screen.getByText('600K / 2M')).toBeInTheDocument()
-
-    // The next run reports the same stale exchange; usage does not move back.
-    client.events.mockImplementationOnce(run('run-2', hourly(500_000)))
-    await act(() => result.current.send({ content: 'second' }))
-    expect(screen.getByText('600K / 2M')).toBeInTheDocument()
-
-    // A fresh exchange that counted more takes over.
-    client.events.mockImplementationOnce(run('run-3', hourly(700_000)))
-    await act(() => result.current.send({ content: 'third' }))
-    expect(screen.getByText('700K / 2M')).toBeInTheDocument()
-
-    // A new window starts from its own report.
+      inputTokens: { max: 2_000_000, used: 2_000_000, remaining: 0 },
+      outputTokens: { max: 100_000, used: 4_000, remaining: 96_000 },
+    }
     client.events.mockImplementationOnce(
-      run('run-4', hourly(5_000, '2026-07-24T12:00:00Z')),
+      run('run-3', hourly(450_000), {
+        type: 'RUN_ERROR',
+        threadId: 'thread-1',
+        runId: 'run-3',
+        code: 'QUOTA_EXHAUSTED',
+        message: 'The hourly usage limit is reached',
+        metadata: { rateLimit: exhausted },
+      }),
     )
-    await act(() => result.current.send({ content: 'fourth' }))
-    expect(screen.getByText('5K / 2M')).toBeInTheDocument()
-    expect(result.current.error).toBe('')
-    expect(getView().error).toBeUndefined()
-  })
-
-  it('does not count a replayed final event twice', async () => {
-    const { result } = renderHook(() => useThread())
-    const spend = { prompt_tokens: 1_000, completion_tokens: 10 }
-    client.events.mockImplementationOnce(async function* () {
-      yield* run('run-1', hourly(0), spend)()
-      // The same final event again, as a reconnect replays it.
-      yield {
-        id: 2,
-        event: {
-          type: 'RUN_FINISHED',
-          threadId: 'thread-1',
-          runId: 'run-1',
-          metadata: { usage: { ...spend, total_tokens: 0 } },
-        },
-      }
-    })
-
-    await act(() => result.current.send({ content: 'once' }))
-
-    expect(getView().rateLimit?.inputTokens).toEqual({
-      max: 2_000_000,
-      used: 1_000,
-      remaining: 1_999_000,
-    })
+    await act(() => result.current.send({ content: 'third' }))
+    expect(getView().rateLimit).toEqual(exhausted)
+    expect(screen.getByText('2M / 2M')).toBeInTheDocument()
   })
 })

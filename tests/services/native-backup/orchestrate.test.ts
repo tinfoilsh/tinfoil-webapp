@@ -13,7 +13,10 @@ import { bytesToHex } from '@noble/hashes/utils.js'
 import { unzipSync, zipSync } from 'fflate'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from '../harness/thread-fixture'
+import {
+  resetChatStoresAroundEachTest,
+  storedThread,
+} from '../harness/thread-fixture'
 
 const backupId = '123e4567-e89b-42d3-a456-426614174000'
 const timestamp = '2026-08-20T12:00:00.000Z'
@@ -195,9 +198,18 @@ function backup(
 const restoredId = (ownerId: string, sourceId = 'local-1') =>
   `native-${bytesToHex(sha256(new TextEncoder().encode(`${ownerId}\0${backupId}\0${sourceId}`)))}`
 
+// The harness's reader of old chats, which a restore sends each local chat
+// to, as its backup holds it in the previous client's format.
+const upgraded = (row: { id: string; title: string }) =>
+  storedThread(row.id, { title: row.title, titleState: 'manual' })
+const upgrades = () =>
+  client.post.mock.calls.filter(([path]) => path === '/v1/threads/upgrade')
+
 function acceptUpload(statuses: Record<string, unknown>[]) {
   client.upload.mockResolvedValue({ jobId: 'job-1' })
-  client.post.mockImplementation(async (path: string) => {
+  client.post.mockImplementation(async (path: string, input) => {
+    if (path === '/v1/threads/upgrade')
+      return { threads: input.threads.map(upgraded) }
     if (path !== '/v1/import/status') throw new Error(`Unexpected ${path}`)
     const status = statuses.length > 1 ? statuses.shift() : statuses[0]
     return { jobId: 'job-1', imported: 0, failed: 0, total: 1, ...status }
@@ -248,71 +260,82 @@ describe('restoring a native backup', () => {
       local_chats: 0,
       images: 1,
     })
-    expect(client.post).toHaveBeenCalledExactlyOnceWith(
-      '/v1/import/status',
-      { jobId: 'job-1' },
-      expect.any(AbortSignal),
-    )
+    expect(
+      client.post.mock.calls.filter(([path]) => path === '/v1/import/status'),
+    ).toEqual([
+      ['/v1/import/status', { jobId: 'job-1' }, expect.any(AbortSignal)],
+    ])
 
     const id = restoredId('alice')
-    const restored = await localThreadStore('device').get(id)
-    expect(restored).toEqual({
-      id,
-      title: 'Local chat',
-      titleState: 'manual',
-      createdAt: '2026-08-20T12:00:00Z',
-      updatedAt: '2026-08-20T12:05:00Z',
-      model: 'test-model',
-      webSearchEnabled: false,
-      codeExecutionAccessToken: expect.stringMatching(/^[0-9a-f]{64}$/),
-      messages: [
+    expect(upgrades()).toEqual([
+      [
+        '/v1/threads/upgrade',
         {
-          id: `${id}-message-0`,
-          role: 'user',
-          createdAt: '2026-08-20T12:00:00Z',
-          content: 'See these',
-          attachments: [
+          threads: [
             {
-              id: 'photo',
-              type: 'image',
-              fileName: 'photo.png',
-              mimeType: 'image/png',
-              fileSize: png.length,
-              base64: uint8ArrayToBase64(png),
-            },
-            {
-              id: 'scan',
-              type: 'document',
-              fileName: 'scan.pdf',
-              textContent: 'Scanned text',
-              pages: [
+              id,
+              title: 'Local chat',
+              titleState: 'manual',
+              createdAt: new Date(timestamp),
+              updatedAt: later,
+              model: 'test-model',
+              webSearchEnabled: false,
+              isLocalOnly: true,
+              messages: [
                 {
-                  page: 1,
-                  text: 'Scanned text',
-                  is_scanned: true,
-                  image: uint8ArrayToBase64(pageImage),
+                  role: 'user',
+                  content: 'See these',
+                  timestamp: new Date(timestamp),
+                  attachments: [
+                    {
+                      id: 'photo',
+                      type: 'image',
+                      fileName: 'photo.png',
+                      mimeType: 'image/png',
+                      fileSize: png.length,
+                      base64: uint8ArrayToBase64(png),
+                    },
+                    {
+                      id: 'scan',
+                      type: 'document',
+                      fileName: 'scan.pdf',
+                      textContent: 'Scanned text',
+                      pages: [
+                        {
+                          page: 1,
+                          text: 'Scanned text',
+                          is_scanned: true,
+                          image: uint8ArrayToBase64(pageImage),
+                        },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  role: 'assistant',
+                  content: 'Both are clear.',
+                  timestamp: new Date(later),
+                  thoughts: 'Reading',
+                  timeline: [
+                    {
+                      type: 'thinking',
+                      id: 'r-t',
+                      content: 'Reading',
+                      isThinking: false,
+                    },
+                    { type: 'content', id: 'r-c', content: 'Both are clear.' },
+                  ],
                 },
               ],
             },
           ],
         },
-        {
-          id: `${id}-message-1`,
-          role: 'assistant',
-          createdAt: '2026-08-20T12:05:00Z',
-          content: 'Both are clear.',
-          timeline: [
-            {
-              type: 'thinking',
-              id: 'r-t',
-              content: 'Reading',
-              isThinking: false,
-            },
-            { type: 'content', id: 'r-c', content: 'Both are clear.' },
-          ],
-        },
+        expect.any(AbortSignal),
       ],
-    })
+    ])
+    expect(await localThreadStore('device').get(id)).toEqual(
+      upgraded({ id, title: 'Local chat' }),
+    )
     expect(result.state).toBe('completed')
     expect(result.report).toMatchObject({
       projects: { imported: 1 },
@@ -457,6 +480,7 @@ describe('restoring a native backup', () => {
   })
 
   it('counts a local chat that cannot be stored as failed', async () => {
+    acceptUpload([{ status: 'completed' }])
     const result = await restore(backup({ cloud: false }), {
       saveChat: async () => null,
     })

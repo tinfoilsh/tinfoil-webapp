@@ -10,7 +10,6 @@ import { logError } from '@/utils/error-handling'
 import { TfRefreshTwoArrows, TfStars } from '@tinfoilsh/tinfoil-icons'
 import React, { memo, useEffect, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
-import { tryParsePartialJson } from './partial-json'
 import { getGenUIWidget, renderGenUIInline } from './render'
 import { ArtifactRetryError, type ArtifactRetryErrorCode } from './retry'
 import type { GenUIToolCall } from './types'
@@ -23,28 +22,6 @@ import type { GenUIToolCall } from './types'
  */
 function prettyWidgetName(toolName: string): string {
   return toolName.replace(/^render_/, '').replace(/_/g, ' ')
-}
-
-/**
- * Pull a short human-readable hint out of partially-streamed tool
- * arguments. We try the small set of fields most widgets surface as
- * their primary label so the tracer can show "Generating chart: Sales
- * by region" rather than a generic spinner. Returns null when nothing
- * useful has streamed yet.
- */
-function extractPartialHint(parsed: unknown): string | null {
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return null
-  }
-  const obj = parsed as Record<string, unknown>
-  const candidates = ['title', 'question', 'description', 'label', 'name']
-  for (const key of candidates) {
-    const value = obj[key]
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value.trim()
-    }
-  }
-  return null
 }
 
 interface GenUIToolCallRendererProps {
@@ -118,7 +95,7 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
       {toolCalls.map((tc) => {
         const widget = getGenUIWidget(tc.name)
 
-        // The schema is unavailable on this client, so waiting for more
+        // The widget is unavailable on this client, so waiting for more
         // argument bytes cannot make this component renderable.
         if (!widget) {
           return (
@@ -143,11 +120,22 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
           )
         }
 
+        if (tc.invalidArguments) {
+          return (
+            <ParseFailureCard
+              key={tc.id}
+              toolName={tc.name}
+              failure={{ type: 'schema_invalid' }}
+              onRetry={onRetry}
+              onRetryToolCall={
+                onRetryToolCall ? () => onRetryToolCall(tc.id) : undefined
+              }
+            />
+          )
+        }
+
         const input = parseInput(tc)
-        const parsedInput = input.ok
-          ? widget.schema.safeParse(input.data)
-          : null
-        if (parsedInput?.success && widget.render) {
+        if (input.ok && widget.render) {
           return (
             <GenUIWidgetErrorBoundary
               key={tc.id}
@@ -163,7 +151,7 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
                   result={tc.result}
                   toolCallId={tc.id}
                   toolName={tc.name}
-                  input={parsedInput.data}
+                  input={input.data}
                   isActive={activeArtifactToolCallId === tc.id}
                   isDarkMode={isDarkMode}
                   isStreaming={isStreaming}
@@ -177,23 +165,12 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
           return <StreamingToolCallTracer key={tc.id} toolCall={tc} />
         }
 
-        // Registered widget but schema validation failed. The model
-        // produced something the widget couldn't accept — offer a retry.
+        // Registered widget whose arguments are not JSON — offer a retry.
         return (
           <ParseFailureCard
             key={tc.id}
             toolName={tc.name}
-            failure={
-              parsedInput && !parsedInput.success
-                ? {
-                    type: 'schema_invalid',
-                    issues: parsedInput.error.issues.map((issue) => ({
-                      code: issue.code,
-                      path: issue.path,
-                    })),
-                  }
-                : { type: 'invalid_json' }
-            }
+            failure={{ type: 'invalid_json' }}
             onRetry={onRetry}
             onRetryToolCall={
               onRetryToolCall ? () => onRetryToolCall(tc.id) : undefined
@@ -268,14 +245,10 @@ class GenUIWidgetErrorBoundary extends React.Component<
 }
 
 /**
- * Live tracer shown while the model is streaming a GenUI tool call.
- *
- * Replaces a static spinner with the widget name and a title when one has
- * streamed far enough to parse safely.
+ * Tracer shown while the model is streaming a GenUI tool call. The chat
+ * service sends a widget's arguments only once they are complete.
  */
 function StreamingToolCallTracer({ toolCall }: { toolCall: GenUIToolCall }) {
-  const partial = tryParsePartialJson(toolCall.arguments)
-  const hint = extractPartialHint(partial)
   const label = prettyWidgetName(toolCall.name)
 
   return (
@@ -287,7 +260,6 @@ function StreamingToolCallTracer({ toolCall }: { toolCall: GenUIToolCall }) {
         />
         <span className="text-sm font-medium text-content-primary">
           Generating {label}
-          {hint ? `: ${hint}` : null}
         </span>
       </div>
     </div>
@@ -297,10 +269,7 @@ function StreamingToolCallTracer({ toolCall }: { toolCall: GenUIToolCall }) {
 type ParseFailure =
   | { type: 'invalid_json' }
   | { type: 'render_exception' }
-  | {
-      type: 'schema_invalid'
-      issues?: Array<{ code: string; path: Array<string | number> }>
-    }
+  | { type: 'schema_invalid' }
 
 function ParseFailureCard({
   toolName,
@@ -320,11 +289,6 @@ function ParseFailureCard({
   const [isRetrying, setIsRetrying] = useState(false)
   const [retryFailure, setRetryFailure] =
     useState<ArtifactRetryErrorCode | null>(null)
-  const primaryIssue =
-    failure.type === 'schema_invalid' ? failure.issues?.[0] : undefined
-  const issueSummary = primaryIssue
-    ? `${primaryIssue.path.join('.') || 'root'} (${primaryIssue.code})`
-    : undefined
 
   // Logging is a side effect — kept out of render so React's render-twice
   // strict mode and re-renders from parent state changes don't produce
@@ -337,10 +301,9 @@ function ParseFailureCard({
       metadata: {
         toolName,
         failure: failure.type,
-        issues: issueSummary,
       },
     })
-  }, [toolName, failure.type, issueSummary, logFailure])
+  }, [toolName, failure.type, logFailure])
 
   const handleRetryToolCall = async () => {
     if (isRetrying) return
@@ -377,11 +340,9 @@ function ParseFailureCard({
     ? retryFailureDescriptions[retryFailure]
     : failure.type === 'invalid_json'
       ? 'The component data is not valid JSON.'
-      : failure.type === 'render_exception'
-        ? `The ${prettyWidgetName(toolName)} component ran into a problem while rendering.`
-        : issueSummary
-          ? `The component data failed schema validation at ${issueSummary}.`
-          : `The response didn't match the ${toolName} widget's expected shape.`
+      : failure.type === 'schema_invalid'
+        ? `The component data doesn't match the ${prettyWidgetName(toolName)} component.`
+        : `The ${prettyWidgetName(toolName)} component ran into a problem while rendering.`
 
   return (
     <div className="my-4 flex flex-col items-stretch gap-3 rounded-lg border border-border-subtle bg-surface-card px-4 py-3 text-sm md:flex-row md:items-center md:justify-between">

@@ -1,4 +1,4 @@
-import type { LocalTurnThread } from './local-threads'
+import type { DocumentPage } from '@/components/chat/types'
 
 export type Json =
   null | boolean | number | string | Json[] | { [key: string]: Json }
@@ -15,20 +15,43 @@ export interface HarnessErrorBody {
   status?: number
   // A document conversion failure's document_* code.
   upstreamCode?: string
+  // The quota after the request, which an exhausted quota's refusal reports.
+  rateLimit?: RateLimit
 }
 
-export interface Attachment {
+// An attachment, in the one shape an upload returns, a turn sends, a thread
+// stores and a view lists. The harness keeps nothing of an upload, so a turn
+// carries an image's bytes; a view leaves out image bytes and page images.
+export interface AttachmentDescriptor {
   id: string
-  kind: string
+  kind: 'image' | 'document' | 'audio'
   fileName: string
   mimeType: string
   size: number
-  thumbnail?: string | null
+  thumbnail?: string
   textContent?: string
   description?: string
-  attKey?: string
-  pages?: number | null
-  status: string
+  pages?: DocumentPage[]
+  base64?: string
+}
+
+// What a web search or page fetch shows, as the harness keeps it current.
+export interface ToolDisplay {
+  query?: string
+  url?: string
+  status: 'running' | 'completed' | 'failed'
+  sources: { url: string; title: string; snippet?: string }[]
+}
+
+// A reply's citation of a page, in the chat completions format.
+export interface Annotation {
+  type: 'url_citation'
+  url_citation: {
+    url: string
+    title: string
+    start_index?: number
+    end_index?: number
+  }
 }
 
 export interface TimelineBlock {
@@ -42,9 +65,10 @@ export interface TimelineBlock {
   result?: Json
   metadata?: Json
   progress?: Json[]
-  activity?: Json
-  resolvedAt?: string | number | null
-  resolution?: { text: string; data?: Json } | null
+  activity?: ToolActivity
+  display?: ToolDisplay
+  // A widget's stored arguments no longer match the widget's declaration.
+  invalidArguments?: boolean
 }
 
 export interface Message {
@@ -56,10 +80,11 @@ export interface Message {
   model?: string
   modelDisplayName?: string
   timeline?: TimelineBlock[]
-  attachments?: Attachment[]
+  attachments?: AttachmentDescriptor[]
   isError?: boolean
   isInterrupted?: boolean
   usage?: Json
+  annotations?: Annotation[]
 }
 
 export interface ThreadSummary {
@@ -78,7 +103,11 @@ export interface ThreadSummary {
   pinned: boolean
   webSearchEnabled: boolean
   messageCount: number
-  activeRun: { runId: string; lastEventId: number } | null
+  // A hint that a run may be live, set when it starts and cleared when it
+  // commits. It never blocks an action.
+  activeRun: { runId: string; expiresAt: string } | null
+  // The safeguards flagged the chat: it is read-only.
+  flagged?: boolean
 }
 
 export interface Thread extends ThreadSummary {
@@ -86,6 +115,28 @@ export interface Thread extends ThreadSummary {
   hasOlder: boolean
   revision?: string
   presetId?: string | null
+}
+
+export type ThreadMessage = Message
+
+// A whole chat in the format the harness stores it in sync, a chat on this
+// device is kept in, and a device run's final event returns.
+export interface StoredThread {
+  id: string
+  title: string
+  titleState: ThreadSummary['titleState']
+  createdAt: string
+  updatedAt: string
+  model: string
+  projectId: string | null
+  presetId: string | null
+  pinned: boolean
+  webSearchEnabled: boolean
+  messages: ThreadMessage[]
+  lastRequestId?: string
+  activeRun: ThreadSummary['activeRun']
+  contextUsage?: ThreadSummary['contextUsage']
+  flagged?: boolean
 }
 
 // One dimension (input or output) of a token budget.
@@ -106,40 +157,43 @@ export interface RateLimit {
   outputTokens?: TokenBudget
 }
 
+// A model as the session offers it, ready to display.
+export interface SessionModel {
+  id: string
+  label: string
+  shortLabel: string
+  icon: string
+  description: string
+  // Tags such as Experimental or Deprecated, and what each explains.
+  badges: {
+    kind: 'experimental' | 'deprecated'
+    label: string
+    tooltip: string
+  }[]
+  reasoning: {
+    toggle: boolean
+    effort: boolean
+    defaultEnabled: boolean
+  } | null
+  deprecated: boolean
+  // The entry that has the router choose a model for each turn.
+  auto?: boolean
+}
+
 export interface Session {
   user: { id: string; anonymous: boolean }
   rateLimit: RateLimit
-  key: {
-    registered: boolean
-    keyId: string | null
-    bundles: { credentialId: string; createdAt: string }[]
-  }
-  models: {
-    id: string
-    name: string
-    nameShort?: string
-    description?: string
-    image?: string
-    paid?: boolean
-    experimental?: boolean
-    deprecationDate?: string
-    descriptionShort?: string
-    attributes?: string[]
-    deprecated?: boolean
-    multimodal: boolean
-    reasoning: {
-      toggle: boolean
-      effort: boolean
-      defaultEnabled: boolean
-    } | null
-  }[]
+  models: SessionModel[]
+  // How hard Auto works: its default level, and each level's labels on the
+  // slider and in the picker.
   auto: {
-    multimodal: boolean
     default: string
-    levels: { id: string; label: string }[]
+    levels: { id: string; label: string; displayLabel: string }[]
   } | null
   defaultModel: string
   widgets: string[]
+  // The value of every profile field a profile leaves unset.
+  profileDefaults: RecordValue
   presets: {
     id: string
     name: string
@@ -149,7 +203,20 @@ export interface Session {
     builtIn: boolean
   }[]
   features: Record<string, boolean>
-  upload: { accept: string[]; maxBytes: number; maxTextBytes: number }
+  // What the composer takes: the files a picker offers and their sizes, the
+  // paste that becomes a text file, and how long dictation records.
+  composer: {
+    attachments: FileGroup[]
+    projectDocuments: FileGroup[]
+    pasteAsFileChars: number
+    dictationMaxSeconds: number
+  }
+}
+
+// Files the composer takes by extension, and the largest each may be.
+export interface FileGroup {
+  accept: string[]
+  maxBytes: number
 }
 
 export interface Turn {
@@ -161,12 +228,12 @@ export interface Turn {
     | 'edit'
     | 'regenerate'
     | 'continue'
-    | 'resolve'
+    | 'retry'
     | 'retryToolCall'
     | 'ask'
   ephemeral?: boolean
   local?: boolean
-  thread?: LocalTurnThread
+  thread?: StoredThread
   profile?: RecordValue
   projectId?: string | null
   presetId?: string | null
@@ -174,8 +241,8 @@ export interface Turn {
   quote?: string
   messageId?: string
   toolCallId?: string
-  resolution?: { text: string; data?: Json }
-  attachments?: string[]
+  // New uploads, or an attachment the stored chat has, by id.
+  attachments?: (AttachmentDescriptor | { id: string })[]
   widgets?: string[]
   options?: {
     model?: string
@@ -184,10 +251,16 @@ export interface Turn {
     reasoningEffort?: string
     thinking?: boolean
     webSearch?: boolean
-    codeExecution?: boolean
     genUI?: boolean
     piiCheck?: boolean
   }
+}
+
+// Re-attaches to a live run, which replays it from its first frame.
+export interface FollowInput {
+  key?: string
+  threadId: string
+  runId: string
 }
 
 export interface QueueItem {
@@ -200,29 +273,40 @@ export interface Snapshot {
   queue: QueueItem[]
   rateLimit?: RateLimit
 }
-export interface Patch {
-  op: 'add' | 'replace' | 'remove' | 'test' | 'move' | 'copy'
-  path: string
-  value?: Json
-  from?: string
+
+// The state changes a run sends: its queue, and the title the harness
+// names a new chat with.
+export type StatePatch =
+  | { op: 'add'; path: '/queue/-'; value: QueueItem }
+  | { op: 'replace'; path: '/queue'; value: QueueItem[] }
+  | { op: 'replace'; path: '/thread/title'; value: string }
+  | {
+      op: 'replace'
+      path: '/thread/titleState'
+      value: ThreadSummary['titleState']
+    }
+
+// A tool's output as it runs: its progress, and the lines it printed.
+export interface ToolActivity {
+  toolCallId?: string
+  tool?: string
+  progress?: number
+  output: Json[]
+}
+export type ActivityPatch =
+  | { op: 'replace'; path: '/progress'; value: number }
+  | { op: 'add'; path: '/output/-'; value: Json }
+
+// What a run's final event reports. A device chat's run returns the whole
+// thread.
+export interface RunMetadata {
+  cancelled?: boolean
+  rateLimit?: RateLimit
+  usage?: Json
+  thread?: unknown
 }
 
-export interface HarnessEvent {
-  type: string
-  timestamp?: string
-  threadId?: string
-  runId?: string
-  messageId?: string
-  parentMessageId?: string
-  toolCallId?: string
-  toolCallName?: string
-  delta?: string | Patch[]
-  snapshot?: Snapshot
-  messages?: Message[]
-  hasOlder?: boolean
-  content?: Json
-  metadata?: RecordValue
-  patch?: Patch[]
+interface RunError {
   code?: string
   message?: string
   kind?: string
@@ -230,13 +314,100 @@ export interface HarnessEvent {
   retryAfter?: number
 }
 
+// The events of a run's stream, as the harness emits them.
+export type HarnessEvent = { timestamp?: string } & (
+  | {
+      type: 'RUN_STARTED'
+      threadId?: string
+      runId: string
+      // The reply a continuation streams into.
+      messageId?: string
+      queued?: boolean
+    }
+  | { type: 'MESSAGES_SNAPSHOT'; messages: Message[]; hasOlder?: boolean }
+  | { type: 'STATE_SNAPSHOT'; snapshot: Snapshot }
+  | {
+      type: 'STATE_DELTA'
+      threadId?: string
+      // Set for a turn queued behind the running reply.
+      runId?: string
+      delta: StatePatch[]
+    }
+  | {
+      type: 'TEXT_MESSAGE_CHUNK'
+      messageId: string
+      role?: 'assistant'
+      delta: string
+    }
+  | { type: 'REASONING_MESSAGE_CHUNK'; messageId: string; delta: string }
+  // A short summary of a reply's reasoning while it goes on. It is not
+  // stored with the chat.
+  | {
+      type: 'REASONING_SUMMARY'
+      messageId: string
+      blockId: string
+      content: string
+    }
+  | {
+      type: 'TOOL_CALL_START'
+      toolCallId: string
+      toolCallName: string
+      parentMessageId?: string
+    }
+  | { type: 'TOOL_CALL_ARGS'; toolCallId: string; delta: string }
+  | { type: 'TOOL_CALL_END'; toolCallId: string }
+  | {
+      type: 'TOOL_CALL_RESULT'
+      toolCallId: string
+      messageId?: string
+      role?: 'tool'
+      content?: Json
+      metadata?: RecordValue
+      display?: ToolDisplay
+    }
+  | {
+      type: 'ACTIVITY_SNAPSHOT'
+      messageId: string
+      activityType?: string
+      content: ToolActivity
+      display?: ToolDisplay
+    }
+  | {
+      type: 'ACTIVITY_DELTA'
+      messageId: string
+      activityType?: string
+      patch: ActivityPatch[]
+      display?: ToolDisplay
+    }
+  | {
+      type: 'RUN_FINISHED'
+      threadId?: string
+      runId?: string
+      metadata?: RunMetadata
+    }
+  | ({
+      type: 'RUN_ERROR'
+      threadId?: string
+      runId?: string
+      metadata?: RunMetadata
+    } & RunError)
+)
+
+export type TerminalEvent = Extract<
+  HarnessEvent,
+  { type: 'RUN_FINISHED' | 'RUN_ERROR' }
+>
+
 export interface Frame {
   event: HarnessEvent
   id?: number
 }
 
+// A shared chat, whose attachments name the key that reads each blob.
 export interface SharedThread {
   title: string
   createdAt: string
-  messages: Message[]
+  messages: (Omit<Message, 'attachments'> & {
+    attachments?: (AttachmentDescriptor & { attKey: string | null })[]
+  })[]
 }

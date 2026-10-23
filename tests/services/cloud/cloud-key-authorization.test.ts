@@ -13,7 +13,6 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { MIGRATION_STARTED } from '../../harness-fixture'
 const mocks = vi.hoisted(() => ({
   validate: vi.fn(),
-  current: vi.fn(),
   register: vi.fn(),
 }))
 vi.mock('@/services/keys/cloud-key-preflight', async (importOriginal) => ({
@@ -25,13 +24,11 @@ vi.mock('@/services/keys/cek-encoding', () => ({
 }))
 vi.mock('@/services/harness/keys', async (importOriginal) => ({
   ...(await importOriginal()),
-  keyCurrent: mocks.current,
   registerKey: mocks.register,
   newIdempotencyKey: () => 'nonce',
 }))
 beforeEach(() => {
   mocks.validate.mockReset()
-  mocks.current.mockReset()
   mocks.register.mockReset()
 })
 it('refuses a mismatched key before registration', async () => {
@@ -44,8 +41,11 @@ it('refuses a mismatched key before registration', async () => {
   expect(mocks.register).not.toHaveBeenCalled()
 })
 it('registers a new account key through the harness', async () => {
-  mocks.validate.mockResolvedValue({ canWrite: true, remoteState: 'empty' })
-  mocks.current.mockResolvedValue({ key_id: null, has_data: false })
+  mocks.validate.mockResolvedValue({
+    canWrite: true,
+    remoteState: 'empty',
+    current: { key_id: null, has_data: false },
+  })
   await authorizeCurrentPrimaryKeyOrThrow()
   expect(mocks.register).toHaveBeenCalledWith({
     keyB64: 'active-key',
@@ -65,8 +65,11 @@ it('moves existing encrypted data to the active key through the harness', async 
     USER_ENCRYPTION_KEY_HISTORY,
     JSON.stringify([encryptionService.encodeKeyFromBytes(previous)]),
   )
-  mocks.validate.mockResolvedValue({ canWrite: true, remoteState: 'exists' })
-  mocks.current.mockResolvedValue({ key_id: null, has_data: true })
+  mocks.validate.mockResolvedValue({
+    canWrite: true,
+    remoteState: 'exists',
+    current: { key_id: null, has_data: true },
+  })
   vi.mocked(harnessAPI().client.post).mockImplementation(async (path) => {
     if (path !== '/v1/keys/migrate-all')
       throw new Error(`Unexpected request: ${path}`)
@@ -91,8 +94,11 @@ it('moves existing encrypted data to the active key through the harness', async 
   expect(mocks.register).not.toHaveBeenCalled()
 })
 it('uses the current etag for an explicitly requested fresh start', async () => {
-  mocks.current.mockResolvedValue({ key_id: 'old', etag: 'revision' })
-  mocks.validate.mockResolvedValue({ canWrite: false, remoteState: 'exists' })
+  mocks.validate.mockResolvedValue({
+    canWrite: false,
+    remoteState: 'exists',
+    current: { key_id: 'old', etag: 'revision' },
+  })
   await registerStartFreshKeyIfNeeded()
   expect(mocks.register).toHaveBeenCalledWith({
     keyB64: 'active-key',
@@ -102,14 +108,20 @@ it('uses the current etag for an explicitly requested fresh start', async () => 
   })
 })
 it('does not re-register a fresh start when this key is already registered', async () => {
-  mocks.current.mockResolvedValue({ key_id: 'active-kid', etag: 'revision' })
-  mocks.validate.mockResolvedValue({ canWrite: true, remoteState: 'exists' })
+  mocks.validate.mockResolvedValue({
+    canWrite: true,
+    remoteState: 'exists',
+    current: { key_id: 'active-kid', etag: 'revision' },
+  })
   await registerStartFreshKeyIfNeeded()
   expect(mocks.register).not.toHaveBeenCalled()
 })
 it('falls back to the any-key sentinel when the account has no key yet', async () => {
-  mocks.current.mockResolvedValue({ key_id: null, etag: '', has_data: false })
-  mocks.validate.mockResolvedValue({ canWrite: true, remoteState: 'empty' })
+  mocks.validate.mockResolvedValue({
+    canWrite: true,
+    remoteState: 'empty',
+    current: { key_id: null, etag: '', has_data: false },
+  })
   await registerStartFreshKeyIfNeeded()
   expect(mocks.register).toHaveBeenCalledExactlyOnceWith({
     keyB64: 'active-key',
@@ -119,8 +131,11 @@ it('falls back to the any-key sentinel when the account has no key yet', async (
   })
 })
 it('refuses a fresh start when the remote key state cannot be verified', async () => {
-  mocks.current.mockResolvedValue({ key_id: 'old', etag: 'revision' })
-  mocks.validate.mockResolvedValue({ canWrite: false, remoteState: 'unknown' })
+  mocks.validate.mockResolvedValue({
+    canWrite: false,
+    remoteState: 'unknown',
+    message: 'unverified',
+  })
   await expect(registerStartFreshKeyIfNeeded()).rejects.toBeInstanceOf(
     CloudKeySetupError,
   )

@@ -2,7 +2,9 @@ import { useProject } from '@/components/project'
 import { cn } from '@/components/ui/utils'
 import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
+import { acceptOf } from '@/services/harness/composer'
 import { useHarness } from '@/services/harness/provider'
+import { transcribe } from '@/services/speech/transcribe'
 import { logError } from '@/utils/error-handling'
 import {
   TfAttachment,
@@ -15,7 +17,6 @@ import {
   TfPlus,
   TfQuote,
   TfStop,
-  TfTerminal,
   TfTools,
 } from '@tinfoilsh/tinfoil-icons'
 import type { FormEvent, RefObject } from 'react'
@@ -73,8 +74,6 @@ type ChatInputProps = {
   modelSelectorButton?: React.ReactNode
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
-  codeExecutionEnabled?: boolean
-  onCodeExecutionToggle?: () => void
   quote?: string | null
   onClearQuote?: () => void
   isTemporaryMode?: boolean
@@ -113,8 +112,6 @@ export function ChatInput({
   modelSelectorButton,
   webSearchEnabled,
   onWebSearchToggle,
-  codeExecutionEnabled,
-  onCodeExecutionToggle,
   quote,
   onClearQuote,
   isTemporaryMode,
@@ -509,15 +506,7 @@ export function ChatInput({
         setIsTranscribing(true)
 
         const file = new File([blob], 'audio.webm', { type: 'audio/webm' })
-        // The harness transcribes without the content key, so a chat kept
-        // on the device can be dictated to while the key is locked.
-        const { text } = await api.upload<{ text: string }>(
-          '/v1/transcriptions',
-          file,
-          {},
-          undefined,
-          false,
-        )
+        const text = await transcribe(file)
 
         if (text) {
           const currentInput = input.trim()
@@ -551,7 +540,7 @@ export function ChatInput({
         setIsTranscribing(false)
       }
     },
-    [api, setInput, toast, input, resizeTextarea],
+    [setInput, toast, input, resizeTextarea],
   )
 
   const isWebMAudioSupported = () => {
@@ -637,9 +626,10 @@ export function ChatInput({
       setRecordingStream(stream)
 
       // Auto-stop after configured timeout
-      recordingTimeoutRef.current = setTimeout(() => {
-        stopRecording()
-      }, CONSTANTS.RECORDING_TIMEOUT_MS)
+      if (session)
+        recordingTimeoutRef.current = setTimeout(() => {
+          stopRecording()
+        }, session.composer.dictationMaxSeconds * 1000)
     } catch (err) {
       stream?.getTracks().forEach((track) => track.stop())
       if (mediaStreamRef.current === stream) mediaStreamRef.current = null
@@ -654,7 +644,7 @@ export function ChatInput({
         position: 'top-right',
       })
     }
-  }, [sendAudioForTranscription, stopRecording, toast])
+  }, [sendAudioForTranscription, stopRecording, toast, session])
 
   // Handle paste event for images and long text detection
   const handlePaste = useCallback(
@@ -684,7 +674,8 @@ export function ChatInput({
 
       // Check if pasted text exceeds threshold
       if (
-        pastedText.length > CONSTANTS.LONG_PASTE_THRESHOLD &&
+        session &&
+        pastedText.length > session.composer.pasteAsFileChars &&
         handleDocumentUpload
       ) {
         e.preventDefault() // Prevent the text from being pasted into the textarea
@@ -711,7 +702,7 @@ export function ChatInput({
       }
       // If text is short enough, let it paste normally (default behavior)
     },
-    [handleDocumentUpload],
+    [handleDocumentUpload, session],
   )
 
   // Once a conversation is underway the composer collapses into a single row
@@ -804,13 +795,11 @@ export function ChatInput({
                 </div>
               )
             })()}
-          {/* No accept filter: unknown extensions are sniffed for text
-              content and rejected gracefully after selection instead of
-              being blocked by the picker. */}
           <input
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
+            accept={acceptOf(session?.composer.attachments)}
             className="hidden"
             multiple
           />
@@ -1303,7 +1292,7 @@ export function ChatInput({
                             Change system prompt
                           </button>
                         )}
-                        {(onWebSearchToggle || onCodeExecutionToggle) && (
+                        {onWebSearchToggle && (
                           <div className="my-1.5 border-t border-border-subtle" />
                         )}
                         {onWebSearchToggle && (
@@ -1330,30 +1319,6 @@ export function ChatInput({
                             )}
                             <span className="flex-1">Web search</span>
                             {webSearchEnabled && (
-                              <TfBoxCheckmark
-                                className="h-4 w-4 text-brand-accent-light"
-                                aria-hidden="true"
-                              />
-                            )}
-                          </button>
-                        )}
-                        {onCodeExecutionToggle && (
-                          <button
-                            type="button"
-                            role="menuitemcheckbox"
-                            aria-checked={codeExecutionEnabled}
-                            onClick={() => {
-                              onCodeExecutionToggle()
-                              closeInputMenu(true)
-                            }}
-                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
-                          >
-                            <TfTerminal
-                              className="h-5 w-5 !text-content-secondary"
-                              aria-hidden="true"
-                            />
-                            <span className="flex-1">Code execution</span>
-                            {codeExecutionEnabled && (
                               <TfBoxCheckmark
                                 className="h-4 w-4 text-brand-accent-light"
                                 aria-hidden="true"

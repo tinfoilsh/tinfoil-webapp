@@ -1,13 +1,17 @@
+import { ERROR_CODES } from './protocol'
 import { HarnessError } from './sse'
 import type {
+  ActivityPatch,
   Frame,
   HarnessErrorBody,
-  Json,
+  HarnessEvent,
   Message,
-  Patch,
   Snapshot,
+  StatePatch,
+  TerminalEvent,
   Thread,
   TimelineBlock,
+  ToolActivity,
 } from './types'
 
 export interface ChatState {
@@ -24,7 +28,13 @@ export interface ChatState {
   // The leading blocks of a continued reply that new text starts after: as
   // in the harness, only a trailing text block takes the continuation.
   sealed?: Record<string, number>
+  // The last frame applied of each run, so a replayed run skips the frames
+  // it applied already.
   cursors: Record<string, number>
+  // The latest summary of each thinking block of the run, by block id.
+  summaries?: Record<string, string>
+  // The harness refused a turn because the safeguards flagged the chat.
+  flagged?: boolean
 }
 
 export function initialChat(thread?: Thread): ChatState {
@@ -37,125 +47,142 @@ export function initialChat(thread?: Thread): ChatState {
   }
 }
 
+export const isTerminal = (event: HarnessEvent): event is TerminalEvent =>
+  event.type === 'RUN_FINISHED' || event.type === 'RUN_ERROR'
+
+export const runOf = (event: HarnessEvent): string | undefined =>
+  'runId' in event ? event.runId : undefined
+
+// A reply's reasoning streams under the reply's id with this suffix.
+const REASONING_SUFFIX = /-reasoning$/
+// A tool's activity streams under the tool call's id with this prefix.
+const ACTIVITY_PREFIX = /^act_/
+const DEFAULT_RUN_ERROR = 'The run could not finish.'
+
 function invalidPatch(): never {
   throw new HarnessError({
-    code: 'INVALID_STREAM',
+    code: ERROR_CODES.invalidStream,
     message: 'The chat stream contained an invalid state patch.',
   })
 }
-function pointer(path: string): string[] {
-  if (path === '') return []
-  if (!path.startsWith('/')) invalidPatch()
-  return path
-    .slice(1)
-    .split('/')
-    .map((part) => {
-      if (/~[^01]|~$/.test(part)) invalidPatch()
-      const key = part.replace(/~1/g, '/').replace(/~0/g, '~')
-      if (['__proto__', 'constructor', 'prototype'].includes(key))
-        invalidPatch()
-      return key
-    })
-}
-function indexOf(part: string, length: number, append = false): number {
-  if (append && part === '-') return length
-  if (!/^(0|[1-9]\d*)$/.test(part)) invalidPatch()
-  const index = Number(part)
-  if (!Number.isSafeInteger(index) || index >= length + (append ? 1 : 0))
-    invalidPatch()
-  return index
-}
-function read(root: Json, parts: string[]): Json {
-  for (const part of parts) {
-    if (!root || typeof root !== 'object') invalidPatch()
-    if (Array.isArray(root)) root = root[indexOf(part, root.length)]
-    else {
-      if (!Object.hasOwn(root, part)) invalidPatch()
-      root = root[part]
-    }
-  }
-  return root
-}
-function same(a: Json, b: Json): boolean {
-  if (a === b) return true
-  if (
-    !a ||
-    !b ||
-    typeof a !== 'object' ||
-    typeof b !== 'object' ||
-    Array.isArray(a) !== Array.isArray(b)
-  )
-    return false
-  const left = Object.keys(a),
-    right = Object.keys(b)
-  return (
-    left.length === right.length &&
-    left.every(
-      (key) =>
-        Object.hasOwn(b, key) &&
-        same(
-          (a as Record<string, Json>)[key],
-          (b as Record<string, Json>)[key],
-        ),
-    )
-  )
-}
 
-// Patches operate on a copy. A failed test or an invalid path leaves the
-// caller's state intact, including when earlier operations succeeded.
-export function applyPatch(value: Json, patches: Patch[]): Json {
-  let result = structuredClone(value)
+const replaceAt = <T>(items: readonly T[], index: number, item: T): T[] =>
+  items.map((current, at) => (at === index ? item : current))
+
+// The queue and title changes a run sends. Each change copies only what it
+// changes.
+function applyStateDelta(
+  snapshot: Snapshot,
+  patches: readonly StatePatch[],
+): Snapshot {
+  let next = snapshot
   for (const patch of patches) {
-    const parts = pointer(patch.path)
-    let replacement = patch.value
-    if (patch.op === 'test') {
-      if (replacement === undefined || !same(read(result, parts), replacement))
-        invalidPatch()
-      continue
-    }
-    if (patch.op === 'copy' || patch.op === 'move') {
-      if (patch.from === undefined) invalidPatch()
-      const source = pointer(patch.from)
-      if (
-        patch.op === 'move' &&
-        parts.length > source.length &&
-        source.every((key, i) => parts[i] === key)
-      )
-        invalidPatch()
-      replacement = structuredClone(read(result, source))
-      if (patch.op === 'move')
-        result = applyPatch(result, [{ op: 'remove', path: patch.from }])
-    } else if (!['add', 'remove', 'replace'].includes(patch.op)) invalidPatch()
-    const add = patch.op === 'add' || patch.op === 'copy' || patch.op === 'move'
-    if (patch.op !== 'remove' && replacement === undefined) invalidPatch()
-    if (!parts.length) {
-      result = patch.op === 'remove' ? null : structuredClone(replacement!)
-      continue
-    }
-    const parent = read(result, parts.slice(0, -1))
-    const key = parts[parts.length - 1]
-    if (!parent || typeof parent !== 'object') invalidPatch()
-    if (Array.isArray(parent)) {
-      const index = indexOf(key, parent.length, add)
-      if (patch.op === 'remove') parent.splice(index, 1)
-      else if (add) parent.splice(index, 0, structuredClone(replacement!))
-      else parent[index] = structuredClone(replacement!)
-    } else {
-      if (!add && !Object.hasOwn(parent, key)) invalidPatch()
-      if (patch.op === 'remove') delete parent[key]
-      else parent[key] = structuredClone(replacement!)
-    }
+    if (patch.op === 'add' && patch.path === '/queue/-')
+      next = { ...next, queue: [...next.queue, patch.value] }
+    else if (patch.op === 'replace' && patch.path === '/queue')
+      next = { ...next, queue: patch.value }
+    else if (
+      patch.op === 'replace' &&
+      patch.path === '/thread/title' &&
+      next.thread
+    )
+      next = { ...next, thread: { ...next.thread, title: patch.value } }
+    else if (
+      patch.op === 'replace' &&
+      patch.path === '/thread/titleState' &&
+      next.thread
+    )
+      next = { ...next, thread: { ...next.thread, titleState: patch.value } }
+    else invalidPatch()
   }
-  return result
+  return next
 }
 
+// A tool's progress and the output lines it adds.
+function applyActivityDelta(
+  activity: ToolActivity,
+  patches: readonly ActivityPatch[],
+): ToolActivity {
+  let next = activity
+  for (const patch of patches) {
+    if (patch.op === 'replace' && patch.path === '/progress')
+      next = { ...next, progress: patch.value }
+    else if (patch.op === 'add' && patch.path === '/output/-')
+      next = { ...next, output: [...next.output, patch.value] }
+    else invalidPatch()
+  }
+  return next
+}
+
+// Changes the timeline of a reply, which the first chunk naming it starts.
+function withReply(
+  messages: Message[],
+  id: string,
+  createdAt: string | undefined,
+  change: (timeline: TimelineBlock[]) => TimelineBlock[],
+): Message[] {
+  const index = messages.findIndex((message) => message.id === id)
+  if (index < 0)
+    return [
+      ...messages,
+      {
+        id,
+        role: 'assistant',
+        createdAt: createdAt ?? '',
+        timeline: change([]),
+      },
+    ]
+  const message = messages[index]
+  return replaceAt(messages, index, {
+    ...message,
+    timeline: change(message.timeline ?? []),
+  })
+}
+
+// Changes a tool call's block, wherever it is; null when no block has it.
+function withToolCall(
+  messages: Message[],
+  toolCallId: string,
+  change: (block: TimelineBlock) => TimelineBlock,
+): Message[] | null {
+  for (const [index, message] of messages.entries()) {
+    const timeline = message.timeline ?? []
+    const at = timeline.findIndex(
+      (block) =>
+        block.type === 'tool_call' &&
+        (block.toolCallId ?? block.id) === toolCallId,
+    )
+    if (at >= 0)
+      return replaceAt(messages, index, {
+        ...message,
+        timeline: replaceAt(timeline, at, change(timeline[at])),
+      })
+  }
+  return null
+}
+
+// The leading blocks of a continued reply that new text does not extend.
+function sealOf(messages: Message[], id: string): Record<string, number> {
+  const blocks = messages.find((message) => message.id === id)?.timeline ?? []
+  return {
+    [id]: blocks.length - (blocks.at(-1)?.type === 'content' ? 1 : 0),
+  }
+}
+
+const withoutQueued = (snapshot: Snapshot, runId?: string): Snapshot => ({
+  ...snapshot,
+  queue: snapshot.queue.filter((item) => item.queueId !== runId),
+})
+
+// Applies one frame of a run. A frame the state applied already, as when a
+// run is replayed from its first frame, returns the state itself.
 export function reduceEvent(
   state: ChatState,
   frame: Frame,
   runHint?: string,
 ): ChatState {
-  const event = frame.event
-  const runId = event.runId ?? runHint ?? state.runId
+  const { event } = frame
+  const runId = runOf(event) ?? runHint ?? state.runId
   if (
     frame.id !== undefined &&
     runId &&
@@ -163,181 +190,215 @@ export function reduceEvent(
     frame.id <= state.cursors[runId]
   )
     return state
-  const next = structuredClone(state)
-  if (frame.id !== undefined && runId) next.cursors[runId] = frame.id
+  const cursors =
+    frame.id !== undefined && runId
+      ? { ...state.cursors, [runId]: frame.id }
+      : state.cursors
+  const next: ChatState = { ...state, cursors }
   // A queued run has its own stream. Its cancellation cannot stop the active
   // run, and late frames from the previous run cannot modify a newer snapshot.
   if (
     runId &&
-    next.runId &&
-    runId !== next.runId &&
-    !['RUN_STARTED', 'STATE_DELTA'].includes(event.type)
-  ) {
-    if (event.type === 'RUN_FINISHED' || event.type === 'RUN_ERROR')
-      next.snapshot.queue = next.snapshot.queue.filter(
-        (item) => item.queueId !== runId,
-      )
-    return next
-  }
-  const message = (id: string): Message => {
-    let value = next.messages.find((m) => m.id === id)
-    if (!value) {
-      value = {
-        id,
-        role: 'assistant',
-        createdAt: event.timestamp ?? '',
-        timeline: [],
-      }
-      next.messages.push(value)
-    }
-    value.timeline ??= []
-    return value
-  }
-  const seal = (id: string) => {
-    const blocks = next.messages.find((m) => m.id === id)?.timeline ?? []
-    next.sealed = {
-      [id]: blocks.length - (blocks.at(-1)?.type === 'content' ? 1 : 0),
-    }
-  }
-  const call = (id: string | undefined): TimelineBlock | undefined =>
-    next.messages
-      .flatMap((m) => m.timeline ?? [])
-      .find((b) => b.type === 'tool_call' && (b.toolCallId ?? b.id) === id)
+    state.runId &&
+    runId !== state.runId &&
+    event.type !== 'RUN_STARTED' &&
+    event.type !== 'STATE_DELTA'
+  )
+    return isTerminal(event)
+      ? { ...next, snapshot: withoutQueued(next.snapshot, runId) }
+      : next
   switch (event.type) {
-    case 'RUN_STARTED':
-      next.runId = event.runId
-      next.status = 'streaming'
-      delete next.error
-      delete next.failedRun
-      delete next.sealed
-      if (event.messageId) {
-        next.continued = event.messageId
-        seal(event.messageId)
-      } else delete next.continued
-      break
-    case 'STATE_SNAPSHOT':
-      if (event.snapshot) next.snapshot = event.snapshot
-      break
-    case 'STATE_DELTA':
-      if (Array.isArray(event.delta))
-        next.snapshot = applyPatch(
-          next.snapshot as unknown as Json,
-          event.delta,
-        ) as unknown as Snapshot
-      if (event.runId && next.status !== 'streaming') {
-        next.status = 'queued'
-        next.runId = event.runId
+    case 'RUN_STARTED': {
+      const {
+        error: _error,
+        failedRun: _failedRun,
+        sealed: _sealed,
+        continued: _continued,
+        summaries: _summaries,
+        ...rest
+      } = next
+      return {
+        ...rest,
+        runId: event.runId,
+        status: 'streaming',
+        ...(event.messageId
+          ? {
+              continued: event.messageId,
+              sealed: sealOf(rest.messages, event.messageId),
+            }
+          : {}),
       }
-      break
-    case 'MESSAGES_SNAPSHOT':
-      next.messages = event.messages ?? []
-      next.hasOlder = event.hasOlder ?? false
-      // The window holds the continued reply as the harness stored it.
-      if (next.continued) seal(next.continued)
-      break
+    }
+    case 'STATE_SNAPSHOT':
+      return { ...next, snapshot: event.snapshot }
+    case 'STATE_DELTA': {
+      const snapshot = applyStateDelta(next.snapshot, event.delta)
+      return event.runId && next.status !== 'streaming'
+        ? { ...next, snapshot, status: 'queued', runId: event.runId }
+        : { ...next, snapshot }
+    }
+    case 'MESSAGES_SNAPSHOT': {
+      const messages = event.messages
+      return {
+        ...next,
+        messages,
+        hasOlder: event.hasOlder ?? false,
+        // The window holds the continued reply as the harness stored it.
+        ...(next.continued ? { sealed: sealOf(messages, next.continued) } : {}),
+      }
+    }
     case 'TEXT_MESSAGE_CHUNK':
     case 'REASONING_MESSAGE_CHUNK': {
-      if (!event.messageId || typeof event.delta !== 'string') break
       const thinking = event.type === 'REASONING_MESSAGE_CHUNK'
       const id = thinking
-        ? event.messageId.replace(/-reasoning$/, '')
+        ? event.messageId.replace(REASONING_SUFFIX, '')
         : event.messageId
-      const m = message(id),
-        blocks = m.timeline!
       const type = thinking ? 'thinking' : 'content'
-      let block = blocks.at(-1)
-      if (block?.type !== type || blocks.length <= (next.sealed?.[id] ?? 0)) {
-        block = { id: `${id}_${type}_${blocks.length}`, type, content: '' }
-        blocks.push(block)
+      const sealed = next.sealed?.[id] ?? 0
+      return {
+        ...next,
+        messages: withReply(next.messages, id, event.timestamp, (blocks) => {
+          const last = blocks.at(-1)
+          if (last?.type === type && blocks.length > sealed)
+            return replaceAt(blocks, blocks.length - 1, {
+              ...last,
+              content: (last.content ?? '') + event.delta,
+            })
+          return [
+            ...blocks,
+            {
+              id: `${id}_${type}_${blocks.length}`,
+              type,
+              content: event.delta,
+            },
+          ]
+        }),
       }
-      block.content = (block.content ?? '') + event.delta
-      break
     }
+    case 'REASONING_SUMMARY':
+      return {
+        ...next,
+        summaries: { ...next.summaries, [event.blockId]: event.content },
+      }
     case 'TOOL_CALL_START': {
-      if (!event.toolCallId) break
-      const existing = call(event.toolCallId)
-      if (existing) {
-        existing.arguments = ''
-        existing.name = event.toolCallName
-        existing.complete = false
-      } else
-        message(
-          event.parentMessageId ?? `msg_${event.toolCallId}`,
-        ).timeline!.push({
-          id: event.toolCallId,
-          toolCallId: event.toolCallId,
-          type: 'tool_call',
-          name: event.toolCallName,
-          arguments: '',
-          complete: false,
-          progress: [],
-          resolvedAt: null,
-          resolution: null,
-        })
-      break
-    }
-    case 'TOOL_CALL_ARGS': {
-      const block = call(event.toolCallId)
-      if (block && typeof event.delta === 'string')
-        block.arguments = (block.arguments ?? '') + event.delta
-      break
-    }
-    case 'TOOL_CALL_END': {
-      const block = call(event.toolCallId)
-      if (block) block.complete = true
-      break
-    }
-    case 'TOOL_CALL_RESULT': {
-      const block = call(event.toolCallId)
-      if (block) {
-        block.result = event.content
-        block.metadata = event.metadata
+      const { toolCallId, toolCallName: name } = event
+      const restarted = withToolCall(next.messages, toolCallId, (block) => ({
+        ...block,
+        arguments: '',
+        name,
+        complete: false,
+      }))
+      return {
+        ...next,
+        messages:
+          restarted ??
+          withReply(
+            next.messages,
+            event.parentMessageId ?? `msg_${toolCallId}`,
+            event.timestamp,
+            (blocks) => [
+              ...blocks,
+              {
+                id: toolCallId,
+                toolCallId,
+                type: 'tool_call',
+                name,
+                arguments: '',
+                complete: false,
+                progress: [],
+              },
+            ],
+          ),
       }
-      break
     }
+    case 'TOOL_CALL_ARGS':
+      return {
+        ...next,
+        messages:
+          withToolCall(next.messages, event.toolCallId, (block) => ({
+            ...block,
+            arguments: (block.arguments ?? '') + event.delta,
+          })) ?? next.messages,
+      }
+    case 'TOOL_CALL_END':
+      return {
+        ...next,
+        messages:
+          withToolCall(next.messages, event.toolCallId, (block) => ({
+            ...block,
+            complete: true,
+          })) ?? next.messages,
+      }
+    case 'TOOL_CALL_RESULT':
+      return {
+        ...next,
+        messages:
+          withToolCall(next.messages, event.toolCallId, (block) => ({
+            ...block,
+            result: event.content,
+            metadata: event.metadata,
+            ...(event.display ? { display: event.display } : {}),
+          })) ?? next.messages,
+      }
     case 'ACTIVITY_SNAPSHOT':
     case 'ACTIVITY_DELTA': {
-      const block = call(event.messageId?.replace(/^act_/, ''))
-      if (block) {
-        block.activity =
-          event.type === 'ACTIVITY_SNAPSHOT'
-            ? event.content
-            : applyPatch(block.activity ?? { output: [] }, event.patch ?? [])
-        if (
-          block.activity &&
-          typeof block.activity === 'object' &&
-          !Array.isArray(block.activity) &&
-          Array.isArray(block.activity.output)
-        )
-          block.progress = block.activity.output
+      const toolCallId = event.messageId.replace(ACTIVITY_PREFIX, '')
+      return {
+        ...next,
+        messages:
+          withToolCall(next.messages, toolCallId, (block) => {
+            const activity =
+              event.type === 'ACTIVITY_SNAPSHOT'
+                ? event.content
+                : applyActivityDelta(
+                    block.activity ?? { output: [] },
+                    event.patch,
+                  )
+            return {
+              ...block,
+              activity,
+              ...(Array.isArray(activity.output)
+                ? { progress: activity.output }
+                : {}),
+              ...(event.display ? { display: event.display } : {}),
+            }
+          }) ?? next.messages,
       }
-      break
     }
     case 'RUN_FINISHED':
     case 'RUN_ERROR': {
-      next.snapshot.queue = next.snapshot.queue.filter(
-        (item) => item.queueId !== runId,
+      const failed = event.type === 'RUN_ERROR'
+      const last = next.messages.findLastIndex(
+        (message) => message.role === 'assistant',
       )
-      next.status = event.type === 'RUN_ERROR' ? 'error' : 'idle'
-      if (event.type === 'RUN_ERROR') {
-        next.error = {
-          code: event.code ?? 'UPSTREAM_REFUSED',
-          message: event.message ?? 'The run could not finish.',
-          ...(event.kind ? { kind: event.kind } : {}),
-          ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
-          ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
-        }
-        if (runId) next.failedRun = runId
+      return {
+        ...next,
+        snapshot: withoutQueued(next.snapshot, runId),
+        status: failed ? 'error' : 'idle',
+        ...(failed
+          ? {
+              error: {
+                code: event.code ?? ERROR_CODES.upstreamRefused,
+                message: event.message ?? DEFAULT_RUN_ERROR,
+                ...(event.kind ? { kind: event.kind } : {}),
+                ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
+                ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
+              },
+              ...(runId ? { failedRun: runId } : {}),
+              ...(event.code === ERROR_CODES.chatFlagged
+                ? { flagged: true }
+                : {}),
+            }
+          : {}),
+        messages:
+          last < 0
+            ? next.messages
+            : replaceAt(next.messages, last, {
+                ...next.messages[last],
+                isError: failed,
+                isInterrupted: event.metadata?.cancelled === true,
+              }),
       }
-      if (event.metadata?.rateLimit)
-        next.snapshot.rateLimit = event.metadata
-          .rateLimit as unknown as Snapshot['rateLimit']
-      const last = next.messages.findLast((m) => m.role === 'assistant')
-      if (last) {
-        last.isError = event.type === 'RUN_ERROR'
-        last.isInterrupted = event.metadata?.cancelled === true
-      }
-      break
     }
   }
   return next

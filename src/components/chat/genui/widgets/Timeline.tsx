@@ -1,22 +1,7 @@
-import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
-
-const schema = z.object({
-  events: z
-    .array(
-      z.object({
-        date: z.string(),
-        title: z.string(),
-        description: z.string().optional(),
-      }),
-    )
-    .min(1),
-  title: z.string().optional(),
-})
 
 export const widget = defineGenUIWidget({
   name: 'render_timeline',
-  schema,
   render: ({ events, title }) => (
     <div className="my-3">
       {title && (

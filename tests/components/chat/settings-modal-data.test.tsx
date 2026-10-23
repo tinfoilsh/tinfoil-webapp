@@ -1,16 +1,16 @@
 import { SettingsModal } from '@/components/chat/settings-modal'
 import { buildChatExport } from '@/services/chat-export/export-archive'
-import {
-  localThreadStore,
-  type LocalThread,
-} from '@/services/harness/local-threads'
+import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
 import type { ThreadSummary } from '@/services/harness/types'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
 import { createFunctionalImportWorker } from '../../services/chat-import/functional-import-worker'
-import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
+import {
+  resetChatStoresAroundEachTest,
+  storedThread,
+} from '../../services/harness/thread-fixture'
 
 const page = vi.hoisted(() => ({
   isSignedIn: true,
@@ -67,8 +67,7 @@ function renderData(props: { isPremium?: boolean } = {}) {
   )
 }
 
-const deviceChat: LocalThread = {
-  id: LOCAL_ID,
+const deviceChat = storedThread(LOCAL_ID, {
   title: 'Garden plans',
   titleState: 'manual',
   createdAt: '2026-04-01T09:00:00Z',
@@ -88,7 +87,7 @@ const deviceChat: LocalThread = {
       timeline: [{ id: 'a1-c', type: 'content', content: 'In May.' }],
     },
   ],
-}
+})
 
 const conversation = (id: string, name: string) => ({
   uuid: id,
@@ -309,9 +308,28 @@ describe('importing chats from the Data tab', () => {
     fireEvent.click(screen.getByRole('button', { name: label }))
     await waitFor(() => expect(page.toast).toHaveBeenCalled())
   }
+  // The harness's reader of old chats upgrades each chat the import parsed,
+  // which is in the previous client's format.
+  const upgraded = (row: { id: string; title: string }) =>
+    storedThread(row.id, { title: row.title, titleState: 'generated' })
+  function acceptUpgrades() {
+    client.post.mockImplementation(async (path: string, input) => {
+      if (path !== '/v1/threads/upgrade') throw new Error(`Unexpected ${path}`)
+      return {
+        threads: (
+          input as { threads: { id: string; title: string }[] }
+        ).threads.map(upgraded),
+      }
+    })
+  }
+  const upgradeRequests = () =>
+    client.post.mock.calls
+      .filter(([path]) => path === '/v1/threads/upgrade')
+      .map(([, input]) => input)
 
   it('stores ChatGPT conversations on this device without cloud sync', async () => {
     connect()
+    acceptUpgrades()
     renderData()
 
     pickFiles('ChatGPT', [chatGptExport])
@@ -323,34 +341,33 @@ describe('importing chats from the Data tab', () => {
     })
     const [listed] = await localThreadStore('device').list()
     expect(listed.id).toMatch(REVERSE_ID)
-    const stored = await localThreadStore('device').get(listed.id)
-    expect(stored).toMatchObject({
-      title: 'Plants',
-      titleState: 'generated',
-      createdAt: '2026-01-01T10:00:00Z',
-      messages: [
-        {
-          id: `${listed.id}-message-0`,
-          role: 'user',
-          createdAt: '2026-01-01T10:00:01Z',
-          content: 'Which herbs?',
-        },
-        {
-          id: `${listed.id}-message-1`,
-          role: 'assistant',
-          createdAt: '2026-01-01T10:00:02Z',
-          content: 'Basil.',
-          timeline: [
-            {
-              type: 'content',
-              id: `${listed.id}-message-1-content`,
-              content: 'Basil.',
-            },
-          ],
-        },
-      ],
-    })
-    expect(stored?.codeExecutionAccessToken).toMatch(/^[0-9a-f]{64}$/)
+    expect(upgradeRequests()).toEqual([
+      {
+        threads: [
+          expect.objectContaining({
+            id: listed.id,
+            title: 'Plants',
+            isLocalOnly: true,
+            createdAt: new Date('2026-01-01T10:00:00Z'),
+            messages: [
+              expect.objectContaining({
+                role: 'user',
+                content: 'Which herbs?',
+                timestamp: new Date('2026-01-01T10:00:01Z'),
+              }),
+              expect.objectContaining({
+                role: 'assistant',
+                content: 'Basil.',
+                timestamp: new Date('2026-01-01T10:00:02Z'),
+              }),
+            ],
+          }),
+        ],
+      },
+    ])
+    expect(await localThreadStore('device').get(listed.id)).toEqual(
+      upgraded({ id: listed.id, title: 'Plants' }),
+    )
     expect(client.upload).not.toHaveBeenCalled()
     expect(screen.getByRole('status')).toHaveTextContent('1 chat imported')
   })
@@ -358,6 +375,7 @@ describe('importing chats from the Data tab', () => {
   it("stores a signed-out visitor's Claude conversations in this tab", async () => {
     page.isSignedIn = false
     connect()
+    acceptUpgrades()
     renderData()
 
     pickFiles('Claude', [
@@ -398,33 +416,32 @@ describe('importing chats from the Data tab', () => {
     })
     expect(await localThreadStore('device').list()).toEqual([])
     const [listed] = await localThreadStore('tab').list()
-    const stored = await localThreadStore('tab').get(listed.id)
-    expect(
-      stored?.messages.map((m) => [m.role, m.content, m.timeline]),
-    ).toEqual([
-      ['user', 'Leek soup?', undefined],
-      [
-        'assistant',
-        'Yes.',
-        [
-          {
-            type: 'thinking',
-            id: `${listed.id}-message-1-thinking`,
-            content: 'Warm',
-            duration: null,
-          },
-          {
-            type: 'content',
-            id: `${listed.id}-message-1-content`,
-            content: 'Yes.',
-          },
+    expect(upgradeRequests()).toEqual([
+      {
+        threads: [
+          expect.objectContaining({
+            id: listed.id,
+            title: 'Soup',
+            messages: [
+              expect.objectContaining({ role: 'user', content: 'Leek soup?' }),
+              expect.objectContaining({
+                role: 'assistant',
+                content: 'Yes.',
+                thoughts: 'Warm',
+              }),
+            ],
+          }),
         ],
-      ],
+      },
     ])
+    expect(await localThreadStore('tab').get(listed.id)).toEqual(
+      upgraded({ id: listed.id, title: 'Soup' }),
+    )
   })
 
   it('stores a Tinfoil export with its images on this device', async () => {
     connect()
+    acceptUpgrades()
     vi.stubGlobal('Worker', createFunctionalImportWorker())
     const image = new Uint8Array([137, 80, 78, 71, 9])
     const archive = await buildChatExport(
@@ -480,18 +497,34 @@ describe('importing chats from the Data tab', () => {
         'Imported 1 chat. Premium is required to import the 1 project chat.',
     })
     const [listed] = await localThreadStore('device').list()
-    const stored = await localThreadStore('device').get(listed.id)
-    expect(stored?.title).toBe('Trip')
-    expect(stored?.messages[0].attachments).toEqual([
+    expect(upgradeRequests()).toEqual([
       {
-        id: 'map',
-        type: 'image',
-        fileName: 'map.png',
-        mimeType: 'image/png',
-        fileSize: image.length,
-        base64: 'iVBORwk=',
+        threads: [
+          expect.objectContaining({
+            id: listed.id,
+            title: 'Trip',
+            messages: [
+              expect.objectContaining({
+                content: 'Our map',
+                attachments: [
+                  {
+                    id: 'map',
+                    type: 'image',
+                    fileName: 'map.png',
+                    mimeType: 'image/png',
+                    fileSize: image.length,
+                    base64: 'iVBORwk=',
+                  },
+                ],
+              }),
+            ],
+          }),
+        ],
       },
     ])
+    expect(await localThreadStore('device').get(listed.id)).toEqual(
+      upgraded({ id: listed.id, title: 'Trip' }),
+    )
     expect(screen.getByRole('status')).toHaveTextContent(
       'Skipped 1 project chat. Premium is required to import project chats.',
     )
