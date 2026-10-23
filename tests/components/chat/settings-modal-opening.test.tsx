@@ -298,7 +298,7 @@ describe('settings opening', () => {
       signIn({ cloud: false })
     })
 
-    it('keeps project data controls with cloud sync', () => {
+    it('offers the data controls, project ones included, as on main', () => {
       render(
         <Harness
           initialTab="data"
@@ -320,10 +320,10 @@ describe('settings opening', () => {
         'Import from Claude',
         'Import from Tinfoil',
         'Export Chats',
+        'Delete all projects',
+        'Export Projects for Claude',
       ])
         expect(screen.getByRole('button', { name })).toBeEnabled()
-      for (const name of ['Delete all projects', 'Export Projects for Claude'])
-        expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
       expect(
         screen.queryByText(/requires end-to-end encrypted cloud sync/),
       ).not.toBeInTheDocument()
