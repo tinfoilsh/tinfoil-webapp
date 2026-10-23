@@ -242,7 +242,10 @@ export function useChatList({
           )
         else if (stored && pinned)
           undo.push(appendShown(pinnedThreads, { ...stored, ...fields }))
-        return () => undo.forEach((step) => step())
+        return () => {
+          undo.forEach((step) => step())
+          persist()
+        }
       },
       // Leaves a chat out of the list before its store deletes it, and
       // returns what lists it again when the store refuses.
@@ -253,7 +256,10 @@ export function useChatList({
             return before ? [removeShown(store, before)] : []
           },
         )
-        return () => undo.forEach((step) => step())
+        return () => {
+          undo.forEach((step) => step())
+          persist()
+        }
       },
       // The stored chats are not listed, as once cloud sync is off.
       clearCloud({
