@@ -9,7 +9,7 @@ import { useToast } from '@/hooks/use-toast'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
-import type { Frame, Turn } from '@/services/harness/types'
+import type { Frame, StoredThread, Turn } from '@/services/harness/types'
 import {
   act,
   fireEvent,
@@ -26,7 +26,7 @@ import {
   storedThread,
 } from '../../services/harness/thread-fixture'
 import { refuseFetch } from './chat-interface-fixture'
-import { chatPage } from './chat-page-mocks'
+import { chatPage, errorHandling } from './chat-page-mocks'
 
 vi.mock('@clerk/react', async () => ({
   ...(await import('./chat-page-mocks')).clerk,
@@ -88,6 +88,7 @@ beforeEach(() => {
   chatPage.router.query = {}
   chatPage.router.replace.mockReset().mockResolvedValue(true)
   chatPage.router.push.mockReset().mockResolvedValue(true)
+  errorHandling.logError.mockClear()
   refuseFetch()
 })
 
@@ -751,6 +752,96 @@ it('continues a chat whose model was retired on the model the user picked', asyn
 
   await waitFor(() => expect(sentTurns()).toHaveLength(1))
   expect(sentTurns()[0].options?.model).toBe(otherModel.id)
+})
+
+// A chat the harness stores, whose settings fail to save.
+function openChatWhoseSettingsFail(fields: Partial<StoredThread> = {}) {
+  signIn({
+    cloud: true,
+    session: {
+      ...sessionWithOtherModel,
+      presets: [{ id: 'research', name: 'Research', builtIn: true }],
+    },
+  })
+  const saved = { ...savedChat('test-model'), ...fields }
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    if (path === '/v1/threads/get')
+      return { ...saved, hasOlder: false, messageCount: 1 }
+    if (path === '/v1/threads/update' || path === '/v1/profile/update')
+      throw new TypeError('Network unavailable')
+    throw new Error(`Unexpected ${path}`)
+  })
+  render(
+    <>
+      <ProjectProvider>
+        <ChatInterface initialChatId={saved.id} suppressIntroModals />
+      </ProjectProvider>
+      <Toaster />
+    </>,
+  )
+}
+
+const logged = () =>
+  errorHandling.logError.mock.calls.map(([message]) => message)
+
+const settingSaves = () =>
+  client.post.mock.calls.filter(
+    ([path]) => path === '/v1/threads/update' || path === '/v1/profile/update',
+  )
+
+it('tells a model pick that failed to save as a settings failure, not a reply failure', async () => {
+  openChatWhoseSettingsFail()
+  await screen.findByText('A saved question')
+
+  fireEvent.click(
+    screen.getAllByRole('button', { name: 'Current model Test model' })[0],
+  )
+  fireEvent.click(
+    within(
+      screen.getAllByRole('menu', { name: 'Select a model' })[0],
+    ).getByRole('menuitemradio', { name: /Other model/ }),
+  )
+
+  expect(await screen.findByText('Failed to save settings')).toBeInTheDocument()
+  await waitFor(() =>
+    expect(logged()).toContain('Failed to save the chat model'),
+  )
+  expect(settingSaves()).toHaveLength(2)
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+it('keeps a web search setting that failed to save out of the reply error banner', async () => {
+  openChatWhoseSettingsFail()
+  await screen.findByText('A saved question')
+
+  fireEvent.click(
+    within(openInputOptions()).getByRole('menuitemcheckbox', {
+      name: 'Web search',
+    }),
+  )
+
+  await waitFor(() =>
+    expect(logged()).toContain('Failed to save the chat web search setting'),
+  )
+  expect(settingSaves()).toHaveLength(1)
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+it('keeps a prompt change that failed to save out of the reply error banner', async () => {
+  openChatWhoseSettingsFail({ presetId: 'research' })
+  await screen.findByText('A saved question')
+
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Stop using this prompt' }),
+  )
+
+  await waitFor(() =>
+    expect(logged()).toContain('Failed to save the chat prompt'),
+  )
+  expect(settingSaves()).toHaveLength(1)
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 
 it('keeps the draft, its attachment and quote when starting a new chat or opening another', async () => {

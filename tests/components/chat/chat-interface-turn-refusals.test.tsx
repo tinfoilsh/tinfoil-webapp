@@ -6,7 +6,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, signIn, testSession } from '../../harness-fixture'
 import { refuseFetch } from './chat-interface-fixture'
-import { chatPage } from './chat-page-mocks'
+import { chatPage, errorHandling } from './chat-page-mocks'
 
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
 vi.mock('next/router', async () => (await import('./chat-page-mocks')).router)
@@ -75,6 +75,7 @@ const turn = (call: number) => client.events.mock.calls[call][1] as Turn
 
 beforeEach(() => {
   chatPage.premium = false
+  errorHandling.logError.mockClear()
   refuseFetch()
   signIn({ cloud: true })
   client.post.mockImplementation(async (path: string) => {
@@ -116,6 +117,32 @@ describe('a turn the harness refuses', () => {
       rerender(<ChatInterface />)
     })
     await waitFor(() => expect(getView().rateLimit?.kind).toBe('hourly'))
+  })
+  it('keeps a failed recheck after a subscription change out of the reply error banner', async () => {
+    client.post.mockImplementation(async (path) => {
+      if (path === '/v1/session') throw new TypeError('Network unavailable')
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      throw new Error(`Unexpected ${path}`)
+    })
+    const { rerender } = render(<ChatInterface />)
+    await screen.findByRole('textbox', { name: /message/i })
+
+    await act(async () => {
+      chatPage.premium = true
+      rerender(<ChatInterface />)
+    })
+
+    await waitFor(() =>
+      expect(
+        errorHandling.logError.mock.calls.map(([message]) => message),
+      ).toContain('Failed to refresh after a subscription change'),
+    )
+    expect(client.post).toHaveBeenCalledWith(
+      '/v1/session',
+      { refreshCredentials: true },
+      expect.any(AbortSignal),
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
   it('explains a full queue without the quota or upgrade, and resends the message', async () => {
     const { messages: _messages, hasOlder: _hasOlder, ...summary } = thread

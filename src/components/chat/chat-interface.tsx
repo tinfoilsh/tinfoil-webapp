@@ -153,7 +153,7 @@ const OnboardingView = dynamic(
 
 import { verifyChatService } from '@/services/harness/attestation'
 import { ERROR_CODES } from '@/services/harness/protocol'
-import { useHarness } from '@/services/harness/provider'
+import { reportProfileError, useHarness } from '@/services/harness/provider'
 import { HarnessError } from '@/services/harness/sse'
 import { isAttachmentsUnavailable } from '@/services/harness/transfer'
 import type { Turn } from '@/services/harness/types'
@@ -335,15 +335,15 @@ export function ChatInterface({
     const changed = previousSubscription.current !== chat_subscription_active
     previousSubscription.current = chat_subscription_active
     if (changed && isSignedIn) {
-      void api.refresh({ credentials: true }).catch(thread.report)
+      void api.refresh({ credentials: true }).catch((cause) => {
+        if (cause instanceof DOMException && cause.name === 'AbortError') return
+        logError('Failed to refresh after a subscription change', cause, {
+          component: 'ChatInterface',
+          action: 'refreshSubscription',
+        })
+      })
     }
-  }, [
-    api,
-    isSignedIn,
-    isSubscriptionLoading,
-    chat_subscription_active,
-    thread.report,
-  ])
+  }, [api, isSignedIn, isSubscriptionLoading, chat_subscription_active])
   // The composer only uses premium status to decide which controls to show,
   // and the server enforces access on every request. Using the cached value
   // while auth loads keeps the toolbar from reflowing once Clerk resolves.
@@ -586,6 +586,15 @@ export function ChatInterface({
       )
       .catch(logListAction('Failed to leave a deleted chat', id))
   }
+  // A chat setting that fails to save is logged, rather than shown as a
+  // failure of the open chat's reply.
+  const logSettingError = (message: string) => (cause: unknown) => {
+    if (cause instanceof DOMException && cause.name === 'AbortError') return
+    logError(message, cause, {
+      component: 'ChatInterface',
+      action: 'chatSetting',
+    })
+  }
   const updateChatTitle = (id: string, title: string) => {
     void thread
       .update(id, { title })
@@ -595,12 +604,16 @@ export function ChatInterface({
     thread.setModel(model)
     if (!findSelectableModel(model, models)?.auto) setExpandedLabel(null)
     if (currentChat.id)
-      void thread.update(currentChat.id, { model }).catch(thread.report)
-    void api.updateProfile({ selectedModel: model }).catch(thread.report)
+      void thread
+        .update(currentChat.id, { model })
+        .catch(logSettingError('Failed to save the chat model'))
+    void api.updateProfile({ selectedModel: model }).catch(reportProfileError)
   }
   // Choosing a prompt also applies its model and web search setting.
   const handleSetActivePreset = (presetId: string | null) => {
-    void thread.selectPreset(presetId).catch(thread.report)
+    void thread
+      .selectPreset(presetId)
+      .catch(logSettingError('Failed to save the chat prompt'))
   }
   const options = {
     model: selectedModel,
@@ -964,7 +977,7 @@ export function ChatInterface({
         .update(currentChat.id, {
           webSearchEnabled: !effectiveWebSearchEnabled,
         })
-        .catch(thread.report)
+        .catch(logSettingError('Failed to save the chat web search setting'))
   }
   const handleOpenVerifierSidebar = () => {
     handleSetVerifierSidebarOpen(!isVerifierSidebarOpen)
