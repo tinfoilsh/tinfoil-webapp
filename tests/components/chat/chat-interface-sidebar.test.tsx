@@ -500,6 +500,44 @@ async function renameRow(from: string, to: string) {
   fireEvent.submit(field.closest('form')!)
 }
 
+it('keeps the latest of two overlapping renames when their answers arrive out of order', async () => {
+  const { alpha, changes } = listTwoChats()
+  await renameRow('Alpha chat', 'First rename')
+  await renameRow('First rename', 'Second rename')
+
+  await act(async () =>
+    changes[1].answer.resolve({
+      ...summaryOf(alpha),
+      title: 'Second rename',
+      titleState: 'manual',
+    }),
+  )
+  await act(async () =>
+    changes[0].answer.resolve({
+      ...summaryOf(alpha),
+      title: 'First rename',
+      titleState: 'manual',
+    }),
+  )
+
+  expect(screen.getByRole('link', { name: /^Second rename/ })).toHaveAttribute(
+    'href',
+    '/chat/alpha-chat',
+  )
+  expect(
+    screen.queryByRole('link', { name: /^First rename/ }),
+  ).not.toBeInTheDocument()
+  expect(
+    readChatListCache('alice', null)?.threads.map(({ id, title }) => ({
+      id,
+      title,
+    })),
+  ).toEqual([
+    { id: alpha.id, title: 'Second rename' },
+    { id: 'beta-chat', title: 'Beta chat' },
+  ])
+})
+
 it('keeps a refused rename out of the saved list when another chat saves meanwhile', async () => {
   const { alpha, beta, changes } = listTwoChats()
   await renameRow('Alpha chat', 'Refused rename')

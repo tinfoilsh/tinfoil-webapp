@@ -143,17 +143,23 @@ export function cloudThreads(
     list.replace(summaryOf(thread))
     return thread
   }
+  // The latest change asked of each chat, so an earlier change answered
+  // after it does not list the chat as it was before the latest.
+  const latestUpdate = new Map<string, number>()
+  let updates = 0
   return {
     local: false,
     get: (threadId) => api.post<Thread>(ROUTES.get, { id: threadId }),
     older: (threadId, before) =>
       api.post<Thread>(ROUTES.get, { id: threadId, before }),
     async update(threadId, patch) {
+      const update = ++updates
+      latestUpdate.set(threadId, update)
       const summary = await api.post<ThreadSummary>(ROUTES.update, {
         id: threadId,
         ...patch,
       })
-      list.replace(summary)
+      if (latestUpdate.get(threadId) === update) list.replace(summary)
       return summary
     },
     async remove(threadId) {
