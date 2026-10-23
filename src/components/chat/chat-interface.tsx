@@ -390,17 +390,18 @@ export function ChatInterface({
   >([])
   const [quote, setQuote] = useState<string | null>(null)
   // Onboarding is shown to signed-in users once their profile has loaded,
-  // unless the account completed it on any device.
-  const { showOnboarding, dismissOnboarding } = useOnboarding({
-    isAuthLoaded: isAuthLoaded && !!session,
-    isSignedIn,
-    userId: user?.id,
-    hasCompletedOnboarding:
-      user?.unsafeMetadata?.has_completed_onboarding === true ||
-      !profileReady ||
-      profile.hasSeenOnboarding === true,
-    suppressIntroModals,
-  })
+  // unless the account completed it on any device. A refused key keeps the
+  // profile from loading, so the account and this device decide then.
+  const { showOnboarding, isOnboardingReady, dismissOnboarding } =
+    useOnboarding({
+      isAuthLoaded: isAuthLoaded && !!session && (profileReady || keyLocked),
+      isSignedIn,
+      userId: user?.id,
+      hasCompletedOnboarding:
+        user?.unsafeMetadata?.has_completed_onboarding === true ||
+        profile.hasSeenOnboarding === true,
+      suppressIntroModals,
+    })
   const [logoAnimDone, setLogoAnimDone] = useState(false)
   const handleLogoAnimFinished = useCallback(() => {
     setLogoAnimDone(true)
@@ -1186,7 +1187,8 @@ export function ChatInterface({
     refreshBundleState,
   } = usePasskeyBackup({
     encryptionKey,
-    initialized: !!session,
+    // Passkey prompts wait for onboarding to be dismissed.
+    initialized: !!session && isOnboardingReady && !showOnboarding,
     isSignedIn,
     user,
     onEncryptionKeyRecovered: useCallback(

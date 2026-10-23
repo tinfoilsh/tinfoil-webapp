@@ -1,8 +1,11 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProjectProvider } from '@/components/project/project-provider'
-import { act, render, screen } from '@testing-library/react'
+import { USER_PREFS_LOCAL_PROFILE } from '@/constants/storage-keys'
+import { publish } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { signIn } from '../../harness-fixture'
+import { client, signIn, testSession } from '../../harness-fixture'
 import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
 import { refuseFetch } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
@@ -12,6 +15,8 @@ import { chatPage } from './chat-page-mocks'
 const account = vi.hoisted(() => ({
   unsafeMetadata: {} as Record<string, unknown>,
 }))
+// Whether the page last let the passkey hook start.
+const passkeyStart = vi.hoisted(() => ({ initialized: undefined as unknown }))
 
 vi.mock('@clerk/react', async () => {
   const { chatPage } = await import('./chat-page-mocks')
@@ -60,10 +65,15 @@ vi.mock(
   '@/hooks/use-subscription-status',
   async () => (await import('./chat-page-mocks')).subscription,
 )
-vi.mock(
-  '@/hooks/use-passkey-backup',
-  async () => (await import('./chat-page-mocks')).passkeyBackup,
-)
+vi.mock('@/hooks/use-passkey-backup', async () => {
+  const { passkeyBackup } = await import('./chat-page-mocks')
+  return {
+    usePasskeyBackup: (options: { initialized: boolean }) => {
+      passkeyStart.initialized = options.initialized
+      return passkeyBackup.usePasskeyBackup()
+    },
+  }
+})
 vi.mock('@/hooks/use-upgrade-to-pro', () => ({
   useUpgradeToPro: () => ({ startUpgrade: vi.fn() }),
 }))
@@ -88,6 +98,7 @@ beforeEach(async () => {
   chatPage.router.pathname = '/'
   chatPage.router.query = {}
   account.unsafeMetadata = {}
+  passkeyStart.initialized = undefined
   refuseFetch()
   // The onboarding chunk is loaded, so it shows as soon as the page asks.
   await import('@/components/onboarding/onboarding-view')
@@ -123,4 +134,74 @@ it.each([
   expect(
     screen.queryByRole('heading', { name: 'Why Tinfoil Chat' }) !== null,
   ).toBe(shown)
+})
+
+it('starts passkey prompts only once onboarding is dismissed', async () => {
+  signIn({ profile: {} })
+  render(view())
+  await screen.findByRole('heading', { name: 'Why Tinfoil Chat' })
+  expect(passkeyStart.initialized).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  await screen.findByRole('heading', { name: 'Private, by Design.' })
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  await screen.findByRole('heading', { name: 'Tending the Garden' })
+  expect(passkeyStart.initialized).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
+  await act(async () => {})
+  expect(passkeyStart.initialized).toBe(true)
+  expect(
+    JSON.parse(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)!),
+  ).toMatchObject({ hasSeenOnboarding: true })
+})
+
+it('waits for the cloud profile to decide onboarding before passkey prompts', async () => {
+  const api = signIn({ cloud: true })
+  let load!: (profile: object) => void
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/session') return structuredClone(testSession)
+    if (path === '/v1/profile/get')
+      return new Promise((resolve) => {
+        load = resolve
+      })
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    throw new Error(`Unexpected harness request: ${path}`)
+  })
+  // The page has opened and the account's profile has not loaded yet.
+  publish({ profile: {}, keyReady: false, profileReady: false })
+  const loading = api.refresh()
+  render(view())
+  await settle()
+  expect(passkeyStart.initialized).toBe(false)
+  await act(async () => {
+    load({ hasSeenOnboarding: true })
+    await loading
+  })
+  expect(passkeyStart.initialized).toBe(true)
+  expect(
+    screen.queryByRole('heading', { name: 'Why Tinfoil Chat' }),
+  ).not.toBeInTheDocument()
+})
+
+it('starts passkey recovery for an account whose key is refused', async () => {
+  account.unsafeMetadata = { has_completed_onboarding: true }
+  const api = signIn({ cloud: true })
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/session') return structuredClone(testSession)
+    if (path === '/v1/profile/get')
+      throw new HarnessError(
+        { code: 'KEY_REQUIRED', message: 'A content key is required' },
+        401,
+      )
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    throw new Error(`Unexpected harness request: ${path}`)
+  })
+  publish({ profile: {}, keyReady: false, profileReady: false })
+  render(view())
+  await settle()
+  expect(passkeyStart.initialized).toBe(false)
+  await act(() => api.refresh())
+  expect(passkeyStart.initialized).toBe(true)
 })
