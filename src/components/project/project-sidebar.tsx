@@ -81,6 +81,7 @@ interface ProjectChat {
   projectId?: string
   isBlankChat?: boolean
   isTemporary?: boolean
+  activeRun?: { runId: string } | null
   flagged?: boolean
 }
 
@@ -568,6 +569,7 @@ export function ProjectSidebar({
       messageCount: c.messageCount,
       projectId: c.projectId,
       isTemporary: c.isTemporary,
+      activeRun: c.activeRun,
       flagged: c.flagged,
     }))
 

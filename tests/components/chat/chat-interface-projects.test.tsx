@@ -6,7 +6,14 @@ import {
 } from '@/constants/storage-keys'
 import { publish } from '@/services/harness/runtime'
 import type { Thread, ThreadSummary } from '@/services/harness/types'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { MotionGlobalConfig } from 'framer-motion'
 import {
   afterAll,
@@ -796,4 +803,12 @@ it('shows the projects loading rather than missing until the key lets them be li
 
   await act(async () => listing.resolve({ projects: [], nextCursor: null }))
   expect(screen.getByText('No projects yet')).toBeInTheDocument()
+})
+
+it('shows a project chat still replying as generating its response', async () => {
+  routes['/v1/threads/list'] = () =>
+    listPage([{ ...projectChat, activeRun: { runId: 'run-1' } }])
+  render(projectView())
+  const row = await screen.findByRole('link', { name: /^Project discussion/ })
+  expect(within(row).getByText('Generating response')).toBeInTheDocument()
 })
