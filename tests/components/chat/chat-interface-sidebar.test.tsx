@@ -452,6 +452,40 @@ it.each(['saved', 'refused'] as const)(
   },
 )
 
+it('shows the saved title again when two overlapping renames are both refused', async () => {
+  const { changes } = listTwoChats()
+  const rename = async (from: string, to: string) => {
+    const listed = await row(from)
+    fireEvent.click(
+      within(listed.closest('li, [role="listitem"]')!).getByRole('button', {
+        name: 'Rename chat',
+      }),
+    )
+    const field = screen.getByRole('textbox', { name: 'Chat title' })
+    fireEvent.change(field, { target: { value: to } })
+    fireEvent.submit(field.closest('form')!)
+  }
+  await rename('Alpha chat', 'First rename')
+  await rename('First rename', 'Second rename')
+  expect(changes.map(({ input }) => input.title)).toEqual([
+    'First rename',
+    'Second rename',
+  ])
+
+  await act(async () => changes[0].answer.reject(new Error('Refused')))
+  expect(
+    screen.getByRole('link', { name: /^Second rename/ }),
+  ).toBeInTheDocument()
+  await act(async () => changes[1].answer.reject(new Error('Refused')))
+
+  expect(
+    await screen.findByRole('link', { name: /^Alpha chat/ }, { timeout: 3000 }),
+  ).toHaveAttribute('href', '/chat/alpha-chat')
+  expect(
+    screen.queryByRole('link', { name: /^First rename/ }),
+  ).not.toBeInTheDocument()
+})
+
 it.each(['deleted', 'refused'] as const)(
   'removes a deleted chat from the list at once, and keeps it out when %s',
   async (outcome) => {

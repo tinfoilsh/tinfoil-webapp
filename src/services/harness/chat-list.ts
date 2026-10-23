@@ -46,18 +46,32 @@ const editsOf = (store: Store<ThreadSummary[]>): ListEdits => ({
 
 // Changes a listed copy of a chat at once, and returns what takes the
 // change back. A copy the list read again meanwhile stays as read.
+// The copy each shown edit replaced, and the edit that replaced it in turn,
+// so undoing an edit a later one already replaced hands the later edit the
+// copy to go back to.
+const shownBefore = new WeakMap<ThreadSummary, ThreadSummary>()
+const shownAfter = new WeakMap<ThreadSummary, ThreadSummary>()
 const replaceShown = (
   store: Store<ThreadSummary[]>,
   before: ThreadSummary,
   after: ThreadSummary,
 ) => {
+  shownBefore.set(after, before)
+  shownAfter.set(before, after)
   store.update((listed) =>
     listed.map((thread) => (thread === before ? after : thread)),
   )
-  return () =>
+  return () => {
+    const previous = shownBefore.get(after) ?? before
+    const later = shownAfter.get(after)
+    if (later) {
+      shownBefore.set(later, previous)
+      shownAfter.set(previous, later)
+    }
     store.update((listed) =>
-      listed.map((thread) => (thread === after ? before : thread)),
+      listed.map((thread) => (thread === after ? previous : thread)),
     )
+  }
 }
 const removeShown = (store: Store<ThreadSummary[]>, before: ThreadSummary) => {
   const index = store.get().indexOf(before)
