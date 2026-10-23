@@ -188,10 +188,12 @@ export function NativeBackupRestore({
                 </li>
               ),
             )}
-            <li>
-              chats on this device: {result.stored} imported, {result.skipped}{' '}
-              skipped
-            </li>
+            {(result.stored > 0 || result.skipped > 0) && (
+              <li>
+                chats on this device: {result.stored} imported, {result.skipped}{' '}
+                skipped
+              </li>
+            )}
             {[...result.warnings, ...(result.status?.warnings ?? [])].map(
               (warning, index) => (
                 <li key={`warning-${index}`}>{warning}</li>

@@ -186,6 +186,32 @@ describe('NativeBackupRestore', () => {
     expect(projectsUpdated).toHaveBeenCalledOnce()
   })
 
+  it('lists only the cloud data a backup without device chats restored', async () => {
+    signIn({ cloud: true })
+    answerRestore([], { jobId: 'job-1', warnings: [] })
+    answerStatus({
+      status: 'completed',
+      imported: 2,
+      failed: 0,
+      total: 2,
+      counts: {
+        chat: { imported: 2, skipped: 0, failed: 0, blocked: 0 },
+      },
+    })
+    const { container } = render(
+      <NativeBackupRestore available ownerId="alice" />,
+    )
+
+    selectArchive(container)
+
+    expect(
+      await screen.findByText('Backup restored successfully.'),
+    ).toBeVisible()
+    expect(listed()).toEqual([
+      'cloud chats: 2 imported, 0 skipped, 0 failed, 0 blocked',
+    ])
+  })
+
   it('restores on this device without cloud sync, skipping chats it holds', async () => {
     signIn()
     answerRestore([deviceChat], { jobId: null, warnings: [] })
