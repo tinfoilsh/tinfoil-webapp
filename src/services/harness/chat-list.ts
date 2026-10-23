@@ -11,7 +11,7 @@ import type { LocalThreadStore } from './local-threads'
 import { ROUTES } from './protocol'
 import type { HarnessAPI } from './runtime'
 import { createStore, useStore, type Store } from './store'
-import type { ListEdits } from './thread-store'
+import type { ListEdits, ThreadPatch } from './thread-store'
 import type { ThreadSummary } from './types'
 
 // Chats listed per request; more load with the cursor the last page ends at.
@@ -43,6 +43,37 @@ const editsOf = (store: Store<ThreadSummary[]>): ListEdits => ({
   remove: (threadId) =>
     store.update((listed) => listed.filter((thread) => thread.id !== threadId)),
 })
+
+// Changes a listed copy of a chat at once, and returns what takes the
+// change back. A copy the list read again meanwhile stays as read.
+const replaceShown = (
+  store: Store<ThreadSummary[]>,
+  before: ThreadSummary,
+  after: ThreadSummary,
+) => {
+  store.update((listed) =>
+    listed.map((thread) => (thread === before ? after : thread)),
+  )
+  return () =>
+    store.update((listed) =>
+      listed.map((thread) => (thread === after ? before : thread)),
+    )
+}
+const removeShown = (store: Store<ThreadSummary[]>, before: ThreadSummary) => {
+  const index = store.get().indexOf(before)
+  store.update((listed) => listed.filter((thread) => thread !== before))
+  return () =>
+    store.update((listed) =>
+      listed.some((thread) => thread.id === before.id)
+        ? listed
+        : [...listed.slice(0, index), before, ...listed.slice(index)],
+    )
+}
+const appendShown = (store: Store<ThreadSummary[]>, after: ThreadSummary) => {
+  store.update((listed) => [...listed, after])
+  return () =>
+    store.update((listed) => listed.filter((thread) => thread !== after))
+}
 
 // The chats the sidebar lists: the harness's stored chats with cloud sync,
 // page by page, and the chats this device keeps, read again as they change.
@@ -154,6 +185,52 @@ export function useChatList({
         },
       },
       device: editsOf(deviceThreads),
+      // Shows a new title or favorite state of a chat before its store
+      // saves it, and returns what takes it back when the store refuses.
+      // Only a stored chat is a favorite.
+      preview(threadId: string, { title, pinned }: ThreadPatch) {
+        if (title === undefined && pinned === undefined) return () => {}
+        const titled: Partial<ThreadSummary> =
+          title !== undefined ? { title, titleState: 'manual' } : {}
+        const fields = {
+          ...titled,
+          ...(pinned !== undefined ? { pinned } : {}),
+        }
+        const find = (store: Store<ThreadSummary[]>) =>
+          store.get().find((thread) => thread.id === threadId)
+        const stored = find(cloudThreads)
+        const favorite = find(pinnedThreads)
+        const onDevice = find(deviceThreads)
+        const undo: (() => void)[] = []
+        if (stored)
+          undo.push(
+            replaceShown(cloudThreads, stored, { ...stored, ...fields }),
+          )
+        if (onDevice && title !== undefined)
+          undo.push(
+            replaceShown(deviceThreads, onDevice, { ...onDevice, ...titled }),
+          )
+        if (favorite && pinned === false)
+          undo.push(removeShown(pinnedThreads, favorite))
+        else if (favorite)
+          undo.push(
+            replaceShown(pinnedThreads, favorite, { ...favorite, ...fields }),
+          )
+        else if (stored && pinned)
+          undo.push(appendShown(pinnedThreads, { ...stored, ...fields }))
+        return () => undo.forEach((step) => step())
+      },
+      // Leaves a chat out of the list before its store deletes it, and
+      // returns what lists it again when the store refuses.
+      previewRemoval(threadId: string) {
+        const undo = [cloudThreads, pinnedThreads, deviceThreads].flatMap(
+          (store) => {
+            const before = store.get().find((thread) => thread.id === threadId)
+            return before ? [removeShown(store, before)] : []
+          },
+        )
+        return () => undo.forEach((step) => step())
+      },
       // The stored chats are not listed, as once cloud sync is off.
       clearCloud({
         confirmedEmpty = false,

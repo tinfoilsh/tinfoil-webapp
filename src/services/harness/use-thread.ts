@@ -570,15 +570,6 @@ export function useThread(
       }),
     }
   })
-  // A run this tab streams is active in the chat list before the list next
-  // reports it, which it never does for a chat kept on the device.
-  const liveRun = (listed: Chat): Chat => {
-    if (listed.activeRun) return listed
-    const runId =
-      deviceRuns.get(listed.id)?.runId ??
-      (listed.id === id && running ? state.runId : undefined)
-    return runId ? { ...listed, activeRun: { runId } } : listed
-  }
   // The open chat is as recent as the latest message it shows, as one just
   // sent, before the list reports it.
   let shownActivity = 0
@@ -586,11 +577,55 @@ export function useThread(
     const at = Date.parse(message.createdAt)
     if (at > shownActivity) shownActivity = at
   }
-  const recent = (listed: Chat): Chat =>
-    listed.id === id &&
-    shownActivity > new Date(listed.activityAt ?? listed.createdAt).getTime()
-      ? { ...listed, activityAt: new Date(shownActivity).toISOString() }
-      : listed
+  const shownRun = running ? state.runId : undefined
+  const { cloudListed, pinnedListed, deviceListed } = list
+  // The same list while nothing it shows changes, so a title the user just
+  // typed is not animated in again.
+  const chats = useMemo(() => {
+    // A run this tab streams is active in the chat list before the list
+    // next reports it, which it never does for a chat kept on the device.
+    const liveRun = (listed: Chat): Chat => {
+      if (listed.activeRun) return listed
+      const runId =
+        deviceRuns.get(listed.id)?.runId ??
+        (listed.id === id ? shownRun : undefined)
+      return runId ? { ...listed, activeRun: { runId } } : listed
+    }
+    const recent = (listed: Chat): Chat =>
+      listed.id === id &&
+      shownActivity > new Date(listed.activityAt ?? listed.createdAt).getTime()
+        ? { ...listed, activityAt: new Date(shownActivity).toISOString() }
+        : listed
+    return [
+      ...(cloud
+        ? [
+            ...cloudListed,
+            ...pinnedListed.filter(
+              (pin) => !cloudListed.some((chat) => chat.id === pin.id),
+            ),
+          ].map((t) => threadView(t))
+        : []),
+      ...deviceListed.map((t) => ({
+        ...threadView(t),
+        isLocalOnly: true,
+      })),
+    ]
+      .map((listed) => recent(liveRun(listed)))
+      .sort(
+        (a, b) =>
+          new Date(b.activityAt ?? b.createdAt).getTime() -
+          new Date(a.activityAt ?? a.createdAt).getTime(),
+      )
+  }, [
+    cloud,
+    cloudListed,
+    pinnedListed,
+    deviceListed,
+    deviceRuns,
+    id,
+    shownRun,
+    shownActivity,
+  ])
   const summary =
     state.snapshot.thread ??
     (openState.loadingId
@@ -639,26 +674,7 @@ export function useThread(
   }))
   return {
     chat,
-    chats: [
-      ...(cloud
-        ? [
-            ...list.cloudListed,
-            ...list.pinnedListed.filter(
-              (pin) => !list.cloudListed.some((chat) => chat.id === pin.id),
-            ),
-          ].map((t) => threadView(t))
-        : []),
-      ...list.deviceListed.map((t) => ({
-        ...threadView(t),
-        isLocalOnly: true,
-      })),
-    ]
-      .map((listed) => recent(liveRun(listed)))
-      .sort(
-        (a, b) =>
-          new Date(b.activityAt ?? b.createdAt).getTime() -
-          new Date(a.activityAt ?? a.createdAt).getTime(),
-      ),
+    chats,
     model,
     setModel: (next: string) => patch({ model: next, modelChosen: true }),
     presetId,

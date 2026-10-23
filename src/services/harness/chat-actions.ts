@@ -14,7 +14,7 @@ import {
   transferInFlight,
   type DeviceChatCopy,
 } from './transfer'
-import type { Thread } from './types'
+import type { Thread, ThreadSummary } from './types'
 
 export interface ChatContext {
   api: HarnessAPI
@@ -52,6 +52,11 @@ export function chatActions({
   openChat,
 }: ChatContext) {
   const isOpen = (threadId: string) => open.get().id === threadId
+  const showSummary = (thread: ThreadSummary) =>
+    controller.view.update((state) => ({
+      ...state,
+      snapshot: { ...state.snapshot, thread },
+    }))
   const requireIdle = (threadId: string) => {
     const { status } = controller.view.get()
     if (
@@ -108,23 +113,50 @@ export function chatActions({
     }))
   }
   return {
+    // A new title or favorite state shows at once, and goes back when the
+    // chat's store refuses it.
     async update(threadId: string, patch: ThreadPatch) {
       if (moving.has(threadId)) return null
-      const summary = await storeOf(threadId).update(threadId, patch)
-      if (summary && isOpen(threadId))
-        controller.view.update((state) => ({
-          ...state,
-          snapshot: { ...state.snapshot, thread: summary },
-        }))
+      const store = storeOf(threadId)
+      const unlist = list.preview(threadId, patch)
+      const shown = controller.view.get().snapshot.thread
+      const titled =
+        shown?.id === threadId && patch.title !== undefined && isOpen(threadId)
+          ? { ...shown, title: patch.title, titleState: 'manual' as const }
+          : null
+      if (titled) showSummary(titled)
+      const undo = () => {
+        unlist()
+        if (shown && titled && controller.view.get().snapshot.thread === titled)
+          showSummary(shown)
+      }
+      let summary: ThreadSummary | null
+      try {
+        summary = await store.update(threadId, patch)
+      } catch (cause) {
+        undo()
+        throw cause
+      }
+      if (!summary) undo()
+      else if (isOpen(threadId)) showSummary(summary)
       return summary
     },
+    // A deleted chat leaves the list and the view at once, and is listed
+    // again when its store refuses to delete it.
     async remove(threadId: string) {
       // A chat deleted during its move is deleted where the move left it.
       await moving.get(threadId)?.catch(() => {})
       const runId = controller.deviceRuns.get().get(threadId)?.runId
       if (runId) void controller.cancel({ threadId, runId }).catch(() => {})
-      await storeOf(threadId).remove(threadId)
+      const store = storeOf(threadId)
+      const undo = list.previewRemoval(threadId)
       if (isOpen(threadId)) reset()
+      try {
+        await store.remove(threadId)
+      } catch (cause) {
+        undo()
+        throw cause
+      }
     },
     // Deletes every chat the user can see here: the harness's stored chats
     // with cloud sync, and the chats kept on this device.

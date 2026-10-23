@@ -19,7 +19,7 @@ import {
   within,
 } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { client, signIn } from '../../harness-fixture'
+import { client, KEY, signIn } from '../../harness-fixture'
 import {
   resetChatStoresAroundEachTest,
   storedThread,
@@ -361,3 +361,159 @@ it('moves a chat to the top of the list as soon as a message is sent', async () 
   expect(listedOrder()).toEqual(['/chat/older-chat', '/chat/newer-chat'])
   runs.end()
 })
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (cause: Error) => void
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
+
+// Two stored chats, and the harness's answer to each change of one, which
+// the test settles.
+function listTwoChats() {
+  signIn({ cloud: true })
+  const alpha = cloudChat('alpha-chat', 'Alpha chat', '2026-10-22T12:00:00Z')
+  const beta = cloudChat('beta-chat', 'Beta chat', '2026-10-20T12:00:00Z')
+  const changes: {
+    path: string
+    input: Record<string, unknown>
+    answer: ReturnType<typeof deferred<unknown>>
+  }[] = []
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/threads/list')
+      return { threads: [summaryOf(alpha), summaryOf(beta)], nextCursor: null }
+    if (path === '/v1/threads/update' || path === '/v1/threads/delete') {
+      const answer = deferred<unknown>()
+      changes.push({ path, input, answer })
+      return answer.promise
+    }
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  render(<ChatInterface suppressIntroModals />)
+  return { alpha, beta, changes }
+}
+
+it.each(['saved', 'refused'] as const)(
+  'renames a chat at once without retyping it, and keeps it when %s',
+  async (outcome) => {
+    const { alpha, changes } = listTwoChats()
+    const listed = await row('Alpha chat')
+    fireEvent.click(
+      within(listed.closest('li, [role="listitem"]')!).getByRole('button', {
+        name: 'Rename chat',
+      }),
+    )
+    const field = screen.getByRole('textbox', { name: 'Chat title' })
+    fireEvent.change(field, { target: { value: 'Renamed chat' } })
+    fireEvent.submit(field.closest('form')!)
+
+    expect(screen.getByRole('link', { name: /^Renamed chat/ })).toHaveAttribute(
+      'href',
+      '/chat/alpha-chat',
+    )
+    expect(changes.map(({ path, input }) => ({ path, input }))).toEqual([
+      {
+        path: '/v1/threads/update',
+        input: { key: KEY, id: alpha.id, title: 'Renamed chat' },
+      },
+    ])
+    await act(async () => {
+      if (outcome === 'saved')
+        changes[0].answer.resolve({
+          ...summaryOf(alpha),
+          title: 'Renamed chat',
+          titleState: 'manual',
+        })
+      else changes[0].answer.reject(new Error('The rename failed'))
+    })
+    // The saved title stays as typed; a refused one types the old title back.
+    if (outcome === 'saved')
+      expect(
+        screen.getByRole('link', { name: /^Renamed chat/ }),
+      ).toHaveAttribute('href', '/chat/alpha-chat')
+    else
+      expect(
+        await screen.findByRole(
+          'link',
+          { name: /^Alpha chat/ },
+          { timeout: 3000 },
+        ),
+      ).toHaveAttribute('href', '/chat/alpha-chat')
+    expect(
+      screen.queryByRole('link', {
+        name: outcome === 'saved' ? /^Alpha chat/ : /^Renamed chat/,
+      }),
+    ).not.toBeInTheDocument()
+  },
+)
+
+it.each(['deleted', 'refused'] as const)(
+  'removes a deleted chat from the list at once, and keeps it out when %s',
+  async (outcome) => {
+    const { beta, changes } = listTwoChats()
+    const listed = await row('Beta chat')
+    fireEvent.click(
+      within(listed.closest('[role="listitem"]')!).getByRole('button', {
+        name: 'Delete chat',
+      }),
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    await waitFor(() =>
+      expect(changes.map(({ path, input }) => ({ path, input }))).toEqual([
+        { path: '/v1/threads/delete', input: { key: KEY, id: beta.id } },
+      ]),
+    )
+    expect(listedOrder()).toEqual(['/chat/alpha-chat'])
+    await act(async () => {
+      if (outcome === 'deleted') changes[0].answer.resolve({})
+      else changes[0].answer.reject(new Error('The deletion failed'))
+    })
+    expect(listedOrder()).toEqual(
+      outcome === 'deleted'
+        ? ['/chat/alpha-chat']
+        : ['/chat/alpha-chat', '/chat/beta-chat'],
+    )
+  },
+)
+
+it.each(['saved', 'refused'] as const)(
+  'pins a chat at once, and keeps it pinned when %s',
+  async (outcome) => {
+    const { beta, changes } = listTwoChats()
+    const listed = (await row('Beta chat')).closest('[role="listitem"]')!
+    fireEvent.click(
+      within(listed as HTMLElement).getByRole('button', {
+        name: 'Pin to Favorites',
+      }),
+    )
+    expect(
+      within(listed as HTMLElement).getByRole('button', {
+        name: 'Remove from Favorites',
+      }),
+    ).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() =>
+      expect(changes.map(({ path, input }) => ({ path, input }))).toEqual([
+        {
+          path: '/v1/threads/update',
+          input: { key: KEY, id: beta.id, pinned: true },
+        },
+      ]),
+    )
+    await act(async () => {
+      if (outcome === 'saved')
+        changes[0].answer.resolve({ ...summaryOf(beta), pinned: true })
+      else changes[0].answer.reject(new Error('The pin failed'))
+    })
+    const listedAfter = (await row('Beta chat')).closest('[role="listitem"]')!
+    expect(
+      within(listedAfter as HTMLElement).getByRole('button', {
+        name:
+          outcome === 'saved' ? 'Remove from Favorites' : 'Pin to Favorites',
+      }),
+    ).toHaveAttribute('aria-pressed', String(outcome === 'saved'))
+  },
+)
