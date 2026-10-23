@@ -1,6 +1,7 @@
 import { findSelectableModel, getSelectedModelLabel } from '@/config/models'
 import { NEW_CHAT_TITLE } from '@/constants/chat'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
+import { UI_EXPAND_PROJECT_DOCUMENTS } from '@/constants/storage-keys'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
@@ -211,6 +212,8 @@ export function ChatInterface({
     exitProjectMode,
     createProject,
     uploadDocument,
+    addUploadingFile,
+    removeUploadingFile,
   } = useProject()
   const { projects } = useProjects({ autoLoad: cloudSyncEnabled })
   const thread = useThread(
@@ -1000,29 +1003,40 @@ export function ChatInterface({
       setShowAddToProjectModal(true)
     } else await processFileForChat(file)
   }
+  // A document being added shows uploading among the project's documents.
+  const addFileToProject = async (file: File) => {
+    const uploadId = crypto.randomUUID()
+    addUploadingFile({ id: uploadId, name: file.name, size: file.size })
+    try {
+      await uploadDocument(file, '')
+    } catch (cause) {
+      toast({
+        title: 'Upload failed',
+        description: uploadErrorMessage(
+          cause,
+          'Failed to add document to project context.',
+        ),
+        variant: 'destructive',
+        position: 'top-right',
+      })
+    } finally {
+      removeUploadingFile(uploadId)
+    }
+  }
   const handleAddToProjectConfirm = async (addToProject: boolean) => {
     const pending = pendingProjectUpload
     setPendingProjectUpload(null)
     setShowAddToProjectModal(false)
-    for (const file of pending?.files ?? []) {
-      if (!addToProject) {
-        await processFileForChat(file)
-        continue
-      }
-      try {
-        await uploadDocument(file, '')
-      } catch (cause) {
-        toast({
-          title: 'Upload failed',
-          description: uploadErrorMessage(
-            cause,
-            'Failed to add document to project context.',
-          ),
-          variant: 'destructive',
-          position: 'top-right',
-        })
-      }
+    if (!pending) return
+    if (!addToProject) {
+      for (const file of pending.files) await processFileForChat(file)
+      return
     }
+    // The sidebar opens to the project's documents, where every file shows
+    // uploading at once.
+    sessionStorage.setItem(UI_EXPAND_PROJECT_DOCUMENTS, 'true')
+    setIsSidebarOpen(true)
+    await Promise.all(pending.files.map(addFileToProject))
   }
   const removeDocument = (id: string) =>
     setProcessedDocuments((previous) => previous.filter((d) => d.id !== id))

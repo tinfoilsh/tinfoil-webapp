@@ -18,7 +18,28 @@ const page = vi.hoisted(() => ({ toast: vi.fn() }))
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
 vi.mock('next/router', async () => (await import('./chat-page-mocks')).router)
 vi.mock('next/head', async () => (await import('./chat-page-mocks')).head)
-vi.mock('next/dynamic', async () => (await import('./chat-page-mocks')).dynamic)
+// Lazy UI renders once loaded, so the Add to project prompt can be answered;
+// the verification sidebar is not part of these tests.
+vi.mock('next/dynamic', async () => {
+  const { lazy, Suspense } = await import('react')
+  return {
+    default: (
+      load: () => Promise<React.ComponentType<Record<string, unknown>>>,
+    ) => {
+      const Component = lazy(async () => ({ default: await load() }))
+      return function Loaded(props: Record<string, unknown>) {
+        return (
+          <Suspense fallback={null}>
+            <Component {...props} />
+          </Suspense>
+        )
+      }
+    },
+  }
+})
+vi.mock('@/components/verification-sidebar', () => ({
+  VerifierSidebar: () => null,
+}))
 vi.mock(
   '@/components/ui/logo-loading',
   async () => (await import('./chat-page-mocks')).logoLoading,
@@ -400,4 +421,98 @@ it('opens a project chosen after leaving another mid-drag, before the address ha
     undefined,
     { shallow: true },
   )
+})
+
+// Drops files on the chat page, as from the desktop.
+function dropFiles(files: File[]) {
+  fireEvent.drop(screen.getByRole('textbox', { name: 'Message' }), {
+    dataTransfer: { files, types: ['Files'] },
+  })
+}
+
+// Holds each project document upload until the test answers it.
+function holdUploads() {
+  const held = new Map<string, ReturnType<typeof deferred<unknown>>>()
+  client.upload.mockImplementation(async (_path: string, file: File) => {
+    const upload = deferred<unknown>()
+    held.set(file.name, upload)
+    return upload.promise
+  })
+  return held
+}
+
+const uploadsSent = () =>
+  client.upload.mock.calls.map(([path, file, fields]) => [
+    path,
+    (file as File).name,
+    fields,
+  ])
+
+it('adds files from the composer to the project, showing them all uploading in its documents', async () => {
+  sessionStorage.setItem(UI_SIDEBAR_OPEN, 'false')
+  const held = holdUploads()
+  render(projectView())
+  await screen.findByTitle('Rename project')
+
+  dropFiles([
+    new File(['# Notes'], notes.filename, { type: 'text/markdown' }),
+    new File(['# Plan'], plan.filename, { type: 'text/markdown' }),
+  ])
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Yes, add to project' }),
+  )
+
+  await waitFor(() =>
+    expect(uploadsSent()).toEqual([
+      [
+        '/v1/projects/documents/upload',
+        notes.filename,
+        { key: KEY, projectId: project.id },
+      ],
+      [
+        '/v1/projects/documents/upload',
+        plan.filename,
+        { key: KEY, projectId: project.id },
+      ],
+    ]),
+  )
+  expect(
+    screen.getByRole('button', { name: 'Close sidebar' }),
+  ).toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: /^Documents/, expanded: true }),
+  ).toBeInTheDocument()
+  expect(screen.getAllByText('Uploading...')).toHaveLength(2)
+
+  routes['/v1/projects/get'] = () => ({
+    ...structuredClone(project),
+    documents: [notes, plan],
+  })
+  await act(async () => {
+    held.get(notes.filename)!.resolve(notes)
+    held.get(plan.filename)!.resolve(plan)
+  })
+  await waitFor(() => expect(screen.queryAllByText('Uploading...')).toEqual([]))
+  expect(screen.getByRole('button', { name: 'Remove notes.md' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'Remove plan.md' })).toBeEnabled()
+  expect(page.toast).not.toHaveBeenCalled()
+})
+
+it('expands the documents of an open sidebar for files added from the composer', async () => {
+  holdUploads()
+  render(projectView())
+  await screen.findByTitle('Rename project')
+  expect(
+    screen.getByRole('button', { name: /^Documents/, expanded: false }),
+  ).toBeInTheDocument()
+
+  dropFiles([new File(['# Notes'], notes.filename, { type: 'text/markdown' })])
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Yes, add to project' }),
+  )
+
+  expect(
+    await screen.findByRole('button', { name: /^Documents/, expanded: true }),
+  ).toBeInTheDocument()
+  expect(screen.getByText('Uploading...')).toBeInTheDocument()
 })

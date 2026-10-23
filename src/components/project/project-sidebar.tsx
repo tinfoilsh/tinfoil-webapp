@@ -357,7 +357,8 @@ export function ProjectSidebar({
         sessionStorage.removeItem(UI_EXPAND_PROJECT_DOCUMENTS)
       }
     }
-  }, [isOpen])
+    // An upload started while the sidebar is open asks for its documents too.
+  }, [isOpen, contextUploadingFiles.length])
 
   const handleSaveSettings = useCallback(async () => {
     if (!project) return
