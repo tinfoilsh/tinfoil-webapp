@@ -97,9 +97,12 @@ describe('StreamErrorBanner', () => {
     expect(onRetry).toHaveBeenCalledOnce()
   })
 
-  it.each(['KEY_REQUIRED', 'KEY_MISMATCH'])(
-    'offers to unlock the key instead of retrying for %s',
-    (code) => {
+  it.each([
+    { code: 'KEY_REQUIRED', title: 'Your encryption key is locked' },
+    { code: 'KEY_MISMATCH', title: 'Your encryption key is out of date' },
+  ])(
+    'offers to unlock the key instead of retrying for $code',
+    ({ code, title }) => {
       const onRetry = vi.fn()
       const onUnlock = vi.fn()
       render(
@@ -111,9 +114,7 @@ describe('StreamErrorBanner', () => {
           onDismiss={vi.fn()}
         />,
       )
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        'Your encryption key is locked',
-      )
+      expect(screen.getByRole('alert')).toHaveTextContent(title)
       expect(screen.getByRole('alert')).not.toHaveTextContent(
         'The service is having trouble',
       )

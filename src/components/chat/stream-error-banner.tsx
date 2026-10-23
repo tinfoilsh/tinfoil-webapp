@@ -193,8 +193,15 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
     case ERROR_CODES.unauthenticated:
       return CLASSIFICATIONS.auth
     case ERROR_CODES.keyRequired:
-    case ERROR_CODES.keyMismatch:
       return CLASSIFICATIONS.key
+    // The chats are sealed with another key than this device holds.
+    case ERROR_CODES.keyMismatch:
+      return {
+        ...CLASSIFICATIONS.key,
+        title: 'Your encryption key is out of date',
+        suggestion:
+          'Recover your current key to keep chatting with cloud sync. Your message was not lost.',
+      }
     case ERROR_CODES.quotaExhausted:
       return quotaClassification(error)
     case ERROR_CODES.rateLimited:
