@@ -66,6 +66,12 @@ export interface ChatContext {
 // The actions on a chat apart from its turns: renaming and its other
 // settings, deleting, forking, changing a message, sharing, and moving it
 // between the cloud and this device.
+// The latest change asked of each chat, so an earlier change answered after
+// it does not show the chat as it was before the latest. The actions are
+// made again as the chat renders, so the changes are counted here.
+const latestUpdate = new Map<string, number>()
+let updates = 0
+
 export function chatActions({
   api,
   controller,
@@ -176,6 +182,8 @@ export function chatActions({
         if (shown && titled && controller.view.get().snapshot.thread === titled)
           showSummary(shown)
       }
+      const update = ++updates
+      latestUpdate.set(threadId, update)
       let summary: ThreadSummary | null
       try {
         summary = await store.update(threadId, patch)
@@ -184,7 +192,8 @@ export function chatActions({
         throw cause
       }
       if (!summary) undo()
-      else if (isOpen(threadId)) showSummary(summary)
+      else if (isOpen(threadId) && latestUpdate.get(threadId) === update)
+        showSummary(summary)
       return summary
     },
     // A deleted chat leaves the list and the view at once, and is listed

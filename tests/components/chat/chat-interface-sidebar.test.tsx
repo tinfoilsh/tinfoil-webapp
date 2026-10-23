@@ -538,6 +538,46 @@ it('keeps the latest of two overlapping renames when their answers arrive out of
   ])
 })
 
+it('keeps the latest of two overlapping renames of the open chat in its header', async () => {
+  signIn({ cloud: true })
+  const alpha = cloudChat('alpha-chat', 'Alpha chat', '2026-10-22T12:00:00Z')
+  const answers: ReturnType<typeof deferred<unknown>>[] = []
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list')
+      return { threads: [summaryOf(alpha)], nextCursor: null }
+    if (path === '/v1/threads/get') return structuredClone(alpha)
+    if (path === '/v1/threads/update') {
+      const answer = deferred<unknown>()
+      answers.push(answer)
+      return answer.promise
+    }
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  render(<ChatInterface initialChatId={alpha.id} suppressIntroModals />)
+  const heading = () =>
+    within(screen.getByRole('banner')).getByRole('heading', { level: 1 })
+  await waitFor(() => expect(heading()).toHaveTextContent('Alpha chat'))
+  await renameRow('Alpha chat', 'First rename')
+  await renameRow('First rename', 'Second rename')
+
+  await act(async () =>
+    answers[1].resolve({
+      ...summaryOf(alpha),
+      title: 'Second rename',
+      titleState: 'manual',
+    }),
+  )
+  await act(async () =>
+    answers[0].resolve({
+      ...summaryOf(alpha),
+      title: 'First rename',
+      titleState: 'manual',
+    }),
+  )
+
+  expect(heading()).toHaveTextContent('Second rename')
+})
+
 it('keeps a refused rename out of the saved list when another chat saves meanwhile', async () => {
   const { alpha, beta, changes } = listTwoChats()
   await renameRow('Alpha chat', 'Refused rename')
