@@ -134,7 +134,7 @@ export function chatActions({
       }
       await device.deleteAll()
       reset()
-      list.clearCloud({ confirmedEmpty: true })
+      list.clearCloud({ confirmedEmpty: cloudDeletionCompleted })
       list.deviceThreads.set([])
       return { cloudDeletionCompleted }
     },

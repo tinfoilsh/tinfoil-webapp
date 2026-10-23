@@ -172,7 +172,7 @@ export function chatTurns({
       const submission =
         status === 'streaming' || status === 'queued'
           ? undefined
-          : { cancelled: false }
+          : { threadId, cancelled: false }
       if (submission) {
         controller.submission = submission
         controller.view.update((state) => ({

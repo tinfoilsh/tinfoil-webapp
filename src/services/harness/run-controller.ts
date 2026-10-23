@@ -47,8 +47,13 @@ export interface DeviceRun {
   since: number
 }
 
+interface Submission {
+  threadId: string
+  cancelled: boolean
+}
+
 export interface RunOptions {
-  submission?: { cancelled: boolean }
+  submission?: Submission
   // A device chat's run keeps reading when the view moves to another chat,
   // or the page to another route, so its reply is still saved. An account
   // change ends it with the API's lifetime.
@@ -91,7 +96,7 @@ export class RunController {
   // The turn sent whose run has not started. It is sent again, with its
   // nonce, to reconnect.
   pending: { input: Turn; run?: DeviceRun } | null = null
-  submission: { cancelled: boolean } | null = null
+  submission: Submission | null = null
   retryPreparation: (() => Promise<boolean>) | null = null
   // Changes each time the view moves to another chat. A run started for
   // the previous one no longer updates the view.
@@ -189,6 +194,18 @@ export class RunController {
         const { event } = frame
         if ('threadId' in event && event.threadId) threadId = event.threadId
         runId = runOf(event) ?? runId
+        if (options.submission?.cancelled && runId) {
+          await this.api.post(
+            ROUTES.cancel,
+            {
+              ...(input.key ? { key: this.api.key() } : {}),
+              threadId,
+              runId,
+            },
+            { keyless: true },
+          )
+          options.submission.cancelled = false
+        }
         const base = shown ? this.view.get() : view
         const next = reduceEvent(base, frame, runId)
         if (next === base && (!isTerminal(event) || !device || device.saved)) {
@@ -212,18 +229,6 @@ export class RunController {
               threadId: event.threadId,
               runId: event.runId,
             })
-        }
-        if (options.submission?.cancelled && runId) {
-          options.submission.cancelled = false
-          await this.api.post(
-            ROUTES.cancel,
-            {
-              ...(input.key ? { key: this.api.key() } : {}),
-              threadId,
-              runId,
-            },
-            { keyless: true },
-          )
         }
         if (
           device &&
@@ -345,7 +350,11 @@ export class RunController {
   }
 
   cancel(input: { key?: string; threadId: string | null; runId?: string }) {
-    if (this.view.get().status === 'submitting' && this.submission) {
+    if (
+      this.view.get().status === 'submitting' &&
+      !input.runId &&
+      this.submission?.threadId === input.threadId
+    ) {
       this.submission.cancelled = true
       return Promise.resolve()
     }
