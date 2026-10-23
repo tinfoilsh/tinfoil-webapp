@@ -1,5 +1,6 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
+import { writeChatListCache } from '@/services/harness/chat-list-cache'
 import { publish } from '@/services/harness/runtime'
 import type { ThreadSummary } from '@/services/harness/types'
 import { act, fireEvent, render, screen } from '@testing-library/react'
@@ -106,6 +107,30 @@ it('offers to unlock locked chats instead of loading them forever', async () => 
   expect(
     client.post.mock.calls.filter(([path]) => path === '/v1/threads/list'),
   ).toEqual([])
+})
+
+it('offers to unlock instead of listing cached chats the refused key cannot open', async () => {
+  signIn({ cloud: true, locked: true })
+  writeChatListCache('alice', null, {
+    threads: [
+      {
+        ...storedThread('cached-chat', {
+          title: 'Cached chat',
+          titleState: 'generated',
+        }),
+        messageCount: 2,
+      },
+    ],
+    pinned: [],
+  })
+  render(<ChatInterface suppressIntroModals />)
+  expect(
+    await screen.findByRole('button', { name: 'Unlock' }),
+  ).toBeInTheDocument()
+  expect(screen.getByText('Your chats are locked')).toBeInTheDocument()
+  expect(
+    screen.queryByRole('link', { name: 'Cached chat' }),
+  ).not.toBeInTheDocument()
 })
 
 it('offers to load the chats again after the profile fails to load', async () => {

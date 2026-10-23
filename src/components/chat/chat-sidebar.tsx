@@ -578,6 +578,9 @@ export function ChatSidebar({
           (chat) => chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
         )
       }
+      // Cached cloud chats cannot be opened with a refused key, so the tab
+      // offers to unlock instead.
+      if (keyLocked) return []
       return chats.filter(
         (chat) => !chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
       )
@@ -585,7 +588,7 @@ export function ChatSidebar({
     return chats.filter(
       (chat) => chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
     )
-  }, [chats, cloudSyncEnabled, showLocalTab])
+  }, [chats, cloudSyncEnabled, keyLocked, showLocalTab])
 
   const favoriteChats = useMemo(() => {
     const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
