@@ -1,8 +1,5 @@
 'use client'
 
-import { ChatInterface } from '@/components/chat'
-import { ProjectProvider } from '@/components/project'
-import { PremiumProjectRoute } from '@/components/project/premium-project-route'
 import SharePage from '@/components/share/share-page'
 import { LogoLoading } from '@/components/ui/logo-loading'
 import NotFound from '@/pages/404'
@@ -11,6 +8,7 @@ import {
   NEW_CHAT_STORAGE_QUERY_KEY,
 } from '@/utils/navigation'
 import { useRouter } from 'next/router'
+import { ChatRoute } from './chat-route'
 
 // The single exported shell for every dynamic route (/chat/*, /project/*,
 // /share/*). The host rewrites all unknown paths to this one file, so there
@@ -33,27 +31,27 @@ export default function ChatPage() {
       const isLocal = rest[0] === 'local'
       return (
         <div className="h-screen font-aeonik">
-          <ProjectProvider>
-            <ChatInterface
-              initialChatId={(isLocal ? rest[1] : rest[0]) ?? null}
-              isLocalChatUrl={isLocal}
-              {...(newChat
-                ? {
-                    initialNewChatIsLocalOnly: isLocalNewChatStorage(
-                      router.query[NEW_CHAT_STORAGE_QUERY_KEY],
-                    ),
-                    suppressIntroModals: true,
-                  }
-                : {})}
-            />
-          </ProjectProvider>
+          <ChatRoute
+            projectRoute={false}
+            projectId={null}
+            chatId={(isLocal ? rest[1] : rest[0]) ?? null}
+            isLocalChatUrl={isLocal}
+            {...(newChat
+              ? {
+                  initialNewChatIsLocalOnly: isLocalNewChatStorage(
+                    router.query[NEW_CHAT_STORAGE_QUERY_KEY],
+                  ),
+                  suppressIntroModals: true,
+                }
+              : {})}
+          />
         </div>
       )
     }
     case 'project':
       return (
         <div className="h-screen font-aeonik">
-          <PremiumProjectRoute
+          <ChatRoute
             projectId={rest[0] ?? null}
             chatId={rest[1] === 'chat' ? (rest[2] ?? null) : null}
           />

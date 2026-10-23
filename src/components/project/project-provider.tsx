@@ -37,6 +37,7 @@ export function ProjectProvider({
   // finishes later must not reopen that one.
   const openProjectId = useRef<string | null>(null)
   const committedProjectId = useRef<string | null>(null)
+  const previousInitialProjectId = useRef(initialProjectId)
   const changed = () => window.dispatchEvent(new Event(PROJECTS_CHANGED))
   const requirePremiumAccess = useCallback(() => {
     if (!hasPremiumAccessRef.current) {
@@ -86,9 +87,24 @@ export function ProjectProvider({
     setUploadingFiles([])
   }, [])
   useEffect(() => {
-    if (initialProjectId && keyReady && hasPremiumAccess)
+    const routeChanged = previousInitialProjectId.current !== initialProjectId
+    const exited = previousInitialProjectId.current && !initialProjectId
+    previousInitialProjectId.current = initialProjectId
+    if (exited) exitProjectMode()
+    if (
+      initialProjectId &&
+      keyReady &&
+      hasPremiumAccess &&
+      !(routeChanged && committedProjectId.current === initialProjectId)
+    )
       void enterProjectMode(initialProjectId)
-  }, [initialProjectId, keyReady, hasPremiumAccess, enterProjectMode])
+  }, [
+    initialProjectId,
+    keyReady,
+    hasPremiumAccess,
+    enterProjectMode,
+    exitProjectMode,
+  ])
   useEffect(() => {
     if (
       projectRevision &&

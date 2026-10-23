@@ -47,16 +47,19 @@ export function useSidebarChat({
   const askQuote = (text: string) => {
     reset()
     setQuote(text)
+    controller.view.update((state) => ({ ...state, status: 'submitting' }))
     const shown = controller.track()
     void (async () => {
       let thread: AskContext
       try {
         thread = await context()
       } catch (cause) {
-        if (shown())
+        if (shown()) {
+          controller.view.update((state) => ({ ...state, status: 'idle' }))
           setContextError(
             cause instanceof Error ? cause.message : CONTEXT_UNREADABLE,
           )
+        }
         return
       }
       if (!shown()) return
@@ -72,7 +75,10 @@ export function useSidebarChat({
       })
     })()
   }
-  const isStreaming = state.status === 'streaming'
+  const isStreaming =
+    state.status === 'submitting' ||
+    state.status === 'streaming' ||
+    state.status === 'queued'
   // A failed ask shows why as an error reply, also when it failed before the
   // harness sent any message.
   const failed =
@@ -116,7 +122,9 @@ export function useSidebarChat({
       // keeps what it received.
       const shown = controller.view.get()
       controller.reset(
-        shown.status === 'streaming' || shown.status === 'queued'
+        shown.status === 'submitting' ||
+          shown.status === 'streaming' ||
+          shown.status === 'queued'
           ? { ...shown, status: 'idle' }
           : shown,
       )

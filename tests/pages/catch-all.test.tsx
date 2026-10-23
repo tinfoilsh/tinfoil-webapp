@@ -23,9 +23,10 @@ vi.mock('@/components/chat', () => ({
 vi.mock('@/components/project', () => ({
   ProjectProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
-vi.mock('@/components/project/premium-project-route', () => ({
-  PremiumProjectRoute: (props: unknown) => {
-    mocks.project(props)
+vi.mock('@/components/chat/chat-route', () => ({
+  ChatRoute: (props: { projectRoute?: boolean }) => {
+    if (props.projectRoute === false) mocks.chat(props)
+    else mocks.project(props)
     return null
   },
 }))
@@ -43,16 +44,35 @@ describe('CatchAllPage', () => {
   })
 
   it.each([
-    [['chat'], mocks.chat, { initialChatId: null, isLocalChatUrl: false }],
+    [
+      ['chat'],
+      mocks.chat,
+      {
+        projectRoute: false,
+        projectId: null,
+        chatId: null,
+        isLocalChatUrl: false,
+      },
+    ],
     [
       ['chat', 'c1'],
       mocks.chat,
-      { initialChatId: 'c1', isLocalChatUrl: false },
+      {
+        projectRoute: false,
+        projectId: null,
+        chatId: 'c1',
+        isLocalChatUrl: false,
+      },
     ],
     [
       ['chat', 'local', 'c2'],
       mocks.chat,
-      { initialChatId: 'c2', isLocalChatUrl: true },
+      {
+        projectRoute: false,
+        projectId: null,
+        chatId: 'c2',
+        isLocalChatUrl: true,
+      },
     ],
     [['project', 'p1'], mocks.project, { projectId: 'p1', chatId: null }],
     [

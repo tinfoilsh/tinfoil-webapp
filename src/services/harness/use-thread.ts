@@ -57,6 +57,7 @@ export function useThread(
         local: !cloud || !!route.local || !!route.newChatLocal,
         unsaved: null,
         loadingId: null,
+        failedId: null,
         notFound: false,
         model: '',
         failure: null,
@@ -165,6 +166,7 @@ export function useThread(
       ...o,
       id: null,
       loadingId: null,
+      failedId: null,
       failure: null,
       notFound: false,
       unsaved: null,
@@ -275,7 +277,7 @@ export function useThread(
       const thread = await store.get(threadId)
       if (!shown()) return { status: 'superseded' }
       if (!thread) {
-        patch({ temporary: false, local, notFound: true })
+        patch({ temporary: false, local, notFound: true, failedId: threadId })
         return { status: 'not-found' }
       }
       controller.view.set(initialChat(thread))
@@ -298,6 +300,14 @@ export function useThread(
       return { status: 'opened', thread }
     } catch (cause) {
       if (!shown()) return { status: 'superseded' }
+      patch({ failedId: threadId })
+      if (
+        cause instanceof HarnessError &&
+        cause.code === ERROR_CODES.threadNotFound
+      ) {
+        patch({ notFound: true })
+        return { status: 'not-found' }
+      }
       throw cause
     } finally {
       if (shown()) patch({ loadingId: null })
@@ -422,12 +432,15 @@ export function useThread(
   }, [cloud, reset, route.newChatLocal, clearCloud, open, patch])
   const previousRoute = useRef(initialId)
   const previousNewChatLocal = useRef(!!route.newChatLocal)
+  const previousProject = useRef(projectId)
   const leavingChat = !!previousRoute.current && !initialId
   useEffect(() => {
     previousRoute.current = initialId
     const changedStorage = previousNewChatLocal.current !== !!route.newChatLocal
     previousNewChatLocal.current = !!route.newChatLocal
-    if (leavingChat || (!initialId && changedStorage)) {
+    const changedProject = previousProject.current !== projectId
+    previousProject.current = projectId
+    if (leavingChat || (!initialId && (changedStorage || changedProject))) {
       newChat({ local: !!route.newChatLocal })
       return
     }
@@ -442,7 +455,7 @@ export function useThread(
     void openChat(initialId, { local: !!route.local }).catch(report)
     // Opening a route must not run again when its stream updates the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialId, keyReady, route.local, route.newChatLocal])
+  }, [initialId, keyReady, route.local, route.newChatLocal, projectId])
   useEffect(() => {
     let currentKey = encryptionService.getKey()
     const clear = () => {
@@ -552,7 +565,11 @@ export function useThread(
     leavingChat ||
     openState.loadingId !== null ||
     (!!initialId && opened.current !== initialId && id !== initialId)
-  const selectedId = openState.loadingId ?? id ?? (loading ? initialId : null)
+  const selectedId =
+    openState.loadingId ??
+    openState.failedId ??
+    id ??
+    (loading ? initialId : null)
   const chat: Chat = summary
     ? {
         ...threadView(summary, messages),
@@ -615,12 +632,21 @@ export function useThread(
     cloud,
     loading,
     notFound: openState.notFound,
+    loadFailed: !!openState.failedId,
+    retryOpen: () =>
+      openState.failedId
+        ? openChat(openState.failedId, { local: openState.local })
+        : undefined,
     status: state.status,
     running,
     // The open chat takes turns once its settings load and, for a chat the
     // harness stores, once the content key is unlocked.
-    canSend: !loading && profileReady && (onDevice(openState) || keyReady),
-    canChangeMessages: !loading && !!chat.id,
+    canSend:
+      !loading &&
+      !openState.failedId &&
+      profileReady &&
+      (onDevice(openState) || keyReady),
+    canChangeMessages: !loading && !openState.failedId && !!chat.id,
     queue,
     contextUsage: summary?.contextUsage ?? undefined,
     error: failure?.message || state.error?.message || '',
@@ -630,6 +656,7 @@ export function useThread(
     hasMoreChats: !!list.nextCursor,
     loadingChats: list.loading,
     chatListError: list.error,
+    retryChatList: list.retry,
     report,
     open: openChat,
     ...turns,

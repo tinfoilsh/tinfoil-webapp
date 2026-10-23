@@ -72,6 +72,7 @@ export const ERROR_CODES = {
   invalidStream: 'INVALID_STREAM',
   upstreamRefused: 'UPSTREAM_REFUSED',
   keyRequired: 'KEY_REQUIRED',
+  keyMismatch: 'KEY_MISMATCH',
   unauthenticated: 'UNAUTHENTICATED',
   badRequest: 'BAD_REQUEST',
   configuration: 'CONFIGURATION',

@@ -27,6 +27,8 @@ interface ChatListProps {
   isDarkMode: boolean
   pixelateSidebarChatTitles: boolean
   isLoading?: boolean
+  error?: string | null
+  onRetry?: () => void
   enableTitleAnimation?: boolean
   animatedDeleteConfirmation?: boolean
   isDraggable?: boolean
@@ -62,6 +64,8 @@ export function ChatList({
   isDarkMode,
   pixelateSidebarChatTitles,
   isLoading = false,
+  error,
+  onRetry,
   enableTitleAnimation = false,
   animatedDeleteConfirmation = true,
   isDraggable = false,
@@ -167,8 +171,24 @@ export function ChatList({
   }
 
   const visibleChats = chats
+  const failure = error ? (
+    <div role="alert" className="space-y-2 p-4 text-sm text-content-secondary">
+      <p>Could not load chats.</p>
+      <p>{error}</p>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="underline hover:text-content-primary"
+        >
+          Try again
+        </button>
+      )}
+    </div>
+  ) : null
 
   if (visibleChats.length === 0 && emptyState) {
+    if (failure) return failure
     return (
       <div className="space-y-2 p-2">
         <div className="p-2">{emptyState}</div>
@@ -178,6 +198,7 @@ export function ChatList({
 
   return (
     <>
+      {failure}
       <div role="list" className="chat-title-privacy-region space-y-2 p-2">
         {visibleChats.map((chat) => (
           <Fragment key={getChatKey(chat)}>

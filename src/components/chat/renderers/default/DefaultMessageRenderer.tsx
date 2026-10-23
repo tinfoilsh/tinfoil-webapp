@@ -27,6 +27,7 @@ import {
   type MessageOverflowMenuItem,
 } from '../components/MessageOverflowMenu'
 import { ReadAloudButton } from '../components/ReadAloudButton'
+import { SourcesButton } from '../components/SourcesButton'
 import { StreamingChunkedText } from '../components/StreamingChunkedText'
 import { StreamingContentWrapper } from '../components/StreamingContentWrapper'
 import { StreamingTracerDot } from '../components/StreamingTracerDot'
@@ -117,6 +118,21 @@ const DefaultMessageComponent = ({
   const timelineSegments = React.useMemo(
     () => segmentTimeline(displayTimeline),
     [displayTimeline],
+  )
+  const sources = React.useMemo(
+    () => [
+      ...displayTimeline.flatMap((block) =>
+        block.type === 'web_search'
+          ? (block.state.sources ?? [])
+          : block.type === 'url_fetches'
+            ? block.fetches.flatMap((fetch) => fetch.sources ?? [])
+            : [],
+      ),
+      ...(message.annotations ?? []).map(
+        (annotation) => annotation.url_citation,
+      ),
+    ],
+    [displayTimeline, message.annotations],
   )
   const [showActions, setShowActions] = React.useState(false)
   const lastContentRef = React.useRef(message.content)
@@ -874,10 +890,15 @@ const DefaultMessageComponent = ({
             }`}
           >
             {!hideActions && !isEditing && message.content && (
-              <MessageActions
-                content={message.content}
-                isDarkMode={isDarkMode}
-              />
+              <>
+                {!(isStreaming && isLastMessage) && (
+                  <SourcesButton sources={sources} />
+                )}
+                <MessageActions
+                  content={message.content}
+                  isDarkMode={isDarkMode}
+                />
+              </>
             )}
             {/* A chat that hides its actions may still be read aloud, as a
                 shared chat is. */}

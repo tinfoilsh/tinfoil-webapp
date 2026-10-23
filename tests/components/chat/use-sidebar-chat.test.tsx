@@ -4,6 +4,22 @@ import { HarnessError } from '@/services/harness/sse'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 
+it('shows waiting feedback before context arrives and clears it when the ask is cancelled', async () => {
+  let resolve!: (context: { threadId: string; local: true }) => void
+  const pending = new Promise<{ threadId: string; local: true }>((done) => {
+    resolve = done
+  })
+  const { result } = renderHook(() =>
+    useSidebarChat({ context: () => pending, options: {} }),
+  )
+  act(() => result.current.askQuote('Selected text'))
+  expect(result.current.isWaitingForResponse).toBe(true)
+  act(() => result.current.cancel())
+  expect(result.current.isWaitingForResponse).toBe(false)
+  await act(async () => resolve({ threadId: 'source', local: true }))
+  expect(vi.mocked(harnessAPI().client.events)).not.toHaveBeenCalled()
+})
+
 it('rejoins an ask under the thread the harness created for it', async () => {
   const events = vi.mocked(harnessAPI().client.events)
   events.mockImplementationOnce(async function* () {

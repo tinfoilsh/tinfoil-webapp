@@ -95,6 +95,9 @@ function isIOSDevice() {
 
 type ChatSidebarProps = {
   hasMore?: boolean
+  isLoadingChats?: boolean
+  chatListError?: string | null
+  onRetryChats?: () => void
   onLoadMore?: () => Promise<void>
   isOpen: boolean
   setIsOpen: (isOpen: boolean) => void
@@ -159,6 +162,9 @@ function usePreventZoom() {
 
 export function ChatSidebar({
   hasMore: hasMoreRemote = false,
+  isLoadingChats = false,
+  chatListError,
+  onRetryChats,
   onLoadMore,
   isOpen,
   setIsOpen,
@@ -2044,6 +2050,13 @@ export function ChatSidebar({
                     {isClient && (
                       <ChatList
                         chats={sortedChats as ChatItemData[]}
+                        isLoading={
+                          paginatesCloudChats &&
+                          isLoadingChats &&
+                          sortedChats.length === 0
+                        }
+                        error={paginatesCloudChats ? chatListError : null}
+                        onRetry={onRetryChats}
                         currentChatId={currentChat?.id}
                         currentChatIsBlank={currentChat?.isBlankChat}
                         currentChatIsLocalOnly={currentChat?.isLocalOnly}

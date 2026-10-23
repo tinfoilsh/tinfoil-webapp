@@ -27,6 +27,7 @@ interface CloudListState {
   projectId: string | null
   loaded: boolean
   error: string | null
+  retryCursor?: string
 }
 
 const editsOf = (store: Store<ThreadSummary[]>): ListEdits => ({
@@ -69,6 +70,7 @@ export function useChatList({
     const deviceThreads = createStore<ThreadSummary[]>([])
     const pinnedThreads = createStore<ThreadSummary[]>(cached?.pinned ?? [])
     const cursor = createStore<string | null>(null)
+    const edits = createStore(0)
     const loadState = createStore<CloudListState>({
       projectId: scope.projectId,
       loaded: false,
@@ -91,6 +93,7 @@ export function useChatList({
       deviceThreads,
       pinnedThreads,
       cursor,
+      edits,
       loadState,
       listing,
       persist,
@@ -113,6 +116,7 @@ export function useChatList({
             cloudEdits.add(summary)
           if (summary.pinned) pinnedEdits.add(summary)
           persist()
+          if (!loadState.get().loaded) edits.update((version) => version + 1)
         },
         replace(summary: ThreadSummary) {
           listing.version++
@@ -122,6 +126,7 @@ export function useChatList({
           if (summary.pinned) pinnedEdits.add(summary)
           else pinnedEdits.remove(summary.id)
           persist()
+          if (!loadState.get().loaded) edits.update((version) => version + 1)
         },
         remove(id: string) {
           listing.version++
@@ -129,6 +134,7 @@ export function useChatList({
           pinnedEdits.remove(id)
           removeCachedChat(api.userId, id)
           persist()
+          if (!loadState.get().loaded) edits.update((version) => version + 1)
         },
       },
       device: editsOf(deviceThreads),
@@ -219,6 +225,7 @@ export function useChatList({
         lists.loadState.set({
           projectId: projectId ?? null,
           loaded: true,
+          retryCursor: next,
           error:
             cause instanceof Error ? cause.message : 'Unable to load chats.',
         })
@@ -227,9 +234,10 @@ export function useChatList({
     },
     [api, cloud, keyReady, projectId, lists],
   )
+  const editVersion = useStore(lists.edits)
   useEffect(() => {
     void refresh().catch(report)
-  }, [refresh, report, revision])
+  }, [refresh, report, revision, editVersion])
   useEffect(() => {
     let sequence = 0
     const load = () => {
@@ -260,6 +268,7 @@ export function useChatList({
     loading: cloud && (!currentScope || !loadState.loaded),
     error: cloud && currentScope ? loadState.error : null,
     refresh,
+    retry: () => refresh(lists.loadState.get().retryCursor),
   }
 }
 

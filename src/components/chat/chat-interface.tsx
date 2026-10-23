@@ -1,4 +1,4 @@
-import { getSelectedModelLabel } from '@/config/models'
+import { findSelectableModel, getSelectedModelLabel } from '@/config/models'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
@@ -10,7 +10,6 @@ import { logError } from '@/utils/error-handling'
 import { useAuth, useUser } from '@clerk/react'
 import { ArrowDownIcon } from '@heroicons/react/24/outline'
 import {
-  TfChat2,
   TfDocumentPlus,
   TfGhost2,
   TfLockLocked,
@@ -63,6 +62,10 @@ import { ArtifactSidebar } from './artifact-sidebar'
 import { AskSidebar } from './ask-sidebar'
 import { ChatAnnouncer } from './chat-announcer'
 import { ChatHeader } from './chat-header'
+import {
+  ChatHistoryStatus,
+  type ChatHistoryProblem,
+} from './chat-history-status'
 import { ChatInput } from './chat-input'
 import { ChatMessages } from './chat-messages'
 import {
@@ -146,6 +149,7 @@ const OnboardingView = dynamic(
 )
 
 import { verifyChatService } from '@/services/harness/attestation'
+import { ERROR_CODES } from '@/services/harness/protocol'
 import { useHarness } from '@/services/harness/provider'
 import { isAttachmentsUnavailable } from '@/services/harness/transfer'
 import type { Turn } from '@/services/harness/types'
@@ -220,7 +224,7 @@ export function ChatInterface({
     chats,
     loading: isChatHydrating,
     running: isStreaming,
-    model: selectedModel,
+    model: chatModel,
     presetId: activePresetId,
   } = thread
   // A selected chat owns its URL change until the router finishes.
@@ -229,6 +233,7 @@ export function ChatInterface({
     if (
       selectionNavigation.current ||
       isChatHydrating ||
+      thread.loadFailed ||
       !currentChat.id ||
       currentChat.isTemporary ||
       currentChat.pendingSave ||
@@ -245,6 +250,7 @@ export function ChatInterface({
         .catch(thread.report)
   }, [
     isChatHydrating,
+    thread.loadFailed,
     currentChat.id,
     currentChat.isTemporary,
     currentChat.isLocalOnly,
@@ -255,6 +261,9 @@ export function ChatInterface({
     thread.report,
   ])
   const models = useMemo(() => session?.models ?? [], [session])
+  const selectedModel = findSelectableModel(chatModel, models)
+    ? chatModel
+    : (session?.defaultModel ?? chatModel)
   const isLoadingConfig = !session
   const hasValidatedModel = !!session
   const loadingState =
@@ -265,6 +274,18 @@ export function ChatInterface({
         : 'idle'
   const isWaitingForResponse =
     isStreaming && currentChat.messages.at(-1)?.role !== 'assistant'
+  const historyProblem: ChatHistoryProblem | null =
+    initialChatId && !isLocalChatUrl && isAuthLoaded && !isSignedIn
+      ? 'sign-in'
+      : (initialChatId && !isLocalChatUrl && !keyReady) ||
+          (thread.loadFailed &&
+            thread.errorDetail?.code === ERROR_CODES.keyMismatch)
+        ? 'unlock'
+        : thread.notFound
+          ? 'not-found'
+          : thread.loadFailed
+            ? 'failed'
+            : null
   const isTemporaryMode = thread.temporary
   useSafeguardsReset()
   // A chat the safeguards flagged is read-only, as the harness reports it.
@@ -322,6 +343,32 @@ export function ChatInterface({
     setExpandedLabel((value) => (value === label ? null : label))
     action()
   }
+  useEffect(() => {
+    if (expandedLabel !== 'model') return
+    const selector = '[data-model-selector], [data-model-menu]'
+    const dismissOutside = (event: Event) => {
+      if (event.target instanceof Element && !event.target.closest(selector))
+        setExpandedLabel(null)
+    }
+    const dismissWithKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setExpandedLabel(null)
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[data-model-selector]'),
+      )
+        .find((element) => element.getClientRects().length > 0)
+        ?.focus()
+    }
+    document.addEventListener('mousedown', dismissOutside)
+    document.addEventListener('focusin', dismissOutside)
+    document.addEventListener('keydown', dismissWithKeyboard)
+    return () => {
+      document.removeEventListener('mousedown', dismissOutside)
+      document.removeEventListener('focusin', dismissOutside)
+      document.removeEventListener('keydown', dismissWithKeyboard)
+    }
+  }, [expandedLabel])
   const [processedDocuments, setProcessedDocuments] = useState<
     ProcessedDocument[]
   >([])
@@ -403,7 +450,7 @@ export function ChatInterface({
     !!currentChat.id && !currentChat.isTemporary && !currentChat.isBlankChat
   const canShare =
     !!isSignedIn && !currentChat.isTemporary && currentChat.messages.length > 0
-  const canChat = thread.canSend
+  const canChat = thread.canSend && !historyProblem
   const reloadChats = () => thread.refresh()
   const createNewChat = (isLocalOnly = false, fromUserAction = true) => {
     selectionNavigation.current = null
@@ -464,7 +511,7 @@ export function ChatInterface({
   }
   const handleModelSelect = (model: string) => {
     thread.setModel(model)
-    setExpandedLabel(null)
+    if (!findSelectableModel(model, models)?.auto) setExpandedLabel(null)
     if (currentChat.id)
       void thread.update(currentChat.id, { model }).catch(thread.report)
     void api.updateProfile({ selectedModel: model }).catch(thread.report)
@@ -726,8 +773,16 @@ export function ChatInterface({
   }
   const handleCreateProject = async () => {
     const project = await createProject({ name: 'New Project' })
-    await enterProjectMode(project.id)
     createNewChat()
+    await handleEnterProjectMode(project.id)
+  }
+  const handleEnterProjectMode = async (id: string, name?: string) => {
+    const entered = await enterProjectMode(id, name)
+    if (entered)
+      await router.push(getNewChatPath({ projectId: id }), undefined, {
+        shallow: true,
+      })
+    return entered
   }
   const handleExitProject = () => {
     exitProjectMode()
@@ -760,16 +815,35 @@ export function ChatInterface({
       .catch(thread.report)
   }
   const handleOpenVerifierSidebar = () => {
-    setIsVerifierSidebarOpen((value) => !value)
+    handleSetVerifierSidebarOpen(!isVerifierSidebarOpen)
+    if (!isVerifierSidebarOpen) {
+      setIsSettingsModalOpen(false)
+      setIsAskSidebarOpen(false)
+      setIsArtifactSidebarOpen(false)
+      sidebarChat.reset()
+    }
   }
-  const handleSetVerifierSidebarOpen = setIsVerifierSidebarOpen
-  const handleOpenSettingsModal = () => {
+  const handleSetVerifierSidebarOpen = (open: boolean) => {
+    setIsVerifierSidebarOpen(open)
+    if (open && windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT)
+      setIsSidebarOpen(false)
+  }
+  const handleOpenSettingsModal = (tab?: SettingsTab) => {
+    if (isSettingsModalOpen && !tab) {
+      setIsSettingsModalOpen(false)
+      return
+    }
+    setSettingsInitialTab(tab)
     setHasMountedSettingsModal(true)
     setIsSettingsModalOpen(true)
+    setIsVerifierSidebarOpen(false)
+    setIsAskSidebarOpen(false)
+    setIsArtifactSidebarOpen(false)
+    if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT)
+      setIsSidebarOpen(false)
   }
   const handleOpenSafeguardsSettings = () => {
-    setSettingsInitialTab('safeguards')
-    handleOpenSettingsModal()
+    handleOpenSettingsModal('safeguards')
   }
   const handleOpenShareModal = () => {
     setHasMountedShareModal(true)
@@ -909,10 +983,6 @@ export function ChatInterface({
       .then(() => setVerificationStatus('verified'))
       .catch(() => setVerificationStatus('failed'))
   }, [api])
-  useEffect(() => {
-    if (!initialProjectId || !keyReady) return
-    void enterProjectMode(initialProjectId).catch(thread.report)
-  }, [initialProjectId, keyReady, enterProjectMode, thread.report])
   const {
     passkeyActive,
     passkeyRecoveryNeeded,
@@ -1068,6 +1138,14 @@ export function ChatInterface({
     }
   }, [])
 
+  useEffect(() => {
+    if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT && isSidebarOpen) {
+      setIsVerifierSidebarOpen(false)
+      setIsAskSidebarOpen(false)
+      setIsArtifactSidebarOpen(false)
+    }
+  }, [windowWidth, isSidebarOpen])
+
   // Listen for `OPEN_ARTIFACT_PREVIEW_EVENT` dispatched by the
   // `render_artifact_preview` inline card. Shows the artifact in the right
   // slide-over and closes any other right-side panel so only one is visible.
@@ -1220,7 +1298,8 @@ export function ChatInterface({
   const showEmptyChatGrid =
     currentChat.messages.length === 0 &&
     !isWaitingForResponse &&
-    !isChatHydrating
+    !isChatHydrating &&
+    !historyProblem
 
   if (!session && sessionError) {
     return (
@@ -1255,36 +1334,8 @@ export function ChatInterface({
     )
   }
 
-  if (isLocalChatUrl && thread.notFound) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center bg-surface-chat-background px-4 font-aeonik">
-        <div className="max-w-md text-center">
-          <div className="mb-6 flex justify-center">
-            <div className="rounded-full bg-surface-chat p-4">
-              <TfChat2
-                className="h-8 w-8 !text-content-secondary"
-                aria-hidden="true"
-              />
-            </div>
-          </div>
-          <h2 className="mb-3 text-xl font-semibold text-content-primary">
-            Chat not found
-          </h2>
-          <p className="mb-6 text-content-secondary">
-            This local chat may have been deleted from your browser.
-          </p>
-          <Link
-            href="/"
-            className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
-          >
-            Start new chat
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
-  const showChatHeader = currentChat.messages.length > 0 || isChatHydrating
+  const showChatHeader =
+    currentChat.messages.length > 0 || isChatHydrating || !!historyProblem
 
   const hideTopControlsOnMobile =
     windowWidth < CONSTANTS.MOBILE_BREAKPOINT &&
@@ -1630,7 +1681,7 @@ export function ChatInterface({
                   isLoadingChats={thread.loadingChats}
                   chatListError={thread.chatListError}
                   onRetryChats={() => {
-                    void thread.refresh().catch(thread.report)
+                    void thread.retryChatList().catch(thread.report)
                   }}
                   isOpen={isSidebarOpen}
                   setIsOpen={setIsSidebarOpen}
@@ -1707,6 +1758,11 @@ export function ChatInterface({
               className="z-40"
             >
               <ChatSidebar
+                isLoadingChats={thread.loadingChats}
+                chatListError={thread.chatListError}
+                onRetryChats={() => {
+                  void thread.retryChatList().catch(thread.report)
+                }}
                 isOpen={isSidebarOpen}
                 setIsOpen={setIsSidebarOpen}
                 chats={chats}
@@ -1743,7 +1799,7 @@ export function ChatInterface({
                     projectId,
                     projectName,
                     createNewChat,
-                    enterProjectMode,
+                    enterProjectMode: handleEnterProjectMode,
                   })
                 }}
                 onCreateProject={handleCreateProject}
@@ -1829,7 +1885,7 @@ export function ChatInterface({
               projectId: project.id,
               projectName: project.name,
               createNewChat,
-              enterProjectMode,
+              enterProjectMode: handleEnterProjectMode,
             })
           }
         />
@@ -2080,7 +2136,18 @@ export function ChatInterface({
                 }
               >
                 <div className="flex min-h-full min-w-0 flex-1 [container-type:inline-size]">
-                  {isChatHydrating ? (
+                  {historyProblem ? (
+                    <ChatHistoryStatus
+                      problem={historyProblem}
+                      path={router.asPath}
+                      error={thread.error}
+                      onRetry={() => {
+                        void thread.retryOpen()?.catch(thread.report)
+                      }}
+                      onUnlock={handleOpenCloudSyncSetup}
+                      onNewChat={() => createNewChat()}
+                    />
+                  ) : isChatHydrating ? (
                     <div
                       className="flex min-h-full flex-1 items-center justify-center text-content-secondary"
                       role="status"
@@ -2164,7 +2231,7 @@ export function ChatInterface({
                 <fieldset
                   ref={inputAreaRef}
                   data-chat-input-area
-                  disabled={isChatHydrating}
+                  disabled={isChatHydrating || !!historyProblem}
                   aria-busy={isForking || isChatHydrating || undefined}
                   className={cn(
                     'pointer-events-none absolute inset-x-0 bottom-0 isolate z-20 min-w-0 px-4 pb-4',

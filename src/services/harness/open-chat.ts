@@ -18,6 +18,7 @@ export interface OpenChat {
   // would find nothing.
   unsaved: string | null
   loadingId: string | null
+  failedId: string | null
   notFound: boolean
   model: string
   // An action that failed. The open chat's run reports how it ended in the

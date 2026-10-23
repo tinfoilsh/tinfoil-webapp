@@ -52,6 +52,34 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+it('restarts an unfinished list after a concurrent chat edit invalidates it', async () => {
+  signIn({ cloud: true })
+  const pending = deferred<ReturnType<typeof page>>()
+  const original = summary('opened')
+  const renamed = { ...original, title: 'Renamed chat' }
+  let listings = 0
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list')
+      return ++listings === 1
+        ? pending.promise
+        : page([renamed, summary('other')])
+    if (path === '/v1/threads/get')
+      return { ...original, messages: [], hasOlder: false }
+    if (path === '/v1/threads/update') return renamed
+    throw new Error(`Unexpected ${path}`)
+  })
+  const { result } = renderHook(() => useThread(original.id))
+  await waitFor(() => expect(result.current.chat.id).toBe(original.id))
+  expect(result.current.loadingChats).toBe(true)
+  await act(() => result.current.update(original.id, { title: renamed.title }))
+  await waitFor(() => expect(result.current.loadingChats).toBe(false))
+  await act(async () => pending.resolve(page([original])))
+  expect(result.current.chats.map((chat) => chat.title).sort()).toEqual([
+    'Renamed chat',
+    'other',
+  ])
+})
+
 it('restores sidebar summaries and favorites after a reload before fresh results arrive', async () => {
   signIn({ cloud: true })
   const cached = {

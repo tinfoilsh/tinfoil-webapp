@@ -1456,29 +1456,12 @@ export function ProjectSidebar({
                   isLoading={
                     (isLoading || isLoadingChats) && projectChats.length === 0
                   }
+                  error={chatListError}
+                  onRetry={onRetryChats}
                   emptyState={
-                    chatListError ? (
-                      <div
-                        role="alert"
-                        className="space-y-2 text-sm text-content-secondary"
-                      >
-                        <p>Could not load chats.</p>
-                        <p>{chatListError}</p>
-                        {onRetryChats && (
-                          <button
-                            type="button"
-                            onClick={onRetryChats}
-                            className="underline hover:text-content-primary"
-                          >
-                            Try again
-                          </button>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-content-muted">
-                        No chats in this project yet.
-                      </p>
-                    )
+                    <p className="text-sm text-content-muted">
+                      No chats in this project yet.
+                    </p>
                   }
                   enableTitleAnimation={true}
                   animatedDeleteConfirmation={false}

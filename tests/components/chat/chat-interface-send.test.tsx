@@ -1,5 +1,9 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProjectProvider } from '@/components/project/project-provider'
+import {
+  UI_SIDEBAR_OPEN,
+  UI_SIDEBAR_PROJECTS_EXPANDED,
+} from '@/constants/storage-keys'
 import ChatPage from '@/pages/[...slug]'
 import HomePage from '@/pages/index'
 import NewChatPage from '@/pages/newchat'
@@ -222,6 +226,58 @@ it('applies device-only mode when a blank page navigates to a local new chat', a
   })
 })
 
+it('keeps the shell and loaded project when its URL changes, and exits it on Back', async () => {
+  signIn({ cloud: true })
+  chatPage.premium = true
+  sessionStorage.setItem(UI_SIDEBAR_OPEN, 'true')
+  sessionStorage.setItem(UI_SIDEBAR_PROJECTS_EXPANDED, 'true')
+  const project = {
+    id: 'research',
+    name: 'Research',
+    description: '',
+    systemInstructions: '',
+    documents: [],
+    createdAt: '2026-10-22T12:00:00Z',
+    updatedAt: '2026-10-22T12:00:00Z',
+  }
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/projects/list')
+      return { projects: [project], nextCursor: null }
+    if (path === '/v1/projects/get') return project
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    throw new Error(`Unexpected ${path}`)
+  })
+  const { rerender } = render(<HomePage />)
+  const main = await screen.findByRole('main', { name: 'Conversation' })
+  fireEvent.click(await screen.findByRole('link', { name: /^Research\b/ }))
+  await waitFor(() =>
+    expect(chatPage.router.push).toHaveBeenLastCalledWith(
+      '/project/research',
+      undefined,
+      { shallow: true },
+    ),
+  )
+  chatPage.router.pathname = '/[...slug]'
+  chatPage.router.query = { slug: ['project', project.id] }
+  rerender(<ChatPage />)
+  expect(screen.getByRole('main', { name: 'Conversation' })).toBe(main)
+  expect(
+    await screen.findByRole('heading', { name: project.name }),
+  ).toBeInTheDocument()
+  expect(
+    client.post.mock.calls.filter(([path]) => path === '/v1/projects/get'),
+  ).toHaveLength(1)
+  chatPage.router.pathname = '/'
+  chatPage.router.query = {}
+  rerender(<HomePage />)
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('heading', { name: project.name }),
+    ).not.toBeInTheDocument(),
+  )
+  expect(screen.getByRole('main', { name: 'Conversation' })).toBe(main)
+})
+
 it('abandons a device turn still being prepared when another chat is opened', async () => {
   signIn()
   const other = storedThread('other-chat', {
@@ -376,7 +432,7 @@ it('shows the chat loading shell while the key is locked and until history arriv
     </ProjectProvider>,
   )
   expect(
-    await screen.findByRole('status', { name: 'Loading chat history' }),
+    await screen.findByRole('heading', { name: 'Unlock chat history' }),
   ).toBeVisible()
   expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
     'Loading chat',
