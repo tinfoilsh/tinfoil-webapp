@@ -140,13 +140,7 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
   },
 }
 
-// Map a run failure to a behavioral kind plus human-readable copy using the
-// chat service's structured error code. Only a failure without a response (a
-// transport error, an interrupted stream, a connection that could not be
-// verified) is a connection problem; any other code came from the service.
-// Both the copy and the retry affordance derive from the same result so they
-// can never disagree. The raw message stays available in the expandable
-// details section.
+// When a limit resets, as a local time, if the error says.
 function formatResetTime(error: StreamErrorInfo): string | null {
   const at = error.resetsAt
     ? Date.parse(error.resetsAt)
@@ -179,6 +173,13 @@ function quotaClassification(error: StreamErrorInfo): ErrorClassification {
   return CLASSIFICATIONS['rate-limit']
 }
 
+// Map a run failure to a behavioral kind plus human-readable copy using the
+// chat service's structured error code. Only a failure without a response (a
+// transport error, an interrupted stream, a connection that could not be
+// verified) is a connection problem; any other code came from the service.
+// Both the copy and the retry affordance derive from the same result so they
+// can never disagree. The raw message stays available in the expandable
+// details section.
 function classifyError(error: StreamErrorInfo): ErrorClassification {
   // A document conversion failure carries the document service's fixed
   // explanation, which describes nothing in the file.
