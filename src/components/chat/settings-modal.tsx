@@ -38,6 +38,7 @@ import { validateCurrentPrimaryKey } from '@/services/keys/cloud-key-preflight'
 import {
   deletePasskeyCredential,
   getLocalPasskeyCredentialId,
+  getRoamingPasskeyCredentialIds,
   loadPasskeyCredentials,
   PrfNotSupportedError,
   type PasskeyCredentialEntry,
@@ -622,6 +623,7 @@ function PasskeyBundleInventory({
 }) {
   const canManage = keyStatus === 'match'
   const localCredentialId = getLocalPasskeyCredentialId()
+  const roamingCredentialIds = getRoamingPasskeyCredentialIds()
   const sorted = [...entries].sort((a, b) => {
     if (a.id === localCredentialId) return -1
     if (b.id === localCredentialId) return 1
@@ -670,6 +672,7 @@ function PasskeyBundleInventory({
       <ul className="divide-y divide-border-subtle">
         {sorted.map((entry) => {
           const isCurrentPlatform = entry.id === localCredentialId
+          const isRoaming = roamingCredentialIds.includes(entry.id)
           const isLegacy = entry.source === 'legacy'
           const isRemoving = removingId === entry.id
           return (
@@ -684,7 +687,11 @@ function PasskeyBundleInventory({
                     aria-hidden="true"
                   />
                   <span className="truncate text-sm font-medium text-content-primary">
-                    {isCurrentPlatform ? 'This platform' : 'Other platform'}
+                    {isCurrentPlatform
+                      ? 'This platform'
+                      : isRoaming
+                        ? 'Security key or phone'
+                        : 'Other platform'}
                   </span>
                   {isLegacy && (
                     <span className="rounded bg-surface-chat px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted">
