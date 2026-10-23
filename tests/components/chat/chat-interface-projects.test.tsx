@@ -775,6 +775,9 @@ it('says the projects are locked while the key is refused, without listing them'
     await screen.findByText('Your projects are locked'),
   ).toBeInTheDocument()
   expect(screen.queryByText('No projects yet')).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'New Project' }),
+  ).not.toBeInTheDocument()
   expect(requested('/v1/projects/list')).toEqual([])
 })
 

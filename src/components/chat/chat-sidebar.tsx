@@ -1340,7 +1340,7 @@ export function ChatSidebar({
                       ) : (
                         <>
                           {/* Create new project button */}
-                          {onCreateProject && (
+                          {onCreateProject && !keyLocked && (
                             <button
                               onClick={async () => {
                                 setIsCreatingProject(true)
