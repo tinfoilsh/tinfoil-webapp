@@ -111,3 +111,23 @@ it('resolves a failed refresh and keeps its error', async () => {
   expect(result.current.loading).toBe(false)
   expect(result.current.projects).toEqual([])
 })
+
+it("loads until the account's projects are first listed, after its key arrives", async () => {
+  publish({ keyReady: false })
+  let finish!: (page: unknown) => void
+  post.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve
+    }),
+  )
+  const { result } = renderHook(() => useProjects())
+  expect(result.current).toMatchObject({ projects: [], loading: true })
+  expect(post).not.toHaveBeenCalled()
+
+  act(() => publish({ keyReady: true }))
+  await waitFor(() => expect(post).toHaveBeenCalledOnce())
+  expect(result.current).toMatchObject({ projects: [], loading: true })
+
+  await act(async () => finish({ projects: [], nextCursor: null }))
+  expect(result.current).toMatchObject({ projects: [], loading: false })
+})

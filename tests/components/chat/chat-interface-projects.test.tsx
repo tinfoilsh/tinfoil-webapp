@@ -736,3 +736,20 @@ it('reports a project that could not be created', async () => {
   expect(screen.getByRole('button', { name: 'New Project' })).toBeEnabled()
   expect(requested('/v1/projects/get')).toEqual([])
 })
+
+it('shows the projects loading rather than missing until the key lets them be listed', async () => {
+  sessionStorage.setItem(UI_SIDEBAR_PROJECTS_EXPANDED, 'true')
+  publish({ keyReady: false, profileReady: false })
+  const listing = deferred<unknown>()
+  routes['/v1/projects/list'] = () => listing.promise
+  render(routeView({}))
+  await screen.findByRole('button', { name: 'New Project' })
+  expect(screen.queryByText('No projects yet')).not.toBeInTheDocument()
+
+  act(() => publish({ keyReady: true, profileReady: true }))
+  await waitFor(() => expect(requested('/v1/projects/list')).toHaveLength(1))
+  expect(screen.queryByText('No projects yet')).not.toBeInTheDocument()
+
+  await act(async () => listing.resolve({ projects: [], nextCursor: null }))
+  expect(screen.getByText('No projects yet')).toBeInTheDocument()
+})
