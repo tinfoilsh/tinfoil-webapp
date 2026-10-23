@@ -603,3 +603,69 @@ it('shows a failed chat list refresh in the list, not as a problem with the open
     { component: 'useChatList', action: 'refresh' },
   )
 })
+
+it('leaves the address of the open chat when it is deleted', async () => {
+  signIn({ cloud: true })
+  const alpha = cloudChat('alpha-chat', 'Alpha chat', '2026-10-22T12:00:00Z')
+  const beta = cloudChat('beta-chat', 'Beta chat', '2026-10-20T12:00:00Z')
+  const deletion = deferred<unknown>()
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list')
+      return { threads: [summaryOf(alpha), summaryOf(beta)], nextCursor: null }
+    if (path === '/v1/threads/get') return structuredClone(alpha)
+    if (path === '/v1/threads/delete') return deletion.promise
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  const { rerender } = render(
+    <ChatInterface initialChatId={alpha.id} suppressIntroModals />,
+  )
+  await screen.findByText('Alpha chat conversation')
+  const listed = (await row('Alpha chat')).closest(
+    '[role="listitem"]',
+  ) as HTMLElement
+  fireEvent.click(within(listed).getByRole('button', { name: 'Delete chat' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+  expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
+    '/',
+    undefined,
+    { shallow: true },
+  )
+  expect(chatPage.router.push).not.toHaveBeenCalled()
+  await waitFor(() =>
+    expect(
+      screen.queryByText('Alpha chat conversation'),
+    ).not.toBeInTheDocument(),
+  )
+
+  rerender(<ChatInterface suppressIntroModals />)
+  await act(async () => deletion.resolve({}))
+  expect(listedOrder()).toEqual(['/chat/beta-chat'])
+  expect(
+    screen.queryByRole('heading', { name: 'Chat not found' }),
+  ).not.toBeInTheDocument()
+  expect(screen.getByRole('textbox', { name: /message/i })).toBeEnabled()
+})
+
+it('keeps the address of the open chat when another chat is deleted', async () => {
+  signIn({ cloud: true })
+  const alpha = cloudChat('alpha-chat', 'Alpha chat', '2026-10-22T12:00:00Z')
+  const beta = cloudChat('beta-chat', 'Beta chat', '2026-10-20T12:00:00Z')
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list')
+      return { threads: [summaryOf(alpha), summaryOf(beta)], nextCursor: null }
+    if (path === '/v1/threads/get') return structuredClone(alpha)
+    if (path === '/v1/threads/delete') return {}
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  render(<ChatInterface initialChatId={alpha.id} suppressIntroModals />)
+  await screen.findByText('Alpha chat conversation')
+  const listed = (await row('Beta chat')).closest(
+    '[role="listitem"]',
+  ) as HTMLElement
+  fireEvent.click(within(listed).getByRole('button', { name: 'Delete chat' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+  await waitFor(() => expect(listedOrder()).toEqual(['/chat/alpha-chat']))
+  expect(chatPage.router.replace).not.toHaveBeenCalled()
+  expect(chatPage.router.push).not.toHaveBeenCalled()
+  expect(screen.getByText('Alpha chat conversation')).toBeInTheDocument()
+})

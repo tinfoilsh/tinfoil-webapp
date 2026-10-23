@@ -551,8 +551,19 @@ export function ChatInterface({
         metadata: { chatId },
       })
     }
+  // Deleting the open chat leaves its address for a new chat's, which
+  // replaces it in the history, as the chat is gone.
   const deleteChat = (id: string) => {
+    const leaving = currentChat.id === id
     void thread.remove(id).catch(logListAction('Failed to delete chat', id))
+    if (!leaving) return
+    void router
+      .replace(
+        activeProject ? getNewChatPath({ projectId: activeProject.id }) : '/',
+        undefined,
+        { shallow: true },
+      )
+      .catch(logListAction('Failed to leave a deleted chat', id))
   }
   const updateChatTitle = (id: string, title: string) => {
     void thread
