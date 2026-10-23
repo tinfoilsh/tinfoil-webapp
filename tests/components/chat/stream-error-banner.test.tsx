@@ -245,6 +245,29 @@ describe('StreamErrorBanner', () => {
     },
   )
 
+  it('explains a reply this device could not store without offering to resend it', () => {
+    render(
+      <StreamErrorBanner
+        error={{
+          code: 'LOCAL_SAVE_FAILED',
+          message: 'This chat could not be saved on this device.',
+        }}
+        isDarkMode={false}
+        onDismiss={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This chat could not be saved on this device',
+    )
+    expect(screen.getByRole('alert')).not.toHaveTextContent(
+      'Connection problem',
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Resend message' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('counts down a requested wait before allowing a resend', async () => {
     vi.useFakeTimers()
     try {
@@ -262,9 +285,11 @@ describe('StreamErrorBanner', () => {
           onRetry={onRetry}
         />,
       )
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        'Too many requests right now',
-      )
+      const alert = screen.getByRole('alert')
+      expect(alert).toHaveTextContent('Too many requests right now')
+      // The countdown changes every second, so it stays out of what is
+      // announced.
+      expect(alert).not.toHaveTextContent('Resend in')
       const retry = screen.getByRole('button', { name: 'Resend in 3s' })
       expect(retry).toBeDisabled()
       fireEvent.click(retry)

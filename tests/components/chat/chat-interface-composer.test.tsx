@@ -532,7 +532,7 @@ it('explains a send the locked key refused on the welcome screen and offers to u
   )
   expect(client.events).not.toHaveBeenCalled()
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  fireEvent.click(within(alert).getByRole('button', { name: 'Unlock' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Unlock' }))
   expect(await screen.findByRole('dialog')).toBeVisible()
 })
 

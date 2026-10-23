@@ -282,12 +282,15 @@ export function useThread(
           component: 'useThread',
           action: 'saveRun',
         })
-        if (attached)
+        if (attached) {
+          const message = 'This chat could not be saved on this device.'
           patch({
             failure: {
-              message: 'This chat could not be saved on this device.',
+              message,
+              detail: { code: ERROR_CODES.localSaveFailed, message },
             },
           })
+        }
       }
     },
     ended: list.reload,

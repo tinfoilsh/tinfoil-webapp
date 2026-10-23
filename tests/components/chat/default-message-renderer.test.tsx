@@ -127,6 +127,7 @@ describe('DefaultMessageRenderer metadata', () => {
         isDarkMode={false}
       />,
     )
+    expect(screen.queryByText('Retired Model')).not.toBeInTheDocument()
     expect(screen.getByText('Encrypted')).toBeInTheDocument()
     expect(screen.queryByText('Current Model')).not.toBeInTheDocument()
   })

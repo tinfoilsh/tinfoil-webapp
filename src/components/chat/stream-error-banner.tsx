@@ -49,6 +49,7 @@ type ErrorKind =
   | 'model'
   | 'document'
   | 'server'
+  | 'storage'
 
 type ErrorClassification = {
   kind: ErrorKind
@@ -132,6 +133,12 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
     suggestion:
       'Remove an attachment, shorten your message, or switch to a model with a larger context window.',
   },
+  storage: {
+    kind: 'storage',
+    title: 'This chat could not be saved on this device',
+    suggestion:
+      'The reply arrived, but this browser could not store it, so it may be missing when the chat is opened again.',
+  },
   server: {
     kind: 'server',
     title: 'The service is having trouble right now',
@@ -140,13 +147,7 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
   },
 }
 
-// Map a run failure to a behavioral kind plus human-readable copy using the
-// chat service's structured error code. Only a failure without a response (a
-// transport error, an interrupted stream, a connection that could not be
-// verified) is a connection problem; any other code came from the service.
-// Both the copy and the retry affordance derive from the same result so they
-// can never disagree. The raw message stays available in the expandable
-// details section.
+// The time the error says a limit resets, formatted in local time.
 function formatResetTime(error: StreamErrorInfo): string | null {
   const at = error.resetsAt
     ? Date.parse(error.resetsAt)
@@ -179,6 +180,13 @@ function quotaClassification(error: StreamErrorInfo): ErrorClassification {
   return CLASSIFICATIONS['rate-limit']
 }
 
+// Map a run failure to a behavioral kind plus human-readable copy using the
+// chat service's structured error code. Only a failure without a response (a
+// transport error, an interrupted stream, a connection that could not be
+// verified) is a connection problem; any other code came from the service.
+// Both the copy and the retry affordance derive from the same result so they
+// can never disagree. The raw message stays available in the expandable
+// details section.
 function classifyError(error: StreamErrorInfo): ErrorClassification {
   // A document conversion failure carries the document service's fixed
   // explanation, which describes nothing in the file.
@@ -214,6 +222,8 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
       return CLASSIFICATIONS['too-large']
     case ERROR_CODES.modelUnavailable:
       return CLASSIFICATIONS.model
+    case ERROR_CODES.localSaveFailed:
+      return CLASSIFICATIONS.storage
     case undefined:
     case ERROR_CODES.streamInterrupted:
     case ERROR_CODES.connection:
@@ -269,7 +279,11 @@ export function StreamErrorBanner({
   // key fails identically until that changes, so a retry button is just an
   // invitation to frustration.
   const showRetry =
-    !!onRetry && kind !== 'rate-limit' && kind !== 'too-large' && kind !== 'key'
+    !!onRetry &&
+    kind !== 'rate-limit' &&
+    kind !== 'too-large' &&
+    kind !== 'key' &&
+    kind !== 'storage'
   const isOffline = isResend && !isOnline
   const retryDisabled = isOffline || waitSeconds > 0
   const retryLabel = isOffline
@@ -289,7 +303,6 @@ export function StreamErrorBanner({
 
   return (
     <div
-      role="alert"
       className={cn(
         'mb-2 overflow-hidden rounded-2xl border shadow-sm transition-colors',
         isDarkMode
@@ -299,7 +312,8 @@ export function StreamErrorBanner({
     >
       <div className="flex gap-2 px-3 py-2.5">
         <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1">
+          {/* Only the explanation is announced, not the retry countdown. */}
+          <div role="alert" className="min-w-0 flex-1">
             <p className="text-sm font-semibold">{title}</p>
             <p
               className={cn(

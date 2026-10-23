@@ -239,6 +239,53 @@ describe('local chats of a signed-in account without cloud sync', () => {
     )
   })
 
+  it('explains a reply this device could not store, without offering to resend', async () => {
+    signIn('alice')
+    const store = localThreadStore('device')
+    const update = store.update.bind(store)
+    let refuse = false
+    vi.spyOn(store, 'update').mockImplementation((...args) =>
+      refuse
+        ? Promise.reject(
+            new DOMException('Storage is full', 'QuotaExceededError'),
+          )
+        : update(...args),
+    )
+    client.events.mockImplementation((_path: string, input: Turn) => {
+      const threadId = input.threadId!
+      const returned = storedThread(threadId, {
+        messages: [
+          {
+            id: input.clientRequestId,
+            role: 'user',
+            createdAt: '2026-05-01T10:00:01Z',
+            content: 'Hi there',
+          },
+        ],
+      })
+      return (async function* (): AsyncGenerator<Frame> {
+        yield {
+          id: 0,
+          event: { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+        }
+        // Only the reply's own save fails.
+        refuse = true
+        yield { id: 1, event: finished(threadId, returned) }
+      })()
+    })
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+
+    await act(() => result.current.send({ content: 'Hi there' }))
+
+    await waitFor(() =>
+      expect(result.current.errorDetail).toEqual({
+        code: 'LOCAL_SAVE_FAILED',
+        message: 'This chat could not be saved on this device.',
+      }),
+    )
+  })
+
   it('lists a new chat with its message as soon as it is sent', async () => {
     signIn('alice')
     let release!: () => void
