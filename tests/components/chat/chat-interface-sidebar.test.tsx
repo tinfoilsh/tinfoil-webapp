@@ -552,7 +552,6 @@ it('keeps a refused rename out of the saved list when another chat saves meanwhi
 
   await act(async () => changes[0].answer.reject(new Error('Refused')))
 
-  expect(await row('Alpha chat')).toBeInTheDocument()
   expect(
     readChatListCache('alice', null)?.threads.map(({ id, title }) => ({
       id,
@@ -562,6 +561,10 @@ it('keeps a refused rename out of the saved list when another chat saves meanwhi
     { id: alpha.id, title: 'Alpha chat' },
     { id: beta.id, title: 'Saved rename' },
   ])
+  // The list types the restored title back in.
+  expect(
+    await screen.findByRole('link', { name: /^Alpha chat/ }, { timeout: 3000 }),
+  ).toHaveAttribute('href', '/chat/alpha-chat')
 })
 
 it.each(['deleted', 'refused'] as const)(

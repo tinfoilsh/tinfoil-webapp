@@ -122,9 +122,10 @@ const clickRetry = () =>
 // retry's run with `run`.
 async function retryWidget(
   run: () => AsyncGenerator<Frame>,
-  ...opened: [Thread, string] | []
+  opened?: Thread,
+  failure?: string,
 ) {
-  await openChat(run, ...opened)
+  await openChat(run, opened, failure)
   await clickRetry()
   expect(client.events).toHaveBeenCalledExactlyOnceWith(
     '/v1/threads/turn',
