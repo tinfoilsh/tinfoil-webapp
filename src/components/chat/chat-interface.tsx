@@ -1,4 +1,5 @@
 import { findSelectableModel, getSelectedModelLabel } from '@/config/models'
+import { NEW_CHAT_TITLE } from '@/constants/chat'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
@@ -447,11 +448,19 @@ export function ChatInterface({
     typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
       ? '⌘'
       : 'Ctrl+'
+  // Blank, temporary, loading and placeholder chats keep the base title, as
+  // what they show as a title is a generic label.
+  const shownChatTitle = currentChat.title.trim()
   const documentTitle =
     (profile.browserTabChatTitleEnabled ?? true) &&
-    currentChat.titleState !== 'placeholder'
-      ? `${currentChat.title} · Tinfoil`
-      : 'Tinfoil Private Chat'
+    !isChatHydrating &&
+    !currentChat.isBlankChat &&
+    !currentChat.isTemporary &&
+    currentChat.titleState !== 'placeholder' &&
+    !!shownChatTitle &&
+    shownChatTitle !== NEW_CHAT_TITLE
+      ? `${shownChatTitle} · ${CONSTANTS.BASE_DOCUMENT_TITLE}`
+      : CONSTANTS.BASE_DOCUMENT_TITLE
   const handleInputFocusWithRateLimitCheck = handleInputFocus
   const canChangeMessages = thread.canChangeMessages
   const canFork =

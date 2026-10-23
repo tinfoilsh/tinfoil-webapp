@@ -26,7 +26,10 @@ import { chatPage } from './chat-page-mocks'
 
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
 vi.mock('next/router', async () => (await import('./chat-page-mocks')).router)
-vi.mock('next/head', async () => (await import('./chat-page-mocks')).head)
+// React places the title the page declares in the document head.
+vi.mock('next/head', () => ({
+  default: ({ children }: { children?: React.ReactNode }) => children,
+}))
 vi.mock('next/dynamic', async () => (await import('./chat-page-mocks')).dynamic)
 vi.mock(
   '@/components/ui/logo-loading',
@@ -116,8 +119,19 @@ function scriptDeviceRuns(title = 'Trip ideas') {
         hasOlder: false,
       },
     }
+    const { messages, ...summary } = thread
     yield {
       id: 2,
+      event: {
+        type: 'STATE_SNAPSHOT',
+        snapshot: {
+          thread: { ...summary, messageCount: messages.length },
+          queue: [],
+        },
+      },
+    }
+    yield {
+      id: 3,
       event: {
         type: 'RUN_FINISHED',
         threadId: input.threadId!,
@@ -307,4 +321,57 @@ it('starts a normal chat after a temporary one', async () => {
       returned[1],
     ),
   )
+})
+
+const TRIP = storedThread('trip-chat', {
+  title: 'Trip ideas',
+  titleState: 'generated',
+  messages: [
+    {
+      id: 'question',
+      role: 'user',
+      createdAt: '2026-10-22T12:00:00Z',
+      content: 'Where should we go?',
+    },
+  ],
+})
+
+it('names the tab after a titled chat once it loads', async () => {
+  signIn()
+  await localThreadStore('device').add(TRIP)
+  const { rerender } = render(view())
+  await screen.findByRole('button', { name: 'Temporary chat' })
+  expect(document.title).toBe('Tinfoil Chat')
+
+  rerender(view({ initialChatId: TRIP.id, isLocalChatUrl: true }))
+  expect(document.title).toBe('Tinfoil Chat')
+  await screen.findByText('Where should we go?')
+
+  expect(document.title).toBe('Trip ideas · Tinfoil Chat')
+})
+
+it('keeps the base tab title when chat titles are turned off', async () => {
+  signIn({ profile: { browserTabChatTitleEnabled: false } })
+  await localThreadStore('device').add(TRIP)
+  render(view({ initialChatId: TRIP.id, isLocalChatUrl: true }))
+  await screen.findByText('Where should we go?')
+  expect(
+    within(screen.getByRole('banner')).getByRole('heading', { level: 1 }),
+  ).toHaveTextContent('Trip ideas')
+
+  expect(document.title).toBe('Tinfoil Chat')
+})
+
+it('keeps the base tab title for a temporary chat the harness named', async () => {
+  signIn()
+  scriptDeviceRuns('Trip ideas')
+  render(view())
+  fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
+  await send('Plan a trip')
+  await screen.findByText('Noted')
+  expect(
+    within(screen.getByRole('banner')).getByRole('heading', { level: 1 }),
+  ).toHaveTextContent('Trip ideas')
+
+  expect(document.title).toBe('Tinfoil Chat')
 })
