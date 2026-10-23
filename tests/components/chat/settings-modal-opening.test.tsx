@@ -16,7 +16,7 @@ import {
 } from '@testing-library/react'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { signIn, testSession } from '../../harness-fixture'
+import { client, KEY, signIn, testSession } from '../../harness-fixture'
 
 const authState = vi.hoisted(() => ({ isSignedIn: false }))
 const toasts = vi.hoisted(() => vi.fn())
@@ -549,6 +549,72 @@ describe('settings personalization', () => {
     await waitFor(() => expect(getView().profile.nickname).toBe('Samantha'))
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
     expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Samantha')
+  })
+
+  it('keeps unsaved edits when settings close and reopen', () => {
+    const profile = { nickname: 'Sam', isUsingPersonalization: true }
+    localStorage.setItem(USER_PREFS_LOCAL_PROFILE, JSON.stringify(profile))
+    publish({ profile })
+    const { rerender } = render(
+      <Harness initialTab="personalization" isClient />,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Nickname'), {
+      target: { value: 'Samantha' },
+    })
+
+    rerender(<Harness initialTab="personalization" isClient isOpen={false} />)
+    expect(screen.queryByPlaceholderText('Nickname')).toBeNull()
+    rerender(<Harness initialTab="personalization" isClient />)
+
+    expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Samantha')
+    expect(screen.getAllByRole('button', { name: 'Save' })).not.toHaveLength(0)
+    expect(getView().profile.nickname).toBe('Sam')
+  })
+
+  it('keeps an edit made while a save is in flight', async () => {
+    const saved = { nickname: 'Sam', isUsingPersonalization: true }
+    signIn({ cloud: true, profile: saved })
+    let finish!: () => void
+    client.post.mockImplementation(async (path: string, input) => {
+      if (path !== '/v1/profile/update')
+        throw new Error(`Unexpected harness request: ${path}`)
+      const { patch } = input as { patch: object }
+      return new Promise((resolve) => {
+        finish = () => resolve({ ...saved, ...patch })
+      })
+    })
+    render(<Harness initialTab="personalization" isClient />)
+    fireEvent.change(screen.getByPlaceholderText('Nickname'), {
+      target: { value: 'Samantha' },
+    })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+    await waitFor(() => expect(finish).toBeDefined())
+    fireEvent.change(screen.getByPlaceholderText('Your occupation'), {
+      target: { value: 'Engineer' },
+    })
+
+    await act(async () => finish())
+
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/profile/update',
+      {
+        key: KEY,
+        patch: {
+          nickname: 'Samantha',
+          profession: '',
+          traits: [],
+          additionalContext: '',
+          isUsingPersonalization: true,
+        },
+      },
+      expect.any(AbortSignal),
+    )
+    expect(getView().profile.nickname).toBe('Samantha')
+    expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Samantha')
+    expect(screen.getByPlaceholderText('Your occupation')).toHaveValue(
+      'Engineer',
+    )
+    expect(screen.getAllByRole('button', { name: 'Save' })).not.toHaveLength(0)
   })
 })
 

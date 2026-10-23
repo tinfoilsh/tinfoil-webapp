@@ -981,11 +981,6 @@ export function SettingsModal({
     'optimistic',
   ]
 
-  // Closing the settings discards unsaved personalization edits.
-  useEffect(() => {
-    if (!isOpen) setPersonalizationEdits({})
-  }, [isOpen])
-
   const refreshPasskeyBundles = useCallback(async () => {
     // Latest-wins sequencing: overlapping refreshes (panel-open effect
     // racing a post-removal refresh) must not let a stale response
@@ -1040,14 +1035,25 @@ export function SettingsModal({
   ])
 
   // Saves personalization details with whether personalization is on. The
-  // edits stay shown until the profile holds them.
+  // edits stay shown until the profile holds them, and an edit made while
+  // the save is in flight stays unsaved.
   const savePersonalizationSettings = (
     details: PersonalizationDetails,
     isEnabled: boolean,
   ) => {
     void api
       .updateProfile({ ...details, isUsingPersonalization: isEnabled })
-      .then(() => setPersonalizationEdits({}))
+      .then(() =>
+        setPersonalizationEdits((edits) =>
+          Object.fromEntries(
+            Object.entries(edits).filter(
+              ([field, value]) =>
+                JSON.stringify(value) !==
+                JSON.stringify(details[field as keyof PersonalizationDetails]),
+            ),
+          ),
+        ),
+      )
       .catch(reportHarnessError)
   }
 
