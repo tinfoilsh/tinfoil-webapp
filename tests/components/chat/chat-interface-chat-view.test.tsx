@@ -442,7 +442,7 @@ it('keeps the base tab title when chat titles are turned off', async () => {
 
 it('keeps the base tab title while a new chat is untitled', async () => {
   signIn()
-  scriptDeviceRuns('Trip ideas')
+  const returned = scriptDeviceRuns('Trip ideas')
   render(view())
   await send('Plan a trip')
   expect(
@@ -452,6 +452,10 @@ it('keeps the base tab title while a new chat is untitled', async () => {
 
   await screen.findByText('Noted')
   expect(document.title).toBe('Trip ideas · Tinfoil Chat')
+  const threadId = (client.events.mock.calls[0][1] as Turn).threadId!
+  await waitFor(async () =>
+    expect(await localThreadStore('device').get(threadId)).toEqual(returned[0]),
+  )
 })
 
 it('titles a temporary chat as one, though the harness named it, and keeps the base tab title', async () => {
