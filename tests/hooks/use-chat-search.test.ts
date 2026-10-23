@@ -59,6 +59,32 @@ afterEach(() => {
 })
 
 describe('useChatSearch', () => {
+  it('refreshes partial index results without requiring another keystroke', async () => {
+    search
+      .mockResolvedValueOnce(page(['partial'], { indexing: true }))
+      .mockResolvedValueOnce(page(['partial', 'newly-indexed']))
+    const { result, unmount } = renderHook(() => useChatSearch('duck', true))
+    await flushDebounce()
+    expect(result.current.results.map((thread) => thread.id)).toEqual([
+      'partial',
+    ])
+    expect(result.current.isIndexing).toBe(true)
+    await act(async () => {
+      await vi.advanceTimersToNextTimerAsync()
+    })
+    expect(result.current.results.map((thread) => thread.id)).toEqual([
+      'partial',
+      'newly-indexed',
+    ])
+    expect(result.current.isIndexing).toBe(false)
+    expect(search.mock.calls.map(([input]) => input)).toEqual([
+      { key: ACCOUNT_KEY_B64, query: 'duck', limit: 20 },
+      { key: ACCOUNT_KEY_B64, query: 'duck', limit: 20 },
+    ])
+    unmount()
+    await vi.runAllTimersAsync()
+    expect(search).toHaveBeenCalledTimes(2)
+  })
   it('searches the harness with the trimmed term after the debounce', async () => {
     search.mockResolvedValueOnce(page(['duck']))
     const { result } = renderHook(() => useChatSearch('  duck  ', true))

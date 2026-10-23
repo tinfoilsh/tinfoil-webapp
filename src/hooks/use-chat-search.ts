@@ -2,6 +2,8 @@ import { useHarness } from '@/services/harness/provider'
 import { searchChats } from '@/services/harness/search'
 import type { ThreadSummary } from '@/services/harness/types'
 import { useEffect, useState } from 'react'
+const SEARCH_DEBOUNCE_MS = 250
+const INDEX_POLL_INTERVAL_MS = 1000
 export function useChatSearch(
   term: string,
   enabled: boolean,
@@ -27,7 +29,8 @@ export function useChatSearch(
       setIsIndexing(false)
       return
     }
-    const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout>
+    const run = () => {
       void searchChats(api, query, controller.signal)
         .then((page) => {
           if (controller.signal.aborted) return
@@ -40,6 +43,7 @@ export function useChatSearch(
             ),
             failed: false,
           })
+          if (page.indexing) timer = setTimeout(run, INDEX_POLL_INTERVAL_MS)
         })
         .catch(() => {
           if (controller.signal.aborted) return
@@ -48,7 +52,8 @@ export function useChatSearch(
           setIsIndexing(false)
           setOutcome({ query, includeProjectChats, results: [], failed: true })
         })
-    }, 250)
+    }
+    timer = setTimeout(run, SEARCH_DEBOUNCE_MS)
     return () => {
       clearTimeout(timer)
       controller.abort()
