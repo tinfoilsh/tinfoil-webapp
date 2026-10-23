@@ -1,13 +1,20 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProjectProvider } from '@/components/project/project-provider'
-import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
+import {
+  SECRET_PASSKEY_BACKED_UP,
+  UI_SIDEBAR_OPEN,
+  USER_ENCRYPTION_KEY,
+} from '@/constants/storage-keys'
 import { encryptionService } from '@/services/encryption/encryption-service'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { base64ToBytes } from '@/services/harness/keys'
+import { deriveTinfoilKeyIdHex } from '@/services/keys/tinfoil-key-id'
+import { PasskeyTimeoutError, PrfNotSupportedError } from '@/services/passkey'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { signIn } from '../../harness-fixture'
+import { client, signIn, testSession } from '../../harness-fixture'
 import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
 import { refuseFetch } from './chat-interface-fixture'
-import { chatPage } from './chat-page-mocks'
+import { chatPage, errorHandling } from './chat-page-mocks'
 
 // The passkey hook as the page reads it: its state and the actions the page
 // calls, which each test scripts.
@@ -15,6 +22,9 @@ const passkey = vi.hoisted(() => ({
   state: {} as Record<string, unknown>,
   showPasskeyRecoveryPrompt: vi.fn(),
   showFirstTimePasskeyPrompt: vi.fn(),
+  updatePasskeyBackup: vi.fn(),
+  setupPasskey: vi.fn(),
+  isPrfSupported: vi.fn(),
 }))
 
 vi.mock('@clerk/react', async () => ({
@@ -58,7 +68,7 @@ vi.mock('@/hooks/use-passkey-backup', () => ({
     passkeySetupFailed: false,
     passkeyRecoveryFailure: null,
     passkeyFirstTimePromptAvailable: false,
-    setupPasskey: vi.fn(),
+    setupPasskey: passkey.setupPasskey,
     setupFirstTimePasskey: vi.fn(),
     dismissFirstTimePasskeyPrompt: vi.fn(),
     recoverWithPasskey: vi.fn(),
@@ -69,8 +79,13 @@ vi.mock('@/hooks/use-passkey-backup', () => ({
     refreshBundleState: vi.fn(),
     showPasskeyRecoveryPrompt: passkey.showPasskeyRecoveryPrompt,
     showFirstTimePasskeyPrompt: passkey.showFirstTimePasskeyPrompt,
+    updatePasskeyBackup: passkey.updatePasskeyBackup,
     ...passkey.state,
   }),
+}))
+vi.mock('@/services/passkey', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/passkey')>()),
+  isPrfSupported: passkey.isPrfSupported,
 }))
 vi.mock('@/hooks/use-upgrade-to-pro', () => ({
   useUpgradeToPro: () => ({ startUpgrade: vi.fn() }),
@@ -110,6 +125,14 @@ beforeEach(() => {
   passkey.showFirstTimePasskeyPrompt
     .mockReset()
     .mockRejectedValue(new Error('Unexpected first passkey check'))
+  passkey.updatePasskeyBackup
+    .mockReset()
+    .mockRejectedValue(new Error('Unexpected passkey backup update'))
+  passkey.setupPasskey
+    .mockReset()
+    .mockRejectedValue(new Error('Unexpected passkey setup'))
+  passkey.isPrfSupported.mockReset().mockResolvedValue(true)
+  errorHandling.logError.mockClear()
   encryptionService.clearKey({ persist: false })
   sessionStorage.setItem(UI_SIDEBAR_OPEN, 'true')
   refuseFetch()
@@ -162,3 +185,137 @@ it('routes to passkey recovery without offering a new passkey', async () => {
   ).toBeInTheDocument()
   expect(passkey.showFirstTimePasskeyPrompt).not.toHaveBeenCalled()
 })
+
+// A key this account registered, which the user enters again on this device.
+const RESTORED_KEY = `key_${'ar'.repeat(32)}`
+const RESTORED_KEY_B64 = 'ERERERERERERERERERERERERERERERERERERERERERE='
+
+// The harness of a cloud account whose key this device lacks: it answers the
+// key the account registered, and once unlocked the profile and empty lists.
+function lockedCloudAccount(current: Record<string, unknown>) {
+  signIn({ cloud: true, locked: true })
+  const registered: unknown[] = []
+  client.post.mockImplementation(async (path: string, input: unknown) => {
+    if (path === '/v1/session') return structuredClone(testSession)
+    if (path === '/v1/keys/current') return current
+    if (path === '/v1/keys/register') {
+      registered.push(input)
+      return { ok: true, key_id: 'fresh-key' }
+    }
+    if (path === '/v1/profile/get') return { hasSeenOnboarding: true }
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    throw new Error(`Unexpected harness request: ${path}`)
+  })
+  passkey.showPasskeyRecoveryPrompt.mockResolvedValue(false)
+  passkey.showFirstTimePasskeyPrompt.mockResolvedValue(false)
+  return registered
+}
+
+async function restoreKey(key: string) {
+  fireEvent.click(
+    (await screen.findAllByRole('button', { name: 'Enable Cloud Sync' }))[0],
+  )
+  const continueButton = await screen.findByRole('button', {
+    name: 'Continue',
+  })
+  await waitFor(() => expect(continueButton).toBeEnabled())
+  fireEvent.click(continueButton)
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Restore Encryption Key' }),
+  )
+  fireEvent.change(await screen.findByPlaceholderText('Enter encryption key'), {
+    target: { value: key },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Restore Key' }))
+  await screen.findByRole('heading', { name: 'Success!' })
+}
+
+it.each([true, false])(
+  'encrypts the passkey backup again after another key is restored (backed up: %s)',
+  async (backedUp) => {
+    if (backedUp) localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
+    passkey.state = { passkeySetupFailed: true }
+    lockedCloudAccount({
+      key_id: await deriveTinfoilKeyIdHex(base64ToBytes(RESTORED_KEY_B64)),
+      etag: 'etag-1',
+      bundles: {},
+    })
+    const persisted: (string | null)[] = []
+    passkey.updatePasskeyBackup.mockImplementation(async () => {
+      persisted.push(localStorage.getItem(USER_ENCRYPTION_KEY))
+    })
+    render(view())
+    await restoreKey(RESTORED_KEY)
+    expect(encryptionService.getKey()).toBe(RESTORED_KEY)
+    expect(persisted).toEqual(backedUp ? [RESTORED_KEY] : [])
+  },
+)
+
+// Starts fresh with a generated key over cloud data this device cannot
+// open, through the manual recovery screen.
+async function startFresh() {
+  fireEvent.click(
+    (await screen.findAllByRole('button', { name: 'Set Up Cloud Sync' }))[0],
+  )
+  fireEvent.click(await screen.findByRole('button', { name: /Start Fresh/ }))
+  fireEvent.click(
+    await screen.findByRole('button', { name: /Yes, start fresh/ }),
+  )
+  fireEvent.click(await screen.findByRole('button', { name: /Let's go!/ }))
+}
+
+it.each([
+  ['an active passkey', { passkeyActive: true }, true, 0],
+  ['no passkey provider', {}, false, 0],
+  ['no passkey yet', {}, true, 1],
+])(
+  'backs up a fresh key with a new passkey only for an account with %s',
+  async (_, state, prfSupported, setups) => {
+    passkey.state = { manualRecoveryNeeded: true, ...state }
+    passkey.isPrfSupported.mockResolvedValue(prfSupported)
+    passkey.setupPasskey.mockResolvedValue(true)
+    const registered = lockedCloudAccount({ key_id: null, bundles: {} })
+    render(view())
+    await startFresh()
+    await waitFor(() => expect(registered).toHaveLength(1))
+    await waitFor(() =>
+      expect(passkey.isPrfSupported).toHaveBeenCalledTimes(
+        'passkeyActive' in state ? 0 : 1,
+      ),
+    )
+    await waitFor(() =>
+      expect(passkey.setupPasskey).toHaveBeenCalledTimes(setups),
+    )
+    expect(registered).toEqual([
+      expect.objectContaining({ created_via: 'start_fresh', if_match: '*' }),
+    ])
+  },
+)
+
+it.each([
+  ['a timed-out passkey', new PasskeyTimeoutError(), 1],
+  ['an unsupported provider', new PrfNotSupportedError(), 0],
+])(
+  'keeps a fresh key when backing it up fails with %s',
+  async (_, error, logged) => {
+    passkey.state = { manualRecoveryNeeded: true }
+    passkey.setupPasskey.mockRejectedValue(error)
+    lockedCloudAccount({ key_id: null, bundles: {} })
+    render(view())
+    await startFresh()
+    await waitFor(() => expect(passkey.setupPasskey).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(
+        errorHandling.logError.mock.calls.filter(
+          ([message]) =>
+            message ===
+            'Failed to back up new key with passkey after start fresh',
+        ),
+      ).toHaveLength(logged),
+    )
+    expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBe(
+      encryptionService.getKey(),
+    )
+  },
+)

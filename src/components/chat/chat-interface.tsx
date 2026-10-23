@@ -161,6 +161,8 @@ import {
   authorizeCurrentPrimaryKeyOrThrow,
   registerStartFreshKeyIfNeeded,
 } from '@/services/keys/cloud-key-authorization'
+import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
+import { hasPasskeyBackup } from '@/utils/signout-cleanup'
 import { useUIState } from './hooks/use-ui-state'
 
 type ChatInterfaceProps = {
@@ -981,6 +983,9 @@ export function ChatInterface({
       else await authorizeCurrentPrimaryKeyOrThrow()
       api.lifetime.signal.throwIfAborted()
       encryptionService.persistCurrentKeyState()
+      // A passkey backup is encrypted again with a new key, so the passkey
+      // goes on recovering the key in use.
+      if (key !== previous && hasPasskeyBackup()) void updatePasskeyBackup()
       await api.refresh()
     } catch (cause) {
       if (!api.lifetime.signal.aborted) {
@@ -991,8 +996,25 @@ export function ChatInterface({
       throw cause
     }
   }
+  // A key started fresh lives only on this device until a passkey backs it
+  // up. An active passkey's backup is encrypted again as the key changes.
+  // A cancel or failure leaves the sidebar's backup warning in place.
   const backupStartFreshKeyWithPasskey = async () => {
-    await setupPasskey()
+    if (passkeyActive) return
+    try {
+      if (!(await isPrfSupported())) return
+      await setupPasskey()
+    } catch (error) {
+      if (error instanceof PrfNotSupportedError) return
+      logError(
+        'Failed to back up new key with passkey after start fresh',
+        error,
+        {
+          component: 'ChatInterface',
+          action: 'backupStartFreshKeyWithPasskey',
+        },
+      )
+    }
   }
   const sidebarChat = useSidebarChat({ context: thread.askContext, options })
   // A flag stops the chat: its reply in progress, its queued turns, and an
@@ -1152,6 +1174,7 @@ export function ChatInterface({
     dismissFirstTimePasskeyPrompt,
     recoverWithPasskey,
     setupNewKeySplit,
+    updatePasskeyBackup,
     dismissBackupWarning,
     skipPasskeyRecovery,
     addPasskeyToThisDevice,
