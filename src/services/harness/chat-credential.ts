@@ -12,6 +12,7 @@ const SUBSCRIPTION_REQUIRED_STATUS = 402
 const FORBIDDEN_STATUS = 403
 const TOO_MANY_REQUESTS_STATUS = 429
 const UNAVAILABLE_STATUS = 503
+const SERVER_ERROR_STATUS = 500
 const HOURLY_LIMIT_CODE = 'HOURLY_LIMIT_REACHED'
 const ACCOUNT_PROVISIONING_CODE = 'ACCOUNT_PROVISIONING'
 const MS_PER_SECOND = 1000
@@ -70,6 +71,7 @@ function rateLimitOf(value: unknown, kind: 'hourly' | 'free_daily'): RateLimit {
 export class ChatCredentialCache {
   private cached?: Credential
   private pending?: Promise<Credential>
+  private generation = 0
   // A refusal that names when to ask again is kept until then, so an account
   // at its hourly cap does not ask with every request.
   private refused?: { error: HarnessError; until: number }
@@ -77,24 +79,34 @@ export class ChatCredentialCache {
 
   constructor(private readonly onRateLimit: (rateLimit: RateLimit) => void) {}
 
-  async get(session: string, signal?: AbortSignal): Promise<string> {
+  async get(
+    session: string,
+    signal?: AbortSignal,
+    refresh = false,
+  ): Promise<string> {
     this.lifetime.signal.throwIfAborted()
     signal?.throwIfAborted()
     if (
+      !refresh &&
       this.cached &&
       this.cached.expiresAt - RENEW_BEFORE_EXPIRY_MS > Date.now()
     )
       return this.cached.key
-    if (this.refused && this.refused.until > Date.now())
+    if (this.refused && this.refused.until > Date.now()) {
+      const held = this.usableAfterFailure(this.refused.error)
+      if (held && !refresh) return held
       throw this.refused.error
-    if (!this.pending)
-      this.pending = this.mint(session).finally(() => {
-        this.pending = undefined
+    }
+    if (!this.pending) {
+      const pending = this.mint(session, this.generation).finally(() => {
+        if (this.pending === pending) this.pending = undefined
       })
+      this.pending = pending
+    }
     const pending = this.pending
-    if (!signal) return (await pending).key
-    let onAbort!: () => void
+    let onAbort: (() => void) | undefined
     try {
+      if (!signal) return (await pending).key
       const credential = await Promise.race([
         pending,
         new Promise<never>((_, reject) => {
@@ -104,16 +116,46 @@ export class ChatCredentialCache {
       ])
       signal.throwIfAborted()
       return credential.key
+    } catch (cause) {
+      this.lifetime.signal.throwIfAborted()
+      signal?.throwIfAborted()
+      const held = this.usableAfterFailure(cause)
+      if (held && !refresh) return held
+      throw cause
     } finally {
-      signal.removeEventListener('abort', onAbort)
+      if (onAbort) signal?.removeEventListener('abort', onAbort)
     }
+  }
+
+  private usableAfterFailure(cause: unknown): string | undefined {
+    const transient =
+      cause instanceof TypeError ||
+      (cause instanceof DOMException && cause.name === 'TimeoutError') ||
+      (cause instanceof HarnessError &&
+        (cause.status === undefined ||
+          cause.status >= SERVER_ERROR_STATUS ||
+          cause.code === ERROR_CODES.rateLimited))
+    return transient && this.cached && this.cached.expiresAt > Date.now()
+      ? this.cached.key
+      : undefined
+  }
+
+  private invalidatePending() {
+    this.generation++
+    this.pending = undefined
+    this.refused = undefined
+  }
+
+  renew(session: string, signal?: AbortSignal) {
+    this.invalidatePending()
+    return this.get(session, signal, true)
   }
 
   // Forgets the access and any refusal, as when the harness refused the
   // access or the account's subscription changed.
   reset() {
     this.cached = undefined
-    this.refused = undefined
+    this.invalidatePending()
   }
 
   dispose() {
@@ -148,8 +190,15 @@ export class ChatCredentialCache {
     })
   }
 
-  private async mint(session: string): Promise<Credential> {
+  private checkGeneration(generation: number) {
+    this.lifetime.signal.throwIfAborted()
+    if (generation !== this.generation)
+      throw new DOMException('Chat access was superseded', 'AbortError')
+  }
+
+  private async mint(session: string, generation: number): Promise<Credential> {
     let response = await this.request('/api/chat/token', session)
+    this.checkGeneration(generation)
     let kind: 'hourly' | 'free_daily' = 'hourly'
     // Only a missing subscription falls back to the free key: a capped or
     // suspended subscriber must not be downgraded around its limit.
@@ -159,7 +208,7 @@ export class ChatCredentialCache {
       kind = 'free_daily'
     }
     const value = obj(await response.json().catch(() => null))
-    this.lifetime.signal.throwIfAborted()
+    this.checkGeneration(generation)
     if (!response.ok) throw this.refuse(response, value)
     const expiresAt = Date.parse(str(value.expires_at))
     if (
@@ -171,7 +220,9 @@ export class ChatCredentialCache {
         code: ERROR_CODES.upstreamRefused,
         message: 'Tinfoil returned invalid chat access. Please try again.',
       })
-    if (value.rate_limit) this.onRateLimit(rateLimitOf(value.rate_limit, kind))
+    this.onRateLimit(
+      value.rate_limit ? rateLimitOf(value.rate_limit, kind) : { kind: null },
+    )
     this.refused = undefined
     this.cached = { key: str(value.key), expiresAt }
     return this.cached
@@ -249,6 +300,11 @@ export class ChatCredentialCache {
         response.status,
       )
     }
+    if (
+      response.status === FORBIDDEN_STATUS ||
+      error.code === ERROR_CODES.quotaExhausted
+    )
+      this.cached = undefined
     if (until > Date.now()) this.refused = { error, until }
     return error
   }

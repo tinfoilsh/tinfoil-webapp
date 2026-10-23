@@ -98,8 +98,7 @@ export class HarnessClient {
   async renewCredential(signal?: AbortSignal) {
     const token = await this.getToken()
     if (!token) return
-    this.chat.reset()
-    await this.chat.get(token, signal)
+    await this.chat.renew(token, signal)
   }
 
   private async request(
@@ -189,8 +188,8 @@ export class HarnessClient {
           token = await this.getToken({ skipCache: true })
           // Access the harness refused is minted again; a refusal the
           // control plane gave is kept until it says to retry.
-          if (token && needsCredential) {
-            if (credential) this.chat.reset()
+          if (token) {
+            if (credential && needsCredential) this.chat.reset()
             await mint()
           }
         }

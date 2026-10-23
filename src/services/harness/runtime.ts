@@ -178,7 +178,12 @@ export class HarnessAPI {
     readonly client: HarnessClient,
     readonly userId: string | null,
   ) {
-    client.onRateLimit = (rateLimit) => this.reportRateLimit(rateLimit)
+    // A successful mint can explicitly clear the previous quota. A keyless
+    // harness report carries no such authority.
+    client.onRateLimit = (rateLimit) => {
+      if (active === this && !this.lifetime.signal.aborted)
+        publish({ rateLimit })
+    }
   }
   key() {
     this.lifetime.signal.throwIfAborted()

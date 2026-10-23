@@ -357,7 +357,8 @@ export class RunController {
       this.api.reportRateLimit(event.snapshot.rateLimit)
     else if (isTerminal(event)) {
       this.api.reportRateLimit(event.metadata?.rateLimit)
-      this.api.reportUsage(event.metadata?.usage)
+      if (!event.metadata?.rateLimit?.kind)
+        this.api.reportUsage(event.metadata?.usage)
     }
   }
 

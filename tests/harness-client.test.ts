@@ -18,6 +18,12 @@ import { stubChatAccess } from './harness-fixture'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
+const transport = () => ({
+  ready: vi.fn().mockResolvedValue(undefined),
+  fetch: vi.fn(),
+  getVerificationDocument: vi.fn(),
+})
+
 function stream(text: string, bytesPerChunk = 1): ReadableStream<Uint8Array> {
   const bytes = new TextEncoder().encode(text)
   let offset = 0
@@ -661,11 +667,6 @@ describe('continuing a reply', () => {
 })
 
 describe('attested harness transport', () => {
-  const transport = () => ({
-    ready: vi.fn().mockResolvedValue(undefined),
-    fetch: vi.fn(),
-    getVerificationDocument: vi.fn(),
-  })
   beforeEach(() => {
     stubChatAccess()
   })
@@ -836,11 +837,6 @@ describe('attested harness transport', () => {
 describe('chat access a signed-in client mints', () => {
   const CONTROLPLANE = API_BASE_URL || 'https://api.tinfoil.sh'
   const expiresAt = () => new Date(Date.now() + 15 * 60_000).toISOString()
-  const transport = () => ({
-    ready: vi.fn().mockResolvedValue(undefined),
-    fetch: vi.fn(),
-    getVerificationDocument: vi.fn(),
-  })
   // What each request to the harness carried as its chat access.
   const access = (secure: ReturnType<typeof transport>) =>
     secure.fetch.mock.calls.map((call) =>
@@ -974,6 +970,7 @@ describe('chat access a signed-in client mints', () => {
       Response.json({ key: 'chat-token', expires_at: expiresAt() }),
     )
     await client.renewCredential()
+    expect(reported.at(-1)).toEqual({ kind: null })
     await expect(client.post('/v1/threads/turn', {})).resolves.toEqual({
       ok: true,
     })
@@ -997,5 +994,123 @@ describe('chat access a signed-in client mints', () => {
       ok: true,
     })
     expect(access(secure)).toEqual(['old-token', 'new-token'])
+  })
+
+  it('mints with the refreshed Clerk session before retrying a turn', async () => {
+    const controlplane = vi.fn<typeof fetch>(async (_url, init) =>
+      new Headers(init?.headers).get('Authorization') === 'Bearer expired'
+        ? new Response('{}', { status: 401 })
+        : Response.json({ key: 'fresh-chat-token', expires_at: expiresAt() }),
+    )
+    vi.stubGlobal('fetch', controlplane)
+    const secure = transport()
+    secure.fetch.mockImplementation(async (_url: string, init: RequestInit) => {
+      const headers = new Headers(init.headers)
+      if (headers.get('Authorization') === 'Bearer expired')
+        return Response.json(
+          { error: { code: 'UNAUTHENTICATED', message: 'Expired session' } },
+          { status: 401 },
+        )
+      return headers.has(INFERENCE_KEY_HEADER)
+        ? Response.json({ ok: true })
+        : needsAccess()
+    })
+    const client = new HarnessClient(
+      'https://harness.example',
+      vi.fn().mockResolvedValueOnce('expired').mockResolvedValue('fresh'),
+      () => secure,
+    )
+    await expect(client.post('/v1/threads/turn', {})).resolves.toEqual({
+      ok: true,
+    })
+    expect(access(secure)).toEqual([null, 'fresh-chat-token'])
+    expect(
+      controlplane.mock.calls.map((call) =>
+        new Headers(call[1]?.headers).get('Authorization'),
+      ),
+    ).toEqual(['Bearer expired', 'Bearer fresh'])
+  })
+
+  it('keeps valid access through transient refresh failures but honors a cap', async () => {
+    const controlplane = stubChatAccess('held-token')
+    const secure = transport()
+    secure.fetch.mockImplementation(async (_url: string, init: RequestInit) =>
+      new Headers(init.headers).has(INFERENCE_KEY_HEADER)
+        ? Response.json({ ok: true })
+        : needsAccess(),
+    )
+    const { client } = connect(secure)
+    await client.post('/v1/threads/turn', {})
+    controlplane.mockImplementation(
+      async () => new Response('{}', { status: 503 }),
+    )
+    await expect(client.renewCredential()).rejects.toMatchObject({
+      status: 503,
+    })
+    await expect(client.post('/v1/threads/turn', {})).resolves.toEqual({
+      ok: true,
+    })
+    expect(access(secure)).toEqual(['held-token', 'held-token'])
+
+    controlplane.mockImplementation(async () =>
+      Response.json(
+        {
+          code: 'HOURLY_LIMIT_REACHED',
+          resets_at: expiresAt(),
+        },
+        { status: 429 },
+      ),
+    )
+    await expect(client.renewCredential()).rejects.toMatchObject({
+      code: 'QUOTA_EXHAUSTED',
+    })
+    await expect(client.post('/v1/threads/turn', {})).rejects.toMatchObject({
+      code: 'QUOTA_EXHAUSTED',
+    })
+    expect(access(secure).slice(2)).toEqual([null, null])
+  })
+
+  it('replaces a pending mint without letting its late answer restore old access', async () => {
+    let release!: (response: Response) => void
+    let started!: () => void
+    const reached = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const held = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    const controlplane = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(() => {
+        started()
+        return held
+      })
+      .mockImplementation(async () =>
+        Response.json({ key: 'renewed-token', expires_at: expiresAt() }),
+      )
+    vi.stubGlobal('fetch', controlplane)
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => Response.json({ ok: true }))
+    const { client, reported } = connect(secure)
+    const previous = client.post('/v1/session', {})
+    await reached
+    const renewal = client.renewCredential()
+    try {
+      await vi.waitFor(() => expect(controlplane).toHaveBeenCalledTimes(2))
+      await renewal
+    } finally {
+      release(
+        Response.json({
+          key: 'old-token',
+          expires_at: expiresAt(),
+          rate_limit: { max_requests: 5, remaining: 0 },
+        }),
+      )
+    }
+    await previous
+    await client.post('/v1/threads/turn', {})
+    expect(access(secure)).not.toContain('old-token')
+    expect(access(secure).at(-1)).toBe('renewed-token')
+    expect(reported).toEqual([{ kind: null }])
   })
 })
