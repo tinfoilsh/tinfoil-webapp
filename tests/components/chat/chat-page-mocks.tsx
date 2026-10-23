@@ -76,6 +76,9 @@ export const passkeyBackup = {
     skipPasskeyRecovery: vi.fn(),
     addPasskeyToThisDevice: vi.fn(),
     refreshBundleState: vi.fn(),
+    showPasskeyRecoveryPrompt: vi.fn(async () => false),
+    showFirstTimePasskeyPrompt: vi.fn(async () => false),
+    updatePasskeyBackup: vi.fn(async () => {}),
   }),
 }
 

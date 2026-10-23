@@ -109,6 +109,20 @@ it('offers copy and sources on shared messages but nothing that changes the chat
             role: 'assistant',
             content: 'Plenty.',
             createdAt: '2026-01-01T00:00:00.000Z',
+            timeline: [
+              {
+                id: 'search',
+                toolCallId: 'search',
+                type: 'tool_call',
+                name: 'web_search',
+                display: {
+                  status: 'completed',
+                  query: 'news',
+                  sources: [{ url: 'https://example.org', title: 'Source' }],
+                },
+              },
+              { id: 'text', type: 'content', content: 'Plenty.' },
+            ],
             annotations: [
               {
                 type: 'url_citation',
@@ -130,8 +144,13 @@ it('offers copy and sources on shared messages but nothing that changes the chat
   expect(
     within(reply)
       .getAllByRole('button')
-      .map((button) => button.getAttribute('aria-label')),
-  ).toEqual(['Show 1 source', 'Copy message', 'Read aloud'])
+      .map((button) => button.getAttribute('aria-label') ?? button.textContent),
+  ).toEqual([
+    'Searched the web for "news"',
+    'Show 1 source',
+    'Copy message',
+    'Read aloud',
+  ])
 })
 
 it("asks the harness to read a shared reply's text aloud, without a key", async () => {
