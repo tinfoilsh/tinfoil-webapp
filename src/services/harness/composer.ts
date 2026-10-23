@@ -1,4 +1,4 @@
-import { BYTES_PER_MB } from '@/utils/format-file-size'
+import { BYTES_PER_MB, formatFileSize } from '@/utils/format-file-size'
 import { ERROR_CODES } from './protocol'
 import { HarnessError } from './sse'
 import type { FileGroup } from './types'
@@ -16,6 +16,12 @@ export const acceptOf = (groups: readonly FileGroup[] | undefined) =>
 // A file of a type no group names uploads as text, which the harness reads
 // when its contents are text.
 const TEXT_EXTENSION = '.txt'
+
+// A limit of whole megabytes reads as the app always wrote it, such as 33MB.
+const limitLabel = (bytes: number) =>
+  bytes % BYTES_PER_MB === 0
+    ? `${bytes / BYTES_PER_MB}MB`
+    : formatFileSize(bytes)
 
 // Refuses a picked file before it uploads: one larger than its group takes,
 // or one of a type no group names when no group takes text.
@@ -36,7 +42,7 @@ export function checkUpload(file: File, groups: readonly FileGroup[]) {
   throw new HarnessError(
     {
       code: ERROR_CODES.attachmentTooLarge,
-      message: `File size exceeds the limit of ${Math.floor(group.maxBytes / BYTES_PER_MB)}MB.`,
+      message: `File size exceeds the limit of ${limitLabel(group.maxBytes)}.`,
     },
     413,
   )
