@@ -74,6 +74,16 @@ describe('read aloud button', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('is withdrawn when the session fails to load', () => {
+    publish({ session: undefined })
+    const { container } = render(button())
+    expect(screen.getByRole('button', { name: 'Read aloud' })).toBeVisible()
+
+    act(() => publish({ error: 'Tinfoil Chat could not start.' }))
+
+    expect(container).toBeEmptyDOMElement()
+  })
+
   it('is not offered outside a chat the harness can read', () => {
     const { container } = render(
       <ReadAloudButton messageId="reply-1" content="Hello." />,

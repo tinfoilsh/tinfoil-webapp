@@ -158,8 +158,11 @@ export function useSessionFeature(
   return useSyncExternalStore(
     subscribe,
     () => {
-      const session = getView().session
-      return session ? session.features[feature] === true : whileLoading
+      const { session, error } = getView()
+      // A session that failed to load offers nothing.
+      return session
+        ? session.features[feature] === true
+        : whileLoading && !error
     },
     () => whileLoading,
   )
