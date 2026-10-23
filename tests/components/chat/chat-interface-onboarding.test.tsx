@@ -3,12 +3,12 @@ import { ProjectProvider } from '@/components/project/project-provider'
 import { USER_PREFS_LOCAL_PROFILE } from '@/constants/storage-keys'
 import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { client, signIn, testSession } from '../../harness-fixture'
 import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
 import { refuseFetch } from './chat-interface-fixture'
-import { chatPage } from './chat-page-mocks'
+import { chatPage, errorHandling } from './chat-page-mocks'
 
 // The Clerk account's metadata, which records onboarding completed on any
 // device.
@@ -204,4 +204,34 @@ it('starts passkey recovery for an account whose key is refused', async () => {
   expect(passkeyStart.initialized).toBe(false)
   await act(() => api.refresh())
   expect(passkeyStart.initialized).toBe(true)
+})
+
+it('finishes onboarding quietly while the key is refused', async () => {
+  signIn({ cloud: true, locked: true })
+  errorHandling.logError.mockClear()
+  render(view())
+  await screen.findByRole('heading', { name: 'Why Tinfoil Chat' })
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  await screen.findByRole('heading', { name: 'Private, by Design.' })
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  await screen.findByRole('heading', { name: 'Tending the Garden' })
+
+  fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
+
+  await waitFor(() =>
+    expect(errorHandling.logError).toHaveBeenCalledExactlyOnceWith(
+      'Failed to save onboarding completion',
+      expect.objectContaining({ code: 'KEY_REQUIRED' }),
+      { component: 'ChatInterface', action: 'completeOnboarding' },
+    ),
+  )
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('heading', { name: 'Tending the Garden' }),
+    ).not.toBeInTheDocument(),
+  )
+  expect(
+    screen.queryByText('Your encryption key is locked'),
+  ).not.toBeInTheDocument()
 })

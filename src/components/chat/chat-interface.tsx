@@ -2808,9 +2808,16 @@ export function ChatInterface({
             key={user?.id}
             onComplete={() => {
               dismissOnboarding()
+              // The account records completion too, so the profile failing
+              // to save it, as while the key is refused, is only logged.
               void api
                 .updateProfile({ hasSeenOnboarding: true })
-                .catch(thread.report)
+                .catch((cause) =>
+                  logError('Failed to save onboarding completion', cause, {
+                    component: 'ChatInterface',
+                    action: 'completeOnboarding',
+                  }),
+                )
             }}
           />
         )}
