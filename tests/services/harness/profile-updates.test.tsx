@@ -160,15 +160,13 @@ it('shows the cloud settings this device kept until they load and while the key 
 
   reload('alice')
   const { result } = renderHook(() => useHarness())
-  expect(result.current).toMatchObject({ profile: kept, profileReady: false })
+  expect(result.current.profile).toEqual(kept)
+  expect(result.current.profileReady).toBe(false)
 
   // This device holds no key for the account.
   await act(() => harnessAPI().refreshProfile())
-  expect(result.current).toMatchObject({
-    profile: kept,
-    keyLocked: true,
-    profileReady: false,
-  })
+  expect(result.current.profile).toEqual(kept)
+  expect(result.current).toMatchObject({ keyLocked: true, profileReady: false })
 
   localStorage.setItem(AUTH_ACTIVE_USER_ID, 'bob')
   reload('bob')
