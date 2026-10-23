@@ -137,7 +137,7 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
     kind: 'storage',
     title: 'This chat could not be saved on this device',
     suggestion:
-      'The reply arrived, but this browser could not store it. Free up storage space for this site, then continue the chat.',
+      'The reply arrived, but this browser could not store it, so it may be missing when the chat is opened again.',
   },
   server: {
     kind: 'server',
@@ -147,7 +147,7 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
   },
 }
 
-// When a limit resets, as a local time, if the error says.
+// The time the error says a limit resets, formatted in local time.
 function formatResetTime(error: StreamErrorInfo): string | null {
   const at = error.resetsAt
     ? Date.parse(error.resetsAt)
