@@ -4,7 +4,7 @@ import {
 } from '@/constants/storage-keys'
 import type { HarnessClient } from '@/services/harness/client'
 import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
-import type { Session } from '@/services/harness/types'
+import type { RateLimit, Session } from '@/services/harness/types'
 import { vi, type Mock } from 'vitest'
 
 export const KEY = 'Y29udGVudC1rZXk='
@@ -88,6 +88,24 @@ export interface FakeClient {
   download: Mock
   stream: Mock
   multipart: Mock
+  // Mints the account's chat access again; a test reports the quota the
+  // control plane answers with through onRateLimit.
+  renewCredential: Mock
+  onRateLimit?: (rateLimit: RateLimit) => void
+}
+
+// Answers a signed-in client's mint of its chat access as the control plane
+// does for a subscriber, so a real HarnessClient never reaches the network.
+export function stubChatAccess(key = 'chat-token') {
+  const controlplane = vi.fn<typeof fetch>(async () =>
+    Response.json({
+      key,
+      expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+      is_free_tier: false,
+    }),
+  )
+  vi.stubGlobal('fetch', controlplane)
+  return controlplane
 }
 
 function unexpected(path: string): never {
@@ -131,6 +149,7 @@ export function signIn({
     download: vi.fn(async (path: string) => unexpected(path)),
     stream: vi.fn(async (path: string) => unexpected(path)),
     multipart: vi.fn(async (path: string) => unexpected(path)),
+    renewCredential: vi.fn(async () => {}),
   }
   const api = new HarnessAPI(client as unknown as HarnessClient, userId)
   const unlocked = !!userId && !locked

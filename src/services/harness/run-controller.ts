@@ -355,8 +355,10 @@ export class RunController {
   private reportQuota(event: HarnessEvent) {
     if (event.type === 'STATE_SNAPSHOT')
       this.api.reportRateLimit(event.snapshot.rateLimit)
-    else if (isTerminal(event))
+    else if (isTerminal(event)) {
       this.api.reportRateLimit(event.metadata?.rateLimit)
+      this.api.reportUsage(event.metadata?.usage)
+    }
   }
 
   cancel(input: { key?: string; threadId: string | null; runId?: string }) {

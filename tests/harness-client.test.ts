@@ -1,14 +1,20 @@
+import { API_BASE_URL } from '@/config'
 import { HarnessClient } from '@/services/harness/client'
-import type { HarnessRoute } from '@/services/harness/protocol'
+import {
+  INFERENCE_KEY_HEADER,
+  type HarnessRoute,
+} from '@/services/harness/protocol'
 import { initialChat, reduceEvent } from '@/services/harness/reducer'
 import { HarnessError, readEvents } from '@/services/harness/sse'
 import type {
   Frame,
   Json,
   Message,
+  RateLimit,
   TimelineBlock,
 } from '@/services/harness/types'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { stubChatAccess } from './harness-fixture'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
@@ -660,6 +666,9 @@ describe('attested harness transport', () => {
     fetch: vi.fn(),
     getVerificationDocument: vi.fn(),
   })
+  beforeEach(() => {
+    stubChatAccess()
+  })
   it('refreshes an expired Clerk JWT once while retaining the same turn nonce and body', async () => {
     vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['fr-FR', 'fr'])
     const secure = transport()
@@ -821,5 +830,172 @@ describe('attested harness transport', () => {
           () => secure,
         ),
     ).toThrow(HarnessError)
+  })
+})
+
+describe('chat access a signed-in client mints', () => {
+  const CONTROLPLANE = API_BASE_URL || 'https://api.tinfoil.sh'
+  const expiresAt = () => new Date(Date.now() + 15 * 60_000).toISOString()
+  const transport = () => ({
+    ready: vi.fn().mockResolvedValue(undefined),
+    fetch: vi.fn(),
+    getVerificationDocument: vi.fn(),
+  })
+  // What each request to the harness carried as its chat access.
+  const access = (secure: ReturnType<typeof transport>) =>
+    secure.fetch.mock.calls.map((call) =>
+      new Headers(call[1].headers).get(INFERENCE_KEY_HEADER),
+    )
+  const connect = (secure: ReturnType<typeof transport>) => {
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      () => secure,
+    )
+    const reported: RateLimit[] = []
+    client.onRateLimit = (rateLimit) => reported.push(rateLimit)
+    return { client, reported }
+  }
+  const needsAccess = () =>
+    Response.json(
+      {
+        error: { code: 'CREDENTIAL_REQUIRED', message: 'Chat access expired' },
+      },
+      { status: 401 },
+    )
+
+  it('mints a subscriber token once while it lasts and reports its quota', async () => {
+    const controlplane = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        key: 'chat-token',
+        expires_at: expiresAt(),
+        is_free_tier: false,
+        rate_limit: {
+          max_input_tokens: 1000,
+          input_tokens_used: 10,
+          input_tokens_remaining: 990,
+          resets_at: '2026-10-23T00:00:00Z',
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', controlplane)
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => Response.json({}))
+    const { client, reported } = connect(secure)
+    await client.post('/v1/session', {})
+    await client.post('/v1/threads/turn', {})
+    expect(controlplane).toHaveBeenCalledTimes(1)
+    expect(String(controlplane.mock.calls[0][0])).toBe(
+      `${CONTROLPLANE}/api/chat/token`,
+    )
+    expect(
+      new Headers(controlplane.mock.calls[0][1]?.headers).get('Authorization'),
+    ).toBe('Bearer clerk')
+    expect(access(secure)).toEqual(['chat-token', 'chat-token'])
+    expect(reported).toEqual([
+      {
+        kind: 'hourly',
+        inputTokens: { max: 1000, used: 10, remaining: 990 },
+        resetsAt: '2026-10-23T00:00:00Z',
+      },
+    ])
+  })
+
+  it("sends the account's free key only without a subscription", async () => {
+    const controlplane = vi.fn<typeof fetch>(async (url) =>
+      String(url).endsWith('/api/chat/token')
+        ? new Response('{}', { status: 402 })
+        : Response.json({
+            key: 'free_key',
+            expires_at: expiresAt(),
+            is_free_tier: true,
+            rate_limit: { max_requests: 10, remaining: 7 },
+          }),
+    )
+    vi.stubGlobal('fetch', controlplane)
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => Response.json({}))
+    const { client, reported } = connect(secure)
+    await client.post('/v1/threads/turn', {})
+    expect(controlplane.mock.calls.map((call) => String(call[0]))).toEqual([
+      `${CONTROLPLANE}/api/chat/token`,
+      `${CONTROLPLANE}/api/keys/chat`,
+    ])
+    expect(access(secure)).toEqual(['free_key'])
+    expect(reported).toEqual([
+      { kind: 'free_daily', maxRequests: 10, remaining: 7 },
+    ])
+  })
+
+  it('keeps an hourly cap until it lifts and shows it where access is needed', async () => {
+    const resetsAt = new Date(Date.now() + 30 * 60_000).toISOString()
+    const controlplane = vi.fn<typeof fetch>(async () =>
+      Response.json(
+        {
+          error: 'You have reached your hourly usage limit.',
+          code: 'HOURLY_LIMIT_REACHED',
+          resets_at: resetsAt,
+          rate_limit: {
+            max_output_tokens: 100,
+            output_tokens_used: 100,
+            output_tokens_remaining: 0,
+          },
+        },
+        { status: 429 },
+      ),
+    )
+    vi.stubGlobal('fetch', controlplane)
+    const secure = transport()
+    secure.fetch.mockImplementation(async (url: string, init: RequestInit) =>
+      url.endsWith('/v1/threads/turn') &&
+      !new Headers(init.headers).has(INFERENCE_KEY_HEADER)
+        ? needsAccess()
+        : Response.json({ ok: true }),
+    )
+    const { client, reported } = connect(secure)
+    await expect(client.post('/v1/session', {})).resolves.toEqual({ ok: true })
+    await expect(client.post('/v1/threads/turn', {})).rejects.toMatchObject({
+      code: 'QUOTA_EXHAUSTED',
+      detail: { kind: 'hourly', resetsAt },
+    })
+    // Neither asked again with each request nor downgraded to a free key.
+    expect(controlplane).toHaveBeenCalledTimes(1)
+    expect(reported).toEqual([
+      {
+        kind: 'hourly',
+        outputTokens: { max: 100, used: 100, remaining: 0 },
+        maxRequests: 0,
+        remaining: 0,
+        resetsAt,
+      },
+    ])
+    // Renewing asks again, as when the cap may have lifted.
+    controlplane.mockImplementation(async () =>
+      Response.json({ key: 'chat-token', expires_at: expiresAt() }),
+    )
+    await client.renewCredential()
+    await expect(client.post('/v1/threads/turn', {})).resolves.toEqual({
+      ok: true,
+    })
+    expect(controlplane).toHaveBeenCalledTimes(2)
+  })
+
+  it('mints again when the harness refuses the access it was sent', async () => {
+    const keys = ['old-token', 'new-token']
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        Response.json({ key: keys.shift(), expires_at: expiresAt() }),
+      ),
+    )
+    const secure = transport()
+    secure.fetch
+      .mockResolvedValueOnce(needsAccess())
+      .mockResolvedValueOnce(Response.json({ ok: true }))
+    const { client } = connect(secure)
+    await expect(client.post('/v1/threads/turn', {})).resolves.toEqual({
+      ok: true,
+    })
+    expect(access(secure)).toEqual(['old-token', 'new-token'])
   })
 })

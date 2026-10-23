@@ -1,8 +1,20 @@
 import { SecureClient } from 'tinfoil'
 import { AnonymousCredentialCache } from './anonymous-credential'
-import { ERROR_CODES, type HarnessRoute, type RunRoute } from './protocol'
+import { ChatCredentialCache } from './chat-credential'
+import {
+  ERROR_CODES,
+  INFERENCE_KEY_HEADER,
+  type HarnessRoute,
+  type RunRoute,
+} from './protocol'
 import { HarnessError, readEvents } from './sse'
-import type { FollowInput, Frame, HarnessErrorBody, Turn } from './types'
+import type {
+  FollowInput,
+  Frame,
+  HarnessErrorBody,
+  RateLimit,
+  Turn,
+} from './types'
 
 const harnessRepo = 'tinfoilsh/confidential-tinfoil-harness'
 // An attestation that has not finished by then is abandoned: the request
@@ -17,10 +29,17 @@ type Transport = Pick<
 export class HarnessClient {
   private readonly origin: string
   private readonly anonymous = new AnonymousCredentialCache()
+  private readonly chat = new ChatCredentialCache((rateLimit) =>
+    this.onRateLimit?.(rateLimit),
+  )
   private secure: Transport
+  // Told the quota the control plane reports as this account's chat access
+  // is minted or refused.
+  onRateLimit?: (rateLimit: RateLimit) => void
 
   dispose() {
     this.anonymous.dispose()
+    this.chat.dispose()
   }
 
   constructor(
@@ -74,6 +93,15 @@ export class HarnessClient {
     return this.secure.getVerificationDocument()
   }
 
+  // Mints the account's chat access again, as when its subscription changed
+  // or its hourly cap may have lifted.
+  async renewCredential(signal?: AbortSignal) {
+    const token = await this.getToken()
+    if (!token) return
+    this.chat.reset()
+    await this.chat.get(token, signal)
+  }
+
   private async request(
     path: HarnessRoute,
     body: string | FormData,
@@ -95,6 +123,21 @@ export class HarnessClient {
       if (await this.getToken())
         throw new DOMException('Account changed', 'AbortError')
     }
+    // A signed-in request carries the account's chat access. A request that
+    // needs none still goes when the control plane refused it, as at an
+    // hourly cap; one that needs it fails with that refusal.
+    let credential: string | undefined
+    let refusal: unknown
+    const mint = async () => {
+      credential = refusal = undefined
+      try {
+        credential = await this.chat.get(token!, signal)
+      } catch (cause) {
+        if (signal?.aborted) throw cause
+        refusal = cause
+      }
+    }
+    if (!anonymous) await mint()
     for (let attempt = 0; attempt < 2; attempt++) {
       signal?.throwIfAborted()
       const headers = new Headers()
@@ -107,6 +150,7 @@ export class HarnessClient {
       if (typeof body === 'string')
         headers.set('Content-Type', 'application/json')
       if (token) headers.set('Authorization', `Bearer ${token}`)
+      if (credential) headers.set(INFERENCE_KEY_HEADER, credential)
       const response = await this.secure.fetch(this.origin + path, {
         method: 'POST',
         headers,
@@ -116,14 +160,40 @@ export class HarnessClient {
         cache: 'no-store',
         credentials: 'omit',
       })
+      if (response.ok) return response
+      let detail: HarnessErrorBody = {
+        code: ERROR_CODES.upstreamRefused,
+        message: 'The chat service could not complete the request.',
+      }
+      const value: unknown = await response.json().catch(() => null)
+      if (
+        value &&
+        typeof value === 'object' &&
+        'error' in value &&
+        value.error &&
+        typeof value.error === 'object' &&
+        'code' in value.error &&
+        typeof value.error.code === 'string' &&
+        'message' in value.error &&
+        typeof value.error.message === 'string'
+      )
+        detail = value.error as HarnessErrorBody
+      const needsCredential = detail.code === ERROR_CODES.credentialRequired
       if (response.status === 401 && token && attempt === 0) {
-        await response.body?.cancel()
         if (anonymous) {
           this.anonymous.reject(token)
           token = await this.anonymous.get(signal)
           if (await this.getToken())
             throw new DOMException('Account changed', 'AbortError')
-        } else token = await this.getToken({ skipCache: true })
+        } else {
+          token = await this.getToken({ skipCache: true })
+          // Access the harness refused is minted again; a refusal the
+          // control plane gave is kept until it says to retry.
+          if (token && needsCredential) {
+            if (credential) this.chat.reset()
+            await mint()
+          }
+        }
         if (!token)
           throw new HarnessError(
             {
@@ -134,27 +204,8 @@ export class HarnessClient {
           )
         continue
       }
-      if (!response.ok) {
-        let detail: HarnessErrorBody = {
-          code: ERROR_CODES.upstreamRefused,
-          message: 'The chat service could not complete the request.',
-        }
-        const value: unknown = await response.json().catch(() => null)
-        if (
-          value &&
-          typeof value === 'object' &&
-          'error' in value &&
-          value.error &&
-          typeof value.error === 'object' &&
-          'code' in value.error &&
-          typeof value.error.code === 'string' &&
-          'message' in value.error &&
-          typeof value.error.message === 'string'
-        )
-          detail = value.error as HarnessErrorBody
-        throw new HarnessError(detail, response.status)
-      }
-      return response
+      if (needsCredential && refusal) throw refusal
+      throw new HarnessError(detail, response.status)
     }
     throw new HarnessError(
       {

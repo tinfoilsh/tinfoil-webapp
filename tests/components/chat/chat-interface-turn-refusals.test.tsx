@@ -94,16 +94,18 @@ describe('a turn the harness refuses', () => {
       },
     })
     api.reportRateLimit({ kind: 'free_daily', maxRequests: 5, remaining: 0 })
+    // The browser mints the subscriber's chat access, whose quota the control
+    // plane reports; the harness reports none for it.
+    client.renewCredential.mockImplementation(async () =>
+      client.onRateLimit?.({
+        kind: 'hourly',
+        inputTokens: { max: 10000, used: 0, remaining: 10000 },
+      }),
+    )
     client.post.mockImplementation(async (path, input) => {
       if (path === '/v1/session') {
-        expect(input).toEqual({ refreshCredentials: true })
-        return {
-          ...testSession,
-          rateLimit: {
-            kind: 'hourly',
-            inputTokens: { max: 10000, used: 0, remaining: 10000 },
-          },
-        }
+        expect(input).toEqual({})
+        return testSession
       }
       if (path === '/v1/profile/get') return {}
       if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
@@ -116,6 +118,7 @@ describe('a turn the harness refuses', () => {
       rerender(<ChatInterface />)
     })
     await waitFor(() => expect(getView().rateLimit?.kind).toBe('hourly'))
+    expect(client.renewCredential).toHaveBeenCalledTimes(1)
   })
   it('explains a full queue without the quota or upgrade, and resends the message', async () => {
     const { messages: _messages, hasOlder: _hasOlder, ...summary } = thread
