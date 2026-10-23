@@ -6,13 +6,7 @@ Tinfoil Chat is a private AI chat app. Its chats run in the attested [chat harne
 
 ## Development
 
-```bash
-cp .env.example .env.local
-npm install
-npm run dev
-```
-
-See [dev.md](./dev.md) for configuration, tests, and the release process.
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for setup, local development, testing, and releases.
 
 ## Reporting Vulnerabilities
 
