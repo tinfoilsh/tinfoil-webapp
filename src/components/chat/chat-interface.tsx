@@ -2333,7 +2333,7 @@ export function ChatInterface({
                           pillClassName="rounded-full border"
                         />
                       )}
-                      {streamError && (
+                      {streamError && !historyProblem && (
                         <StreamErrorBanner
                           key={streamError.timestamp}
                           error={streamError}

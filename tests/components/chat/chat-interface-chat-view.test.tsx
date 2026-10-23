@@ -455,7 +455,7 @@ it.each([
   },
 )
 
-it('offers a new chat beside retrying a chat that failed to load', async () => {
+it('explains a chat that failed to load once and offers a new chat', async () => {
   signIn({ cloud: true })
   client.post.mockImplementation(async (path) => {
     if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
@@ -469,9 +469,11 @@ it('offers a new chat beside retrying a chat that failed to load', async () => {
   })
   render(view({ initialChatId: 'broken-chat' }))
   await screen.findByRole('heading', { name: "Couldn't load chat" })
-  const status = within(
-    screen.getByRole('region', { name: 'Chat history unavailable' }),
-  )
+  const region = screen.getByRole('region', {
+    name: 'Chat history unavailable',
+  })
+  const status = within(region)
+  expect(screen.getAllByRole('alert')).toEqual([status.getByRole('alert')])
   expect(status.getByRole('alert')).toHaveTextContent(
     'A network error occurred while loading this chat. Please try again.',
   )
