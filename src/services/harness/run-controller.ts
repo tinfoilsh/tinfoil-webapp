@@ -63,6 +63,9 @@ export interface RunOptions {
   // Rejoining a run left behind: losing it shows no error.
   quiet?: boolean
   rejoined?: boolean
+  // The run started before this stream: one followed by its id is, unless a
+  // stream that only queued it is rejoined.
+  started?: boolean
   // A widget's retry leaves the chat's status and error as they were, and
   // keeps why it failed here instead.
   widgetRetry?: { failure?: HarnessErrorBody }
@@ -183,6 +186,7 @@ export class RunController {
     options: RunOptions = {},
   ): Promise<boolean> {
     const { device, quiet = false, widgetRetry } = options
+    let started = options.started ?? 'runId' in input
     const controller = new AbortController()
     if (!device) this.followers.add(controller)
     const version = this.generation
@@ -202,6 +206,7 @@ export class RunController {
         const { event } = frame
         if ('threadId' in event && event.threadId) threadId = event.threadId
         runId = runOf(event) ?? runId
+        if (event.type === 'RUN_STARTED') started = true
         const base = shown ? this.view.get() : view
         const next = reduceEvent(base, frame, runId, !!widgetRetry)
         const replayed =
@@ -292,6 +297,7 @@ export class RunController {
         return await this.run(ROUTES.follow, follow, {
           ...options,
           rejoined: true,
+          started,
         })
       }
       if (attached()) {
@@ -306,7 +312,7 @@ export class RunController {
         }
         // A run the harness refused to follow is gone. One that could not
         // be reached keeps its receipt, so it can still be rejoined.
-        else if (!quiet) this.fail(cause, !!runId)
+        else if (!quiet) this.fail(cause, started)
         else if (cause instanceof HarnessError && cause.status !== undefined)
           this.forgetReceipt(runId)
       }

@@ -202,6 +202,7 @@ describe('a turn the harness refuses', () => {
       'a lost connection',
       new TypeError('Failed to fetch'),
       'Connection problemCheck your internet connection, then resend your message. Your message was not lost.',
+      false,
     ],
     [
       'the hourly limit',
@@ -210,10 +211,17 @@ describe('a turn the harness refuses', () => {
         429,
       ),
       'Too many requests right nowWait a moment, then resend your message. Your message was not lost.',
+      false,
+    ],
+    [
+      'a connection lost once the harness queued it',
+      new TypeError('Failed to fetch'),
+      'Connection problem',
+      true,
     ],
   ])(
     'keeps the reply streaming when %s refuses a message queued behind it',
-    async (_refusal, refusal, explanation) => {
+    async (_refusal, refusal, explanation, queued) => {
       const { messages: _messages, hasOlder: _hasOlder, ...summary } = thread
       let release!: () => void
       const held = new Promise<void>((resolve) => {
@@ -241,6 +249,21 @@ describe('a turn the harness refuses', () => {
         await finished
       })
       client.events.mockImplementationOnce(async function* () {
+        if (queued)
+          yield {
+            id: 0,
+            event: {
+              type: 'STATE_DELTA',
+              runId: 'run-2',
+              delta: [
+                {
+                  op: 'add',
+                  path: '/queue/-',
+                  value: { queueId: 'run-2', content: 'And one more' },
+                },
+              ],
+            },
+          } satisfies Frame
         throw refusal
       })
       render(<ChatInterface initialChatId={THREAD_ID} />)
