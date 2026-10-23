@@ -64,6 +64,7 @@ describe('RateLimitBanner', () => {
           resetsAt: RESET_AT,
           kind: 'free_daily',
         }}
+        onCheckAgain={vi.fn()}
         isDarkMode={false}
       />,
     )
@@ -123,15 +124,14 @@ describe('hourly limit recheck', () => {
   }
 
   beforeEach(async () => {
-    session
-      .mockReset()
-      .mockResolvedValueOnce({
-        ...structuredClone(testSession),
-        rateLimit: capped,
-      })
-    vi.mocked(harnessAPI().client.post).mockImplementation(async (path) =>
-      path === '/v1/session' ? session() : {},
-    )
+    session.mockReset().mockResolvedValueOnce({
+      ...structuredClone(testSession),
+      rateLimit: capped,
+    })
+    vi.mocked(harnessAPI().client.post).mockImplementation(async (path) => {
+      if (path !== '/v1/session') throw new Error(`Unexpected request: ${path}`)
+      return session()
+    })
     await act(async () => {
       await harnessAPI().refresh()
     })

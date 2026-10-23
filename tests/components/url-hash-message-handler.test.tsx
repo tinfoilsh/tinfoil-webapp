@@ -21,7 +21,6 @@ function setLocation(path: string) {
 
 afterEach(() => {
   routerReplace.mockClear()
-  vi.restoreAllMocks()
   setLocation('/')
 })
 

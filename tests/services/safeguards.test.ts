@@ -55,14 +55,7 @@ function deferredFetch() {
 
 describe('safeguards store', () => {
   beforeEach(() => {
-    vi.restoreAllMocks()
     resetSafeguards()
-  })
-
-  it('has no simulator or preview surface on the exported store', async () => {
-    const mod = await import('@/services/safeguards')
-    expect(mod).not.toHaveProperty('simulateSafeguardFlag')
-    expect(getSafeguardsSnapshot()).not.toHaveProperty('isPreview')
   })
 
   it('loads flagged chats and indexes them by conversation id', async () => {

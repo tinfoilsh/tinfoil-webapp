@@ -22,9 +22,9 @@ export class DeletedChatsTracker {
         const parsed: unknown[] = JSON.parse(stored)
         parsed.forEach((entry) => {
           if (typeof entry === 'string') {
-            // The legacy string format combined local and remote tombstones.
-            // Revision sync is authoritative, so an upsert must be able to
-            // retire these after they suppress any stale in-flight save.
+            // The previous client's string format combined local and remote
+            // tombstones. Treat them as remote, so a local rollback cannot
+            // bring back a chat that was deleted elsewhere.
             this.remoteDeletedChats.add(entry)
           } else if (entry && typeof entry === 'object' && 'chatId' in entry) {
             const persisted = entry as {
@@ -89,17 +89,6 @@ export class DeletedChatsTracker {
     })
   }
 
-  markAsRemoteDeleted(chatId: string): void {
-    this.remoteDeletedChats.add(chatId)
-    this.saveToStorage()
-
-    logInfo('Marked remote chat as deleted', {
-      component: 'DeletedChatsTracker',
-      action: 'markAsRemoteDeleted',
-      metadata: { chatId },
-    })
-  }
-
   isDeleted(chatId: string): boolean {
     return (
       this.localDeletedChats.has(chatId) || this.remoteDeletedChats.has(chatId)
@@ -118,18 +107,6 @@ export class DeletedChatsTracker {
       return true
     }
     return false
-  }
-
-  removeRemoteDeletion(chatId: string): boolean {
-    if (!this.remoteDeletedChats.delete(chatId)) return false
-    this.saveToStorage()
-
-    logInfo('Removed remote chat deletion from tracker', {
-      component: 'DeletedChatsTracker',
-      action: 'removeRemoteDeletion',
-      metadata: { chatId },
-    })
-    return !this.localDeletedChats.has(chatId)
   }
 
   clear(): void {

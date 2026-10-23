@@ -9,22 +9,10 @@ import {
 } from '@/services/harness/local-threads'
 import type { Message as WireMessage } from '@/services/harness/types'
 import { chatEvents } from '@/services/storage/chat-events'
-import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
-import {
-  DB_NAME,
-  DB_VERSION,
-  indexedDBStorage,
-} from '@/services/storage/indexed-db'
-import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
+import { IDBFactory } from 'fake-indexeddb'
+import { describe, expect, it, vi } from 'vitest'
+import { rawRows, resetChatStoresAroundEachTest } from './thread-fixture'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -51,45 +39,7 @@ function thread(overrides: Partial<LocalThread> = {}): LocalThread {
   }
 }
 
-async function rawRows(store: 'chats' | 'attachmentPayloads') {
-  const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
-  })
-  try {
-    return await new Promise<Record<string, unknown>[]>((resolve, reject) => {
-      const request = db.transaction(store).objectStore(store).getAll()
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
-    })
-  } finally {
-    db.close()
-  }
-}
-
-beforeAll(() => {
-  Object.defineProperty(globalThis, 'indexedDB', {
-    configurable: true,
-    value: new IDBFactory(),
-  })
-  Object.defineProperty(globalThis, 'IDBKeyRange', {
-    configurable: true,
-    value: FakeIDBKeyRange,
-  })
-})
-
-beforeEach(async () => {
-  deletedChatsTracker.clear()
-  sessionStorage.clear()
-  await indexedDBStorage.deleteAllChats()
-})
-
-afterEach(() => {
-  deletedChatsTracker.clear()
-  sessionStorage.clear()
-  chatEvents.clear()
-})
+resetChatStoresAroundEachTest()
 
 describe('device store', () => {
   const store = localThreadStore('device')

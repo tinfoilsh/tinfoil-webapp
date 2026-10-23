@@ -1,7 +1,7 @@
 import { API_BASE_URL } from '@/config'
 import { AnonymousCredentialCache } from '@/services/harness/anonymous-credential'
 import { HarnessClient } from '@/services/harness/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
@@ -35,10 +35,6 @@ function setup(getToken = async (): Promise<string | null> => null) {
 beforeEach(() => {
   controlplane.mockReset().mockImplementation(async () => issuance())
   vi.stubGlobal('fetch', controlplane)
-})
-afterEach(() => {
-  vi.unstubAllGlobals()
-  vi.restoreAllMocks()
 })
 
 describe('anonymous client credentials', () => {

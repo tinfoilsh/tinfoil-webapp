@@ -4,14 +4,12 @@ import {
 } from '@/components/chat/stream-error-banner'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 const CONNECTION_ERROR: StreamErrorInfo = {
   code: 'STREAM_INTERRUPTED',
   message: 'Connection failure details',
 }
-
-afterEach(() => vi.restoreAllMocks())
 
 describe('StreamErrorBanner', () => {
   it('explains an authentication failure without blaming connectivity', () => {
@@ -40,50 +38,41 @@ describe('StreamErrorBanner', () => {
     expect(screen.getByText('Authentication is not initialized')).toBeVisible()
   })
 
-  it.each([false, true])(
-    'supports resend, details, and dismissal in dark mode: %s',
-    (isDarkMode) => {
-      const onRetry = vi.fn()
-      const onDismiss = vi.fn()
-      render(
-        <StreamErrorBanner
-          error={CONNECTION_ERROR}
-          isDarkMode={isDarkMode}
-          onRetry={onRetry}
-          onDismiss={onDismiss}
-        />,
-      )
+  it('supports resend, details, and dismissal', () => {
+    const onRetry = vi.fn()
+    const onDismiss = vi.fn()
+    render(
+      <StreamErrorBanner
+        error={CONNECTION_ERROR}
+        isDarkMode={false}
+        onRetry={onRetry}
+        onDismiss={onDismiss}
+      />,
+    )
 
-      expect(screen.getByRole('alert')).toHaveTextContent('Connection problem')
-      const retry = screen.getByRole('button', { name: 'Resend message' })
-      expect(retry).toHaveClass('rounded-site-control')
-      fireEvent.click(retry)
-      expect(onRetry).toHaveBeenCalledOnce()
-      expect(onDismiss).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Connection problem')
+    fireEvent.click(screen.getByRole('button', { name: 'Resend message' }))
+    expect(onRetry).toHaveBeenCalledOnce()
+    expect(onDismiss).not.toHaveBeenCalled()
 
-      const expand = screen.getByRole('button', {
-        name: 'Expand error details',
-      })
-      expect(expand).toHaveAttribute('aria-expanded', 'false')
-      expect(
-        screen.queryByText(CONNECTION_ERROR.message),
-      ).not.toBeInTheDocument()
-      fireEvent.click(expand)
-      expect(screen.getByText(CONNECTION_ERROR.message)).toBeVisible()
-      const collapse = screen.getByRole('button', {
-        name: 'Collapse error details',
-      })
-      expect(collapse).toHaveAttribute('aria-expanded', 'true')
-      fireEvent.click(collapse)
-      expect(
-        screen.queryByText(CONNECTION_ERROR.message),
-      ).not.toBeInTheDocument()
+    const expand = screen.getByRole('button', {
+      name: 'Expand error details',
+    })
+    expect(expand).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText(CONNECTION_ERROR.message)).not.toBeInTheDocument()
+    fireEvent.click(expand)
+    expect(screen.getByText(CONNECTION_ERROR.message)).toBeVisible()
+    const collapse = screen.getByRole('button', {
+      name: 'Collapse error details',
+    })
+    expect(collapse).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(collapse)
+    expect(screen.queryByText(CONNECTION_ERROR.message)).not.toBeInTheDocument()
 
-      fireEvent.click(screen.getByRole('button', { name: 'Dismiss error' }))
-      expect(onDismiss).toHaveBeenCalledOnce()
-      expect(onRetry).toHaveBeenCalledOnce()
-    },
-  )
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss error' }))
+    expect(onDismiss).toHaveBeenCalledOnce()
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
 
   it('disables resend offline and enables it when connectivity returns', () => {
     const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)

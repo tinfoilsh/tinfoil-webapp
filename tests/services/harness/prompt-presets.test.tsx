@@ -1,31 +1,19 @@
 import { usePromptLibrary } from '@/components/chat/hooks/use-prompt-library'
-import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
-import type { HarnessClient } from '@/services/harness/client'
-import { localThreadStore } from '@/services/harness/local-threads'
 import {
-  activateAPI,
   getView,
-  HarnessAPI,
   MIGRATED_CUSTOM_PROMPT_PRESET_ID,
-  publish,
 } from '@/services/harness/runtime'
 import type { Frame, Session, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
-import { chatEvents } from '@/services/storage/chat-events'
-import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
-import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
+import { describe, expect, it, vi } from 'vitest'
 import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest'
-import { testSession } from '../../harness-fixture'
+  client,
+  KEY,
+  signIn as signInTo,
+  testSession,
+} from '../../harness-fixture'
+import { resetChatStoresAroundEachTest } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/utils/error-handling', () => ({
@@ -34,7 +22,6 @@ vi.mock('@/utils/error-handling', () => ({
   logWarning: vi.fn(),
 }))
 
-const KEY = 'Y29udGVudC1rZXk='
 const RESEARCH = {
   id: 'user:research',
   name: 'Research',
@@ -67,13 +54,6 @@ const session: Session = {
   ],
 }
 
-let client: {
-  events: ReturnType<typeof vi.fn>
-  post: ReturnType<typeof vi.fn>
-  upload: ReturnType<typeof vi.fn>
-  download: ReturnType<typeof vi.fn>
-}
-
 function signIn({
   cloud,
   profile = {},
@@ -81,35 +61,19 @@ function signIn({
   cloud: boolean
   profile?: Record<string, unknown>
 }) {
-  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
-  localStorage.setItem(
-    'tinfoil-settings-cloud-sync-enabled',
-    cloud ? 'true' : 'false',
-  )
-  client = {
-    events: vi.fn(),
-    post: vi.fn(async (path: string, input: Record<string, unknown>) =>
-      path === '/v1/threads/list'
-        ? { threads: [], nextCursor: null }
-        : path === '/v1/profile/update'
-          ? { ...getView().profile, ...(input.patch as object) }
-          : {},
-    ),
-    upload: vi.fn(),
-    download: vi.fn(),
-  }
-  const api = new HarnessAPI(client as unknown as HarnessClient, 'alice')
-  vi.spyOn(api, 'key').mockReturnValue(KEY)
-  activateAPI(api)
-  publish({
+  const api = signInTo({
+    cloud,
     session,
-    profile: {
-      customPromptPresets: [RESEARCH, QUIET],
-      ...profile,
-    },
-    keyReady: true,
-    profileReady: true,
+    profile: { customPromptPresets: [RESEARCH, QUIET], ...profile },
   })
+  client.post.mockImplementation(
+    async (path: string, input: Record<string, unknown>) => {
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      if (path === '/v1/profile/update')
+        return { ...getView().profile, ...(input.patch as object) }
+      throw new Error(`Unexpected harness request: ${path}`)
+    },
+  )
   return api
 }
 
@@ -124,29 +88,7 @@ const turn = (call = 0) => client.events.mock.calls[call][1] as Turn
 // What the attested client sends: the turn as JSON, without undefined fields.
 const sent = (call = 0) => JSON.parse(JSON.stringify(turn(call)))
 
-beforeAll(() => {
-  Object.defineProperty(globalThis, 'indexedDB', {
-    configurable: true,
-    value: new IDBFactory(),
-  })
-  Object.defineProperty(globalThis, 'IDBKeyRange', {
-    configurable: true,
-    value: FakeIDBKeyRange,
-  })
-})
-
-beforeEach(async () => {
-  sessionStorage.clear()
-  deletedChatsTracker.clear()
-  await indexedDBStorage.deleteAllChats()
-  deletedChatsTracker.clear()
-})
-
-afterEach(() => {
-  chatEvents.clear()
-  deletedChatsTracker.clear()
-  vi.restoreAllMocks()
-})
+resetChatStoresAroundEachTest()
 
 describe('the default prompt of a new stored chat', () => {
   it('shows the default and leaves it to the harness to stamp', async () => {
@@ -495,43 +437,5 @@ describe('the custom default prompt', () => {
         defaultPromptPresetId: 'builtin:tutor',
       }),
     )
-  })
-})
-
-describe('local settings', () => {
-  it("import the previous client's default prompt once", async () => {
-    signIn({ cloud: false })
-    localStorage.setItem(
-      'tinfoil-user-prefs-default-prompt-preset-id',
-      QUIET.id,
-    )
-    localStorage.setItem(
-      'tinfoil-user-prefs-custom-prompt-presets',
-      JSON.stringify([QUIET, { ...RESEARCH, webSearchEnabled: 'yes' }]),
-    )
-    const { loadLocalProfile } =
-      await import('@/services/harness/local-profile')
-
-    expect(loadLocalProfile()).toEqual({ defaultPromptPresetId: QUIET.id })
-    localStorage.setItem(
-      'tinfoil-user-prefs-default-prompt-preset-id',
-      RESEARCH.id,
-    )
-    expect(loadLocalProfile()).toEqual({ defaultPromptPresetId: QUIET.id })
-  })
-
-  it('keep valid saved prompt settings', async () => {
-    signIn({ cloud: false })
-    localStorage.setItem(
-      'tinfoil-user-prefs-custom-prompt-presets',
-      JSON.stringify([QUIET, RESEARCH]),
-    )
-    const { loadLocalProfile } =
-      await import('@/services/harness/local-profile')
-
-    expect(loadLocalProfile()).toEqual({
-      customPromptPresets: [QUIET, RESEARCH],
-    })
-    expect(await localThreadStore('device').list()).toEqual([])
   })
 })

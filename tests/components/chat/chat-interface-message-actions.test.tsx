@@ -10,7 +10,8 @@ import {
   within,
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { connectHarness, KEY, type FakeHarness } from './chat-interface-fixture'
+import { client, KEY, signIn } from '../../harness-fixture'
+import { stubSafeguardFlags } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
@@ -75,11 +76,9 @@ const thread: Thread = {
     },
   ],
 }
-let harness: FakeHarness
-
 function open() {
-  harness = connectHarness()
-  harness.client.post.mockImplementation(async (path: string, input) => {
+  signIn({ cloud: true })
+  client.post.mockImplementation(async (path: string, input) => {
     if (path === '/v1/threads/get')
       return (input as { id: string }).id === THREAD_ID
         ? structuredClone(thread)
@@ -94,7 +93,7 @@ function open() {
       }
     if (path === '/v1/threads/messages/delete')
       return { ...structuredClone(thread), messages: [thread.messages[1]] }
-    return {}
+    throw new Error(`Unexpected ${path}`)
   })
   render(<ChatInterface initialChatId={THREAD_ID} />)
 }
@@ -106,27 +105,13 @@ async function moreActions() {
 
 beforeEach(() => {
   authTokenManager.initialize(async () => 'clerk-jwt')
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (url: string) => {
-      if (String(url).endsWith('/api/users/me/safeguard-flags'))
-        return Response.json({
-          flags: [],
-          in_window: 0,
-          window_hours: 168,
-          warn_threshold: 2,
-          ban_threshold: 3,
-        })
-      throw new Error(`Unexpected request: ${url}`)
-    }),
-  )
+  stubSafeguardFlags()
   chatPage.router.replace.mockClear()
 })
 
 afterEach(() => {
   resetSafeguards()
   authTokenManager.reset()
-  vi.unstubAllGlobals()
 })
 
 describe('message actions on the chat page', () => {
@@ -153,7 +138,7 @@ describe('message actions on the chat page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
     expect(
-      harness.client.post.mock.calls.some(
+      client.post.mock.calls.some(
         ([path]) => path === '/v1/threads/messages/delete',
       ),
     ).toBe(false)
@@ -164,7 +149,7 @@ describe('message actions on the chat page', () => {
     )
 
     await waitFor(() =>
-      expect(harness.client.post).toHaveBeenCalledWith(
+      expect(client.post).toHaveBeenCalledWith(
         '/v1/threads/messages/delete',
         { key: KEY, threadId: THREAD_ID, messageId: 'u1' },
         expect.any(AbortSignal),
@@ -193,7 +178,7 @@ describe('message actions on the chat page', () => {
         { shallow: true },
       ),
     )
-    expect(harness.client.post).toHaveBeenCalledWith(
+    expect(client.post).toHaveBeenCalledWith(
       '/v1/threads/fork',
       { key: KEY, threadId: THREAD_ID, messageId: 'a1' },
       expect.any(AbortSignal),

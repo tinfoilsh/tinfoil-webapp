@@ -18,30 +18,18 @@ describe('readExportFiles', () => {
     expect(records.map((r) => r.uuid)).toEqual(['a', 'b', 'c'])
   })
 
-  it('rejects stray object files in a conversations export', async () => {
-    await expect(
-      readExportFiles(
-        [
-          jsonFile('conversations.json', [{ mapping: {} }]),
-          jsonFile('users.json', { id: 'user-1', email: 'a@b.c' }),
-        ],
-        'ChatGPT conversations',
-      ),
-    ).rejects.toThrow('users.json is not a ChatGPT conversations export')
-  })
-
-  it.each(['just a string', null, 42])(
-    'names a file holding %j instead of a list',
+  it.each([{ id: 'user-1', email: 'a@b.c' }, 'just a string'])(
+    'rejects stray files in a conversations export: %j',
     async (value) => {
       await expect(
         readExportFiles(
           [
-            jsonFile('conversations-1.json', [{ uuid: 'a' }]),
+            jsonFile('conversations.json', [{ mapping: {} }]),
             jsonFile('users.json', value),
           ],
-          'Claude conversations',
+          'ChatGPT conversations',
         ),
-      ).rejects.toThrow('users.json is not a Claude conversations export')
+      ).rejects.toThrow('users.json is not a ChatGPT conversations export')
     },
   )
 

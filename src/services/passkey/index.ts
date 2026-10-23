@@ -1,7 +1,6 @@
 export {
   PasskeyTimeoutError,
   PrfNotSupportedError,
-  clearCachedPrfResult,
   createAndWrapTinfoilKey,
   passkeyKeyManager,
 } from './kit'

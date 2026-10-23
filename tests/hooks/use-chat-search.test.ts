@@ -1,14 +1,10 @@
-import {
-  AUTH_ACTIVE_USER_ID,
-  USER_ENCRYPTION_KEY,
-} from '@/constants/storage-keys'
+import { USER_ENCRYPTION_KEY } from '@/constants/storage-keys'
 import { useChatSearch } from '@/hooks/use-chat-search'
-import type { HarnessClient } from '@/services/harness/client'
-import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
+import { publish } from '@/services/harness/runtime'
 import type { ThreadSummary } from '@/services/harness/types'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../harness-fixture'
+import { client, signIn } from '../harness-fixture'
 
 const ACCOUNT_KEY = `key_${'ar'.repeat(32)}`
 const ACCOUNT_KEY_B64 = 'ERERERERERERERERERERERERERERERERERERERERERE='
@@ -20,7 +16,6 @@ type SearchPage = {
 
 const search =
   vi.fn<(input: unknown, signal: AbortSignal) => Promise<SearchPage>>()
-let release: () => void
 
 function page(ids: string[], options: Partial<SearchPage> = {}): SearchPage {
   return {
@@ -46,24 +41,20 @@ async function flushDebounce() {
 
 beforeEach(() => {
   vi.useFakeTimers()
-  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_1')
   localStorage.setItem(USER_ENCRYPTION_KEY, ACCOUNT_KEY)
   search.mockReset().mockRejectedValue(new Error('Unexpected search request'))
-  const client = {
-    post: vi.fn(async (path: string, input: unknown, signal: AbortSignal) => {
+  signIn({ userId: 'user_1', locked: true })
+  publish({ keyReady: true })
+  client.post.mockImplementation(
+    async (path: string, input: unknown, signal: AbortSignal) => {
       if (path !== '/v1/threads/search')
         throw new Error(`Unexpected request: ${path}`)
       return search(input, signal)
-    }),
-  }
-  release = activateAPI(
-    new HarnessAPI(client as unknown as HarnessClient, 'user_1'),
+    },
   )
-  publish({ session: testSession, keyReady: true })
 })
 
 afterEach(() => {
-  release()
   vi.useRealTimers()
 })
 
@@ -84,28 +75,6 @@ describe('useChatSearch', () => {
     )
     expect(result.current.results.map((thread) => thread.id)).toEqual(['duck'])
     expect(result.current.isSearching).toBe(false)
-  })
-
-  it('hides the old query results as soon as the user edits the search', async () => {
-    search
-      .mockResolvedValueOnce(page(['old']))
-      .mockResolvedValueOnce(page(['new']))
-    const { result, rerender } = renderHook(
-      ({ term }) => useChatSearch(term, true),
-      { initialProps: { term: 'old' } },
-    )
-    await flushDebounce()
-    expect(result.current.results[0].id).toBe('old')
-    rerender({ term: 'new' })
-    expect(result.current.results).toEqual([])
-    expect(result.current.isSearching).toBe(true)
-    await flushDebounce()
-    expect(result.current.results[0].id).toBe('new')
-    expect(result.current.isSearching).toBe(false)
-    rerender({ term: '' })
-    expect(result.current.results).toEqual([])
-    expect(result.current.isSearching).toBe(false)
-    expect(search).toHaveBeenCalledTimes(2)
   })
 
   it('never renders the previous term results for a new term', async () => {
@@ -145,6 +114,10 @@ describe('useChatSearch', () => {
       ids: ['new'],
       isSearching: false,
     })
+
+    rerender({ term: '' })
+    expect(renders.at(-1)).toEqual({ term: '', ids: [], isSearching: false })
+    expect(search).toHaveBeenCalledTimes(2)
   })
 
   it('hides project hits immediately when the allowed search scope changes', async () => {
