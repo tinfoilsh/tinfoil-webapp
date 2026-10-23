@@ -218,6 +218,8 @@ interface WelcomeScreenProps {
   onOpenPromptLibrary?: () => void
   onSelectPromptPreset?: (presetId: string | null) => void
   composerNotice?: React.ReactNode
+  quote?: string | null
+  onClearQuote?: () => void
 }
 
 // isTemporaryMode is forwarded to the embedded ChatInput so the input can
@@ -254,6 +256,8 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   onOpenPromptLibrary,
   onSelectPromptPreset,
   composerNotice,
+  quote,
+  onClearQuote,
 }: WelcomeScreenProps) {
   const { user, isSignedIn } = useUser()
   const [nickname, setNickname] = useState<string>('')
@@ -433,6 +437,8 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   processedDocuments={processedDocuments}
                   removeDocument={removeDocument}
                   isPremium={isPremium}
+                  quote={quote}
+                  onClearQuote={onClearQuote}
                   hasMessages={false}
                   modelSelectorButton={
                     models &&

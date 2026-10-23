@@ -1,6 +1,9 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProjectProvider } from '@/components/project/project-provider'
-import { USER_PREFS_LOCAL_PROFILE } from '@/constants/storage-keys'
+import {
+  UI_SIDEBAR_OPEN,
+  USER_PREFS_LOCAL_PROFILE,
+} from '@/constants/storage-keys'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
 import type { Frame, Turn } from '@/services/harness/types'
@@ -666,4 +669,118 @@ it('continues a chat whose model was retired on the model the user picked', asyn
 
   await waitFor(() => expect(sentTurns()).toHaveLength(1))
   expect(sentTurns()[0].options?.model).toBe(otherModel.id)
+})
+
+it('keeps the draft, its attachment and quote when starting a new chat or opening another', async () => {
+  signIn()
+  answerTurns()
+  sessionStorage.setItem(UI_SIDEBAR_OPEN, 'true')
+  const store = localThreadStore('device')
+  await store.add(
+    storedThread('first-chat', {
+      title: 'First chat',
+      messages: [
+        {
+          id: 'first-question',
+          role: 'user',
+          content: 'Which door should I paint?',
+          createdAt: '2026-10-22T12:00:00Z',
+        },
+      ],
+    }),
+  )
+  await store.add(
+    storedThread('second-chat', {
+      title: 'Second chat',
+      messages: [
+        {
+          id: 'second-question',
+          role: 'user',
+          content: 'A different conversation',
+          createdAt: '2026-10-22T12:00:00Z',
+        },
+      ],
+    }),
+  )
+  const notes = {
+    id: 'att-notes',
+    kind: 'document',
+    fileName: 'notes.txt',
+    mimeType: 'text/plain',
+    size: 4,
+  }
+  client.upload.mockResolvedValue({ attachment: notes })
+  const frames: FrameRequestCallback[] = []
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+    frames.push(callback)
+    return frames.length
+  })
+  const { rerender } = render(view('first-chat'))
+  const question = await screen.findByText('Which door should I paint?')
+
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), {
+    target: { value: 'My unfinished draft' },
+  })
+  fireEvent.change(document.querySelector('input[type="file"]')!, {
+    target: { files: [new File(['note'], notes.fileName)] },
+  })
+  await screen.findByText('Document')
+  const range = document.createRange()
+  range.setStart(question.firstChild!, 6)
+  range.setEnd(question.firstChild!, 10)
+  vi.spyOn(range, 'getBoundingClientRect').mockReturnValue(
+    new DOMRect(100, 100, 120, 20),
+  )
+  window.getSelection()!.removeAllRanges()
+  window.getSelection()!.addRange(range)
+  fireEvent(document, new Event('selectionchange'))
+  act(() => frames.splice(0).forEach((callback) => callback(0)))
+  fireEvent.click(screen.getByRole('button', { name: 'Quote' }))
+  window.getSelection()!.removeAllRanges()
+
+  const expectDraft = () => {
+    expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue(
+      'My unfinished draft',
+    )
+    expect(
+      screen.getByRole('button', { name: 'Remove notes.txt' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('door')).toBeInTheDocument()
+  }
+  expectDraft()
+
+  fireEvent.click(screen.getByRole('link', { name: 'Second chat' }))
+  await waitFor(() =>
+    expect(chatPage.router.push).toHaveBeenCalledWith(
+      '/chat/local/second-chat',
+      undefined,
+      { shallow: true },
+    ),
+  )
+  rerender(view('second-chat'))
+  await screen.findByText('A different conversation')
+  expectDraft()
+
+  fireEvent.click(screen.getAllByRole('link', { name: 'New chat' })[0])
+  await waitFor(() =>
+    expect(chatPage.router.push).toHaveBeenLastCalledWith('/', undefined, {
+      shallow: true,
+    }),
+  )
+  rerender(view())
+  await waitFor(() =>
+    expect(
+      screen.queryByText('A different conversation'),
+    ).not.toBeInTheDocument(),
+  )
+  expectDraft()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+  await waitFor(() => expect(sentTurns()).toHaveLength(1))
+  expect(sentTurns()[0].threadId).not.toBe('second-chat')
+  expect(sentTurns()[0]).toMatchObject({
+    content: 'My unfinished draft',
+    quote: 'door',
+  })
+  expect(sentTurns()[0].attachments).toEqual([notes])
 })

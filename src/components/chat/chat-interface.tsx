@@ -515,9 +515,6 @@ export function ChatInterface({
   const createNewChat = (isLocalOnly = false, fromUserAction = true) => {
     selectionNavigation.current = null
     thread.newChat({ local: isLocalOnly })
-    setInput('')
-    setQuote(null)
-    setProcessedDocuments([])
     // The sidebar switches a blank chat to its tab's storage without moving
     // the page, which may still be opening a chat from its URL.
     if (!fromUserAction) return
@@ -530,8 +527,6 @@ export function ChatInterface({
   const handleChatSelect = (id: string) => {
     const selection = Symbol()
     selectionNavigation.current = selection
-    setProcessedDocuments([])
-    setQuote(null)
     const isLocalOnly =
       !cloudSyncEnabled || !!chats.find((chat) => chat.id === id)?.isLocalOnly
     void thread
@@ -2487,6 +2482,8 @@ export function ChatInterface({
                       composerNotice={
                         showKeyErrorOnWelcome ? streamErrorBanner : undefined
                       }
+                      quote={quote}
+                      onClearQuote={() => setQuote(null)}
                     />
                   )}
                 </div>
