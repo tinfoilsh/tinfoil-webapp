@@ -122,8 +122,8 @@ export function useProjects({ autoLoad = true }: { autoLoad?: boolean } = {}) {
   return {
     projects,
     // An account's projects are loading until they are first listed, which
-    // waits for its key.
-    loading: loading || (!!api.userId && !listed),
+    // waits for its key, unless the caller does not list them.
+    loading: loading || (autoLoad && !!api.userId && !listed),
     error,
     refresh,
     loadProjects: refresh,

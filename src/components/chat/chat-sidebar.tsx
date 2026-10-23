@@ -272,7 +272,7 @@ export function ChatSidebar({
   } = useUpgradeToPro()
   // Without cloud sync every chat stays on this device. With it, "Enable
   // local chats" adds a Local tab whose new chats stay on this device.
-  const { keyReady, keyLocked, cloud: cloudSyncEnabled } = useHarness()
+  const { keyLocked, cloud: cloudSyncEnabled } = useHarness()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const localOnlyModeEnabled = useLocalChatsSetting()
   const showStorageTabs = cloudSyncEnabled && localOnlyModeEnabled
@@ -337,7 +337,7 @@ export function ChatSidebar({
     loading: projectsLoading,
     refresh: refreshProjects,
   } = useProjects({
-    autoLoad: cloudSyncEnabled && keyReady && isPremium,
+    autoLoad: cloudSyncEnabled && isPremium,
   })
 
   const { activeProject } = useProject()

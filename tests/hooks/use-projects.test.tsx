@@ -131,3 +131,9 @@ it("loads until the account's projects are first listed, after its key arrives",
   await act(async () => finish({ projects: [], nextCursor: null }))
   expect(result.current).toMatchObject({ projects: [], loading: false })
 })
+
+it('does not report loading to a caller that does not list projects', () => {
+  const { result } = renderHook(() => useProjects({ autoLoad: false }))
+  expect(result.current).toMatchObject({ projects: [], loading: false })
+  expect(post).not.toHaveBeenCalled()
+})
