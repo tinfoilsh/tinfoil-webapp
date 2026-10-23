@@ -6,11 +6,11 @@ import {
   type BaseModel,
 } from '@/config/models'
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
-import { USER_PREFS_NICKNAME } from '@/constants/storage-keys'
+import { useHarness } from '@/services/harness/provider'
 import { useUser } from '@clerk/react'
 import { TfLockLocked } from '@tinfoilsh/tinfoil-icons'
 import { motion } from 'framer-motion'
-import React, { memo, useEffect, useRef, useState } from 'react'
+import React, { memo, useRef, useState } from 'react'
 import { ChatInput } from './chat-input'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
@@ -260,42 +260,12 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   onClearQuote,
 }: WelcomeScreenProps) {
   const { user, isSignedIn } = useUser()
-  const [nickname, setNickname] = useState<string>('')
+  const { profile } = useHarness()
+  // The nickname saved in Settings greets a signed-in user.
+  const nickname =
+    user?.id && typeof profile.nickname === 'string' ? profile.nickname : ''
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false)
   const fallbackInputRef = useRef<HTMLTextAreaElement>(null)
-
-  // Load nickname from localStorage and listen for changes
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // Clear nickname when user changes or is not authenticated
-      if (!user?.id) {
-        setNickname('')
-        return
-      }
-
-      const savedNickname = localStorage.getItem(USER_PREFS_NICKNAME)
-      if (savedNickname) {
-        setNickname(savedNickname)
-      }
-
-      // Listen for personalization changes
-      const handlePersonalizationChange = (event: CustomEvent) => {
-        setNickname(event.detail?.nickname ?? '')
-      }
-
-      window.addEventListener(
-        'personalizationChanged',
-        handlePersonalizationChange as EventListener,
-      )
-
-      return () => {
-        window.removeEventListener(
-          'personalizationChanged',
-          handlePersonalizationChange as EventListener,
-        )
-      }
-    }
-  }, [user?.id])
 
   // Determine the greeting text based on time of day
   const getGreeting = () => {
