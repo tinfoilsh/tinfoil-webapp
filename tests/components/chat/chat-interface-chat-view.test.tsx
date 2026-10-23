@@ -243,6 +243,7 @@ it('saves a temporary chat once the reply streaming when Save was clicked is sto
 
   fireEvent.click(screen.getByRole('button', { name: 'Save chat' }))
 
+  expect(screen.getByRole('button', { name: 'Saving chat' })).toBeDisabled()
   expect(await rawRows('chats')).toEqual([])
   expect(chatPage.router.replace).not.toHaveBeenCalled()
   finish()
