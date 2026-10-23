@@ -72,7 +72,7 @@ export type TimelineContentBlock = {
 
 // GenUI tool calls — one block per call. Arguments arrive as JSON-string
 // deltas during streaming.
-export type TimelineToolCallBlock = {
+export type TimelineToolCallBlock = TimelineTiming & {
   type: 'tool_call'
   id: string
   toolCallId: string
@@ -87,31 +87,12 @@ export type TimelineToolCallBlock = {
   invalidArguments?: boolean
 }
 
-// Code-execution tool call. Args are fully-formed (router emits a single
-// in_progress event with the parsed args, then a terminal event with output).
-export type ToolCallState = {
-  id: string
-  toolName: string
-  arguments?: Record<string, unknown>
-  status: 'running' | 'completed' | 'failed'
-  output?: string
-}
-
-// Code-execution timeline block. Consecutive code-exec calls are merged
-// into a single block so the renderer can group them under one header.
-export type TimelineCodeExecBlock = TimelineTiming & {
-  type: 'code_exec'
-  id: string
-  calls: ToolCallState[]
-}
-
 export type TimelineBlock =
   | TimelineThinkingBlock
   | TimelineWebSearchBlock
   | TimelineURLFetchBlock
   | TimelineContentBlock
   | TimelineToolCallBlock
-  | TimelineCodeExecBlock
 
 export type DocumentPage = {
   page: number
@@ -168,8 +149,6 @@ export type Message = {
     name: string
     arguments: string
   }>
-  // Code-execution tool calls (derived from timeline)
-  codeExecCalls?: ToolCallState[]
 }
 
 export type TitleState = 'placeholder' | 'generated' | 'manual'
@@ -186,10 +165,9 @@ export type Chat = {
   messageCount?: number
   isMetadataOnly?: boolean
   createdAt: Date
-  // Latest server-bumped write time, used as the canonical sort
-  // key for the sidebar. Absent for chats that have never been
-  // stored (blank chats kept purely in component state).
+  // Latest server-bumped write time, independent of conversation activity.
   updatedAt?: string
+  activityAt?: string
   // Blank chat flag - true for new chats that haven't been used yet
   isBlankChat?: boolean
   // Local-only flag - true for chats that should never sync to cloud

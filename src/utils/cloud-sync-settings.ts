@@ -6,6 +6,7 @@ import {
 } from '@/constants/storage-keys'
 
 export const CLOUD_SYNC_SETTING_CHANGED_EVENT = 'cloudSyncSettingChanged'
+export const LOCAL_ONLY_MODE_CHANGED_EVENT = 'localOnlyModeChanged'
 
 /**
  * Record a user's explicit choice to turn cloud sync on or off. The
@@ -81,7 +82,7 @@ export function setLocalOnlyModeEnabled(enabled: boolean): void {
   if (typeof window === 'undefined') return
   try {
     localStorage.setItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED, enabled.toString())
-    window.dispatchEvent(new Event('localOnlyModeChanged'))
+    window.dispatchEvent(new Event(LOCAL_ONLY_MODE_CHANGED_EVENT))
   } catch {
     // Storage unavailable (e.g., Safari private mode) - silently fail
   }

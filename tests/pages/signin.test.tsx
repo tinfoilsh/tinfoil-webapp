@@ -189,7 +189,7 @@ function renderAndSubmitPasswordSignUp() {
 
 describe('SignInPage', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     auth.clerkLoaded = true
     auth.isAuthLoaded = true
     auth.isSignedIn = false
@@ -843,6 +843,7 @@ describe('SignInPage', () => {
       auth.signUp.missingFields = []
       return { error: null }
     })
+    await waitFor(() => expect(consent).toBeEnabled())
     fireEvent.click(consent)
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
@@ -881,6 +882,7 @@ describe('SignInPage', () => {
       auth.signUp.missingFields = []
       return { error: null }
     })
+    await waitFor(() => expect(screen.getByRole('checkbox')).toBeEnabled())
     fireEvent.click(screen.getByRole('checkbox'))
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
@@ -933,6 +935,7 @@ describe('SignInPage', () => {
     render(<SignInPage />)
 
     await screen.findByRole('heading', { name: 'Complete your account' })
+    await waitFor(() => expect(screen.getByRole('checkbox')).toBeEnabled())
     fireEvent.click(screen.getByRole('checkbox'))
     const submit = screen.getByRole('button', { name: 'Create account' })
     await waitFor(() => expect(submit).toBeEnabled())
@@ -965,6 +968,7 @@ describe('SignInPage', () => {
     render(<SignInPage />)
 
     await screen.findByRole('heading', { name: 'Complete your account' })
+    await waitFor(() => expect(screen.getByRole('checkbox')).toBeEnabled())
     fireEvent.click(screen.getByRole('checkbox'))
     auth.signUp.update.mockImplementation(async () => {
       auth.signUp.missingFields = []

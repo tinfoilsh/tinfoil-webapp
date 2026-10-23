@@ -25,6 +25,15 @@ export const AUTH_ACTIVE_USER_ID = 'tinfoil-auth-active-user-id'
 export const AUTH_ACCOUNT_RESET_SIGNAL = 'tinfoil-auth-account-reset-signal'
 export const AUTH_SIGNOUT_REQUESTED_AT = 'tinfoil-auth-signout-requested-at'
 
+// --- localStorage: Sidebar cache --------------------------------------------
+export const CLOUD_CHAT_LIST_CACHE_PREFIX = 'tinfoil-cloud-chat-list-v1'
+
+// --- localStorage: Cloud settings cache -------------------------------------
+// The settings the chat service last stored for an account with cloud sync,
+// shown on this device until they load and while the account's key is
+// refused.
+export const CLOUD_PROFILE_CACHE_PREFIX = 'tinfoil-cloud-profile-v1'
+
 // --- localStorage: App settings --------------------------------------------
 export const SETTINGS_CLOUD_SYNC_ENABLED = 'tinfoil-settings-cloud-sync-enabled'
 export const SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED =
@@ -36,6 +45,8 @@ export const SETTINGS_AUTO_INTELLIGENCE = 'tinfoil-settings-auto-intelligence'
 export const SETTINGS_REASONING_EFFORT = 'tinfoil-settings-reasoning-effort'
 export const SETTINGS_THINKING_ENABLED = 'tinfoil-settings-thinking-enabled'
 export const SETTINGS_WEB_SEARCH_ENABLED = 'tinfoil-settings-web-search-enabled'
+export const SETTINGS_WEB_SEARCH_AVAILABLE =
+  'tinfoil-settings-web-search-available'
 export const SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED =
   'tinfoil-settings-pixelate-sidebar-chat-titles-enabled'
 // When disabled, the browser tab shows only the base app title instead of
@@ -124,6 +135,10 @@ export const USER_PREFS_DEFAULT_PROMPT_PRESET_ID =
 // Settings of an account without cloud sync and of a signed-out visitor, in
 // the chat service's profile format.
 export const USER_PREFS_LOCAL_PROFILE = 'tinfoil-user-prefs-local-profile'
+export const USER_PREFS_PENDING_PROFILE_MERGE =
+  'tinfoil-user-prefs-pending-profile-merge'
+export const USER_PREFS_LOCAL_PROFILE_CHANGES =
+  'tinfoil-user-prefs-local-profile-changes'
 // Set once the local profile needs no upgrade from what older clients
 // stored: the chat service upgraded it, it was empty, or it is the cloud
 // profile kept on this device when cloud sync was turned off.

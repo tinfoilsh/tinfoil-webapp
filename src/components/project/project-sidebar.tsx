@@ -77,9 +77,11 @@ interface ProjectChat {
   messageCount: number
   createdAt: Date
   updatedAt?: string
+  activityAt?: string
   projectId?: string
   isBlankChat?: boolean
   isTemporary?: boolean
+  activeRun?: { runId: string } | null
   flagged?: boolean
 }
 
@@ -95,6 +97,9 @@ interface ProjectSidebarProps {
   loadingProjectId?: string
   projectName?: string
   isLoading?: boolean
+  isLoadingChats?: boolean
+  chatListError?: string | null
+  onRetryChats?: () => void
   isDarkMode: boolean
   pixelateSidebarChatTitles: boolean
   onExitProject: () => void
@@ -206,6 +211,9 @@ export function ProjectSidebar({
   loadingProjectId,
   projectName,
   isLoading,
+  isLoadingChats = false,
+  chatListError,
+  onRetryChats,
   isDarkMode,
   pixelateSidebarChatTitles,
   onExitProject,
@@ -235,7 +243,7 @@ export function ProjectSidebar({
   onLoadMore,
 }: ProjectSidebarProps) {
   const { isSignedIn } = useAuth()
-  const { cloud: cloudSyncEnabled, session } = useHarness()
+  const { cloud: cloudSyncEnabled, keyLocked, session } = useHarness()
   const {
     draggingChatId,
     draggingChatSource,
@@ -350,7 +358,8 @@ export function ProjectSidebar({
         sessionStorage.removeItem(UI_EXPAND_PROJECT_DOCUMENTS)
       }
     }
-  }, [isOpen])
+    // An upload started while the sidebar is open asks for its documents too.
+  }, [isOpen, contextUploadingFiles.length])
 
   const handleSaveSettings = useCallback(async () => {
     if (!project) return
@@ -546,13 +555,13 @@ export function ProjectSidebar({
       (editedColor ?? '') !== (project.color ?? '')
     : false
 
-  // Convert chatsProp to ChatItemData format and sort by updatedAt descending
+  // Convert chatsProp to ChatItemData format and sort by latest activity.
   const projectChats: ChatItemData[] = (chatsProp || [])
     .filter((c) => !c.isBlankChat)
     .sort(
       (a, b) =>
-        new Date(b.updatedAt ?? b.createdAt).getTime() -
-        new Date(a.updatedAt ?? a.createdAt).getTime(),
+        new Date(b.activityAt ?? b.createdAt).getTime() -
+        new Date(a.activityAt ?? a.createdAt).getTime(),
     )
     .map((c) => ({
       id: c.id,
@@ -560,6 +569,7 @@ export function ProjectSidebar({
       messageCount: c.messageCount,
       projectId: c.projectId,
       isTemporary: c.isTemporary,
+      activeRun: c.activeRun,
       flagged: c.flagged,
     }))
 
@@ -1446,7 +1456,16 @@ export function ProjectSidebar({
                   currentChatIsBlank={!currentChatId}
                   isDarkMode={isDarkMode}
                   pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                  isLoading={isLoading && projectChats.length === 0}
+                  isLoading={
+                    (isLoading || isLoadingChats) && projectChats.length === 0
+                  }
+                  error={chatListError}
+                  onRetry={onRetryChats}
+                  emptyState={
+                    <p className="text-sm text-content-muted">
+                      No chats in this project yet.
+                    </p>
+                  }
                   enableTitleAnimation={true}
                   animatedDeleteConfirmation={false}
                   isDraggable={!!onRemoveChatFromProject}
@@ -1508,6 +1527,7 @@ export function ProjectSidebar({
             isSignedIn={Boolean(isSignedIn)}
             isPremium={Boolean(isPremium)}
             isDarkMode={isDarkMode}
+            syncNeedsAttention={keyLocked}
             onOpenSettings={(tab) => onSettingsClick?.(tab)}
             onReportBug={() => onReportBugClick?.()}
           />

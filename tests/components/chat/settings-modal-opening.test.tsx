@@ -6,22 +6,33 @@ import {
   USER_PREFS_LOCAL_PROFILE,
 } from '@/constants/storage-keys'
 import { getView, harnessAPI, publish } from '@/services/harness/runtime'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { HarnessError } from '@/services/harness/sse'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { signIn, testSession } from '../../harness-fixture'
+import { client, KEY, signIn, testSession } from '../../harness-fixture'
 
 const authState = vi.hoisted(() => ({ isSignedIn: false }))
 const toasts = vi.hoisted(() => vi.fn())
+const signOut = vi.hoisted(() => vi.fn(async () => {}))
 
 vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: toasts }),
+  toast: toasts,
 }))
 
 vi.mock('@clerk/react', () => ({
+  useReverification: (callback: unknown) => callback,
   useAuth: () => ({
     getToken: async () => null,
-    signOut: vi.fn(),
+    signOut,
     isSignedIn: authState.isSignedIn,
   }),
   useUser: () => ({
@@ -66,6 +77,7 @@ describe('settings opening', () => {
   beforeEach(() => {
     authState.isSignedIn = false
     toasts.mockReset()
+    signOut.mockReset().mockResolvedValue(undefined)
   })
 
   it("offers a signed-out visitor this browser's chats but no account data", () => {
@@ -103,6 +115,72 @@ describe('settings opening', () => {
     ])
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
   })
+
+  it('requires confirmation before signing out with device chats', async () => {
+    authState.isSignedIn = true
+    signIn({ cloud: false })
+    render(
+      <Harness
+        initialTab="account"
+        isSignedIn
+        chats={[{ id: 'local-chat', isLocalOnly: true }]}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+    expect(
+      await screen.findByRole('dialog', { name: 'Sign Out' }),
+    ).toBeInTheDocument()
+    expect(signOut).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Sign Out' }),
+      ).not.toBeInTheDocument(),
+    )
+    expect(signOut).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+    fireEvent.click(
+      within(await screen.findByRole('dialog', { name: 'Sign Out' })).getByRole(
+        'button',
+        { name: 'Sign Out' },
+      ),
+    )
+    await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1))
+  })
+
+  it.each([
+    [false, false, 'All local data will be cleared.'],
+    [
+      true,
+      true,
+      'All local data will be cleared. You can recover your cloud chats by signing back in.',
+    ],
+    [
+      true,
+      false,
+      'All local data will be cleared. You will need your encryption key to recover your cloud chats.',
+    ],
+  ])(
+    'explains how cloud chats are recovered after signing out (cloud sync: %s, passkey: %s)',
+    async (cloud, passkeyActive, recovery) => {
+      authState.isSignedIn = true
+      signIn({ cloud })
+      render(
+        <Harness
+          initialTab="account"
+          isSignedIn
+          passkeyActive={passkeyActive}
+          chats={[{ id: 'local-chat', isLocalOnly: true }]}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Sign Out' })
+      expect(within(dialog).getByText(recovery)).toBeInTheDocument()
+      expect(
+        within(dialog).getByText('Your local chats will be deleted forever.'),
+      ).toBeInTheDocument()
+    },
+  )
 
   it.each([false, true])(
     'gates project transfers in settings (premium: %s)',
@@ -220,7 +298,7 @@ describe('settings opening', () => {
       signIn({ cloud: false })
     })
 
-    it('keeps project data controls with cloud sync', () => {
+    it('offers the data controls, project ones included, as on main', () => {
       render(
         <Harness
           initialTab="data"
@@ -242,10 +320,10 @@ describe('settings opening', () => {
         'Import from Claude',
         'Import from Tinfoil',
         'Export Chats',
+        'Delete all projects',
+        'Export Projects for Claude',
       ])
         expect(screen.getByRole('button', { name })).toBeEnabled()
-      for (const name of ['Delete all projects', 'Export Projects for Claude'])
-        expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
       expect(
         screen.queryByText(/requires end-to-end encrypted cloud sync/),
       ).not.toBeInTheDocument()
@@ -388,6 +466,87 @@ describe('settings opening', () => {
   })
 })
 
+describe('settings while the key is refused', () => {
+  const EXPLANATION =
+    'Unlock your encryption key in Cloud Sync to change these settings.'
+
+  beforeEach(() => {
+    authState.isSignedIn = true
+    toasts.mockReset()
+  })
+
+  it('shows the settings it kept as unavailable and keeps Cloud Sync usable', () => {
+    signIn({
+      cloud: true,
+      locked: true,
+      profile: { pixelateSidebarChatTitlesEnabled: true, nickname: 'Sam' },
+    })
+    const onCloudSyncSetupClick = vi.fn()
+    render(
+      <Harness
+        initialTab="general"
+        isSignedIn
+        isClient
+        encryptionKey={`key_${'ab'.repeat(32)}`}
+        onCloudSyncSetupClick={onCloudSyncSetupClick}
+      />,
+    )
+    const redact = screen.getByRole('checkbox', {
+      name: 'Redact sidebar chat titles',
+    })
+    expect(redact).toBeChecked()
+    expect(redact).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Dark' })).toBeDisabled()
+    expect(screen.getByText(EXPLANATION)).toBeVisible()
+
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Personalization' })[0],
+    )
+    expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Sam')
+    expect(screen.getByPlaceholderText('Nickname')).toBeDisabled()
+    expect(screen.getByText(EXPLANATION)).toBeVisible()
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Cloud Sync (needs attention)',
+      })[0],
+    )
+    expect(screen.queryByText(EXPLANATION)).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('checkbox', { name: 'Encrypted Cloud Sync' }),
+    ).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Recover Key' }))
+    expect(onCloudSyncSetupClick).toHaveBeenCalledOnce()
+  })
+
+  it('keeps unsaved personalization from saving once the key is refused', () => {
+    signIn({
+      cloud: true,
+      profile: { nickname: 'Sam', isUsingPersonalization: true },
+    })
+    render(
+      <Harness
+        initialTab="personalization"
+        isSignedIn
+        isClient
+        encryptionKey={`key_${'ab'.repeat(32)}`}
+      />,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Nickname'), {
+      target: { value: 'Samantha' },
+    })
+    const saves = screen.getAllByRole('button', { name: 'Save' })
+    expect(saves).not.toHaveLength(0)
+    for (const save of saves) expect(save).toBeEnabled()
+
+    act(() => publish({ keyReady: false, keyLocked: true }))
+
+    for (const save of screen.getAllByRole('button', { name: 'Save' }))
+      expect(save).toBeDisabled()
+    expect(screen.getByText(EXPLANATION)).toBeVisible()
+  })
+})
+
 describe('settings prompts', () => {
   beforeEach(() => {
     authState.isSignedIn = false
@@ -474,6 +633,116 @@ describe('settings personalization', () => {
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
     expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Samantha')
   })
+
+  it('keeps unsaved edits when settings close and reopen', () => {
+    const profile = { nickname: 'Sam', isUsingPersonalization: true }
+    localStorage.setItem(USER_PREFS_LOCAL_PROFILE, JSON.stringify(profile))
+    publish({ profile })
+    const { rerender } = render(
+      <Harness initialTab="personalization" isClient />,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Nickname'), {
+      target: { value: 'Samantha' },
+    })
+
+    rerender(<Harness initialTab="personalization" isClient isOpen={false} />)
+    expect(screen.queryByPlaceholderText('Nickname')).toBeNull()
+    rerender(<Harness initialTab="personalization" isClient />)
+
+    expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Samantha')
+    expect(screen.getAllByRole('button', { name: 'Save' })).not.toHaveLength(0)
+    expect(getView().profile.nickname).toBe('Sam')
+  })
+
+  it.each([
+    {
+      action: 'saved details',
+      act: () => {
+        fireEvent.change(screen.getByPlaceholderText('Nickname'), {
+          target: { value: 'Samantha' },
+        })
+        fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+      },
+    },
+    {
+      action: 'turning personalization off',
+      act: () =>
+        fireEvent.click(
+          screen.getByRole('checkbox', { name: 'Personalize responses' }),
+        ),
+    },
+  ])('says when the chat service refuses $action', async ({ act }) => {
+    const saved = { nickname: 'Sam', isUsingPersonalization: true }
+    signIn({ cloud: true, profile: saved })
+    toasts.mockReset()
+    client.post.mockImplementation(async (path: string) => {
+      if (path !== '/v1/profile/update')
+        throw new Error(`Unexpected harness request: ${path}`)
+      throw new HarnessError(
+        { code: 'UPSTREAM_ERROR', message: 'Storage unavailable' },
+        502,
+      )
+    })
+    render(<Harness initialTab="personalization" isClient />)
+
+    act()
+
+    await waitFor(() =>
+      expect(toasts).toHaveBeenCalledExactlyOnceWith({
+        title: 'Failed to save settings',
+        description: 'Please try again.',
+        variant: 'destructive',
+      }),
+    )
+    expect(getView().profile).toEqual(saved)
+    expect(getView().error).toBeUndefined()
+  })
+
+  it('keeps an edit made while a save is in flight', async () => {
+    const saved = { nickname: 'Sam', isUsingPersonalization: true }
+    signIn({ cloud: true, profile: saved })
+    let finish!: () => void
+    client.post.mockImplementation(async (path: string, input) => {
+      if (path !== '/v1/profile/update')
+        throw new Error(`Unexpected harness request: ${path}`)
+      const { patch } = input as { patch: object }
+      return new Promise((resolve) => {
+        finish = () => resolve({ ...saved, ...patch })
+      })
+    })
+    render(<Harness initialTab="personalization" isClient />)
+    fireEvent.change(screen.getByPlaceholderText('Nickname'), {
+      target: { value: 'Samantha' },
+    })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+    await waitFor(() => expect(finish).toBeDefined())
+    fireEvent.change(screen.getByPlaceholderText('Your occupation'), {
+      target: { value: 'Engineer' },
+    })
+
+    await act(async () => finish())
+
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/profile/update',
+      {
+        key: KEY,
+        patch: {
+          nickname: 'Samantha',
+          profession: '',
+          traits: [],
+          additionalContext: '',
+          isUsingPersonalization: true,
+        },
+      },
+      expect.any(AbortSignal),
+    )
+    expect(getView().profile.nickname).toBe('Samantha')
+    expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Samantha')
+    expect(screen.getByPlaceholderText('Your occupation')).toHaveValue(
+      'Engineer',
+    )
+    expect(screen.getAllByRole('button', { name: 'Save' })).not.toHaveLength(0)
+  })
 })
 
 describe('settings imports', () => {
@@ -485,13 +754,16 @@ describe('settings imports', () => {
 
   const exportFile = (name: string, size: number) =>
     new File([new Uint8Array(size)], name, { type: 'application/json' })
+  // The chat service's answer to an import that started a cloud job.
+  const jobStarted = (jobId: string) =>
+    new Response(`${JSON.stringify({ done: { jobId, warnings: [] } })}\n`)
 
   it('imports the files of a split export one after another from a reviewed list', async () => {
     const client = harnessAPI().client
     const uploaded: string[] = []
-    vi.mocked(client.upload).mockImplementation(async (_path, file) => {
-      uploaded.push(file.name)
-      return { jobId: `job-${uploaded.length}` }
+    vi.mocked(client.multipart).mockImplementation(async (_path, form) => {
+      uploaded.push((form.get('file') as File).name)
+      return jobStarted(`job-${uploaded.length}`)
     })
     const statuses: Record<string, object> = {
       'job-1': { status: 'completed', imported: 3, failed: 0, total: 3 },
@@ -551,7 +823,9 @@ describe('settings imports', () => {
 
   it('names the file that failed and the files never started', async () => {
     const client = harnessAPI().client
-    vi.mocked(client.upload).mockResolvedValue({ jobId: 'job-1' })
+    vi.mocked(client.multipart).mockImplementation(async () =>
+      jobStarted('job-1'),
+    )
     vi.mocked(client.post).mockImplementation(async (path) => {
       if (path === '/v1/import/status')
         return {
@@ -595,6 +869,6 @@ describe('settings imports', () => {
     expect(
       screen.getByText('1 remaining file was not imported.'),
     ).toBeInTheDocument()
-    expect(client.upload).toHaveBeenCalledOnce()
+    expect(client.multipart).toHaveBeenCalledOnce()
   })
 })

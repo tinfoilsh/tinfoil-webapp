@@ -16,11 +16,6 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: vi.fn() }),
 }))
 
-vi.mock('@/components/chat/hooks/use-chat-font', () => ({
-  CHAT_FONT_CLASSES: { default: '' },
-  useChatFont: () => 'default',
-}))
-
 // Visual viewport height with the on-screen keyboard open.
 const VIEWPORT_HEIGHT_PX = 400
 const TEXT_CONTENT_HEIGHT_PX = 1000
@@ -123,8 +118,6 @@ afterEach(() => {
   pendingFrames.clear()
   resizeObservers.clear()
   delete (window as { visualViewport?: VisualViewport }).visualViewport
-  vi.unstubAllGlobals()
-  vi.restoreAllMocks()
 })
 
 function ChatInputInArea(
@@ -164,6 +157,9 @@ describe('ChatInput height cap', () => {
         removeDocument={vi.fn()}
       />,
     )
+    expect(
+      screen.getByRole('button', { name: `Remove ${ATTACHMENT_NAME}` }),
+    ).toBeInTheDocument()
     notifyResize(container.querySelector('[data-chat-input-area]')!)
     flushFrames()
 

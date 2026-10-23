@@ -4,6 +4,7 @@ import {
   initialChat,
   isTerminal,
   reduceEvent,
+  runErrorOf,
   runOf,
   type ChatState,
 } from './reducer'
@@ -15,6 +16,7 @@ import type {
   HarnessErrorBody,
   HarnessEvent,
   TerminalEvent,
+  ThreadSummary,
   Turn,
 } from './types'
 
@@ -36,6 +38,7 @@ const gone = (cause: unknown) =>
 // A run of a chat the browser stores. Its final event returns the whole
 // thread, without the image bytes the browser holds for it.
 export interface DeviceRun {
+  saved?: boolean
   threadId: string
   store: LocalThreadStore
   images: ImagesById
@@ -46,7 +49,13 @@ export interface DeviceRun {
   since: number
 }
 
+interface Submission {
+  threadId: string
+  cancelled: boolean
+}
+
 export interface RunOptions {
+  submission?: Submission
   // A device chat's run keeps reading when the view moves to another chat,
   // or the page to another route, so its reply is still saved. An account
   // change ends it with the API's lifetime.
@@ -54,6 +63,12 @@ export interface RunOptions {
   // Rejoining a run left behind: losing it shows no error.
   quiet?: boolean
   rejoined?: boolean
+  // The run started before this stream: one followed by its id is, unless a
+  // stream that only queued it is rejoined.
+  started?: boolean
+  // A widget's retry leaves the chat's status and error as they were, and
+  // keeps why it failed here instead.
+  widgetRetry?: { failure?: HarnessErrorBody }
 }
 
 // What the chat around a run does as the run goes.
@@ -62,6 +77,9 @@ export interface RunHooks {
   started?(run: { threadId?: string; runId: string }): void
   // The harness accepted a stored chat's turn, which stored a new chat.
   accepted?(threadId: string): void
+  // The run the view shows changed the chat's summary, as when it started,
+  // titled the chat or ended.
+  summary?(thread: ThreadSummary): void
   // A device run's final event returns the thread to store.
   saved?(run: DeviceRun, event: TerminalEvent, attached: boolean): Promise<void>
   // A run ended, which may have changed the chat list.
@@ -89,6 +107,8 @@ export class RunController {
   // The turn sent whose run has not started. It is sent again, with its
   // nonce, to reconnect.
   pending: { input: Turn; run?: DeviceRun } | null = null
+  submission: Submission | null = null
+  retryPreparation: (() => Promise<boolean>) | null = null
   // Changes each time the view moves to another chat. A run started for
   // the previous one no longer updates the view.
   private generation = 0
@@ -117,6 +137,8 @@ export class RunController {
     this.followers.clear()
     this.starting = null
     this.pending = null
+    this.submission = null
+    this.retryPreparation = null
     this.view.set(next)
   }
 
@@ -163,12 +185,14 @@ export class RunController {
     input: Turn | FollowInput,
     options: RunOptions = {},
   ): Promise<boolean> {
-    const { device, quiet = false } = options
+    const { device, quiet = false, widgetRetry } = options
+    let started = options.started ?? 'runId' in input
     const controller = new AbortController()
     if (!device) this.followers.add(controller)
     const version = this.generation
     const attached = () => version === this.generation
     let runId = 'runId' in input ? input.runId : undefined
+    let threadId = input.threadId
     let succeeded = false
     let view = this.view.get()
     try {
@@ -180,28 +204,72 @@ export class RunController {
         const shown = attached()
         if (!shown && !device) break
         const { event } = frame
+        if ('threadId' in event && event.threadId) threadId = event.threadId
         runId = runOf(event) ?? runId
+        if (event.type === 'RUN_STARTED') started = true
         const base = shown ? this.view.get() : view
-        const next = reduceEvent(base, frame, runId)
+        const next = reduceEvent(base, frame, runId, !!widgetRetry)
+        const replayed =
+          next === base && (!isTerminal(event) || !device || device.saved)
         // A replayed frame leaves the view as it was.
-        if (next !== base) {
-          this.reportQuota(event)
-          if (event.type === 'RUN_ERROR' && shown) this.errorAt = Date.now()
+        if (!replayed) {
+          if (next !== base) {
+            this.reportQuota(event)
+            if (event.type === 'RUN_ERROR' && widgetRetry)
+              widgetRetry.failure = runErrorOf(event)
+            else if (event.type === 'RUN_ERROR' && shown)
+              this.errorAt = Date.now()
+          }
+          view = next
+          if (shown) this.view.set(next)
+          if (event.type === 'RUN_STARTED') {
+            this.started(event.runId, threadId!, device, shown && !widgetRetry)
+            if (shown)
+              this.hooks.started?.({
+                threadId: event.threadId,
+                runId: event.runId,
+              })
+          }
+          if (
+            shown &&
+            next.snapshot.thread &&
+            next.snapshot.thread !== base.snapshot.thread
+          )
+            this.hooks.summary?.(next.snapshot.thread)
         }
-        view = next
-        if (shown) this.view.set(next)
+        if (options.submission?.cancelled && runId) {
+          await this.api.post(
+            ROUTES.cancel,
+            {
+              ...(input.key ? { key: this.api.key() } : {}),
+              threadId,
+              runId,
+            },
+            { keyless: true },
+          )
+          options.submission.cancelled = false
+        }
         if (event.type === 'RUN_FINISHED')
           succeeded = event.metadata?.cancelled !== true
-        if (event.type === 'RUN_STARTED') {
-          this.started(event.runId, input.threadId!, device, shown)
-          if (shown)
-            this.hooks.started?.({
-              threadId: event.threadId,
-              runId: event.runId,
-            })
+        if (replayed) continue
+        if (
+          device &&
+          event.type === 'STATE_DELTA' &&
+          event.runId &&
+          event.delta.some(
+            (patch) =>
+              patch.op === 'add' &&
+              patch.path === '/queue/-' &&
+              patch.value.queueId === event.runId,
+          )
+        ) {
+          this.settle(device)
         }
         if (!isTerminal(event)) continue
-        if (device) await this.hooks.saved?.(device, event, attached())
+        if (device) {
+          await this.hooks.saved?.(device, event, attached())
+          device.saved = true
+        }
         this.forgetReceipt(runId)
         this.hooks.ended?.()
       }
@@ -219,7 +287,7 @@ export class RunController {
         try {
           follow = {
             ...(input.key ? { key: this.api.key() } : {}),
-            threadId: input.threadId!,
+            threadId: threadId!,
             runId,
           }
         } catch (refusal) {
@@ -229,6 +297,7 @@ export class RunController {
         return await this.run(ROUTES.follow, follow, {
           ...options,
           rejoined: true,
+          started,
         })
       }
       if (attached()) {
@@ -236,10 +305,14 @@ export class RunController {
           this.pending = null
           this.forgetReceipt(runId)
           await this.hooks.gone?.(input.threadId!)
+        } else if (widgetRetry) {
+          widgetRetry.failure =
+            cause instanceof HarnessError ? cause.detail : CONNECTION_LOST
+          this.api.reportRateLimit(widgetRetry.failure.rateLimit)
         }
         // A run the harness refused to follow is gone. One that could not
         // be reached keeps its receipt, so it can still be rejoined.
-        else if (!quiet) this.fail(cause)
+        else if (!quiet) this.fail(cause, started)
         else if (cause instanceof HarnessError && cause.status !== undefined)
           this.forgetReceipt(runId)
       }
@@ -281,15 +354,20 @@ export class RunController {
     else this.hooks.accepted?.(threadId)
   }
 
-  // The open chat's run ended with its stream, refused or cut off.
-  fail(cause: unknown) {
+  // The open chat's run ended with its stream, refused or cut off. A turn
+  // refused before it started, as one queued behind a reply, leaves the
+  // reply streaming.
+  fail(cause: unknown, started = true) {
     const detail =
       cause instanceof HarnessError ? cause.detail : CONNECTION_LOST
     this.errorAt = Date.now()
     this.view.update((state) => ({
       ...state,
       error: detail,
-      status: 'error',
+      ...(!started &&
+      (state.status === 'streaming' || state.status === 'queued')
+        ? {}
+        : { status: 'error' }),
       ...(detail.code === ERROR_CODES.chatFlagged ? { flagged: true } : {}),
     }))
     this.api.reportRateLimit(detail.rateLimit)
@@ -304,6 +382,14 @@ export class RunController {
   }
 
   cancel(input: { key?: string; threadId: string | null; runId?: string }) {
+    if (
+      this.view.get().status === 'submitting' &&
+      !input.runId &&
+      this.submission?.threadId === input.threadId
+    ) {
+      this.submission.cancelled = true
+      return Promise.resolve()
+    }
     return this.api.post(ROUTES.cancel, input, { keyless: true })
   }
 

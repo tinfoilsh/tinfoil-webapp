@@ -3,7 +3,14 @@ import { SharedChatView } from '@/components/chat/shared-chat-view'
 import type { BaseModel } from '@/config/models'
 import { harnessAPI } from '@/services/harness/runtime'
 import { speechPlayer } from '@/services/speech/player'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { client, signIn } from '../../harness-fixture'
 import { FakeAudioContext } from '../../services/speech/fixtures'
@@ -80,6 +87,70 @@ it("keeps loading a shared image when the viewer's content key changes", async (
     'src',
     'data:image/png;base64,AQID',
   )
+})
+
+it('offers copy and sources on shared messages but nothing that changes the chat', () => {
+  render(
+    <SharedChatView
+      model={model}
+      isDarkMode={false}
+      chatData={{
+        title: 'Shared chat',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        messages: [
+          {
+            id: 'u1',
+            role: 'user',
+            content: 'What is new?',
+            createdAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            id: 'a1',
+            role: 'assistant',
+            content: 'Plenty.',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            timeline: [
+              {
+                id: 'search',
+                toolCallId: 'search',
+                type: 'tool_call',
+                name: 'web_search',
+                display: {
+                  status: 'completed',
+                  query: 'news',
+                  sources: [{ url: 'https://example.org', title: 'Source' }],
+                },
+              },
+              { id: 'text', type: 'content', content: 'Plenty.' },
+            ],
+            annotations: [
+              {
+                type: 'url_citation',
+                url_citation: { url: 'https://example.org', title: 'Source' },
+              },
+            ],
+          },
+        ],
+      }}
+    />,
+  )
+
+  const [question, reply] = screen.getAllByRole('article')
+  expect(
+    within(question)
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label')),
+  ).toEqual(['Copy message'])
+  expect(
+    within(reply)
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label') ?? button.textContent),
+  ).toEqual([
+    'Searched the web for "news"',
+    'Show 1 source',
+    'Copy message',
+    'Read aloud',
+  ])
 })
 
 it("asks the harness to read a shared reply's text aloud, without a key", async () => {

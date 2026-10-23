@@ -8,6 +8,9 @@ export const PROJECTS_CHANGED = 'harness-projects-changed'
 interface ProjectListState {
   projects: Project[]
   loading: boolean
+  // A listing of the account's projects has finished, so an empty list means
+  // it has none.
+  listed: boolean
   error: string | null
 }
 // The account's project list, which every useProjects shows. Hooks that load
@@ -17,9 +20,11 @@ class ProjectList {
   private state: ProjectListState = {
     projects: [],
     loading: false,
+    listed: false,
     error: null,
   }
   private listing: Promise<void> | null = null
+  private revision?: string
   // Only the latest listing applies, so a list read before a change cannot
   // replace the list read after it.
   private generation = 0
@@ -43,7 +48,11 @@ class ProjectList {
     this.state = { ...this.state, ...patch }
     for (const listener of this.listeners) listener()
   }
-  load(): Promise<void> {
+  load(revision?: string): Promise<void> {
+    if (revision !== this.revision) {
+      this.revision = revision
+      return this.refresh()
+    }
     return (getView().keyReady && this.listing) || this.refresh()
   }
   // A failed refresh keeps its error here and resolves, since callers start
@@ -54,7 +63,7 @@ class ProjectList {
       version === this.generation && !this.api.lifetime.signal.aborted
     if (!this.api.userId || !getView().keyReady) {
       this.listing = null
-      this.set({ projects: [], loading: false })
+      this.set({ projects: [], loading: false, listed: false })
       return Promise.resolve()
     }
     this.set({ loading: true })
@@ -67,10 +76,11 @@ class ProjectList {
           all.push(...page.projects)
           cursor = page.nextCursor
         } while (cursor)
-        if (isCurrent()) this.set({ projects: all, error: null })
+        if (isCurrent()) this.set({ projects: all, listed: true, error: null })
       } catch (cause) {
         if (!isCurrent()) return
         this.set({
+          listed: true,
           error:
             cause instanceof Error ? cause.message : 'Unable to load projects.',
         })
@@ -98,16 +108,24 @@ function projectList(api: HarnessAPI): ProjectList {
   return list
 }
 export function useProjects({ autoLoad = true }: { autoLoad?: boolean } = {}) {
-  const { api, keyReady } = useHarness()
+  const { api, keyReady, projectRevision } = useHarness()
   const list = projectList(api)
-  const { projects, loading, error } = useSyncExternalStore(
+  const { projects, loading, listed, error } = useSyncExternalStore(
     list.subscribe,
     list.read,
     list.read,
   )
   useEffect(() => {
-    if (autoLoad) void list.load()
-  }, [autoLoad, list, keyReady])
+    if (autoLoad) void list.load(projectRevision)
+  }, [autoLoad, list, keyReady, projectRevision])
   const refresh = useCallback(() => list.refresh(), [list])
-  return { projects, loading, error, refresh, loadProjects: refresh }
+  return {
+    projects,
+    // An account's projects are loading until they are first listed, which
+    // waits for its key, unless the caller does not list them.
+    loading: loading || (autoLoad && !!api.userId && !listed),
+    error,
+    refresh,
+    loadProjects: refresh,
+  }
 }

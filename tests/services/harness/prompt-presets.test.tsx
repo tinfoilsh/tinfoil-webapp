@@ -280,7 +280,12 @@ describe('choosing a saved prompt', () => {
       return { threads: [], nextCursor: null }
     })
     const { result } = renderHook(() => useThread('thread-1', null))
-    await waitFor(() => expect(result.current.chat.id).toBe('thread-1'))
+    await waitFor(() =>
+      expect(result.current).toMatchObject({
+        chat: { id: 'thread-1' },
+        loading: false,
+      }),
+    )
 
     await act(() => result.current.selectPreset(RESEARCH.id))
 
@@ -308,7 +313,9 @@ describe('choosing a saved prompt', () => {
     }
     await localThreadStore('device').update(id, () => before)
     const { result } = renderHook(() => useThread(id, null, { local: true }))
-    await waitFor(() => expect(result.current.chat.id).toBe(id))
+    await waitFor(() =>
+      expect(result.current).toMatchObject({ chat: { id }, loading: false }),
+    )
     client.post.mockResolvedValueOnce({ thread: applied })
 
     await act(() => result.current.selectPreset(RESEARCH.id))

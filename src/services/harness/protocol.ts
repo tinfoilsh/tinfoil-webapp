@@ -2,9 +2,11 @@
 
 export const ROUTES = {
   session: '/v1/session',
+  changes: '/v1/changes',
   profileGet: '/v1/profile/get',
   profileUpdate: '/v1/profile/update',
   profileUpgrade: '/v1/profile/upgrade',
+  profileMerge: '/v1/profile/merge',
   keysCurrent: '/v1/keys/current',
   keysRegister: '/v1/keys/register',
   keysAddBundle: '/v1/keys/add-bundle',
@@ -43,6 +45,7 @@ export const ROUTES = {
   projectDocumentUpload: '/v1/projects/documents/upload',
   projectDocumentDelete: '/v1/projects/documents/delete',
   favicon: '/v1/metadata/favicon',
+  linkMetadata: '/v1/metadata/link',
   speech: '/v1/speech',
   transcriptions: '/v1/transcriptions',
   export: '/v1/export',
@@ -51,6 +54,9 @@ export const ROUTES = {
 } as const
 
 export type HarnessRoute = (typeof ROUTES)[keyof typeof ROUTES]
+
+// Every widget the harness declares is named with this prefix.
+export const WIDGET_PREFIX = 'render_'
 
 // A run's stream: a turn starts one, and following one replays it.
 export type RunRoute = typeof ROUTES.turn | typeof ROUTES.follow
@@ -70,12 +76,17 @@ export const ERROR_CODES = {
   invalidStream: 'INVALID_STREAM',
   upstreamRefused: 'UPSTREAM_REFUSED',
   keyRequired: 'KEY_REQUIRED',
+  keyMismatch: 'KEY_MISMATCH',
   unauthenticated: 'UNAUTHENTICATED',
   badRequest: 'BAD_REQUEST',
   configuration: 'CONFIGURATION',
   connection: 'CONNECTION',
   threadNotFound: 'THREAD_NOT_FOUND',
   threadExists: 'THREAD_EXISTS',
+  // The chat changed while a run that edits it in place ran.
+  revisionConflict: 'REVISION_CONFLICT',
+  // A tool, such as a widget, is not offered to the client.
+  toolUnavailable: 'TOOL_UNAVAILABLE',
   threadTooLarge: 'THREAD_TOO_LARGE',
   attachmentsUnavailable: 'ATTACHMENTS_UNAVAILABLE',
   attachmentTooLarge: 'ATTACHMENT_TOO_LARGE',
@@ -85,4 +96,14 @@ export const ERROR_CODES = {
   // The chat already holds the most turns it queues behind a running reply.
   // It is not the caller's quota.
   queueFull: 'QUEUE_FULL',
+  // An archive holds more than the harness can process.
+  archiveTooLarge: 'ARCHIVE_TOO_LARGE',
+  // Other archives hold the harness's temporary space for now.
+  tempSpaceBusy: 'TEMP_SPACE_BUSY',
+  projectsRequireCloud: 'PROJECTS_REQUIRE_CLOUD',
+  importInvalid: 'IMPORT_INVALID',
+  importTooLarge: 'IMPORT_TOO_LARGE',
+  payloadTooLarge: 'PAYLOAD_TOO_LARGE',
+  // Set by this client, not the harness: a reply this device could not store.
+  localSaveFailed: 'LOCAL_SAVE_FAILED',
 } as const

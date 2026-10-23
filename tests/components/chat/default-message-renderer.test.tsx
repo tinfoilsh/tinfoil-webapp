@@ -5,11 +5,12 @@ import type { BaseModel } from '@/config/models'
 import type {
   Annotation,
   ToolDisplay,
+  TimelineBlock as WireBlock,
   Message as WireMessage,
 } from '@/services/harness/types'
 import { messageView } from '@/services/harness/view-model'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
+import { describe, expect, it, vi, type Mock } from 'vitest'
 
 const model = {
   id: 'current-model',
@@ -126,6 +127,7 @@ describe('DefaultMessageRenderer metadata', () => {
         isDarkMode={false}
       />,
     )
+    expect(screen.queryByText('Retired Model')).not.toBeInTheDocument()
     expect(screen.getByText('Encrypted')).toBeInTheDocument()
     expect(screen.queryByText('Current Model')).not.toBeInTheDocument()
   })
@@ -511,10 +513,6 @@ describe('DefaultMessageRenderer edit keyboard shortcuts', () => {
     'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
   const messageIndex = 3
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
   describe.each<{
     name: string
     openEditor: (onSave: Mock) => HTMLElement
@@ -584,6 +582,7 @@ describe('DefaultMessageRenderer edit keyboard shortcuts', () => {
         messageIndex,
         'Revised text',
       )
+      expect(textbox).not.toBeInTheDocument()
     })
 
     it('inserts a new line on plain Enter on phones', () => {
@@ -595,6 +594,7 @@ describe('DefaultMessageRenderer edit keyboard shortcuts', () => {
       expect(notCancelled).toBe(true)
       expect(onSave).not.toHaveBeenCalled()
       expect(textbox).toBeInTheDocument()
+      expect(textbox).toHaveValue('Revised text')
     })
 
     it('saves on Cmd+Enter on phones', () => {
@@ -607,6 +607,7 @@ describe('DefaultMessageRenderer edit keyboard shortcuts', () => {
         messageIndex,
         'Revised text',
       )
+      expect(textbox).not.toBeInTheDocument()
     })
   })
 })
@@ -892,6 +893,273 @@ describe('DefaultMessageRenderer work traces', () => {
     expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
       'Worked for 42.0 seconds',
     )
+  })
+
+  it('says how long the steps of a stored reply took', () => {
+    const thinking: WireBlock = {
+      id: 't',
+      type: 'thinking',
+      content: 'Plan the trip.',
+      startedAt: 1_000,
+      endedAt: 3_500,
+      duration: 2.5,
+    }
+    const answer: WireBlock = { id: 'c', type: 'content', content: 'Go.' }
+    const stored = (timeline: WireBlock[]): WireMessage => ({
+      id: 'a1',
+      role: 'assistant',
+      createdAt: '2026-08-07T00:00:01.000Z',
+      content: 'Go.',
+      timeline,
+    })
+    const { unmount } = renderReply(stored([thinking, answer]), false)
+    expect(screen.getByText('Thought').closest('button')).toHaveTextContent(
+      'Thought for 2.5 seconds',
+    )
+    unmount()
+
+    renderReply(
+      stored([
+        thinking,
+        {
+          id: 's',
+          type: 'tool_call',
+          toolCallId: 's',
+          name: 'web_search',
+          arguments: '{"query":"trip"}',
+          complete: true,
+          display: { query: 'trip', status: 'completed', sources: [] },
+          startedAt: 4_000,
+          endedAt: 11_000,
+        },
+        answer,
+      ]),
+      false,
+    )
+    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
+      'Worked for 10.0 seconds',
+    )
+  })
+
+  it("lists the last search's results and the citations as the reply's sources", () => {
+    const page = (name: string) => ({
+      url: `https://${name}.example/`,
+      title: `Page ${name}`,
+    })
+    const call = (
+      id: string,
+      name: string,
+      display: ToolDisplay,
+    ): WireBlock => ({
+      id,
+      type: 'tool_call',
+      toolCallId: id,
+      name,
+      arguments: '{}',
+      complete: true,
+      display,
+    })
+    const reply = (timeline: WireBlock[]): WireMessage => ({
+      id: 'a1',
+      role: 'assistant',
+      createdAt: '2026-08-07T00:00:01.000Z',
+      content: 'Answer.',
+      timeline: [...timeline, { id: 'c', type: 'content', content: 'Answer.' }],
+      annotations: [{ type: 'url_citation', url_citation: page('first') }],
+    })
+    const read = call('f', 'web_fetch', {
+      url: page('read').url,
+      status: 'completed',
+      sources: [page('read')],
+    })
+    const { unmount } = renderReply(
+      reply([
+        call('s1', 'web_search', {
+          query: 'one',
+          status: 'completed',
+          sources: [page('first')],
+        }),
+        call('s2', 'web_search', {
+          query: 'two',
+          status: 'completed',
+          sources: [page('second')],
+        }),
+        read,
+      ]),
+      false,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 sources' }))
+    expect(
+      within(screen.getByRole('dialog'))
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('href')),
+    ).toEqual(['https://second.example/', 'https://first.example/'])
+    unmount()
+
+    renderReply(reply([read]), false)
+    expect(
+      screen.queryByRole('button', { name: /^Show \d+ sources?$/ }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows each page back-to-back reads asked for, and which failed', () => {
+    const fetch = (
+      id: string,
+      urls: string[],
+      result: WireBlock['result'],
+    ): WireBlock => ({
+      id,
+      type: 'tool_call',
+      toolCallId: id,
+      name: 'web_fetch',
+      arguments: JSON.stringify({ urls }),
+      complete: true,
+      result,
+      display: { url: urls[0], status: 'completed', sources: [] },
+    })
+    const { container } = renderReply(
+      {
+        id: 'a1',
+        role: 'assistant',
+        createdAt: '2026-08-07T00:00:01.000Z',
+        content: 'Read them.',
+        timeline: [
+          fetch('f1', ['https://a.example/one', 'https://b.example/two'], {
+            pages: [{ url: 'https://a.example/one', text: 'One' }],
+            failed: [{ url: 'https://b.example/two', error: 'timeout' }],
+          }),
+          fetch('f2', ['https://c.example/three'], {
+            pages: [{ url: 'https://c.example/three', text: 'Three' }],
+            failed: [],
+          }),
+          { id: 'c', type: 'content', content: 'Read them.' },
+        ],
+      },
+      false,
+    )
+
+    // One step lists every page; only the pages read count as read.
+    expect(screen.getByRole('button', { name: 'Read 2 links' })).toBeVisible()
+    expect(container).not.toHaveTextContent('Read 1 link')
+    expect(container).not.toHaveTextContent('Worked')
+    for (const page of ['a.example/one', 'b.example/two', 'c.example/three'])
+      expect(screen.getByText(page)).toBeInTheDocument()
+  })
+
+  it('times back-to-back reads from the first start to the last end', () => {
+    const fetch = (id: string, startedAt: number, endedAt: number) => ({
+      id,
+      type: 'tool_call' as const,
+      toolCallId: id,
+      name: 'web_fetch',
+      arguments: JSON.stringify({ urls: [`https://${id}.example/`] }),
+      complete: true,
+      display: { status: 'completed' as const, sources: [] },
+      startedAt,
+      endedAt,
+    })
+    renderReply(
+      {
+        id: 'a1',
+        role: 'assistant',
+        createdAt: '2026-08-07T00:00:01.000Z',
+        content: 'Read them.',
+        timeline: [
+          fetch('first', 1_000, 4_000),
+          fetch('second', 4_000, 9_000),
+          {
+            id: 't',
+            type: 'thinking',
+            content: 'Both read.',
+            startedAt: 5_000,
+            endedAt: 6_000,
+            duration: 1,
+          },
+          { id: 'c', type: 'content', content: 'Read them.' },
+        ],
+      },
+      false,
+    )
+
+    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
+      'Worked for 8.0 seconds',
+    )
+  })
+
+  it('times a cut-off read as long as it ran when it follows another read', () => {
+    const fetch = (id: string, startedAt: number, endedAt?: number) => ({
+      id,
+      type: 'tool_call' as const,
+      toolCallId: id,
+      name: 'web_fetch',
+      arguments: JSON.stringify({ urls: [`https://${id}.example/`] }),
+      complete: true,
+      startedAt,
+      endedAt,
+    })
+    renderReply(
+      {
+        id: 'a1',
+        role: 'assistant',
+        createdAt: '2026-08-07T00:00:01.000Z',
+        content: 'Read them.',
+        timeline: [
+          {
+            id: 't',
+            type: 'thinking',
+            content: 'Reading both.',
+            startedAt: 500,
+            endedAt: 900,
+            duration: 0.4,
+          },
+          fetch('first', 1_000, 4_000),
+          fetch('second', 5_000),
+          { id: 'c', type: 'content', content: 'Read them.' },
+        ],
+      },
+      false,
+    )
+
+    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
+      'Worked for 4.5 seconds',
+    )
+  })
+
+  it('shows nothing of the code an older chat ran, unlike a retired widget', () => {
+    renderReply(
+      {
+        id: 'a1',
+        role: 'assistant',
+        createdAt: '2026-08-07T00:00:01.000Z',
+        content: 'It is Monday.',
+        timeline: [
+          {
+            id: 'x1',
+            type: 'tool_call',
+            toolCallId: 'x1',
+            name: 'bash',
+            arguments: '{"command":"date"}',
+            result: { output: 'Mon Aug 7' },
+            complete: true,
+          },
+          {
+            id: 'w1',
+            type: 'tool_call',
+            toolCallId: 'w1',
+            name: 'render_retired',
+            arguments: '{}',
+            complete: true,
+          },
+          { id: 'c', type: 'content', content: 'It is Monday.' },
+        ],
+      },
+      false,
+    )
+
+    expect(screen.getAllByText('Component unavailable')).toHaveLength(1)
+    expect(screen.queryByText(/Mon Aug 7|command/)).not.toBeInTheDocument()
+    expect(screen.getByText('It is Monday.')).toBeInTheDocument()
   })
 
   it('leaves a lone trace block rendered as itself', () => {

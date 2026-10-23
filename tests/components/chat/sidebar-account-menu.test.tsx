@@ -42,6 +42,7 @@ function renderMenu(
       isSignedIn
       isPremium={false}
       isDarkMode={false}
+      syncNeedsAttention={false}
       onOpenSettings={onOpenSettings}
       onReportBug={onReportBug}
       {...overrides}
@@ -87,6 +88,18 @@ describe('SidebarAccountMenu', () => {
     expect(onOpenSettings).toHaveBeenLastCalledWith('account')
   })
 
+  it('opens settings on Cloud Sync while the cloud key needs attention', () => {
+    const { onOpenSettings } = renderMenu({ syncNeedsAttention: true })
+
+    const trigger = screen.getByRole('button', { name: /Ada/ })
+    expect(trigger).toHaveAccessibleDescription('Cloud sync needs attention')
+    fireEvent.click(trigger)
+    const settings = screen.getByRole('menuitem', { name: 'Settings' })
+    expect(settings).toHaveAccessibleDescription('Cloud sync needs attention')
+    fireEvent.click(settings)
+    expect(onOpenSettings).toHaveBeenCalledWith('cloud-sync')
+  })
+
   it('reveals help links and the bug report action in a submenu', () => {
     const { onReportBug } = renderMenu()
 
@@ -113,6 +126,7 @@ describe('SidebarAccountMenu', () => {
       isSignedIn: true,
       isPremium: false,
       isDarkMode: false,
+      syncNeedsAttention: false,
       onOpenSettings: vi.fn(),
       onReportBug: vi.fn(),
     }

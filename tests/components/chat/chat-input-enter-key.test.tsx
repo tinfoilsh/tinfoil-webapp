@@ -87,4 +87,25 @@ describe('ChatInput Enter key handling', () => {
 
     expect(handleSubmit).toHaveBeenCalledOnce()
   })
+
+  it('keeps the text box focused after sending with the button on phones', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE_USER_AGENT)
+    const { handleSubmit, textarea } = renderChatInput()
+    expect(textarea).toHaveFocus()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(handleSubmit).toHaveBeenCalledOnce()
+    expect(textarea).toHaveFocus()
+  })
+
+  it('blurs the text box after sending with the button on desktop', () => {
+    const { handleSubmit, textarea } = renderChatInput()
+    expect(textarea).toHaveFocus()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(handleSubmit).toHaveBeenCalledOnce()
+    expect(textarea).not.toHaveFocus()
+  })
 })

@@ -1,8 +1,9 @@
 import { SETTINGS_LOCAL_ONLY_MODE_ENABLED } from '@/constants/storage-keys'
-import { isLocalOnlyModeEnabled } from '@/utils/cloud-sync-settings'
+import {
+  isLocalOnlyModeEnabled,
+  LOCAL_ONLY_MODE_CHANGED_EVENT,
+} from '@/utils/cloud-sync-settings'
 import { useSyncExternalStore } from 'react'
-
-const LOCAL_ONLY_MODE_CHANGED_EVENT = 'localOnlyModeChanged'
 
 function subscribeTo(key: string, event: string) {
   return (listener: () => void) => {

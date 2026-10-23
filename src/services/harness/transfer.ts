@@ -1,9 +1,14 @@
 import { logError } from '@/utils/error-handling'
-import type { LocalThreadStore } from './local-threads'
+import type { LocalThreadStore, Originals } from './local-threads'
 import { ERROR_CODES, ROUTES } from './protocol'
 import type { HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import type { StoredThread, ThreadSummary } from './types'
+
+export interface DeviceChatCopy {
+  thread: StoredThread
+  originals: Originals
+}
 
 // Moving a chat between the cloud and this device keeps its id. A chat on the
 // device holds its attachments' content, so a move carries the content with
@@ -21,6 +26,15 @@ export function transferInFlight(): HarnessError {
     409,
   )
 }
+
+const alreadyOnDevice = () =>
+  new HarnessError(
+    {
+      code: ERROR_CODES.threadExists,
+      message: 'This chat is already stored on this device.',
+    },
+    409,
+  )
 
 const SERVER_ERROR_STATUS = 500
 
@@ -44,18 +58,19 @@ export function isAttachmentsUnavailable(error: unknown): boolean {
 
 // A stored chat as this device keeps it: the thread with every attachment's
 // content inline.
-export async function cloudTranscript(
+async function cloudTranscript(
   api: HarnessAPI,
   threadId: string,
   signal?: AbortSignal,
-): Promise<StoredThread> {
-  const result = await api.post<{ thread?: unknown }>(
+): Promise<{ thread: StoredThread; revision: string }> {
+  const result = await api.post<{ thread?: unknown; revision?: string }>(
     ROUTES.transcript,
     { threadId },
     { signal },
   )
   const thread = result?.thread
   if (
+    !result?.revision ||
     !thread ||
     typeof thread !== 'object' ||
     Array.isArray(thread) ||
@@ -65,7 +80,10 @@ export async function cloudTranscript(
       code: ERROR_CODES.upstreamRefused,
       message: 'The chat service returned an invalid chat.',
     })
-  return { ...(thread as StoredThread), id: threadId }
+  return {
+    thread: { ...(thread as StoredThread), id: threadId },
+    revision: result.revision,
+  }
 }
 
 // Stores a chat on this device, then deletes its cloud copy. A deletion that
@@ -78,18 +96,16 @@ export async function placeOnDevice(
   api: HarnessAPI,
   store: LocalThreadStore,
   thread: StoredThread,
+  originals?: Originals,
+  revision?: string,
 ): Promise<StoredThread> {
-  const saved = await store.add(thread)
-  if (!saved)
-    throw new HarnessError(
-      {
-        code: ERROR_CODES.threadExists,
-        message: 'This chat is already stored on this device.',
-      },
-      409,
-    )
+  const saved = await store.add(thread, originals)
+  if (!saved) throw alreadyOnDevice()
   try {
-    await api.post(ROUTES.delete, { id: thread.id })
+    await api.post(ROUTES.delete, {
+      id: thread.id,
+      ...(revision ? { revision } : {}),
+    })
   } catch (cause) {
     if (!isRefusal(cause)) throw cause
     await store.delete(thread.id).catch((error) =>
@@ -109,7 +125,45 @@ export async function moveThreadToDevice(
   store: LocalThreadStore,
   threadId: string,
 ): Promise<StoredThread> {
-  return placeOnDevice(api, store, await cloudTranscript(api, threadId))
+  const { thread, revision } = await cloudTranscript(api, threadId)
+  return placeOnDevice(api, store, thread, undefined, revision)
+}
+
+// A chat this device keeps, with the originals of its attachments.
+async function deviceCopy(
+  store: LocalThreadStore,
+  threadId: string,
+): Promise<DeviceChatCopy> {
+  const thread = await store.get(threadId)
+  if (!thread)
+    throw new HarnessError(
+      {
+        code: ERROR_CODES.threadNotFound,
+        message: 'This chat is no longer stored on this device.',
+      },
+      404,
+    )
+  const originals = await store.originals(
+    threadId,
+    thread.messages.flatMap((message) =>
+      (message.attachments ?? []).map((attachment) => attachment.id),
+    ),
+  )
+  return { thread, originals }
+}
+
+// Stores a chat from one store of this device in another under the same id,
+// as a temporary chat the user keeps, then deletes it from the first.
+export async function moveThreadOnDevice(
+  from: LocalThreadStore,
+  to: LocalThreadStore,
+  threadId: string,
+): Promise<StoredThread> {
+  const { thread, originals } = await deviceCopy(from, threadId)
+  const saved = await to.add(thread, originals)
+  if (!saved) throw alreadyOnDevice()
+  await from.delete(threadId)
+  return saved
 }
 
 // Stores a chat from this device in the cloud under the same id, then
@@ -120,16 +174,8 @@ export async function moveThreadToCloud(
   api: HarnessAPI,
   store: LocalThreadStore,
   threadId: string,
-): Promise<{ summary: ThreadSummary; original: StoredThread }> {
-  const original = await store.get(threadId)
-  if (!original)
-    throw new HarnessError(
-      {
-        code: ERROR_CODES.threadNotFound,
-        message: 'This chat is no longer stored on this device.',
-      },
-      404,
-    )
+): Promise<{ summary: ThreadSummary; original: DeviceChatCopy }> {
+  const { thread: original, originals } = await deviceCopy(store, threadId)
   const summary = await api.post<ThreadSummary>(ROUTES.threadImport, {
     threadId,
     thread: original,
@@ -146,5 +192,5 @@ export async function moveThreadToCloud(
     )
     throw cause
   }
-  return { summary, original }
+  return { summary, original: { thread: original, originals } }
 }

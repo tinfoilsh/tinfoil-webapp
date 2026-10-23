@@ -4,6 +4,7 @@ import {
   SETTINGS_REASONING_EFFORT,
   SETTINGS_THEME_MODE,
   SETTINGS_THINKING_ENABLED,
+  SETTINGS_WEB_SEARCH_AVAILABLE,
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
   USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
   USER_PREFS_LOCAL_PROFILE,
@@ -32,6 +33,7 @@ describe('loadLocalProfile', () => {
     localStorage.setItem(USER_PREFS_PERSONALIZATION_ENABLED, 'false')
     localStorage.setItem(SETTINGS_REASONING_EFFORT, 'high')
     localStorage.setItem(SETTINGS_THINKING_ENABLED, 'false')
+    localStorage.setItem(SETTINGS_WEB_SEARCH_AVAILABLE, 'false')
     localStorage.setItem(SETTINGS_THEME_MODE, 'dark')
     localStorage.setItem(SETTINGS_CHAT_FONT, 'comic')
     localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, 'p1')
@@ -56,6 +58,7 @@ describe('loadLocalProfile', () => {
       isUsingPersonalization: false,
       reasoningEffort: 'high',
       thinkingEnabled: false,
+      webSearchAvailable: false,
       themeMode: 'dark',
       chatFont: 'comic',
       defaultPromptPresetId: 'p1',

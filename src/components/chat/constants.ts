@@ -1,5 +1,6 @@
 export const CONSTANTS = {
   MOBILE_BREAKPOINT: 768,
+  INPUT_MIN_HEIGHT: '28px',
   // Welcome-screen composer: one comfortable line of text before it grows.
   WELCOME_INPUT_MIN_HEIGHT: '36px',
   // Maximum height of the chat input textarea before it scrolls internally
@@ -11,6 +12,8 @@ export const CONSTANTS = {
   // viewport so it never covers the entire screen above the keyboard
   INPUT_VIEWPORT_TOP_GAP_PX: 24,
   CHAT_INPUT_BOTTOM_GAP_PX: 32,
+  CHAT_MESSAGE_TOP_GAP_PX: 16,
+  CHAT_SCROLL_BUTTON_THRESHOLD_PX: 200,
   CHAT_INPUT_FADE_HEIGHT_PX: 80,
   CHAT_INPUT_FADE_SOLID_AT_PX: 72,
   SINGLE_SIDEBAR_BREAKPOINT: 1024, // Below this width, only one sidebar can be open at a time
@@ -54,6 +57,8 @@ export const CONSTANTS = {
   SIDEBAR_MENU_HOVER_TOLERANCE_PX: 48,
   // Recent chats listed in the search modal before a term is typed.
   SEARCH_RECENT_CHAT_COUNT: 8,
+  // Favorites the sidebar lists, the most recently pinned first.
+  MAX_FAVORITE_CHATS: 20,
   // Height of a pinned sidebar section header (Projects/Chats). The Chats
   // header offsets by this amount so it stacks below the pinned Projects
   // header while scrolling.
@@ -70,6 +75,11 @@ export const CONSTANTS = {
   SIDEBAR_SECTION_SCROLLBAR_HIDE_MS: 300,
   SETTINGS_SIDEBAR_WIDTH_PX: 345,
   VERIFIER_SIDEBAR_WIDTH_PX: 345,
+  // The verification panel retries a failed verification, each wait longer
+  // than the last by the backoff factor.
+  VERIFICATION_MAX_RETRIES: 5,
+  VERIFICATION_RETRY_DELAY_MS: 2000,
+  VERIFICATION_RETRY_BACKOFF_FACTOR: 1.5,
   ASK_SIDEBAR_WIDTH_PX: 420,
   ARTIFACT_SIDEBAR_WIDTH_PX: 420,
   ARTIFACT_SIDEBAR_MIN_WIDTH_PX: 360,

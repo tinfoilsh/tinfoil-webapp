@@ -45,10 +45,16 @@ export function getNewChatPath({
 
 // The sections the catch-all route renders; it shows its not-found page for
 // any other path.
-const CATCH_ALL_SECTIONS = ['chat', 'project', 'share']
+const SHARE_SECTION = 'share'
+const CATCH_ALL_SECTIONS = ['chat', 'project', SHARE_SECTION]
 export function isCatchAllSection(slug: string | string[] | undefined) {
   const section = Array.isArray(slug) ? slug[0] : slug
   return !!section && CATCH_ALL_SECTIONS.includes(section)
+}
+// A shared chat's page, which opens without the visitor's account.
+export function isShareSection(slug: string | string[] | undefined) {
+  const section = Array.isArray(slug) ? slug[0] : slug
+  return section === SHARE_SECTION
 }
 
 export function isLocalNewChatStorage(

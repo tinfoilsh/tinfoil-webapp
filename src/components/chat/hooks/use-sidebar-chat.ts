@@ -8,6 +8,16 @@ import { messageView } from '@/services/harness/view-model'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LoadingState, Message } from '../types'
 const CONTEXT_UNREADABLE = 'The chat could not be read.'
+type AskedRun = { key?: string; threadId?: string; runId?: string }
+const inFlight = (status: string) =>
+  status === 'submitting' || status === 'streaming' || status === 'queued'
+// The harness runs an ask to its end unless asked to stop it, also one
+// whose stream failed while the run may go on.
+function stopAsk(controller: RunController, asked: AskedRun) {
+  const { key, threadId, runId } = asked
+  if (threadId && runId && controller.view.get().status !== 'idle')
+    void controller.cancel({ key, threadId, runId }).catch(() => {})
+}
 export interface SidebarChatState {
   messages: Message[]
   quote: string | null
@@ -28,35 +38,52 @@ export function useSidebarChat({
   const { api } = useHarness()
   const [controller] = useState(() => new RunController(api))
   const state = useStore(controller.view)
-  const [quote, setQuote] = useState<string | null>(null)
+  // The ask's question: the quoted selection, shown as a quote from the
+  // moment it is asked.
+  const [question, setQuestion] = useState<Message | null>(null)
   // Why the thread the ask reads could not be read, which no stream reports.
   const [contextError, setContextError] = useState<string | null>(null)
   // The ask's run, which the harness runs as a thread of its own, and the
   // key it carries.
-  const asked = useRef<{ key?: string; threadId?: string; runId?: string }>({})
+  const asked = useRef<AskedRun>({})
   controller.hooks = {
     started: (run) => Object.assign(asked.current, run),
   }
   const reset = () => {
+    stopAsk(controller, asked.current)
     controller.reset()
     asked.current = {}
-    setQuote(null)
+    setQuestion(null)
     setContextError(null)
   }
-  useEffect(() => () => controller.reset(), [controller])
+  useEffect(
+    () => () => {
+      stopAsk(controller, asked.current)
+      controller.reset()
+    },
+    [controller],
+  )
   const askQuote = (text: string) => {
     reset()
-    setQuote(text)
+    setQuestion({
+      role: 'user',
+      content: '',
+      quote: text,
+      timestamp: new Date(),
+    })
+    controller.view.update((state) => ({ ...state, status: 'submitting' }))
     const shown = controller.track()
     void (async () => {
       let thread: AskContext
       try {
         thread = await context()
       } catch (cause) {
-        if (shown())
+        if (shown()) {
+          controller.view.update((state) => ({ ...state, status: 'idle' }))
           setContextError(
             cause instanceof Error ? cause.message : CONTEXT_UNREADABLE,
           )
+        }
         return
       }
       if (!shown()) return
@@ -72,7 +99,7 @@ export function useSidebarChat({
       })
     })()
   }
-  const isStreaming = state.status === 'streaming'
+  const isStreaming = inFlight(state.status)
   // A failed ask shows why as an error reply, also when it failed before the
   // harness sent any message.
   const failed =
@@ -91,16 +118,23 @@ export function useSidebarChat({
   )
   return {
     messages: [
-      ...state.messages.map((m, index) =>
-        messageView(
-          m,
-          isStreaming && index === state.messages.length - 1,
-          state.summaries,
-        ),
+      ...(question ? [question] : []),
+      // The question stands for the ask's message, which the harness returns
+      // with the quote as its content.
+      ...state.messages.flatMap((m, index) =>
+        m.role === 'user'
+          ? []
+          : [
+              messageView(
+                m,
+                isStreaming && index === state.messages.length - 1,
+                state.summaries,
+              ),
+            ],
       ),
       ...(failure ? [failure] : []),
     ],
-    quote,
+    quote: question?.quote ?? null,
     loadingState: (isStreaming ? 'streaming' : 'idle') as LoadingState,
     isWaitingForResponse:
       isStreaming && !state.messages.some((m) => m.role === 'assistant'),
@@ -109,16 +143,12 @@ export function useSidebarChat({
     askQuote,
     reset,
     cancel: () => {
-      const { key, threadId, runId } = asked.current
-      if (threadId && runId)
-        void controller.cancel({ key, threadId, runId }).catch(() => {})
+      stopAsk(controller, asked.current)
       // The stopped stream reports nothing more, so the ask stops here and
       // keeps what it received.
       const shown = controller.view.get()
       controller.reset(
-        shown.status === 'streaming' || shown.status === 'queued'
-          ? { ...shown, status: 'idle' }
-          : shown,
+        inFlight(shown.status) ? { ...shown, status: 'idle' } : shown,
       )
     },
   }

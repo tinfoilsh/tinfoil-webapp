@@ -8,8 +8,16 @@ vi.mock('@clerk/react', () => ({
   ClerkProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
 vi.mock('@/services/harness/provider', () => ({
-  HarnessProvider: ({ children }: { children: ReactNode }) => (
-    <div data-testid="harness">{children}</div>
+  HarnessProvider: ({
+    children,
+    anonymous = false,
+  }: {
+    children: ReactNode
+    anonymous?: boolean
+  }) => (
+    <div data-testid="harness" data-anonymous={String(anonymous)}>
+      {children}
+    </div>
   ),
 }))
 vi.mock('@/components/auth-cleanup-handler', () => ({
@@ -58,4 +66,48 @@ describe('the chat service around pages', () => {
     expect(screen.getByRole('main')).toHaveTextContent('Page')
     expect(screen.queryByTestId('harness') !== null).toBe(wrapped)
   })
+
+  it.each([
+    { pathname: '/', slug: undefined, isReady: true, anonymous: 'false' },
+    {
+      pathname: '/[...slug]',
+      slug: ['chat', 'c1'],
+      isReady: true,
+      anonymous: 'false',
+    },
+    {
+      pathname: '/[...slug]',
+      slug: ['share', 's1'],
+      isReady: true,
+      anonymous: 'true',
+    },
+    {
+      pathname: '/[...slug]',
+      slug: ['share', 's1'],
+      isReady: false,
+      anonymous: 'false',
+    },
+  ])(
+    'opens $pathname $slug without the account: $anonymous',
+    ({ pathname, slug, isReady, anonymous }) => {
+      const router = {
+        pathname,
+        asPath: slug ? `/${slug.join('/')}` : pathname,
+        query: slug ? { slug } : {},
+        isReady,
+      }
+      render(
+        <App
+          Component={() => <main>Page</main>}
+          pageProps={{}}
+          router={router as unknown as AppProps['router']}
+        />,
+      )
+
+      expect(screen.getByTestId('harness')).toHaveAttribute(
+        'data-anonymous',
+        anonymous,
+      )
+    },
+  )
 })

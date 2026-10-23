@@ -422,7 +422,7 @@ describe('code previews', () => {
   })
 })
 
-it('opens HTML artifacts on the preview tab but runs them on the sandbox only on request', () => {
+it('automatically runs HTML artifacts in the sandbox when their preview opens', () => {
   const html = '<h1>Artifact</h1>'
   const { getByRole, getByTitle, queryByRole, queryByTitle } = render(
     <ArtifactPreviewPanel source={{ type: 'html', html }} title="Artifact" />,
@@ -431,8 +431,6 @@ it('opens HTML artifacts on the preview tab but runs them on the sandbox only on
     'aria-selected',
     'true',
   )
-  expect(queryByTitle('Artifact')).toBeNull()
-  fireEvent.click(getByRole('button', { name: 'Run preview' }))
   const frame = getByTitle('Artifact') as HTMLIFrameElement
   expect(frame.src.startsWith(`${SANDBOX_PREVIEW_URL}#`)).toBe(true)
   expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
@@ -448,14 +446,13 @@ it('opens HTML artifacts on the preview tab but runs them on the sandbox only on
   expect(queryByRole('button', { name: 'Run preview' })).toBeNull()
 })
 
-it('asks again before running a new HTML artifact shown in the panel', () => {
-  const { getByRole, getByTitle, queryByTitle, rerender } = render(
+it('runs the new HTML when the artifact shown in the panel changes', () => {
+  const { getByTitle, rerender } = render(
     <ArtifactPreviewPanel
       source={{ type: 'html', html: '<p>a</p>' }}
       title="Artifact"
     />,
   )
-  fireEvent.click(getByRole('button', { name: 'Run preview' }))
   const frame = getByTitle('Artifact') as HTMLIFrameElement
   expect(sandboxRun(frame)).toMatchObject({ html: '<p>a</p>' })
   // The ready frame would forward any new run it receives.
@@ -466,9 +463,16 @@ it('asks again before running a new HTML artifact shown in the panel', () => {
       title="Artifact"
     />,
   )
-  expect(queryByTitle('Artifact')).toBeNull()
-  expect(getByRole('button', { name: 'Run preview' })).not.toBeNull()
-  expect(post).not.toHaveBeenCalled()
+  expect(getByTitle('Artifact')).toBe(frame)
+  expect(post).toHaveBeenCalledExactlyOnceWith(
+    {
+      type: 'tinfoil-sandbox-run',
+      kind: 'artifact',
+      html: '<p>b</p>',
+      instanceId: expect.any(String),
+    },
+    '*',
+  )
 })
 
 it('opens a new artifact on the preview tab after viewing source', () => {
@@ -505,6 +509,55 @@ it('frames URL artifacts directly with the same sandbox permissions', () => {
   expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
   expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer')
 })
+
+it.each([
+  { type: 'html', html: '<p>Press a key</p>' },
+  { type: 'url', url: 'https://example.com/game' },
+] as const)(
+  'leaves focus in the composer when a $type preview opens',
+  (source) => {
+    const contentWindowGetter = Object.getOwnPropertyDescriptor(
+      HTMLIFrameElement.prototype,
+      'contentWindow',
+    )!.get!
+    const focus = vi.fn()
+    vi.spyOn(
+      HTMLIFrameElement.prototype,
+      'contentWindow',
+      'get',
+    ).mockImplementation(function (this: HTMLIFrameElement) {
+      const frameWindow: Window | null = contentWindowGetter.call(this)
+      if (frameWindow && !vi.isMockFunction(frameWindow.focus)) {
+        vi.spyOn(frameWindow, 'focus').mockImplementation(focus)
+      }
+      return frameWindow
+    })
+    const composer = document.createElement('textarea')
+    document.body.append(composer)
+    composer.focus()
+    try {
+      const { getByTitle } = render(
+        <ArtifactPreviewPanel
+          source={source}
+          title="Artifact"
+          layout="sidebar"
+        />,
+      )
+      const frame = getByTitle('Artifact')
+      fireEvent.load(frame)
+      fireEvent.mouseEnter(frame)
+      expect(focus).not.toHaveBeenCalled()
+      expect(composer).toHaveFocus()
+
+      // Once the user leaves the composer, the preview takes focus again.
+      composer.blur()
+      fireEvent.mouseEnter(frame)
+      expect(focus).toHaveBeenCalledOnce()
+    } finally {
+      composer.remove()
+    }
+  },
+)
 
 describe('mermaid preview', () => {
   it('renders in the in-origin Mermaid page and relays height and errors', () => {

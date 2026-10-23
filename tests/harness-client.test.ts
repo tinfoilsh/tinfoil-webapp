@@ -2,7 +2,12 @@ import { HarnessClient } from '@/services/harness/client'
 import type { HarnessRoute } from '@/services/harness/protocol'
 import { initialChat, reduceEvent } from '@/services/harness/reducer'
 import { HarnessError, readEvents } from '@/services/harness/sse'
-import type { Frame, Message, TimelineBlock } from '@/services/harness/types'
+import type {
+  Frame,
+  Json,
+  Message,
+  TimelineBlock,
+} from '@/services/harness/types'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
@@ -52,6 +57,55 @@ describe('harness SSE', () => {
 })
 
 describe('harness reducer', () => {
+  it('applies committed metadata to each reply without changing earlier replies', () => {
+    let state = initialChat()
+    state.messages = [
+      {
+        id: 'old',
+        role: 'assistant',
+        createdAt: '',
+        content: 'Earlier answer',
+      },
+    ]
+    state = reduceEvent(state, {
+      id: 0,
+      event: { type: 'RUN_STARTED', runId: 'run' },
+    })
+    state = reduceEvent(state, {
+      id: 1,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'answer',
+        delta: 'A sourced answer.',
+      },
+    })
+    const metadata = {
+      id: 'answer',
+      model: 'gpt-oss-120b',
+      modelDisplayName: 'GPT-OSS',
+      annotations: [
+        {
+          type: 'url_citation' as const,
+          url_citation: { url: 'https://example.org', title: 'Source' },
+        },
+      ],
+      usage: { promptTokens: 17, completionTokens: 4 },
+      isError: true,
+      isInterrupted: false,
+    }
+    const finished = reduceEvent(state, {
+      id: 2,
+      event: {
+        type: 'RUN_ERROR',
+        runId: 'run',
+        metadata: { messages: [metadata] },
+      },
+    })
+    expect(finished.messages[0]).toBe(state.messages[0])
+    expect(finished.messages[1]).toMatchObject(metadata)
+    expect(finished.messages[1].timeline).toEqual(state.messages[1].timeline)
+    expect(state.messages[1]).not.toHaveProperty('annotations')
+  })
   it('keeps the active run when a separately streamed queued turn is removed', () => {
     let state = reduceEvent(initialChat(), {
       id: 0,
@@ -136,6 +190,7 @@ describe('harness reducer', () => {
     state = reduceEvent(state, {
       event: { type: 'MESSAGES_SNAPSHOT', messages: state.messages },
     })
+    state.messages[0].timeline![1].invalidArguments = true
     state = reduceEvent(state, {
       id: 0,
       event: { type: 'RUN_STARTED', runId: 'retry', threadId: 't' },
@@ -162,6 +217,7 @@ describe('harness reducer', () => {
       event: { type: 'TOOL_CALL_END', toolCallId: 'call' },
     })
     expect(state.messages).toHaveLength(1)
+    expect(state.messages[0].timeline![1].invalidArguments).not.toBe(true)
     expect(state.messages[0].timeline).toEqual([
       { id: 'm_content_0', type: 'content', content: 'Keep this' },
       expect.objectContaining({
@@ -197,7 +253,13 @@ describe('harness reducer', () => {
         messageId: 'act_c',
         patch: [{ op: 'add' as const, path: '/output/-', value: '1' }],
       },
-      { type: 'RUN_FINISHED', metadata: { cancelled: true } },
+      {
+        type: 'RUN_FINISHED',
+        metadata: {
+          cancelled: true,
+          messages: [{ id: 'm', isInterrupted: true }],
+        },
+      },
     ]
     for (const event of events) state = reduceEvent(state, { event })
     expect(state.messages[0].timeline?.map((b) => b.type)).toEqual([
@@ -313,6 +375,145 @@ describe('harness reducer', () => {
 
     expect(state.snapshot).toEqual(before)
   })
+  // Timed reply events, from STEPS_START: a reply's reasoning and text, each
+  // at the second given.
+  const STEPS_START = Date.UTC(2026, 9, 1)
+  const stepAt = (seconds: number) =>
+    new Date(STEPS_START + seconds * 1000).toISOString()
+  const reasoning = (delta: string, seconds: number): Frame['event'] => ({
+    type: 'REASONING_MESSAGE_CHUNK',
+    messageId: 'r-reasoning',
+    delta,
+    timestamp: stepAt(seconds),
+  })
+  const text = (delta: string, seconds: number): Frame['event'] => ({
+    type: 'TEXT_MESSAGE_CHUNK',
+    messageId: 'r',
+    delta,
+    timestamp: stepAt(seconds),
+  })
+  // Reasoning for 2.5 seconds, then the reply's text.
+  const thoughtThenAnswer = [
+    reasoning('Plan', 0),
+    reasoning('ning', 2.5),
+    text('Answer', 3),
+  ]
+  const reduceAll = (events: Frame['event'][]) =>
+    events.reduce(
+      (state, event) => reduceEvent(state, { event }),
+      initialChat(),
+    )
+
+  it('records when each reasoning and tool step ran, as the harness does', () => {
+    const start = STEPS_START
+    const state = reduceAll([
+      ...thoughtThenAnswer,
+      {
+        type: 'TOOL_CALL_START',
+        parentMessageId: 'r',
+        toolCallId: 's',
+        toolCallName: 'web_search',
+        timestamp: stepAt(4),
+      },
+      {
+        type: 'TOOL_CALL_RESULT',
+        toolCallId: 's',
+        content: { results: [] },
+        timestamp: stepAt(6),
+      },
+      reasoning('Next', 7),
+      reasoning(' step', 8.25),
+    ])
+    expect(state.messages[0].timeline).toEqual([
+      {
+        id: 'r_thinking_0',
+        type: 'thinking',
+        content: 'Planning',
+        startedAt: start,
+        endedAt: start + 2_500,
+        duration: 2.5,
+      },
+      { id: 'r_content_1', type: 'content', content: 'Answer' },
+      {
+        id: 's',
+        toolCallId: 's',
+        type: 'tool_call',
+        name: 'web_search',
+        arguments: '',
+        complete: false,
+        progress: [],
+        result: { results: [] },
+        startedAt: start + 4_000,
+        endedAt: start + 6_000,
+      },
+      {
+        id: 'r_thinking_3',
+        type: 'thinking',
+        content: 'Next step',
+        startedAt: start + 7_000,
+        endedAt: start + 8_250,
+        duration: 1.25,
+      },
+    ])
+  })
+  it('marks a widget call as invalid once the harness refuses its arguments', () => {
+    const call = (
+      toolCallId: string,
+      name: string,
+      content: Json,
+    ): Frame['event'][] => [
+      {
+        type: 'TOOL_CALL_START',
+        parentMessageId: 'r',
+        toolCallId,
+        toolCallName: name,
+      },
+      { type: 'TOOL_CALL_ARGS', toolCallId, delta: '{"url":"x"}' },
+      { type: 'TOOL_CALL_END', toolCallId },
+      { type: 'TOOL_CALL_RESULT', toolCallId, content },
+    ]
+    const refusal = { status: 'error', error: 'The arguments did not match.' }
+    let state = initialChat()
+    for (const event of [
+      ...call('refused', 'render_link_preview', refusal),
+      ...call('unread', 'render_link_preview', { error: 'Not found' }),
+      ...call('search', 'web_search', refusal),
+    ])
+      state = reduceEvent(state, { event })
+    expect(state.messages[0].timeline).toEqual([
+      {
+        id: 'refused',
+        toolCallId: 'refused',
+        type: 'tool_call',
+        name: 'render_link_preview',
+        arguments: '{"url":"x"}',
+        complete: true,
+        progress: [],
+        result: refusal,
+        invalidArguments: true,
+      },
+      expect.not.objectContaining({ invalidArguments: true }),
+      expect.not.objectContaining({ invalidArguments: true }),
+    ])
+  })
+  it('keeps late reasoning with the thought the reply text closed', () => {
+    const state = reduceAll([
+      ...thoughtThenAnswer,
+      reasoning(' late', 3.2),
+      text(' done', 3.4),
+    ])
+    expect(state.messages[0].timeline).toEqual([
+      {
+        id: 'r_thinking_0',
+        type: 'thinking',
+        content: 'Planning late',
+        startedAt: STEPS_START,
+        endedAt: STEPS_START + 2_500,
+        duration: 2.5,
+      },
+      { id: 'r_content_1', type: 'content', content: 'Answer done' },
+    ])
+  })
   it('leaves the state a frame was applied to as it was', () => {
     const started = reduceEvent(initialChat(), {
       id: 0,
@@ -354,7 +555,14 @@ describe('continuing a reply', () => {
       { type: 'RUN_STARTED', threadId: 't', runId: 'run-2', messageId: 'a1' },
       { type: 'MESSAGES_SNAPSHOT', messages: window, hasOlder: false },
       ...events,
-      { type: 'RUN_FINISHED', threadId: 't', runId: 'run-2' },
+      {
+        type: 'RUN_FINISHED',
+        threadId: 't',
+        runId: 'run-2',
+        metadata: {
+          messages: [{ id: 'a1', isError: false, isInterrupted: false }],
+        },
+      },
     ].entries())
       state = reduceEvent(state, { id, event: event as Frame['event'] })
     return state
@@ -422,6 +630,28 @@ describe('continuing a reply', () => {
       { id: 'a1_thinking_1', type: 'thinking', content: 'second' },
     ])
   })
+
+  it('does not add new reasoning to a thought the stored reply finished', () => {
+    const state = run(
+      [
+        user,
+        reply(
+          { id: 'r', type: 'thinking', content: 'first' },
+          { id: 'c', type: 'content', content: 'Once upon' },
+        ),
+      ],
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'a1-reasoning',
+        delta: 'second',
+      },
+    )
+    expect(state.messages[1].timeline).toEqual([
+      { id: 'r', type: 'thinking', content: 'first' },
+      { id: 'c', type: 'content', content: 'Once upon' },
+      { id: 'a1_thinking_2', type: 'thinking', content: 'second' },
+    ])
+  })
 })
 
 describe('attested harness transport', () => {
@@ -431,6 +661,7 @@ describe('attested harness transport', () => {
     getVerificationDocument: vi.fn(),
   })
   it('refreshes an expired Clerk JWT once while retaining the same turn nonce and body', async () => {
+    vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['fr-FR', 'fr'])
     const secure = transport()
     secure.fetch
       .mockResolvedValueOnce(new Response('{}', { status: 401 }))
@@ -454,6 +685,11 @@ describe('attested harness transport', () => {
         new Headers(call[1].headers).get('Authorization'),
       ),
     ).toEqual(['Bearer old', 'Bearer fresh'])
+    expect(
+      secure.fetch.mock.calls.map((call) =>
+        new Headers(call[1].headers).get('Accept-Language'),
+      ),
+    ).toEqual(['fr-FR,fr', 'fr-FR,fr'])
     expect(
       secure.fetch.mock.calls.every(
         (call) =>
