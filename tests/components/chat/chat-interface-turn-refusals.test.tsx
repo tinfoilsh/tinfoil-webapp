@@ -113,11 +113,16 @@ describe('a turn the harness refuses', () => {
     })
     const { rerender } = render(<ChatInterface />)
     expect(getView().rateLimit?.kind).toBe('free_daily')
+    const refresh = vi.spyOn(api, 'refresh')
     await act(async () => {
       chatPage.premium = true
       rerender(<ChatInterface />)
     })
-    await waitFor(() => expect(getView().rateLimit?.kind).toBe('hourly'))
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+    await act(async () => {
+      await refresh.mock.results[0].value
+    })
+    expect(getView().rateLimit?.kind).toBe('hourly')
     expect(client.renewCredential).toHaveBeenCalledTimes(1)
   })
   it('explains a full queue without the quota or upgrade, and resends the message', async () => {
