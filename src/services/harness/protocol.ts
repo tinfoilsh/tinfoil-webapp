@@ -104,6 +104,13 @@ export const ERROR_CODES = {
   importInvalid: 'IMPORT_INVALID',
   importTooLarge: 'IMPORT_TOO_LARGE',
   payloadTooLarge: 'PAYLOAD_TOO_LARGE',
+  // The request needs the chat access the browser mints, which it lacked or
+  // which expired.
+  credentialRequired: 'CREDENTIAL_REQUIRED',
   // Set by this client, not the harness: a reply this device could not store.
   localSaveFailed: 'LOCAL_SAVE_FAILED',
 } as const
+
+// Carries a signed-in account's chat access, which the harness checks before
+// it reads a request's body.
+export const INFERENCE_KEY_HEADER = 'X-Tinfoil-Inference-Key'

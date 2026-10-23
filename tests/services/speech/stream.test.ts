@@ -5,6 +5,7 @@ import { SPEECH } from '@/services/speech/constants'
 import { speechErrorMessage } from '@/services/speech/errors'
 import { decodePcmStream, speechSource } from '@/services/speech/stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { stubChatAccess } from '../../harness-fixture'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
@@ -79,6 +80,7 @@ describe('PCM streaming', () => {
 describe('speech requests', () => {
   // The attested connection to the harness, with its transport replaced.
   function connect(response: () => Response | Promise<Response>) {
+    stubChatAccess()
     const secure = {
       ready: vi.fn().mockResolvedValue(undefined),
       fetch: vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>

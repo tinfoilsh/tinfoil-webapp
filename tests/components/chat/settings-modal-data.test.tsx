@@ -228,26 +228,6 @@ describe('exporting chats from the Data tab', () => {
     expect(downloads.map(({ name }) => name)).toEqual(['tinfoil-chats.zip'])
   })
 
-  it("sends a signed-out visitor's chats from this tab without a key", async () => {
-    page.isSignedIn = false
-    connect()
-    await keepPhotoChats('tab')
-    answerExport()
-    renderData()
-
-    await exportChats()
-
-    expect((await sentForm()).parts).toEqual([
-      ['options', { format: 'conversations' }],
-      ['thread', photoChat],
-      ['file', photo.id, 'image/png', 'original'],
-      ['thread', photoFork],
-    ])
-    expect(new Uint8Array(await downloads[0].blob.arrayBuffer())).toEqual(
-      ARCHIVE,
-    )
-  })
-
   it('says when there is nothing to export', async () => {
     connect()
     renderData()
@@ -741,25 +721,24 @@ describe('importing chats from the Data tab', () => {
     expect(await localThreadStore('device').get(imported.id)).toEqual(imported)
   })
 
-  it("stores a signed-out visitor's chats in this tab", async () => {
-    page.isSignedIn = false
-    connect()
-    answerImport([imported], { jobId: null, warnings: [] })
+  it('keeps Claude archives, which can hold projects, for subscribers', async () => {
+    connect({ cloud: true })
     renderData()
 
-    pickFiles('Claude', [new File(['[]'], 'conversations.json')])
-    await importStaged()
-
-    expect((await sentForm()).parts[0]).toEqual([
-      'options',
-      { target: 'device' },
+    pickFiles('Claude', [
+      new File(['zip'], 'claude-export.zip', { type: 'application/zip' }),
     ])
+
     expect(page.toast).toHaveBeenCalledExactlyOnceWith({
-      title: 'Import complete',
-      description: 'Imported 1 chat from Claude',
+      title: 'Premium required',
+      description: 'Claude archives containing projects require Premium',
+      variant: 'destructive',
     })
-    expect(await localThreadStore('device').list()).toEqual([])
-    expect(await localThreadStore('tab').get(imported.id)).toEqual(imported)
+    expect(
+      screen.queryByRole('button', { name: 'Import conversations' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Conversations' })).toBeEnabled()
+    expect(client.multipart).not.toHaveBeenCalled()
   })
 
   it('imports to the cloud with cloud sync and follows the job it started', async () => {

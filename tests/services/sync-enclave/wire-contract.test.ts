@@ -17,6 +17,7 @@ import {
 import { TINFOIL_PASSKEY_PROFILE } from '@/services/passkey/kit'
 import { storeEncryptedKeys } from '@/services/passkey/passkey-key-storage'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { stubChatAccess } from '../../harness-fixture'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
@@ -45,6 +46,7 @@ function wrappedKeys() {
 }
 
 beforeEach(async () => {
+  stubChatAccess()
   secureFetch
     .mockReset()
     .mockRejectedValue(new Error('Unexpected secure request'))

@@ -23,7 +23,13 @@ import {
   waitFor,
 } from '@testing-library/react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { client, KEY, signIn, testSession } from '../../harness-fixture'
+import {
+  CACHE_SECRET,
+  client,
+  KEY,
+  signIn,
+  testSession,
+} from '../../harness-fixture'
 import { FakeAudioContext } from '../speech/fixtures'
 import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
@@ -202,7 +208,11 @@ describe('regenerating a reply', () => {
         messageId: call === 0 ? 'a2' : 'msg_regen',
         content: '',
         widgets: ['render_chart'],
-        options: { model: 'test-model', timezone: expect.any(String) },
+        options: {
+          model: 'test-model',
+          timezone: expect.any(String),
+          cacheSecret: CACHE_SECRET,
+        },
       })
     }
   })
@@ -470,7 +480,11 @@ describe('retrying after an error', () => {
       key: KEY,
       kind: 'retry',
       widgets: ['render_chart'],
-      options: { model: 'test-model', timezone: expect.any(String) },
+      options: {
+        model: 'test-model',
+        timezone: expect.any(String),
+        cacheSecret: CACHE_SECRET,
+      },
     })
     expect(turn(1).clientRequestId).not.toBe(turn(0).clientRequestId)
     expect(result.current.chat.messages.at(-1)?.content).toBe('new answer')
@@ -937,7 +951,11 @@ describe('changing messages of a local chat', () => {
       threadId: THREAD_ID,
       kind: 'retry',
       widgets: ['render_chart'],
-      options: { model: 'test-model', timezone: expect.any(String) },
+      options: {
+        model: 'test-model',
+        timezone: expect.any(String),
+        cacheSecret: CACHE_SECRET,
+      },
       local: true,
       thread: localThread(),
       profile: {},

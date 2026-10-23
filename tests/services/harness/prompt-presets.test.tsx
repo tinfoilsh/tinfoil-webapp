@@ -6,6 +6,7 @@ import { useThread } from '@/services/harness/use-thread'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  CACHE_SECRET,
   client,
   KEY,
   signIn as signInTo,
@@ -149,7 +150,10 @@ describe('the default prompt of a new stored chat', () => {
       }),
     )
 
-    expect(turn().options).toEqual({ thinking: true })
+    expect(turn().options).toEqual({
+      thinking: true,
+      cacheSecret: CACHE_SECRET,
+    })
     expect(result.current.model).toBe('deep-model')
     expect(result.current.chat.webSearchEnabled).toBe(true)
   })
@@ -195,7 +199,10 @@ describe('the default prompt of a new stored chat', () => {
       }),
     )
 
-    expect(turn().options).toEqual({ model: 'test-model' })
+    expect(turn().options).toEqual({
+      model: 'test-model',
+      cacheSecret: CACHE_SECRET,
+    })
   })
 
   it('does not show a model the catalog no longer offers', async () => {
@@ -229,7 +236,11 @@ describe('the default prompt of a new device chat', () => {
       threadId: expect.any(String),
       kind: 'send',
       widgets: [],
-      options: { model: 'test-model', timezone: expect.any(String) },
+      options: {
+        model: 'test-model',
+        timezone: expect.any(String),
+        cacheSecret: CACHE_SECRET,
+      },
       content: 'Hi',
       local: true,
       profile: {
