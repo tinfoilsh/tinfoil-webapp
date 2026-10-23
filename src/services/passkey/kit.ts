@@ -95,6 +95,7 @@ export const passkeyKeyManager = createPasskeyKeyManager({
   profile: TINFOIL_PASSKEY_PROFILE,
   relyingPartyName: 'Tinfoil Chat',
   storage: tinfoilPasskeyStorage,
+  enrollmentAttachment: 'any',
 })
 
 let capabilityPromise: Promise<PasskeyCapability> | null = null
@@ -161,7 +162,8 @@ export class PrfNotSupportedError extends Error {
   constructor() {
     super(
       "Your passkey provider doesn't support the security features required by Tinfoil. " +
-        "Try using iCloud Keychain, Chrome's built-in passkey manager, or the Passwords app in your device settings.",
+        "Try using iCloud Keychain, Chrome's built-in passkey manager, the Passwords app in your device settings, " +
+        'or a recent security key such as a YubiKey 5.',
     )
     this.name = 'PrfNotSupportedError'
   }

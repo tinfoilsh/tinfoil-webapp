@@ -3199,8 +3199,8 @@ ${encryptionKey.replace('key_', '')}
                                   Sync and backup using Passkeys
                                 </span>
                                 <p className="text-xs text-content-muted">
-                                  Use Face ID or Touch ID to sync chats across
-                                  devices
+                                  Use a passkey or security key to sync chats
+                                  across devices
                                 </p>
                               </div>
                             </div>
@@ -3323,8 +3323,8 @@ ${encryptionKey.replace('key_', '')}
                                       : 'Add Passkey for seamless sync'}
                                   </span>
                                   <p className="text-xs text-content-muted">
-                                    Use Face ID or Touch ID to sync chats across
-                                    devices
+                                    Use a passkey or security key to sync chats
+                                    across devices
                                   </p>
                                 </div>
                               </div>
@@ -3345,7 +3345,7 @@ ${encryptionKey.replace('key_', '')}
                                     toast({
                                       title: 'Passkey added for this device',
                                       description:
-                                        'You can now unlock your chats on this device with Face ID or Touch ID',
+                                        'You can now unlock your chats on this device with your passkey',
                                     })
                                   }
                                 } catch (error) {

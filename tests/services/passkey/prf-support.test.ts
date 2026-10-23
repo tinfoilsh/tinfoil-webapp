@@ -55,4 +55,22 @@ describe('prf-support', () => {
     const result = await isPrfSupported()
     expect(result).toBe(true)
   })
+
+  it('allows security keys and phones when this device has no platform authenticator', async () => {
+    Object.defineProperty(window, 'PublicKeyCredential', {
+      value: {
+        isUserVerifyingPlatformAuthenticatorAvailable: vi
+          .fn()
+          .mockResolvedValue(false),
+        getClientCapabilities: vi
+          .fn()
+          .mockResolvedValue({ 'extension:prf': true }),
+      },
+      writable: true,
+      configurable: true,
+    })
+
+    const result = await isPrfSupported()
+    expect(result).toBe(true)
+  })
 })
