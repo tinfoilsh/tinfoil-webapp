@@ -1457,6 +1457,9 @@ export function SettingsModal({
   const renderImportStatus = (source: ImportSection) => {
     if (importSource !== source) return null
     if (isImporting) {
+      // A file's upload reports no progress until the chat service answers,
+      // so the bar moves without a value meanwhile.
+      const isUploading = !importProgress || importProgress.type === 'upload'
       const { title, detail, percent } = describeImportProgress(
         importProgress ?? {
           type: 'upload',
@@ -1492,8 +1495,13 @@ export function SettingsModal({
             </div>
           </div>
           <div
+            role="progressbar"
+            aria-label="Import progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={isUploading ? undefined : Math.round(percent)}
             className={cn(
-              'mt-3 h-2 overflow-hidden rounded-full',
+              'mt-3 flex h-2 overflow-hidden rounded-full',
               isDarkMode ? 'bg-surface-sidebar' : 'bg-surface-chat',
             )}
           >
@@ -1501,6 +1509,9 @@ export function SettingsModal({
               className="h-full bg-brand-accent-light transition-all"
               style={{ width: `${percent}%` }}
             />
+            {isUploading && (
+              <div className="h-full flex-1 animate-pulse bg-brand-accent-light/40" />
+            )}
           </div>
         </div>
       )

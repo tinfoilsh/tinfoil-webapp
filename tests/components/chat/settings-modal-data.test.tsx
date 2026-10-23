@@ -590,6 +590,59 @@ describe('importing chats from the Data tab', () => {
     )
   })
 
+  it('moves the progress bar while a file uploads, before any chat arrives', async () => {
+    connect()
+    let answer!: (response: Response) => void
+    client.multipart.mockReturnValue(
+      new Promise<Response>((resolve) => {
+        answer = resolve
+      }),
+    )
+    renderData()
+
+    pickFiles('ChatGPT', [chatGptExport])
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Import conversations' }),
+    )
+    const uploading = await screen.findByRole('progressbar', {
+      name: 'Import progress',
+    })
+    expect(screen.getByRole('status')).toHaveTextContent('Uploading export...')
+    expect(uploading).not.toHaveAttribute('aria-valuenow')
+
+    let send!: ReadableStreamDefaultController<Uint8Array>
+    answer(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start: (controller) => {
+            send = controller
+          },
+        }),
+      ),
+    )
+    await waitFor(() => expect(send).toBeDefined())
+    send.enqueue(
+      new TextEncoder().encode(`${JSON.stringify({ thread: importedLine })}\n`),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('progressbar', { name: 'Import progress' }),
+      ).toHaveAttribute('aria-valuenow', '100'),
+    )
+    send.enqueue(
+      new TextEncoder().encode(
+        `${JSON.stringify({ done: { jobId: null, warnings: [] } })}\n`,
+      ),
+    )
+    send.close()
+    await waitFor(() =>
+      expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+        title: 'Import complete',
+        description: 'Imported 1 chat from ChatGPT',
+      }),
+    )
+  })
+
   it('keeps the chats stored before an import fails partway and shows why', async () => {
     connect()
     client.multipart.mockResolvedValue(
