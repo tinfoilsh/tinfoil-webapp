@@ -172,7 +172,7 @@ const turnOptions = (webSearch: boolean) => ({
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 })
 
-it('hides the web search control and sends turns without search once Settings turns it off', async () => {
+it('hides the web search control and has the harness leave search out once Settings turns it off', async () => {
   // The default prompt turns web search on, which Settings overrides.
   const profile = {
     customPromptPresets: [
@@ -236,7 +236,13 @@ it('hides the web search control and sends turns without search once Settings tu
 
   await send('What happened today?')
   await waitFor(() => expect(sentTurns()).toHaveLength(1))
-  expect(sentTurns()[0].options).toEqual(turnOptions(false))
+  // The turn leaves the chat's setting to its prompt rather than turning it
+  // off, and the profile tells the harness to leave search out.
+  expect(sentTurns()[0].options).toEqual({
+    ...turnOptions(true),
+    webSearch: undefined,
+  })
+  expect(sentTurns()[0].profile).toMatchObject({ webSearchAvailable: false })
 })
 
 it('turns web search off for the open chat only, so a new chat searches again', async () => {

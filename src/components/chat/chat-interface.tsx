@@ -459,8 +459,8 @@ export function ChatInterface({
   const webSearchAvailable =
     (session?.features.webSearch ?? false) &&
     (profile.webSearchAvailable ?? true)
-  const effectiveWebSearchEnabled =
-    webSearchAvailable && (currentChat.webSearchEnabled ?? true)
+  const chatWebSearchEnabled = currentChat.webSearchEnabled ?? true
+  const effectiveWebSearchEnabled = webSearchAvailable && chatWebSearchEnabled
   const contextUsage = thread.contextUsage
   const modKey =
     typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
@@ -606,7 +606,9 @@ export function ChatInterface({
     autoIntelligence,
     reasoningEffort,
     thinking: thinkingEnabled,
-    webSearch: effectiveWebSearchEnabled,
+    // While Settings turns search off, the harness leaves it out and keeps
+    // the chat's own setting for when it is turned back on.
+    webSearch: (session?.features.webSearch ?? false) && chatWebSearchEnabled,
     piiCheck: profile.piiCheckEnabled ?? true,
     genUI: profile.genUIEnabled ?? true,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
