@@ -811,6 +811,7 @@ describe('moving a chat from this device to the cloud', () => {
       expect(served).toEqual(['/v1/threads/import', '/v1/threads/delete-all'])
       expect(await stored(CHAT_ID)).toBeNull()
       expect(result.current.chats).toEqual([])
+      expect(result.current.loadingChats).toBe(false)
     })
   })
 

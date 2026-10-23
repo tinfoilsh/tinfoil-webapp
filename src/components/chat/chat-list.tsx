@@ -150,7 +150,7 @@ export function ChatList({
 
   if (isLoading) {
     return (
-      <div className="space-y-2 p-2">
+      <div className="space-y-2 p-2" role="status" aria-label="Loading chats">
         {[1, 2, 3].map((i) => (
           <div
             key={i}

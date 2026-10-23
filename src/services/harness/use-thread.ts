@@ -612,6 +612,8 @@ export function useThread(
     errorAt: controller.errorAt,
     hasOlder: state.hasOlder,
     hasMoreChats: !!list.nextCursor,
+    loadingChats: list.loading,
+    chatListError: list.error,
     report,
     open: openChat,
     ...turns,

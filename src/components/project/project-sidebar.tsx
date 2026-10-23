@@ -96,6 +96,9 @@ interface ProjectSidebarProps {
   loadingProjectId?: string
   projectName?: string
   isLoading?: boolean
+  isLoadingChats?: boolean
+  chatListError?: string | null
+  onRetryChats?: () => void
   isDarkMode: boolean
   pixelateSidebarChatTitles: boolean
   onExitProject: () => void
@@ -207,6 +210,9 @@ export function ProjectSidebar({
   loadingProjectId,
   projectName,
   isLoading,
+  isLoadingChats = false,
+  chatListError,
+  onRetryChats,
   isDarkMode,
   pixelateSidebarChatTitles,
   onExitProject,
@@ -1447,7 +1453,33 @@ export function ProjectSidebar({
                   currentChatIsBlank={!currentChatId}
                   isDarkMode={isDarkMode}
                   pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                  isLoading={isLoading && projectChats.length === 0}
+                  isLoading={
+                    (isLoading || isLoadingChats) && projectChats.length === 0
+                  }
+                  emptyState={
+                    chatListError ? (
+                      <div
+                        role="alert"
+                        className="space-y-2 text-sm text-content-secondary"
+                      >
+                        <p>Could not load chats.</p>
+                        <p>{chatListError}</p>
+                        {onRetryChats && (
+                          <button
+                            type="button"
+                            onClick={onRetryChats}
+                            className="underline hover:text-content-primary"
+                          >
+                            Try again
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-content-muted">
+                        No chats in this project yet.
+                      </p>
+                    )
+                  }
                   enableTitleAnimation={true}
                   animatedDeleteConfirmation={false}
                   isDraggable={!!onRemoveChatFromProject}

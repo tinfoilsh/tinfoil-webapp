@@ -23,6 +23,12 @@ interface CloudPage {
   nextCursor: string | null
 }
 
+interface CloudListState {
+  projectId: string | null
+  loaded: boolean
+  error: string | null
+}
+
 const editsOf = (store: Store<ThreadSummary[]>): ListEdits => ({
   add: (summary) =>
     store.update((listed) => [
@@ -63,6 +69,11 @@ export function useChatList({
     const deviceThreads = createStore<ThreadSummary[]>([])
     const pinnedThreads = createStore<ThreadSummary[]>(cached?.pinned ?? [])
     const cursor = createStore<string | null>(null)
+    const loadState = createStore<CloudListState>({
+      projectId: scope.projectId,
+      loaded: false,
+      error: null,
+    })
     const cloudEdits = editsOf(cloudThreads)
     const pinnedEdits = editsOf(pinnedThreads)
     // Counts listings of the stored chats apart from the open chat, so that
@@ -80,6 +91,7 @@ export function useChatList({
       deviceThreads,
       pinnedThreads,
       cursor,
+      loadState,
       listing,
       persist,
       restore(projectId: string | null | undefined) {
@@ -88,6 +100,7 @@ export function useChatList({
         listing.version++
         scope.projectId = next
         scope.restored = true
+        loadState.set({ projectId: next, loaded: false, error: null })
         const cached = readChatListCache(api.userId, next)
         cloudThreads.set(cached?.threads ?? [])
         pinnedThreads.set(cached?.pinned ?? [])
@@ -120,9 +133,16 @@ export function useChatList({
       },
       device: editsOf(deviceThreads),
       // The stored chats are not listed, as once cloud sync is off.
-      clearCloud() {
+      clearCloud({
+        confirmedEmpty = false,
+      }: { confirmedEmpty?: boolean } = {}) {
         listing.version++
         scope.restored = false
+        loadState.set({
+          projectId: scope.projectId,
+          loaded: confirmedEmpty,
+          error: null,
+        })
         clearChatListCache(api.userId)
         cloudThreads.set([])
         pinnedThreads.set([])
@@ -138,44 +158,72 @@ export function useChatList({
       lists.restore(projectId)
       if (!keyReady) return
       const version = next ? lists.listing.version : ++lists.listing.version
-      const wanted = next
-        ? PAGE_SIZE
-        : Math.max(PAGE_SIZE, lists.cloudThreads.get().length)
-      const result: CloudPage = { threads: [], nextCursor: next ?? null }
-      do {
-        const page: CloudPage = await api.post<CloudPage>(ROUTES.list, {
-          cursor: result.nextCursor ?? undefined,
-          projectId,
-          limit: PAGE_SIZE,
+      if (lists.loadState.get().error) {
+        lists.loadState.set({
+          projectId: projectId ?? null,
+          loaded: false,
+          error: null,
         })
-        if (page.pinned) result.pinned = page.pinned
-        result.threads.push(
-          ...page.threads.filter(
-            (thread) => !result.threads.some((seen) => seen.id === thread.id),
-          ),
+      }
+      try {
+        const wanted = next
+          ? PAGE_SIZE
+          : Math.max(PAGE_SIZE, lists.cloudThreads.get().length)
+        const result: CloudPage = { threads: [], nextCursor: next ?? null }
+        do {
+          const page: CloudPage = await api.post<CloudPage>(ROUTES.list, {
+            cursor: result.nextCursor ?? undefined,
+            projectId,
+            limit: PAGE_SIZE,
+          })
+          if (page.pinned) result.pinned = page.pinned
+          result.threads.push(
+            ...page.threads.filter(
+              (thread) => !result.threads.some((seen) => seen.id === thread.id),
+            ),
+          )
+          if (page.nextCursor === result.nextCursor) break
+          result.nextCursor = page.nextCursor
+        } while (
+          !next &&
+          result.nextCursor &&
+          result.threads.length < wanted &&
+          version === lists.listing.version
         )
-        if (page.nextCursor === result.nextCursor) break
-        result.nextCursor = page.nextCursor
-      } while (
-        !next &&
-        result.nextCursor &&
-        result.threads.length < wanted &&
-        version === lists.listing.version
-      )
-      if (version !== lists.listing.version) return
-      lists.cloudThreads.update((previous) =>
-        next
-          ? [
-              ...previous,
-              ...result.threads.filter(
-                (thread) => !previous.some((p) => p.id === thread.id),
-              ),
-            ]
-          : result.threads,
-      )
-      lists.cursor.set(result.nextCursor)
-      if (!next) lists.pinnedThreads.set(result.pinned ?? [])
-      lists.persist()
+        if (version !== lists.listing.version) return
+        lists.cloudThreads.update((previous) =>
+          next
+            ? [
+                ...previous,
+                ...result.threads.filter(
+                  (thread) => !previous.some((p) => p.id === thread.id),
+                ),
+              ]
+            : result.threads,
+        )
+        lists.cursor.set(result.nextCursor)
+        if (!next) lists.pinnedThreads.set(result.pinned ?? [])
+        lists.persist()
+        lists.loadState.set({
+          projectId: projectId ?? null,
+          loaded: true,
+          error: null,
+        })
+      } catch (cause) {
+        if (
+          version !== lists.listing.version ||
+          api.lifetime.signal.aborted ||
+          (cause instanceof DOMException && cause.name === 'AbortError')
+        )
+          return
+        lists.loadState.set({
+          projectId: projectId ?? null,
+          loaded: true,
+          error:
+            cause instanceof Error ? cause.message : 'Unable to load chats.',
+        })
+        throw cause
+      }
     },
     [api, cloud, keyReady, projectId, lists],
   )
@@ -201,12 +249,16 @@ export function useChatList({
     load()
     return chatEvents.on(load)
   }, [device, lists])
+  const loadState = useStore(lists.loadState)
+  const currentScope = loadState.projectId === (projectId ?? null)
   return {
     ...lists,
     cloudListed: useStore(lists.cloudThreads),
     pinnedListed: useStore(lists.pinnedThreads),
     deviceListed: useStore(lists.deviceThreads),
     nextCursor: useStore(lists.cursor),
+    loading: cloud && (!currentScope || !loadState.loaded),
+    error: cloud && currentScope ? loadState.error : null,
     refresh,
   }
 }

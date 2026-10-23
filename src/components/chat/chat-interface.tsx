@@ -1603,6 +1603,11 @@ export function ChatInterface({
                 <ProjectSidebar
                   hasMore={thread.hasMoreChats}
                   onLoadMore={thread.loadMoreChats}
+                  isLoadingChats={thread.loadingChats}
+                  chatListError={thread.chatListError}
+                  onRetryChats={() => {
+                    void thread.refresh().catch(thread.report)
+                  }}
                   isOpen={isSidebarOpen}
                   setIsOpen={setIsSidebarOpen}
                   project={activeProject}
