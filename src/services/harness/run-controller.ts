@@ -306,7 +306,7 @@ export class RunController {
         }
         // A run the harness refused to follow is gone. One that could not
         // be reached keeps its receipt, so it can still be rejoined.
-        else if (!quiet) this.fail(cause)
+        else if (!quiet) this.fail(cause, !!runId)
         else if (cause instanceof HarnessError && cause.status !== undefined)
           this.forgetReceipt(runId)
       }
@@ -348,15 +348,20 @@ export class RunController {
     else this.hooks.accepted?.(threadId)
   }
 
-  // The open chat's run ended with its stream, refused or cut off.
-  fail(cause: unknown) {
+  // The open chat's run ended with its stream, refused or cut off. A turn
+  // refused before it started, as one queued behind a reply, leaves the
+  // reply streaming.
+  fail(cause: unknown, started = true) {
     const detail =
       cause instanceof HarnessError ? cause.detail : CONNECTION_LOST
     this.errorAt = Date.now()
     this.view.update((state) => ({
       ...state,
       error: detail,
-      status: 'error',
+      ...(!started &&
+      (state.status === 'streaming' || state.status === 'queued')
+        ? {}
+        : { status: 'error' }),
       ...(detail.code === ERROR_CODES.chatFlagged ? { flagged: true } : {}),
     }))
     this.api.reportRateLimit(detail.rateLimit)

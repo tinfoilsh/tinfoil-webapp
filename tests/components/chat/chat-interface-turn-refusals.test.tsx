@@ -170,4 +170,75 @@ describe('a turn the harness refuses', () => {
     expect(turn(2)).toEqual(turn(1))
     release()
   })
+  it.each([
+    [
+      'a lost connection',
+      new TypeError('Failed to fetch'),
+      'Connection problemCheck your internet connection, then resend your message. Your message was not lost.',
+    ],
+    [
+      'the hourly limit',
+      new HarnessError(
+        { code: 'RATE_LIMITED', message: 'You reached the hourly limit' },
+        429,
+      ),
+      'Too many requests right nowWait a moment, then resend your message. Your message was not lost.',
+    ],
+  ])(
+    'keeps the reply streaming when %s refuses a message queued behind it',
+    async (_refusal, refusal, explanation) => {
+      const { messages: _messages, hasOlder: _hasOlder, ...summary } = thread
+      let release!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let finish!: () => void
+      const finished = new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      client.events.mockImplementationOnce(async function* () {
+        const frames: Frame['event'][] = [
+          { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-1' },
+          { type: 'STATE_SNAPSHOT', snapshot: { thread: summary, queue: [] } },
+        ]
+        for (const [id, event] of frames.entries()) yield { id, event }
+        await held
+        yield {
+          id: frames.length,
+          event: {
+            type: 'TEXT_MESSAGE_CHUNK',
+            messageId: 'a1',
+            delta: ' and more',
+          },
+        }
+        await finished
+      })
+      client.events.mockImplementationOnce(async function* () {
+        throw refusal
+      })
+      render(<ChatInterface initialChatId={THREAD_ID} />)
+      await screen.findByText('Hello there')
+      await waitFor(() =>
+        expect(client.events).toHaveBeenCalledWith(
+          '/v1/threads/follow',
+          expect.objectContaining({ runId: 'run-1' }),
+          expect.any(AbortSignal),
+        ),
+      )
+      const input = screen.getByRole('textbox', { name: /message/i })
+      fireEvent.change(input, { target: { value: 'And one more' } })
+      fireEvent.submit(input.closest('form')!)
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(explanation)
+      expect(
+        screen.getByRole('button', { name: 'Stop generation' }),
+      ).toBeInTheDocument()
+      await act(async () => release())
+      expect(screen.getByText('Hello there and more')).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: 'Stop generation' }),
+      ).toBeInTheDocument()
+      finish()
+    },
+  )
 })
