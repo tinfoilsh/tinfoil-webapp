@@ -34,8 +34,11 @@ export async function latestChatsOutsideProjects(
   signal?: AbortSignal,
 ) {
   const found: ThreadSummary[] = []
+  // A page that names a cursor already read ends the scan.
+  const read = new Set<string>()
   let cursor: string | null = null
   do {
+    if (cursor) read.add(cursor)
     const page: { threads: ThreadSummary[]; nextCursor: string | null } =
       await api.post(
         ROUTES.list,
@@ -44,6 +47,6 @@ export async function latestChatsOutsideProjects(
       )
     found.push(...page.threads.filter((thread) => !thread.projectId))
     cursor = page.nextCursor
-  } while (cursor && found.length < count)
+  } while (cursor && !read.has(cursor) && found.length < count)
   return found.slice(0, count)
 }
