@@ -29,6 +29,8 @@ interface StreamErrorBannerProps {
   error: StreamErrorInfo
   onDismiss: () => void
   onRetry?: () => void
+  // Opens the key recovery for a turn the locked content key refused.
+  onUnlock?: () => void
   isDarkMode: boolean
 }
 
@@ -38,6 +40,7 @@ interface StreamErrorBannerProps {
 type ErrorKind =
   | 'connection'
   | 'auth'
+  | 'key'
   | 'rate-limit'
   | 'busy'
   | 'queue-full'
@@ -77,6 +80,12 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
     title: 'Unable to confirm your sign-in',
     suggestion:
       'Sign in again, then resend your message. Your message was not lost.',
+  },
+  key: {
+    kind: 'key',
+    title: 'Your encryption key is locked',
+    suggestion:
+      'Unlock it to keep chatting with cloud sync. Your message was not lost.',
   },
   connection: {
     kind: 'connection',
@@ -183,6 +192,9 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
   switch (error.code) {
     case ERROR_CODES.unauthenticated:
       return CLASSIFICATIONS.auth
+    case ERROR_CODES.keyRequired:
+    case ERROR_CODES.keyMismatch:
+      return CLASSIFICATIONS.key
     case ERROR_CODES.quotaExhausted:
       return quotaClassification(error)
     case ERROR_CODES.rateLimited:
@@ -225,6 +237,7 @@ export function StreamErrorBanner({
   error,
   onDismiss,
   onRetry,
+  onUnlock,
   isDarkMode,
 }: StreamErrorBannerProps) {
   const [isExpanded, setIsExpanded] = useState(false)
@@ -245,10 +258,11 @@ export function StreamErrorBanner({
   // it would only burn the automatic in-request retries and fail again.
   const isConnectionError = kind === 'connection'
   const isResend = isConnectionError || kind === 'busy' || kind === 'queue-full'
-  // A request refused for an exhausted quota or the chat's size fails
-  // identically until that changes, so a retry button is just an invitation
-  // to frustration.
-  const showRetry = !!onRetry && kind !== 'rate-limit' && kind !== 'too-large'
+  // A request refused for an exhausted quota, the chat's size or a locked
+  // key fails identically until that changes, so a retry button is just an
+  // invitation to frustration.
+  const showRetry =
+    !!onRetry && kind !== 'rate-limit' && kind !== 'too-large' && kind !== 'key'
   const isOffline = isResend && !isOnline
   const retryDisabled = isOffline || waitSeconds > 0
   const retryLabel = isOffline
@@ -259,6 +273,7 @@ export function StreamErrorBanner({
         ? 'Resend message'
         : 'Try again'
   const showUpgrade = kind === 'rate-limit' && error.kind === 'free_daily'
+  const showUnlock = kind === 'key' && !!onUnlock
 
   const handleDismiss = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -325,6 +340,23 @@ export function StreamErrorBanner({
               )}
             >
               Upgrade to Premium
+            </button>
+          )}
+          {showUnlock && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onUnlock?.()
+              }}
+              className={cn(
+                'flex h-9 shrink-0 items-center gap-1 self-start whitespace-nowrap rounded-site-control border px-3 text-xs font-medium transition-colors sm:self-center',
+                isDarkMode
+                  ? 'border-red-500/40 hover:bg-red-500/20'
+                  : 'border-red-300 hover:bg-red-500/10',
+              )}
+            >
+              Unlock
             </button>
           )}
         </div>

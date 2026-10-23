@@ -97,6 +97,35 @@ describe('StreamErrorBanner', () => {
     expect(onRetry).toHaveBeenCalledOnce()
   })
 
+  it.each(['KEY_REQUIRED', 'KEY_MISMATCH'])(
+    'offers to unlock the key instead of retrying for %s',
+    (code) => {
+      const onRetry = vi.fn()
+      const onUnlock = vi.fn()
+      render(
+        <StreamErrorBanner
+          error={{ code, message: 'Unlock your encryption key' }}
+          isDarkMode={false}
+          onRetry={onRetry}
+          onUnlock={onUnlock}
+          onDismiss={vi.fn()}
+        />,
+      )
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Your encryption key is locked',
+      )
+      expect(screen.getByRole('alert')).not.toHaveTextContent(
+        'The service is having trouble',
+      )
+      expect(
+        screen.queryByRole('button', { name: 'Try again' }),
+      ).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Unlock' }))
+      expect(onUnlock).toHaveBeenCalledOnce()
+      expect(onRetry).not.toHaveBeenCalled()
+    },
+  )
+
   it.each([
     { code: 'QUOTA_EXHAUSTED', title: 'Usage limit reached' },
     {

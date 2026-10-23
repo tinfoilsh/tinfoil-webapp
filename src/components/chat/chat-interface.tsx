@@ -1577,6 +1577,24 @@ export function ChatInterface({
 
   const showChatHeader =
     currentChat.messages.length > 0 || isChatHydrating || !!historyProblem
+  // A chat whose history could not open explains why in its place.
+  const streamErrorBanner = streamError && !historyProblem && (
+    <StreamErrorBanner
+      key={streamError.timestamp}
+      error={streamError}
+      onDismiss={dismissStreamError}
+      onRetry={retryLastMessage}
+      onUnlock={handleOpenCloudSyncSetup}
+      isDarkMode={isDarkMode}
+    />
+  )
+  // On desktop the welcome screen holds the composer until a first message,
+  // so a send the locked key refused before showing it is explained there.
+  const showKeyErrorOnWelcome =
+    windowWidth >= CONSTANTS.MOBILE_BREAKPOINT &&
+    !showChatHeader &&
+    (streamError?.code === ERROR_CODES.keyRequired ||
+      streamError?.code === ERROR_CODES.keyMismatch)
 
   const hideTopControlsOnMobile =
     windowWidth < CONSTANTS.MOBILE_BREAKPOINT &&
@@ -2461,6 +2479,9 @@ export function ChatInterface({
                       activePromptPreset={activePreset}
                       onOpenPromptLibrary={handleOpenPromptLibrary}
                       onSelectPromptPreset={handleSetActivePreset}
+                      composerNotice={
+                        showKeyErrorOnWelcome ? streamErrorBanner : undefined
+                      }
                     />
                   )}
                 </div>
@@ -2536,15 +2557,7 @@ export function ChatInterface({
                           pillClassName="rounded-full border"
                         />
                       )}
-                      {streamError && !historyProblem && (
-                        <StreamErrorBanner
-                          key={streamError.timestamp}
-                          error={streamError}
-                          onDismiss={dismissStreamError}
-                          onRetry={retryLastMessage}
-                          isDarkMode={isDarkMode}
-                        />
-                      )}
+                      {streamErrorBanner}
                       <MessageQueue
                         queue={queuedMessages}
                         onRemove={removeQueuedMessage}

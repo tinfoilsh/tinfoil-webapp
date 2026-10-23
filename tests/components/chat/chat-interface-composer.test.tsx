@@ -497,3 +497,21 @@ it('asks a free account out of daily requests to subscribe instead of regenerati
   ).toBeVisible()
   expect(client.events).not.toHaveBeenCalled()
 })
+
+it('explains a send the locked key refused on the welcome screen and offers to unlock it', async () => {
+  signIn({ cloud: true, locked: true })
+  answerCloudRequests()
+  render(view())
+
+  await send('A question for later')
+
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('Your encryption key is locked')
+  expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue(
+    'A question for later',
+  )
+  expect(client.events).not.toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  fireEvent.click(within(alert).getByRole('button', { name: 'Unlock' }))
+  expect(await screen.findByRole('dialog')).toBeVisible()
+})

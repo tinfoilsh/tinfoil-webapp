@@ -97,6 +97,8 @@ type ChatMessagesProps = {
   activePromptPreset?: PromptPreset | null
   onOpenPromptLibrary?: () => void
   onSelectPromptPreset?: (presetId: string | null) => void
+  // Shown above the welcome screen's composer, as an error from a send.
+  composerNotice?: React.ReactNode
 }
 
 function getMessageActiveArtifactToolCallId(
@@ -300,6 +302,7 @@ export function ChatMessages({
   activePromptPreset,
   onOpenPromptLibrary,
   onSelectPromptPreset,
+  composerNotice,
 }: ChatMessagesProps) {
   const [mounted, setMounted] = useState(false)
   const messageActions = readOnly
@@ -503,6 +506,7 @@ export function ChatMessages({
             activePromptPreset={activePromptPreset}
             onOpenPromptLibrary={onOpenPromptLibrary}
             onSelectPromptPreset={onSelectPromptPreset}
+            composerNotice={composerNotice}
           />
         </div>
         <div className="flex-[3]" />

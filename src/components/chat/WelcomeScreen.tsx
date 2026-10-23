@@ -217,6 +217,7 @@ interface WelcomeScreenProps {
   activePromptPreset?: PromptPreset | null
   onOpenPromptLibrary?: () => void
   onSelectPromptPreset?: (presetId: string | null) => void
+  composerNotice?: React.ReactNode
 }
 
 // isTemporaryMode is forwarded to the embedded ChatInput so the input can
@@ -252,6 +253,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   activePromptPreset,
   onOpenPromptLibrary,
   onSelectPromptPreset,
+  composerNotice,
 }: WelcomeScreenProps) {
   const { user, isSignedIn } = useUser()
   const [nickname, setNickname] = useState<string>('')
@@ -416,6 +418,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   delay: 0.4,
                 }}
               >
+                {composerNotice}
                 <ChatInput
                   input={input}
                   setInput={setInput}
