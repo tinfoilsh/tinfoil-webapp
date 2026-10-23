@@ -172,13 +172,15 @@ describe('attachments of a local chat', () => {
 describe('picking a file to attach', () => {
   // The session takes .png files up to 1000 bytes, and .pdf and .txt files
   // up to 2000. Picked files carry no type, so only the name tells them
-  // apart.
+  // apart. A file of a type no group names goes as text, which the harness
+  // reads if it is.
   it.each([
     { name: 'photo.png', size: 1000, refused: null },
     { name: 'PHOTO.PNG', size: 1001, refused: 413 },
     { name: 'notes.v2.txt', size: 2000, refused: null },
     { name: 'report.pdf', size: 2001, refused: 413 },
-    { name: 'archive.zip', size: 10, refused: 415 },
+    { name: 'Dockerfile', size: 2000, refused: null },
+    { name: 'archive.zip', size: 2001, refused: 413 },
   ])(
     'uploads $name of $size bytes unless its group refuses it ($refused)',
     async ({ name, size, refused }) => {

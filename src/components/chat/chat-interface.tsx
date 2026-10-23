@@ -154,6 +154,7 @@ const OnboardingView = dynamic(
 import { verifyChatService } from '@/services/harness/attestation'
 import { ERROR_CODES } from '@/services/harness/protocol'
 import { useHarness } from '@/services/harness/provider'
+import { HarnessError } from '@/services/harness/sse'
 import { isAttachmentsUnavailable } from '@/services/harness/transfer'
 import type { Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
@@ -623,7 +624,8 @@ export function ChatInterface({
     submitComposer()
   }
   const submitComposer = () => {
-    // Files still uploading stay in the composer for the next message.
+    // Files still uploading stay in the composer for the next message; files
+    // the harness cannot read are cleared with it.
     const uploaded = processedDocuments.filter((d) => d.descriptor)
     if (
       isChatHydrating ||
@@ -640,7 +642,7 @@ export function ChatInterface({
       setInput('')
       setQuote(null)
       setProcessedDocuments((previous) =>
-        previous.filter((d) => !uploaded.includes(d)),
+        previous.filter((d) => !uploaded.includes(d) && !d.isUnsupported),
       )
     }
   }
@@ -1119,6 +1121,25 @@ export function ChatInterface({
         ),
       )
     } catch (cause) {
+      // A file the harness cannot read stays, marked, until it is removed.
+      if (
+        cause instanceof HarnessError &&
+        cause.code === ERROR_CODES.attachmentUnsupported
+      ) {
+        setProcessedDocuments((previous) =>
+          previous.map((d) =>
+            d.id === localId
+              ? {
+                  id: localId,
+                  name: file.name,
+                  time: d.time,
+                  isUnsupported: true,
+                }
+              : d,
+          ),
+        )
+        return
+      }
       setProcessedDocuments((previous) =>
         previous.filter((d) => d.id !== localId),
       )

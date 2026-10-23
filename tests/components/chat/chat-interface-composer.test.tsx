@@ -7,6 +7,7 @@ import {
 } from '@/constants/storage-keys'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Turn } from '@/services/harness/types'
 import {
   act,
@@ -790,6 +791,59 @@ it('keeps the draft, its attachment and quote when starting a new chat or openin
     quote: 'door',
   })
   expect(sentTurns()[0].attachments).toEqual([notes])
+})
+
+it('uploads a file of an unlisted type and marks one the harness cannot read', async () => {
+  signIn()
+  answerTurns()
+  const dockerfile = {
+    id: 'att-dockerfile',
+    kind: 'document',
+    fileName: 'Dockerfile',
+    mimeType: 'text/plain; charset=utf-8',
+    size: 13,
+    textContent: 'FROM scratch\n',
+  }
+  client.upload.mockImplementation(async (_path: string, file: File) => {
+    if (file.name === dockerfile.fileName) return { attachment: dockerfile }
+    throw new HarnessError(
+      { code: 'ATTACHMENT_UNSUPPORTED', message: 'Unsupported file type' },
+      415,
+    )
+  })
+  render(
+    <>
+      {view()}
+      <Toaster />
+    </>,
+  )
+  await screen.findByRole('textbox', { name: 'Message' })
+  fireEvent.change(document.querySelector('input[type="file"]')!, {
+    target: {
+      files: [
+        new File(['FROM scratch\n'], dockerfile.fileName),
+        new File([new Uint8Array([0, 1, 2])], 'program.bin'),
+      ],
+    },
+  })
+
+  expect(await screen.findByText('Unsupported format')).toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: 'Remove program.bin' }),
+  ).toBeInTheDocument()
+  await waitFor(() => expect(client.upload).toHaveBeenCalledTimes(2))
+  expect(
+    client.upload.mock.calls.map(([path, file]) => [path, (file as File).name]),
+  ).toEqual([
+    ['/v1/attachments/upload', 'Dockerfile'],
+    ['/v1/attachments/upload', 'program.bin'],
+  ])
+  expect(screen.queryByText('Processing failed')).not.toBeInTheDocument()
+
+  await send('Explain this')
+  await waitFor(() => expect(sentTurns()).toHaveLength(1))
+  expect(sentTurns()[0].attachments).toEqual([dockerfile])
+  expect(screen.queryByText('Unsupported format')).not.toBeInTheDocument()
 })
 
 it('explains a file over its size limit before uploading it', async () => {

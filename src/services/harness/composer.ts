@@ -13,12 +13,17 @@ function extensionOf(name: string) {
 export const acceptOf = (groups: readonly FileGroup[] | undefined) =>
   groups?.flatMap((group) => group.accept).join(',')
 
-// Refuses a picked file before it uploads: one whose extension no group
-// accepts, or one larger than its group takes.
+// A file of a type no group names uploads as text, which the harness reads
+// when its contents are text.
+const TEXT_EXTENSION = '.txt'
+
+// Refuses a picked file before it uploads: one larger than its group takes,
+// or one of a type no group names when no group takes text.
 export function checkUpload(file: File, groups: readonly FileGroup[]) {
   const extension = extensionOf(file.name)
   const group =
-    extension && groups.find((group) => group.accept.includes(extension))
+    (extension && groups.find((group) => group.accept.includes(extension))) ||
+    groups.find((group) => group.accept.includes(TEXT_EXTENSION))
   if (!group)
     throw new HarnessError(
       {
