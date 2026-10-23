@@ -1,6 +1,9 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProjectProvider } from '@/components/project/project-provider'
-import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
+import {
+  UI_SIDEBAR_OPEN,
+  UI_SIDEBAR_PROJECTS_EXPANDED,
+} from '@/constants/storage-keys'
 import { publish } from '@/services/harness/runtime'
 import type { Thread, ThreadSummary } from '@/services/harness/types'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -686,4 +689,50 @@ it('reports a chat dropped out of its project that stays in it', async () => {
     { key: KEY, id: projectChat.id, projectId: null },
   ])
   expect(requestedAfter('/v1/threads/update')).toContain('/v1/threads/list')
+})
+
+it('names a new project after the projects listed and opens it', async () => {
+  sessionStorage.setItem(UI_SIDEBAR_PROJECTS_EXPANDED, 'true')
+  const created = { ...project, id: 'project-new', name: 'My Project #2' }
+  routes['/v1/projects/create'] = () => structuredClone(created)
+  routes['/v1/projects/get'] = (input) =>
+    structuredClone(input.id === created.id ? created : project)
+  render(routeView({}))
+  await screen.findByRole('link', { name: /^Research/ })
+
+  fireEvent.click(screen.getByRole('button', { name: 'New Project' }))
+
+  expect(await screen.findByTitle('Rename project')).toHaveTextContent(
+    created.name,
+  )
+  expect(requested('/v1/projects/create')).toEqual([
+    { key: KEY, name: 'My Project #2', description: '' },
+  ])
+  expect(chatPage.router.push).toHaveBeenLastCalledWith(
+    `/project/${created.id}`,
+    undefined,
+    { shallow: true },
+  )
+  expect(page.toast).not.toHaveBeenCalled()
+})
+
+it('reports a project that could not be created', async () => {
+  sessionStorage.setItem(UI_SIDEBAR_PROJECTS_EXPANDED, 'true')
+  routes['/v1/projects/create'] = () => {
+    throw new Error('Sync is unavailable')
+  }
+  render(routeView({}))
+  await screen.findByRole('link', { name: /^Research/ })
+
+  fireEvent.click(screen.getByRole('button', { name: 'New Project' }))
+
+  await waitFor(() =>
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Failed to create project',
+      description: 'Please try again.',
+      variant: 'destructive',
+    }),
+  )
+  expect(screen.getByRole('button', { name: 'New Project' })).toBeEnabled()
+  expect(requested('/v1/projects/get')).toEqual([])
 })

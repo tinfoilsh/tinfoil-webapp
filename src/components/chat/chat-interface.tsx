@@ -820,9 +820,24 @@ export function ChatInterface({
     await thread.removeProjectChats(activeProject.id)
   }
   const handleCreateProject = async () => {
-    const project = await createProject({ name: 'New Project' })
-    createNewChat()
-    await handleEnterProjectMode(project.id)
+    try {
+      const project = await createProject({
+        name: `My Project #${projects.length + 1}`,
+        description: '',
+      })
+      createNewChat()
+      await handleEnterProjectMode(project.id)
+    } catch (error) {
+      logError('Failed to create project', error, {
+        component: 'ChatInterface',
+        action: 'handleCreateProject',
+      })
+      toast({
+        title: 'Failed to create project',
+        description: 'Please try again.',
+        variant: 'destructive',
+      })
+    }
   }
   const handleEnterProjectMode = async (id: string, name?: string) => {
     const entered = await enterProjectMode(id, name)
