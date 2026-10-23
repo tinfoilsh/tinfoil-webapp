@@ -29,9 +29,26 @@ import {
 } from './runtime'
 
 const HarnessContext = createContext<HarnessAPI | null>(null)
+// Whose session the harness serves: an account, a signed-out account, or a
+// visitor whose account is not asked for. A visitor's session shares nothing
+// with a signed-out account's.
+const SIGNED_OUT_ACCOUNT = 'anonymous'
+const VISITOR_ACCOUNT = 'visitor'
 
-export function HarnessProvider({ children }: { children: ReactNode }) {
-  const { isLoaded, userId, getToken } = useAuth()
+export function HarnessProvider({
+  children,
+  anonymous = false,
+}: {
+  children: ReactNode
+  // The page opens as a visitor without waiting for the account to load, as
+  // a shared chat does: every request it makes is anonymous.
+  anonymous?: boolean
+}) {
+  const auth = useAuth()
+  const isLoaded = anonymous || auth.isLoaded
+  const userId = anonymous ? null : auth.userId
+  const getToken = auth.getToken
+  const owner = anonymous ? VISITOR_ACCOUNT : (userId ?? SIGNED_OUT_ACCOUNT)
   const identity = useRef(userId)
   identity.current = userId
   const token = useRef(getToken)
@@ -55,8 +72,9 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
         if (userId && !jwt) throw new AuthTokenUnavailableError('unavailable')
         return jwt
       }
-      // A null getter records a confirmed signed-out session for account APIs.
-      authTokenManager.initialize(userId ? getter : null)
+      // A null getter records a confirmed signed-out session for account
+      // APIs, which a visitor's page does not know.
+      if (!anonymous) authTokenManager.initialize(userId ? getter : null)
       const api = new HarnessAPI(new HarnessClient(url, getter), userId ?? null)
       release = activateAPI(api)
       setSessionAPI(api)
@@ -80,7 +98,7 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
       window.addEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, unlock)
       refresh()
       window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, keyChanged)
-      setAccount(userId ?? 'anonymous')
+      setAccount(owner)
       return () => {
         stopChanges()
         window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, keyChanged)
@@ -94,7 +112,7 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
       )
       release?.()
     }
-  }, [isLoaded, userId])
+  }, [isLoaded, userId, anonymous, owner])
   if (error)
     return (
       <main
@@ -104,7 +122,7 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
         {error}
       </main>
     )
-  if (!isLoaded || account !== (userId ?? 'anonymous'))
+  if (!isLoaded || account !== owner)
     return (
       <div role="status" aria-label="Loading your session">
         <LogoLoading />

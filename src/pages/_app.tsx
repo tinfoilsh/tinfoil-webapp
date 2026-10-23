@@ -5,7 +5,7 @@ import { HarnessProvider } from '@/services/harness/provider'
 import '@/styles/globals.css'
 import '@/styles/tailwind.css'
 import { analyticsExcluded } from '@/utils/analytics-routes'
-import { isCatchAllSection } from '@/utils/navigation'
+import { isCatchAllSection, isShareSection } from '@/utils/navigation'
 import { migrateStorageKeys } from '@/utils/storage-migration'
 import { Clerk } from '@clerk/clerk-js/no-rhc'
 import { ClerkProvider } from '@clerk/react'
@@ -146,6 +146,11 @@ export default function App({ Component, pageProps, router }: AppProps) {
     (router.pathname === '/[...slug]' &&
       router.isReady &&
       !isCatchAllSection(router.query.slug))
+  // A shared link opens even while the account loads, or if it cannot.
+  const sharedChat =
+    router.pathname === '/[...slug]' &&
+    router.isReady &&
+    isShareSection(router.query.slug)
 
   return (
     <>
@@ -210,7 +215,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
           {withoutHarness ? (
             <Component {...pageProps} />
           ) : (
-            <HarnessProvider>
+            <HarnessProvider anonymous={sharedChat}>
               <Component {...pageProps} />
             </HarnessProvider>
           )}
