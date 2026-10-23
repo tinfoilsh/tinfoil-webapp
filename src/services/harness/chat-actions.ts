@@ -172,25 +172,31 @@ export function chatActions({
       )
     },
     share: (threadId: string) => storeOf(threadId).share(threadId),
-    // Messages before those shown.
+    // Every message before those shown, which the store gives a page at a
+    // time.
     async older() {
       const { id: threadId } = open.get()
       if (!threadId) return
       const shown = controller.track()
-      const before = controller.view.get().messages[0]?.id
-      const thread = await storeOf(threadId).older(threadId, before)
-      if (!shown()) return
-      controller.view.update((state) => ({
-        ...state,
-        messages: [
-          ...thread.messages.filter(
+      while (controller.view.get().hasOlder) {
+        const before = controller.view.get().messages[0]?.id
+        const thread = await storeOf(threadId).older(threadId, before)
+        if (!shown()) return
+        let added = 0
+        controller.view.update((state) => {
+          const earlier = thread.messages.filter(
             (message) =>
               !state.messages.some((shown) => shown.id === message.id),
-          ),
-          ...state.messages,
-        ],
-        hasOlder: thread.hasOlder,
-      }))
+          )
+          added = earlier.length
+          return {
+            ...state,
+            messages: [...earlier, ...state.messages],
+            hasOlder: thread.hasOlder,
+          }
+        })
+        if (!added) return
+      }
     },
     // Moves a stored chat to this device under the same id. A chat the
     // harness stored a moment ago is put back as it was on the device, so a

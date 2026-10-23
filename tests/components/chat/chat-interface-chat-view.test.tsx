@@ -16,7 +16,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
 import {
   rawRows,
@@ -500,4 +500,118 @@ it('explains a chat service that could not start without its raw error', async (
     "Tinfoil Chat is experiencing some technical difficulties. We're working on resolving it. Please try again later.",
   )
   expect(screen.queryByText(/connection refused/)).not.toBeInTheDocument()
+})
+
+// A cloud chat of three turns, shown from its latest one.
+const TURNS = [1, 2, 3].flatMap((turn) => [
+  {
+    id: `u${turn}`,
+    role: 'user' as const,
+    createdAt: `2026-10-22T12:0${turn}:00Z`,
+    content: `Question ${turn}`,
+  },
+  {
+    id: `a${turn}`,
+    role: 'assistant' as const,
+    createdAt: `2026-10-22T12:0${turn}:30Z`,
+    timeline: [
+      { id: `b${turn}`, type: 'content' as const, content: `Answer ${turn}` },
+    ],
+  },
+])
+
+function scriptLongChat() {
+  signIn({ cloud: true })
+  const page = (messages: typeof TURNS, hasOlder: boolean) => ({
+    ...storedThread('long-chat', { title: 'Long chat', messages }),
+    titleState: 'generated',
+    messageCount: TURNS.length,
+    hasOlder,
+  })
+  const pages: unknown[] = []
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/get') {
+      const { before } = input as { before?: string }
+      if (!before) return page(TURNS.slice(4), true)
+      pages.push(input)
+      return before === 'u3'
+        ? page(TURNS.slice(2, 4), true)
+        : page(TURNS.slice(0, 2), false)
+    }
+    throw new Error(`Unexpected ${path}`)
+  })
+  render(view({ initialChatId: 'long-chat' }))
+  return pages
+}
+
+const shownMessages = () =>
+  within(screen.getByRole('log', { name: 'Conversation' }))
+    .getAllByRole('article')
+    .map((article) => article.textContent)
+
+it('shows every earlier message of a long chat from the conversation', async () => {
+  const pages = scriptLongChat()
+  await screen.findByText('Question 3')
+  const log = within(screen.getByRole('log', { name: 'Conversation' }))
+
+  fireEvent.click(log.getByRole('button', { name: 'Show 4 earlier messages' }))
+
+  await waitFor(() =>
+    expect(
+      log.queryByRole('button', { name: /earlier messages/ }),
+    ).not.toBeInTheDocument(),
+  )
+  expect(pages).toEqual([
+    { key: KEY, id: 'long-chat', before: 'u3' },
+    { key: KEY, id: 'long-chat', before: 'u2' },
+  ])
+  expect(shownMessages()).toEqual(
+    TURNS.map((message) =>
+      expect.stringContaining(
+        message.role === 'user' ? message.content : message.timeline[0].content,
+      ),
+    ),
+  )
+})
+
+it('prints a long chat with its earlier messages', async () => {
+  const printed: string[] = []
+  vi.doMock('html2pdf.js', () => ({
+    default: () => {
+      const chain = {
+        set: () => chain,
+        from: (element: HTMLElement) => {
+          printed.push(element.textContent ?? '')
+          return chain
+        },
+        outputPdf: async () => new Blob(['pdf']),
+      }
+      return chain
+    },
+  }))
+  onTestFinished(() => {
+    vi.doUnmock('html2pdf.js')
+  })
+  vi.stubGlobal(
+    'open',
+    vi.fn(() => null),
+  )
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:printed')
+  const pages = scriptLongChat()
+  await screen.findByText('Question 3')
+
+  fireEvent.keyDown(window, { key: 'p', metaKey: true })
+
+  await waitFor(() => expect(printed).toHaveLength(1))
+  expect(pages).toHaveLength(2)
+  const order = TURNS.map((message) =>
+    printed[0].indexOf(
+      message.role === 'user' ? message.content : message.timeline[0].content,
+    ),
+  )
+  expect(order.every((at) => at >= 0)).toBe(true)
+  expect(order).toEqual([...order].sort((a, b) => a - b))
+  expect(window.open).toHaveBeenCalledExactlyOnceWith('blob:printed', '_blank')
 })

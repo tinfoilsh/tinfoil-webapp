@@ -470,6 +470,14 @@ export function ChatInterface({
     !!isSignedIn && !currentChat.isTemporary && currentChat.messages.length > 0
   const canChat = thread.canSend && !historyProblem
   const reloadChats = () => thread.refresh()
+  const loadEarlierMessages = () =>
+    thread.older().then(
+      () => true,
+      (cause) => {
+        thread.report(cause)
+        return false
+      },
+    )
   const createNewChat = (isLocalOnly = false, fromUserAction = true) => {
     selectionNavigation.current = null
     thread.newChat({ local: isLocalOnly })
@@ -2143,14 +2151,6 @@ export function ChatInterface({
             />
             <div className="relative flex min-h-0 flex-1">
               <AnimatePresence>{isForking && <ForkOverlay />}</AnimatePresence>
-              {thread.hasOlder && (
-                <button
-                  className="absolute top-16 z-10 rounded-full border border-border-subtle px-4 py-2 text-content-secondary"
-                  onClick={() => void thread.older().catch(thread.report)}
-                >
-                  Load earlier messages
-                </button>
-              )}
               <div
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
@@ -2244,6 +2244,14 @@ export function ChatInterface({
                       loadDocumentText={thread.documentText}
                       speak={thread.speak}
                       imagesUnsaved={!isSignedIn && !isTemporaryMode}
+                      earlierMessageCount={Math.max(
+                        0,
+                        (currentChat.messageCount ?? 0) -
+                          currentChat.messages.length,
+                      )}
+                      loadEarlierMessages={
+                        thread.hasOlder ? loadEarlierMessages : undefined
+                      }
                       showScrollButton={showScrollButton}
                       webSearchEnabled={effectiveWebSearchEnabled}
                       onWebSearchToggle={

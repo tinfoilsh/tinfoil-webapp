@@ -80,6 +80,10 @@ type ChatMessagesProps = {
   speak?: Speak
   // The chat keeps its images only while the page is open.
   imagesUnsaved?: boolean
+  // Messages before those shown: how many, and loading them, which resolves
+  // to whether they all loaded. A print loads them first.
+  earlierMessageCount?: number
+  loadEarlierMessages?: () => Promise<boolean>
   showScrollButton?: boolean
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
@@ -281,6 +285,8 @@ export function ChatMessages({
   loadDocumentText,
   speak,
   imagesUnsaved = false,
+  earlierMessageCount = 0,
+  loadEarlierMessages,
   showScrollButton,
   webSearchEnabled,
   onWebSearchToggle,
@@ -322,11 +328,13 @@ export function ChatMessages({
   const [printRequested, setPrintRequested] = useState(false)
 
   const preparePrint = useCallback(async () => {
+    if (loadEarlierMessages && !(await loadEarlierMessages()))
+      throw new Error('Earlier messages could not be loaded')
     await new Promise<void>((resolve) => {
       printReadyResolverRef.current = resolve
       setPrintRequested(true)
     })
-  }, [])
+  }, [loadEarlierMessages])
 
   useLayoutEffect(() => {
     if (!printRequested) return
@@ -528,6 +536,19 @@ export function ChatMessages({
             aria-busy={isStreamingResponse}
             className="mx-auto w-full min-w-0 px-0 pb-6 pt-6 font-chat md:px-4"
           >
+            {loadEarlierMessages && (
+              <div className="flex justify-center px-4 pb-8">
+                <button
+                  type="button"
+                  onClick={() => void loadEarlierMessages()}
+                  className="hover:bg-surface-secondary rounded-full border border-border-subtle bg-surface-chat px-4 py-2 text-sm text-content-secondary transition-colors hover:text-content-primary"
+                >
+                  {earlierMessageCount > 0
+                    ? `Show ${earlierMessageCount} earlier ${earlierMessageCount === 1 ? 'message' : 'messages'}`
+                    : 'Show earlier messages'}
+                </button>
+              </div>
+            )}
             <UnsavedImagesProvider value={imagesUnsaved}>
               {messages.map((message, index) => (
                 <ChatMessage
