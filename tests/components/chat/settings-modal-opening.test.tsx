@@ -126,25 +126,59 @@ describe('settings opening', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
     expect(
-      await screen.findByRole('dialog', { name: 'Sign out' }),
+      await screen.findByRole('dialog', { name: 'Sign Out' }),
     ).toBeInTheDocument()
     expect(signOut).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await waitFor(() =>
       expect(
-        screen.queryByRole('dialog', { name: 'Sign out' }),
+        screen.queryByRole('dialog', { name: 'Sign Out' }),
       ).not.toBeInTheDocument(),
     )
     expect(signOut).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
     fireEvent.click(
-      within(await screen.findByRole('dialog', { name: 'Sign out' })).getByRole(
+      within(await screen.findByRole('dialog', { name: 'Sign Out' })).getByRole(
         'button',
-        { name: 'Sign out' },
+        { name: 'Sign Out' },
       ),
     )
     await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1))
   })
+
+  it.each([
+    [false, false, 'All local data will be cleared.'],
+    [
+      true,
+      true,
+      'All local data will be cleared. You can recover your cloud chats by signing back in.',
+    ],
+    [
+      true,
+      false,
+      'All local data will be cleared. You will need your encryption key to recover your cloud chats.',
+    ],
+  ])(
+    'explains how cloud chats are recovered after signing out (cloud sync: %s, passkey: %s)',
+    async (cloud, passkeyActive, recovery) => {
+      authState.isSignedIn = true
+      signIn({ cloud })
+      render(
+        <Harness
+          initialTab="account"
+          isSignedIn
+          passkeyActive={passkeyActive}
+          chats={[{ id: 'local-chat', isLocalOnly: true }]}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Sign Out' })
+      expect(within(dialog).getByText(recovery)).toBeInTheDocument()
+      expect(
+        within(dialog).getByText('Your local chats will be deleted forever.'),
+      ).toBeInTheDocument()
+    },
+  )
 
   it.each([false, true])(
     'gates project transfers in settings (premium: %s)',

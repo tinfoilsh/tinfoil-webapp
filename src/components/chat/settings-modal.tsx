@@ -4326,19 +4326,32 @@ ${encryptionKey.replace('key_', '')}
           <Dialog.Panel className="mx-4 w-full max-w-sm rounded-site-lg border border-border-subtle bg-surface-card p-6 shadow-xl">
             <Dialog.Title
               as="h3"
-              className="text-lg font-medium text-content-primary"
+              className="font-aeonik text-lg font-medium text-content-primary"
             >
-              Sign out
+              Sign Out
             </Dialog.Title>
-            <p className="mt-3 text-sm text-content-secondary">
-              All local data will be cleared. Your local chats will be deleted
-              forever.
-            </p>
+            <div className="mt-3 space-y-2 text-sm text-content-secondary">
+              <p>
+                {!cloudSyncEnabled
+                  ? 'All local data will be cleared.'
+                  : passkeyActive
+                    ? 'All local data will be cleared. You can recover your cloud chats by signing back in.'
+                    : 'All local data will be cleared. You will need your encryption key to recover your cloud chats.'}
+              </p>
+              <p className="font-medium text-orange-500">
+                Your local chats will be deleted forever.
+              </p>
+            </div>
             <div className="mt-5 flex gap-3">
               <button
                 type="button"
                 onClick={() => setShowSignOutConfirm(false)}
-                className="flex-1 rounded-lg border border-border-subtle px-4 py-2.5 text-sm text-content-primary"
+                className={cn(
+                  'flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
+                  isDarkMode
+                    ? 'border-border-strong bg-surface-chat text-content-primary hover:bg-surface-chat/80'
+                    : 'border-border-subtle bg-white text-content-primary hover:bg-gray-50',
+                )}
               >
                 Cancel
               </button>
@@ -4349,9 +4362,21 @@ ${encryptionKey.replace('key_', '')}
                   void handleSignOut()
                 }}
                 disabled={isSigningOut}
-                className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm text-white hover:bg-red-700"
+                className={cn(
+                  'flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
+                  'disabled:cursor-not-allowed disabled:opacity-70',
+                  isDarkMode
+                    ? 'border-red-500/30 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                    : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
+                )}
               >
-                Sign out
+                {isSigningOut && (
+                  <PiSpinner
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                )}
+                {isSigningOut ? 'Signing out...' : 'Sign Out'}
               </button>
             </div>
           </Dialog.Panel>
