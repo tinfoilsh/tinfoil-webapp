@@ -155,12 +155,16 @@ export function cloudThreads(
     async update(threadId, patch) {
       const update = ++updates
       latestUpdate.set(threadId, update)
-      const summary = await api.post<ThreadSummary>(ROUTES.update, {
-        id: threadId,
-        ...patch,
-      })
-      if (latestUpdate.get(threadId) === update) list.replace(summary)
-      return summary
+      try {
+        const summary = await api.post<ThreadSummary>(ROUTES.update, {
+          id: threadId,
+          ...patch,
+        })
+        if (latestUpdate.get(threadId) === update) list.replace(summary)
+        return summary
+      } finally {
+        if (latestUpdate.get(threadId) === update) latestUpdate.delete(threadId)
+      }
     },
     async remove(threadId) {
       await api.post(ROUTES.delete, { id: threadId })

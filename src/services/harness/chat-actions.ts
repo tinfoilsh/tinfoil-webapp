@@ -185,15 +185,18 @@ export function chatActions({
       const update = ++updates
       latestUpdate.set(threadId, update)
       let summary: ThreadSummary | null
+      let latest = false
       try {
         summary = await store.update(threadId, patch)
       } catch (cause) {
         undo()
         throw cause
+      } finally {
+        latest = latestUpdate.get(threadId) === update
+        if (latest) latestUpdate.delete(threadId)
       }
       if (!summary) undo()
-      else if (isOpen(threadId) && latestUpdate.get(threadId) === update)
-        showSummary(summary)
+      else if (isOpen(threadId) && latest) showSummary(summary)
       return summary
     },
     // A deleted chat leaves the list and the view at once, and is listed
