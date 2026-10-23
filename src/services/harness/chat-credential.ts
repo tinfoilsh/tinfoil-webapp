@@ -7,6 +7,9 @@ import type { RateLimit, TokenBudget } from './types'
 // started with it can finish first.
 const RENEW_BEFORE_EXPIRY_MS = 5 * 60_000
 const MINT_TIMEOUT_MS = 15_000
+// A busy, unavailable or suspended answer that names no time to ask again
+// is kept this long, so requests do not ask with each one.
+const REFUSAL_FALLBACK_MS = 60_000
 // The control plane's answers that decide what an account's access is.
 const SUBSCRIPTION_REQUIRED_STATUS = 402
 const FORBIDDEN_STATUS = 403
@@ -73,8 +76,9 @@ export class ChatCredentialCache {
   private cached?: Credential
   private pending?: Promise<Credential>
   private generation = 0
-  // A refusal that names when to ask again is kept until then, so an account
-  // at its hourly cap does not ask with every request.
+  // A refusal is kept until it says to ask again, or for a while when it
+  // does not, so an account at its hourly cap does not ask with every
+  // request.
   private refused?: { error: HarnessError; until: number }
   private readonly lifetime = new AbortController()
 
@@ -236,7 +240,13 @@ export class ChatCredentialCache {
     const retryAfter =
       Number.isFinite(seconds) && seconds > 0 ? seconds : undefined
     let error: HarnessError
-    let until = retryAfter ? Date.now() + retryAfter * MS_PER_SECOND : 0
+    let until = retryAfter
+      ? Date.now() + retryAfter * MS_PER_SECOND
+      : response.status === TOO_MANY_REQUESTS_STATUS ||
+          response.status === FORBIDDEN_STATUS ||
+          response.status === UNAVAILABLE_STATUS
+        ? Date.now() + REFUSAL_FALLBACK_MS
+        : 0
     if (
       response.status === TOO_MANY_REQUESTS_STATUS &&
       str(value.code) === HOURLY_LIMIT_CODE

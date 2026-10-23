@@ -977,6 +977,53 @@ describe('chat access a signed-in client mints', () => {
     expect(controlplane).toHaveBeenCalledTimes(2)
   })
 
+  it.each([
+    { status: 429, code: 'RATE_LIMITED', retryAfter: null, heldMs: 60_000 },
+    { status: 503, code: 'UPSTREAM_REFUSED', retryAfter: null, heldMs: 60_000 },
+    { status: 403, code: 'UPSTREAM_REFUSED', retryAfter: null, heldMs: 60_000 },
+    { status: 429, code: 'RATE_LIMITED', retryAfter: '120', heldMs: 120_000 },
+  ])(
+    'keeps a $status refusal (Retry-After: $retryAfter) for $heldMs ms before asking again',
+    async ({ status, code, retryAfter, heldMs }) => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      try {
+        const controlplane = vi.fn<typeof fetch>(
+          async () =>
+            new Response('{}', {
+              status,
+              headers: retryAfter ? { 'Retry-After': retryAfter } : {},
+            }),
+        )
+        vi.stubGlobal('fetch', controlplane)
+        const secure = transport()
+        secure.fetch.mockImplementation(async () => needsAccess())
+        const { client } = connect(secure)
+        const first = await client
+          .post('/v1/threads/turn', {})
+          .catch((cause: unknown) => cause)
+        expect(first).toBeInstanceOf(HarnessError)
+        expect(first).toMatchObject({ status, code })
+        expect(controlplane).toHaveBeenCalledOnce()
+
+        vi.advanceTimersByTime(heldMs - 1)
+        await expect(client.post('/v1/threads/turn', {})).rejects.toBe(first)
+        expect(controlplane).toHaveBeenCalledOnce()
+
+        vi.advanceTimersByTime(1)
+        const next = await client
+          .post('/v1/threads/turn', {})
+          .catch((cause: unknown) => cause)
+        expect(next).toBeInstanceOf(HarnessError)
+        expect(next).not.toBe(first)
+        expect(next).toMatchObject({ status, code })
+        expect(controlplane).toHaveBeenCalledTimes(2)
+        expect(access(secure)).toEqual([null, null, null, null, null, null])
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
+
   it('mints again when the harness refuses the access it was sent', async () => {
     const keys = ['old-token', 'new-token']
     vi.stubGlobal(
