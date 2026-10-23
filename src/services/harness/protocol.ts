@@ -82,6 +82,10 @@ export const ERROR_CODES = {
   connection: 'CONNECTION',
   threadNotFound: 'THREAD_NOT_FOUND',
   threadExists: 'THREAD_EXISTS',
+  // The chat changed while a run that edits it in place ran.
+  revisionConflict: 'REVISION_CONFLICT',
+  // A tool, such as a widget, is not offered to the client.
+  toolUnavailable: 'TOOL_UNAVAILABLE',
   threadTooLarge: 'THREAD_TOO_LARGE',
   attachmentsUnavailable: 'ATTACHMENTS_UNAVAILABLE',
   attachmentTooLarge: 'ATTACHMENT_TOO_LARGE',

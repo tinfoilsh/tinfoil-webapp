@@ -594,15 +594,12 @@ export function ChatInterface({
     if (generationBlocked) return
     void thread.regenerate(index, { options }).catch(thread.report)
   }
-  const retryToolCall = async (index: number, toolCallId: string) => {
-    return Boolean(
-      await handleQuery('', {
-        kind: 'retryToolCall',
-        messageId: currentChat.messages[index]?.id,
-        toolCallId,
-      }),
-    )
-  }
+  const retryToolCall = (index: number, toolCallId: string) =>
+    thread.retryToolCall({
+      options,
+      messageId: currentChat.messages[index]?.id,
+      toolCallId,
+    })
   const retryLastMessage = () => {
     if (generationBlocked) return
     void thread.retry({ options }).catch(thread.report)

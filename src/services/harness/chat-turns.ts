@@ -1,4 +1,8 @@
 import { GENUI_WIDGETS } from '@/components/chat/genui/registry'
+import {
+  ArtifactRetryError,
+  type ArtifactRetryErrorCode,
+} from '@/components/chat/genui/retry'
 import { generateReverseId } from '@/utils/reverse-id'
 import { now } from './local-threads'
 import type { OpenAttachments } from './open-attachments'
@@ -9,12 +13,28 @@ import {
   type OpenChatResult,
   type PresetChoice,
 } from './open-chat'
-import { ROUTES } from './protocol'
+import { ERROR_CODES, ROUTES } from './protocol'
 import type { RunController } from './run-controller'
 import { getView, type HarnessAPI, type Profile } from './runtime'
 import type { Store } from './store'
 import type { ThreadStore, TurnSettings } from './thread-store'
-import type { Session, ThreadMessage, Turn } from './types'
+import type { HarnessErrorBody, Session, ThreadMessage, Turn } from './types'
+
+// What a widget's card says of a retry the harness refused or could not
+// finish.
+function widgetRetryFailure(
+  detail: HarnessErrorBody | undefined,
+): ArtifactRetryErrorCode {
+  switch (detail?.code) {
+    case ERROR_CODES.threadNotFound:
+    case ERROR_CODES.toolUnavailable:
+      return 'unavailable_target'
+    case ERROR_CODES.revisionConflict:
+      return 'stale_target'
+    default:
+      return 'request_failed'
+  }
+}
 
 export interface TurnContext {
   api: HarnessAPI
@@ -311,6 +331,23 @@ export function chatTurns({
     if (!failedRun || status !== 'error') return reconnect()
     return send({ ...fields, kind: 'retry' })
   }
+  // Asks the harness for new arguments for a widget call. A retry that does
+  // not repair the widget rejects with why.
+  async function retryToolCall(fields: Partial<Turn>) {
+    const repaired = await send({
+      ...fields,
+      kind: 'retryToolCall',
+      content: '',
+    })
+    if (repaired) return true
+    throw new ArtifactRetryError(
+      widgetRetryFailure(
+        repaired === undefined
+          ? undefined
+          : (open.get().failure?.detail ?? controller.view.get().error),
+      ),
+    )
+  }
   const queueInput = (queueId: string) => ({
     ...openStore().runKey(),
     threadId: open.get().id,
@@ -323,6 +360,7 @@ export function chatTurns({
     continueReply,
     reconnect,
     retry,
+    retryToolCall,
     sendQueued: async (queueId: string) =>
       controller.sendQueued(queueInput(queueId)),
     removeQueued: async (queueId: string) =>
