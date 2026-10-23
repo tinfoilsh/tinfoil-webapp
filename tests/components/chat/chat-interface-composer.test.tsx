@@ -515,3 +515,88 @@ it('explains a send the locked key refused on the welcome screen and offers to u
   fireEvent.click(within(alert).getByRole('button', { name: 'Unlock' }))
   expect(await screen.findByRole('dialog')).toBeVisible()
 })
+
+it('shows the attachments and quote of each queued message', async () => {
+  signIn({ cloud: true })
+  const saved = {
+    ...storedThread('busy-chat', {
+      messages: [
+        {
+          id: 'question',
+          role: 'user',
+          content: 'A first question',
+          createdAt: '2026-10-22T12:00:00Z',
+        },
+      ],
+      activeRun: { runId: 'run-1', expiresAt: '2026-10-22T13:00:00Z' },
+    }),
+    messageCount: 1,
+    hasOlder: false,
+  }
+  const { messages: _messages, hasOlder: _hasOlder, ...summary } = saved
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/threads/get') return structuredClone(saved)
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    throw new Error(`Unexpected ${path}`)
+  })
+  const held = gate()
+  client.events.mockImplementation(async function* (): AsyncGenerator<Frame> {
+    yield {
+      id: 0,
+      event: { type: 'RUN_STARTED', threadId: saved.id, runId: 'run-1' },
+    }
+    yield {
+      id: 1,
+      event: {
+        type: 'STATE_SNAPSHOT',
+        snapshot: {
+          thread: summary,
+          queue: [
+            {
+              queueId: 'queued-files',
+              content: '',
+              attachments: [
+                {
+                  id: 'att-door',
+                  kind: 'image',
+                  fileName: 'door.png',
+                  mimeType: 'image/png',
+                  size: 4,
+                  thumbnail: 'dGh1bWI=',
+                },
+                {
+                  id: 'att-notes',
+                  kind: 'document',
+                  fileName: 'notes.txt',
+                  mimeType: 'text/plain',
+                  size: 4,
+                },
+              ],
+            },
+            { queueId: 'queued-quote', content: null, quote: 'Earlier text' },
+            { queueId: 'queued-text', content: 'And then?' },
+          ],
+        },
+      },
+    }
+    await held.promise
+  })
+  render(
+    <ProjectProvider>
+      <ChatInterface initialChatId={saved.id} suppressIntroModals />
+    </ProjectProvider>,
+  )
+
+  expect(await screen.findByText('And then?')).toBeInTheDocument()
+  expect(screen.getByRole('img', { name: 'door.png' })).toHaveAttribute(
+    'src',
+    'data:image/png;base64,dGh1bWI=',
+  )
+  expect(screen.getByText('2 attachments')).toBeInTheDocument()
+  expect(screen.getByText('Quoted reply')).toBeInTheDocument()
+  expect(
+    screen.getAllByRole('button', { name: 'Remove queued message' }),
+  ).toHaveLength(3)
+  held.resolve()
+})

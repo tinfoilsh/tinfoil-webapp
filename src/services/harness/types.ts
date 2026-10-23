@@ -272,8 +272,13 @@ export interface FollowInput {
 
 export interface QueueItem {
   queueId: string
-  content: string
+  content?: string | null
   kind?: string
+  quote?: string | null
+  attachments?: Pick<
+    AttachmentDescriptor,
+    'id' | 'kind' | 'fileName' | 'mimeType' | 'size' | 'thumbnail'
+  >[]
 }
 export interface Snapshot {
   thread: ThreadSummary | null

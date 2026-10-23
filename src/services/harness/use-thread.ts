@@ -34,7 +34,7 @@ import { HarnessError } from './sse'
 import { createStore, useStore } from './store'
 import { cloudThreads, type AskContext, type ThreadStore } from './thread-store'
 import type { AttachmentDescriptor, Message as WireMessage } from './types'
-import { messageView, threadView } from './view-model'
+import { attachmentView, messageView, threadView } from './view-model'
 
 export interface ThreadRoute {
   // The route names a chat stored on this device (/chat/local/:id).
@@ -685,7 +685,11 @@ export function useThread(
   const profileFailed = cloud && !profileReady && !keyLocked && !!sessionError
   const queue: QueuedMessage[] = state.snapshot.queue.map((item) => ({
     id: item.queueId,
-    text: item.content,
+    text: item.content ?? '',
+    ...(item.quote ? { quote: item.quote } : {}),
+    ...(item.attachments?.length
+      ? { attachments: item.attachments.map(attachmentView) }
+      : {}),
   }))
   return {
     chat,
