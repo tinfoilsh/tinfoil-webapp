@@ -27,6 +27,15 @@ export function transferInFlight(): HarnessError {
   )
 }
 
+const alreadyOnDevice = () =>
+  new HarnessError(
+    {
+      code: ERROR_CODES.threadExists,
+      message: 'This chat is already stored on this device.',
+    },
+    409,
+  )
+
 const SERVER_ERROR_STATUS = 500
 
 // A request the harness refused, or that failed before it was sent, changed
@@ -91,14 +100,7 @@ export async function placeOnDevice(
   revision?: string,
 ): Promise<StoredThread> {
   const saved = await store.add(thread, originals)
-  if (!saved)
-    throw new HarnessError(
-      {
-        code: ERROR_CODES.threadExists,
-        message: 'This chat is already stored on this device.',
-      },
-      409,
-    )
+  if (!saved) throw alreadyOnDevice()
   try {
     await api.post(ROUTES.delete, {
       id: thread.id,
@@ -127,17 +129,13 @@ export async function moveThreadToDevice(
   return placeOnDevice(api, store, thread, undefined, revision)
 }
 
-// Stores a chat from this device in the cloud under the same id, then
-// deletes it from the device. A failed import leaves the device copy as it
-// was; when the device copy cannot be deleted, the cloud copy is deleted
-// again. The device copy is returned, so a caller can put it back.
-export async function moveThreadToCloud(
-  api: HarnessAPI,
+// A chat this device keeps, with the originals of its attachments.
+async function deviceCopy(
   store: LocalThreadStore,
   threadId: string,
-): Promise<{ summary: ThreadSummary; original: DeviceChatCopy }> {
-  const original = await store.get(threadId)
-  if (!original)
+): Promise<DeviceChatCopy> {
+  const thread = await store.get(threadId)
+  if (!thread)
     throw new HarnessError(
       {
         code: ERROR_CODES.threadNotFound,
@@ -147,10 +145,37 @@ export async function moveThreadToCloud(
     )
   const originals = await store.originals(
     threadId,
-    original.messages.flatMap((message) =>
+    thread.messages.flatMap((message) =>
       (message.attachments ?? []).map((attachment) => attachment.id),
     ),
   )
+  return { thread, originals }
+}
+
+// Stores a chat from one store of this device in another under the same id,
+// as a temporary chat the user keeps, then deletes it from the first.
+export async function moveThreadOnDevice(
+  from: LocalThreadStore,
+  to: LocalThreadStore,
+  threadId: string,
+): Promise<StoredThread> {
+  const { thread, originals } = await deviceCopy(from, threadId)
+  const saved = await to.add(thread, originals)
+  if (!saved) throw alreadyOnDevice()
+  await from.delete(threadId)
+  return saved
+}
+
+// Stores a chat from this device in the cloud under the same id, then
+// deletes it from the device. A failed import leaves the device copy as it
+// was; when the device copy cannot be deleted, the cloud copy is deleted
+// again. The device copy is returned, so a caller can put it back.
+export async function moveThreadToCloud(
+  api: HarnessAPI,
+  store: LocalThreadStore,
+  threadId: string,
+): Promise<{ summary: ThreadSummary; original: DeviceChatCopy }> {
+  const { thread: original, originals } = await deviceCopy(store, threadId)
   const summary = await api.post<ThreadSummary>(ROUTES.threadImport, {
     threadId,
     thread: original,

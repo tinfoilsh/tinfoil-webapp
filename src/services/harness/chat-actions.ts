@@ -7,6 +7,7 @@ import type { HarnessAPI } from './runtime'
 import type { Store } from './store'
 import type { ThreadPatch, ThreadStore } from './thread-store'
 import {
+  moveThreadOnDevice,
   moveThreadToCloud,
   moveThreadToDevice,
   placeOnDevice,
@@ -22,6 +23,8 @@ export interface ChatContext {
   list: ChatList
   // The browser's store of chats on this device, which moves use.
   device: LocalThreadStore
+  // The page-memory store of the open temporary chat.
+  temporary(): LocalThreadStore
   // The store of a chat: the open chat's own, or the one that lists it.
   storeOf(threadId: string): ThreadStore
   // Chats moving between the cloud and this device, and their moves.
@@ -42,6 +45,7 @@ export function chatActions({
   open,
   list,
   device,
+  temporary,
   storeOf,
   moving,
   reset,
@@ -221,6 +225,29 @@ export function chatActions({
         list.cloud.add(summary)
         if (isOpen(threadId)) await openChat(threadId, { local: false })
         return original
+      })
+    },
+    // Keeps the open temporary chat under the same id where new chats are
+    // stored: in the cloud with cloud sync, or else on this device. Its
+    // title is the one the harness gave it during its first turn.
+    async saveTemporary() {
+      const { id: threadId, temporary: isTemporary, local } = open.get()
+      if (!threadId || !isTemporary || moving.has(threadId)) return
+      requireIdle(threadId)
+      const cloud = api.cloud && !local
+      return whileMoving(threadId, async () => {
+        if (cloud) {
+          const { summary } = await moveThreadToCloud(
+            api,
+            temporary(),
+            threadId,
+          )
+          list.cloud.add(summary)
+        } else {
+          const saved = await moveThreadOnDevice(temporary(), device, threadId)
+          list.device.add(localSummary(saved))
+        }
+        if (isOpen(threadId)) await openChat(threadId, { local: !cloud })
       })
     },
   }

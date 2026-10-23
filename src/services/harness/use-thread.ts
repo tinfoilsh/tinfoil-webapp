@@ -319,6 +319,7 @@ export function useThread(
     open,
     list,
     device,
+    temporary: () => temporaryChats.store,
     storeOf,
     moving,
     reset,

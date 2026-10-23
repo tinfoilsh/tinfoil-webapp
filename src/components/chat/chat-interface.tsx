@@ -804,11 +804,30 @@ export function ChatInterface({
     setShowAddToProjectModal(false)
     exitProjectMode()
   }
+  // A temporary chat is kept once its reply has finished.
   const canToggleTemporaryChat = (chat: Chat) =>
-    !chat.id && !processedDocuments.length && !isStreaming
+    (!!chat.isBlankChat || !!chat.isTemporary) && !isStreaming
+  const handleSaveTemporaryChat = async () => {
+    try {
+      await thread.saveTemporary()
+    } catch (error) {
+      if (isAbort(error)) return
+      logError('Failed to save temporary chat', error, {
+        component: 'ChatInterface',
+        action: 'handleSaveTemporaryChat',
+      })
+      toast({
+        title: 'Failed to save chat',
+        description: 'Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }
   const handleToggleTemporaryMode = () => {
-    if (canToggleTemporaryChat(currentChat))
-      thread.setTemporary(!thread.temporary)
+    if (!canToggleTemporaryChat(currentChat)) return
+    if (thread.temporary && currentChat.messages.length > 0)
+      void handleSaveTemporaryChat()
+    else thread.setTemporary(!thread.temporary)
   }
   const handleWebSearchToggle = () => {
     thread.setWebSearch(!effectiveWebSearchEnabled)

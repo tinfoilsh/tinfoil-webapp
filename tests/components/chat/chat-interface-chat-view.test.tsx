@@ -1,5 +1,6 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProjectProvider } from '@/components/project/project-provider'
+import { localThreadStore } from '@/services/harness/local-threads'
 import type {
   Frame,
   Message,
@@ -14,7 +15,7 @@ import {
   within,
 } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { client, signIn } from '../../harness-fixture'
+import { client, KEY, signIn } from '../../harness-fixture'
 import {
   rawRows,
   resetChatStoresAroundEachTest,
@@ -152,9 +153,132 @@ it('offers a signed-out visitor a temporary chat that is kept out of the tab', a
   expect(await rawRows('chats')).toEqual([])
 })
 
-it('starts a normal chat after a temporary one', async () => {
+it('saves a temporary chat on this device with its title', async () => {
+  signIn()
+  const returned = scriptDeviceRuns('Trip ideas')
+  render(view())
+  fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
+  await send('Plan a trip')
+  await screen.findByText('Noted')
+  const threadId = (client.events.mock.calls[0][1] as Turn).threadId!
+  expect(await rawRows('chats')).toEqual([])
+  expect(chatPage.router.replace).not.toHaveBeenCalled()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save chat' }))
+
+  await waitFor(() =>
+    expect(chatPage.router.replace).toHaveBeenCalledWith(
+      `/chat/local/${threadId}`,
+      undefined,
+      { shallow: true },
+    ),
+  )
+  expect(await localThreadStore('device').get(threadId)).toEqual(returned[0])
+  const header = within(screen.getByRole('banner'))
+  expect(header.getByRole('heading', { level: 1 })).toHaveTextContent(
+    'Trip ideas',
+  )
+  expect(header.getByText('Only saved locally')).toBeInTheDocument()
+  expect(header.queryByText('Temporary chat')).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: /Save chat|Temporary chat/ }),
+  ).not.toBeInTheDocument()
+
+  await send('And then?')
+  await waitFor(async () =>
+    expect(await localThreadStore('device').get(threadId)).toEqual(returned[1]),
+  )
+  expect(client.events.mock.calls[1][1]).toMatchObject({
+    threadId,
+    local: true,
+    thread: returned[0],
+  })
+})
+
+it('saves a temporary chat to the cloud with cloud sync', async () => {
+  signIn({ cloud: true })
+  const returned = scriptDeviceRuns('Trip ideas')
+  const imported: unknown[] = []
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/import') {
+      imported.push(input)
+      const { messages, ...summary } = returned[0]
+      return { ...summary, messageCount: messages.length }
+    }
+    if (path === '/v1/threads/get')
+      return {
+        ...returned[0],
+        messageCount: returned[0].messages.length,
+        hasOlder: false,
+      }
+    throw new Error(`Unexpected ${path}`)
+  })
+  render(view())
+  fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
+  await send('Plan a trip')
+  await screen.findByText('Noted')
+  const threadId = (client.events.mock.calls[0][1] as Turn).threadId!
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save chat' }))
+
+  await waitFor(() =>
+    expect(chatPage.router.replace).toHaveBeenCalledWith(
+      `/chat/${threadId}`,
+      undefined,
+      { shallow: true },
+    ),
+  )
+  expect(imported).toEqual([{ key: KEY, threadId, thread: returned[0] }])
+  expect(await rawRows('chats')).toEqual([])
+  const header = within(screen.getByRole('banner'))
+  expect(header.getByRole('heading', { level: 1 })).toHaveTextContent(
+    'Trip ideas',
+  )
+  expect(header.queryByText('Temporary chat')).not.toBeInTheDocument()
+  expect(header.queryByText('Only saved locally')).not.toBeInTheDocument()
+})
+
+it('keeps an attached document when the chat becomes temporary', async () => {
   signIn()
   scriptDeviceRuns()
+  const descriptor = {
+    id: 'att_notes',
+    kind: 'document',
+    fileName: 'notes.txt',
+    mimeType: 'text/plain',
+    size: 5,
+    textContent: 'notes',
+  }
+  client.upload.mockResolvedValueOnce({ attachment: descriptor })
+  render(view())
+  await screen.findByRole('button', { name: 'Temporary chat' })
+  fireEvent.change(document.querySelector('input[type="file"]')!, {
+    target: {
+      files: [new File(['notes'], 'notes.txt', { type: 'text/plain' })],
+    },
+  })
+  await waitFor(() => expect(client.upload).toHaveBeenCalledOnce())
+
+  fireEvent.click(screen.getByRole('button', { name: 'Temporary chat' }))
+  expect(
+    screen.getByRole('button', { name: 'Exit temporary chat' }),
+  ).toHaveAttribute('aria-pressed', 'true')
+  await send('Summarize these')
+  await screen.findByText('Noted')
+
+  expect(client.events.mock.calls[0][1]).toMatchObject({
+    local: true,
+    content: 'Summarize these',
+    attachments: [descriptor],
+  })
+  expect(await rawRows('chats')).toEqual([])
+})
+
+it('starts a normal chat after a temporary one', async () => {
+  signIn()
+  const returned = scriptDeviceRuns()
   render(view())
   fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
   await send('Off the record')
@@ -177,5 +301,10 @@ it('starts a normal chat after a temporary one', async () => {
     expect((await rawRows('chats')).map((row) => row.id)).toEqual([
       kept.threadId,
     ]),
+  )
+  await waitFor(async () =>
+    expect(await localThreadStore('device').get(kept.threadId!)).toEqual(
+      returned[1],
+    ),
   )
 })
