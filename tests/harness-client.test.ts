@@ -2,7 +2,12 @@ import { HarnessClient } from '@/services/harness/client'
 import type { HarnessRoute } from '@/services/harness/protocol'
 import { initialChat, reduceEvent } from '@/services/harness/reducer'
 import { HarnessError, readEvents } from '@/services/harness/sse'
-import type { Frame, Message, TimelineBlock } from '@/services/harness/types'
+import type {
+  Frame,
+  Json,
+  Message,
+  TimelineBlock,
+} from '@/services/harness/types'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
@@ -451,6 +456,46 @@ describe('harness reducer', () => {
         endedAt: start + 8_250,
         duration: 1.25,
       },
+    ])
+  })
+  it('marks a widget call as invalid once the harness refuses its arguments', () => {
+    const call = (
+      toolCallId: string,
+      name: string,
+      content: Json,
+    ): Frame['event'][] => [
+      {
+        type: 'TOOL_CALL_START',
+        parentMessageId: 'r',
+        toolCallId,
+        toolCallName: name,
+      },
+      { type: 'TOOL_CALL_ARGS', toolCallId, delta: '{"url":"x"}' },
+      { type: 'TOOL_CALL_END', toolCallId },
+      { type: 'TOOL_CALL_RESULT', toolCallId, content },
+    ]
+    const refusal = { status: 'error', error: 'The arguments did not match.' }
+    let state = initialChat()
+    for (const event of [
+      ...call('refused', 'render_link_preview', refusal),
+      ...call('unread', 'render_link_preview', { error: 'Not found' }),
+      ...call('search', 'web_search', refusal),
+    ])
+      state = reduceEvent(state, { event })
+    expect(state.messages[0].timeline).toEqual([
+      {
+        id: 'refused',
+        toolCallId: 'refused',
+        type: 'tool_call',
+        name: 'render_link_preview',
+        arguments: '{"url":"x"}',
+        complete: true,
+        progress: [],
+        result: refusal,
+        invalidArguments: true,
+      },
+      expect.not.objectContaining({ invalidArguments: true }),
+      expect.not.objectContaining({ invalidArguments: true }),
     ])
   })
   it('keeps late reasoning with the thought the reply text closed', () => {

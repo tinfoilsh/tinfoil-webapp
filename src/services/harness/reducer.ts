@@ -1,10 +1,11 @@
-import { ERROR_CODES } from './protocol'
+import { ERROR_CODES, WIDGET_PREFIX } from './protocol'
 import { HarnessError } from './sse'
 import type {
   ActivityPatch,
   Frame,
   HarnessErrorBody,
   HarnessEvent,
+  Json,
   Message,
   Snapshot,
   StatePatch,
@@ -57,6 +58,9 @@ export const runOf = (event: HarnessEvent): string | undefined =>
 const REASONING_SUFFIX = /-reasoning$/
 // A tool's activity streams under the tool call's id with this prefix.
 const ACTIVITY_PREFIX = /^act_/
+// The status of a widget call's result when the harness refused its
+// arguments and asked the model to call the widget again.
+const REFUSED_WIDGET_STATUS = 'error'
 const DEFAULT_RUN_ERROR = 'The run could not finish.'
 
 function invalidPatch(): never {
@@ -68,6 +72,17 @@ function invalidPatch(): never {
 
 const replaceAt = <T>(items: readonly T[], index: number, item: T): T[] =>
   items.map((current, at) => (at === index ? item : current))
+
+// Whether a widget call's result refuses the arguments it was drawn from.
+function refusesWidget(block: TimelineBlock, result: Json | undefined) {
+  return (
+    !!block.name?.startsWith(WIDGET_PREFIX) &&
+    typeof result === 'object' &&
+    result !== null &&
+    !Array.isArray(result) &&
+    result.status === REFUSED_WIDGET_STATUS
+  )
+}
 
 // When an event happened, in epoch milliseconds, if it says.
 function millisOf(timestamp: string | undefined): number | undefined {
@@ -381,6 +396,9 @@ export function reduceEvent(
             result: event.content,
             metadata: event.metadata,
             ...(event.display ? { display: event.display } : {}),
+            ...(refusesWidget(block, event.content)
+              ? { invalidArguments: true }
+              : {}),
             ...(at !== undefined &&
             (block.startedAt === undefined || at >= block.startedAt)
               ? { endedAt: at }

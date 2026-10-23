@@ -7,7 +7,6 @@ import { act, render, screen } from '@testing-library/react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { client } from '../../harness-fixture'
 
-vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/hooks/use-chat-print', () => ({ useChatPrint: () => undefined }))
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -52,9 +51,12 @@ function Conversation() {
 const at = (seconds: number) =>
   new Date(Date.UTC(2026, 9, 1) + seconds * 1000).toISOString()
 
-// Sends a question whose reply streams these events, and waits for its run
-// to finish.
-async function streamReply(events: Frame['event'][]) {
+// Sends a question whose reply streams these events, and finishes its run
+// once `finish` settles. Resolves once the run finished.
+function sendReply(
+  events: Frame['event'][],
+  finish: Promise<void> = Promise.resolve(),
+) {
   client.events.mockImplementation(async function* (_path, input) {
     const threadId = input.threadId as string
     const frames: Frame['event'][] = [
@@ -67,13 +69,26 @@ async function streamReply(events: Frame['event'][]) {
         hasOlder: false,
       },
       ...events,
-      { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
     ]
     for (const [id, event] of frames.entries()) yield { id, event }
+    await finish
+    yield {
+      id: frames.length,
+      event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+    }
   })
   render(<Conversation />)
+  let sending!: Promise<unknown>
+  act(() => {
+    sending = send!()
+  })
+  return sending
+}
+
+async function streamReply(events: Frame['event'][]) {
+  const sending = sendReply(events)
   await act(async () => {
-    await send!()
+    await sending
   })
 }
 
@@ -147,5 +162,55 @@ describe('a streamed reply', () => {
     expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
       'Worked for 9.0 seconds',
     )
+  })
+
+  it('shows a widget the harness refused as it streams', async () => {
+    const draft = JSON.stringify({
+      channel: 'message',
+      title: 'Reply draft',
+      variants: [{ label: 'Concise', body: 'Thanks.' }],
+    })
+    let finish!: () => void
+    const sending = sendReply(
+      [
+        {
+          type: 'TOOL_CALL_START',
+          parentMessageId: 'm1',
+          toolCallId: 'draft-1',
+          toolCallName: 'render_message_compose',
+        },
+        { type: 'TOOL_CALL_ARGS', toolCallId: 'draft-1', delta: draft },
+        { type: 'TOOL_CALL_END', toolCallId: 'draft-1' },
+        {
+          type: 'TOOL_CALL_RESULT',
+          toolCallId: 'draft-1',
+          content: { status: 'error', error: 'The arguments did not match.' },
+        },
+        { type: 'TEXT_MESSAGE_CHUNK', messageId: 'm1', delta: 'Sorry.' },
+      ],
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+
+    // Every frame before the run's end has applied once the reply's text shows.
+    expect(await screen.findByText('Sorry.')).toBeInTheDocument()
+    expect(
+      screen.getByText("Couldn't display message compose"),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        "The component data doesn't match the message compose component.",
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Reply draft')).not.toBeInTheDocument()
+
+    await act(async () => {
+      finish()
+      await sending
+    })
+    expect(
+      screen.getByText("Couldn't display message compose"),
+    ).toBeInTheDocument()
   })
 })
