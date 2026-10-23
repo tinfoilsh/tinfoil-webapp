@@ -910,7 +910,7 @@ export function ChatInterface({
   const handleEnterProjectMode = async (id: string, name?: string) => {
     const entered = await enterProjectMode(id, name)
     if (entered)
-      await router.push(getNewChatPath({ projectId: id }), undefined, {
+      await router.replace(getNewChatPath({ projectId: id }), undefined, {
         shallow: true,
       })
     return entered
@@ -918,7 +918,7 @@ export function ChatInterface({
   const handleExitProject = () => {
     exitProjectMode()
     thread.newChat()
-    void router.push('/')
+    void router.replace('/')
   }
   // Leaving a project while one of its chats is dragged keeps the open chat,
   // so the drag can end on the Cloud or Local tab. The page leaves the
@@ -927,7 +927,7 @@ export function ChatInterface({
     setPendingProjectUpload(null)
     setShowAddToProjectModal(false)
     exitProjectMode()
-    void router.push(
+    void router.replace(
       currentChat.id && !currentChat.isTemporary
         ? getChatPath(currentChat.id, { isLocalOnly: currentChat.isLocalOnly })
         : '/',
@@ -1299,7 +1299,7 @@ export function ChatInterface({
     setInput('')
     setQuote(null)
     setProcessedDocuments([])
-    void router.push('/', undefined, { shallow: true })
+    void router.replace('/', undefined, { shallow: true })
     // Only a change of the storage mode moves the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloudSyncEnabled])
@@ -2268,7 +2268,7 @@ export function ChatInterface({
           onAllProjectsDeleted={() => {
             exitProjectMode()
             thread.newChat()
-            void router.push('/')
+            void router.replace('/')
           }}
           isSignedIn={isSignedIn}
           isPremium={isPremium}

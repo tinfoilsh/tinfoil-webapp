@@ -408,11 +408,11 @@ it("leaves a project mid-drag for the open chat's own address, which lists every
   await screen.findByText('What did the survey find?')
   await screen.findByTitle('Rename project')
   await screen.findByRole('link', { name: projectChat.title })
-  chatPage.router.push.mockClear()
+  chatPage.router.replace.mockClear()
 
   dragOntoExitProject(projectChat.title)
 
-  expect(chatPage.router.push).toHaveBeenCalledExactlyOnceWith(
+  expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
     `/chat/${projectChat.id}`,
     undefined,
     { shallow: true },
@@ -425,8 +425,8 @@ it("leaves a project mid-drag for the open chat's own address, which lists every
     await screen.findByRole('link', { name: mainChat.title }),
   ).toBeInTheDocument()
   expect(screen.getByText('What did the survey find?')).toBeInTheDocument()
-  expect(chatPage.router.push).toHaveBeenCalledOnce()
-  expect(chatPage.router.replace).not.toHaveBeenCalled()
+  expect(chatPage.router.replace).toHaveBeenCalledOnce()
+  expect(chatPage.router.push).not.toHaveBeenCalled()
 })
 
 it('opens a project chosen after leaving another mid-drag, before the address has changed', async () => {
@@ -443,7 +443,7 @@ it('opens a project chosen after leaving another mid-drag, before the address ha
   await screen.findByRole('link', { name: projectChat.title })
 
   dragOntoExitProject(projectChat.title)
-  expect(chatPage.router.push).toHaveBeenLastCalledWith('/', undefined, {
+  expect(chatPage.router.replace).toHaveBeenLastCalledWith('/', undefined, {
     shallow: true,
   })
   fireEvent.click(await screen.findByRole('link', { name: /^Planning/ }))
@@ -459,7 +459,7 @@ it('opens a project chosen after leaving another mid-drag, before the address ha
   expect(await screen.findByTitle('Rename project')).toHaveTextContent(
     planning.name,
   )
-  expect(chatPage.router.push).toHaveBeenLastCalledWith(
+  expect(chatPage.router.replace).toHaveBeenLastCalledWith(
     `/project/${planning.id}`,
     undefined,
     { shallow: true },
@@ -746,7 +746,7 @@ it('names a new project after the projects listed and opens it', async () => {
   expect(requested('/v1/projects/create')).toEqual([
     { key: KEY, name: 'My Project #2', description: '' },
   ])
-  expect(chatPage.router.push).toHaveBeenLastCalledWith(
+  expect(chatPage.router.replace).toHaveBeenLastCalledWith(
     `/project/${created.id}`,
     undefined,
     { shallow: true },

@@ -226,7 +226,7 @@ it('applies device-only mode when a blank page navigates to a local new chat', a
   })
 })
 
-it('keeps the shell and loaded project when its URL changes, and exits it on Back', async () => {
+it('keeps the shell and loaded project when its URL changes, and exits it when the URL leaves', async () => {
   signIn({ cloud: true })
   chatPage.premium = true
   sessionStorage.setItem(UI_SIDEBAR_OPEN, 'true')
@@ -251,7 +251,7 @@ it('keeps the shell and loaded project when its URL changes, and exits it on Bac
   const main = await screen.findByRole('main', { name: 'Conversation' })
   fireEvent.click(await screen.findByRole('link', { name: /^Research\b/ }))
   await waitFor(() =>
-    expect(chatPage.router.push).toHaveBeenLastCalledWith(
+    expect(chatPage.router.replace).toHaveBeenLastCalledWith(
       '/project/research',
       undefined,
       { shallow: true },
