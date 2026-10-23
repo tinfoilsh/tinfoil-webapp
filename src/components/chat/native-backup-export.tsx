@@ -109,7 +109,7 @@ export function NativeBackupExport({ available }: { available: boolean }) {
             <span>
               {received > 0
                 ? `Saving archive... ${formatFileSize(received)}`
-                : 'Preparing backup...'}
+                : 'Collecting cloud data...'}
             </span>
             <button
               type="button"

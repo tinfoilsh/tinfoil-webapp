@@ -216,7 +216,7 @@ describe('NativeBackupExport', () => {
     await act(async () => {})
 
     expect(requestSignal(0).aborted).toBe(true)
-    expect(screen.getByText('Preparing backup...')).toBeVisible()
+    expect(screen.getByText('Collecting cloud data...')).toBeVisible()
     expect(screen.queryByText(/No backup file was saved/)).toBeNull()
     expect(
       screen.getByRole('button', { name: 'Create Tinfoil Backup' }),
