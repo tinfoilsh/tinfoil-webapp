@@ -7,50 +7,15 @@ npm install
 cp .env.example .env.local
 ```
 
-In `.env.local`, add the Clerk keys and set:
-
-```env
-NEXT_PUBLIC_DEV=true
-NEXT_PUBLIC_API_BASE_URL=https://api.tinfoil.sh
-NEXT_PUBLIC_DEV_API_KEY=tf-api-key
-```
-
-`NEXT_PUBLIC_DEV_API_KEY` is only used by the optional local model router. Hosted builds reject `NEXT_PUBLIC_DEV=true`.
+In `.env.local`, add the Clerk keys, the controlplane URL, and `NEXT_PUBLIC_HARNESS_ENCLAVE_URL`. The harness URL must be a deployed, attested HTTPS origin.
 
 ## Running locally
 
-Run each command in its own terminal:
-
 ```bash
-npm run dev:backend   # port 3001: Dev Simulator, controlplane mocks, forwarding to NEXT_PUBLIC_API_BASE_URL
-npm run dev           # port 3000: the app
+npm run dev
 ```
 
-Open http://localhost:3000 and sign in to test account-scoped features such as safeguards. Add controlplane mocks in `scripts/mock-controlplane.mjs`.
-
-To test the static export instead of `npm run dev`, keep `dev:backend` running:
-
-```bash
-npm run build
-npm run dev:serve
-```
-
-With `NEXT_PUBLIC_DEV=true`, streamed responses are saved per chat as Markdown under `logs/` (gitignored).
-
-## Dev Simulator
-
-Select **Dev Simulator** in the model picker. Send `help` for the full command list. Useful commands:
-
-- `test thoughts`, `test long thoughts`, `test no thoughts`: responses with and without reasoning
-- `test rapid`, `test code`: fast streaming and code blocks
-- `test retry`: fails three times, then succeeds after automatic retries
-- `test error`: the connection-error banner (send a different message to resume)
-- `flag safeguard`: flags the chat in the local safeguards mock (requires sign-in)
-- `reset safeguards`: clears all mock flags, as does restarting `dev:backend` (flagged chats are read-only, so send it from another chat)
-
-## Optional local model router
-
-Run an OpenAI-compatible model router on `localhost:8090` and select a model from `DEV_MODELS` in `src/config/models.ts`. These requests use `NEXT_PUBLIC_DEV_API_KEY` and skip attestation.
+The app runs against the configured harness with real services and the signed-in account, so use a test account.
 
 ## Testing
 
@@ -62,7 +27,9 @@ npm run lint
 npm run build
 ```
 
-Reproduce a shuffled failure with the seed Vitest prints: `npm run test:shuffle -- --sequence.seed=42`. `npm run test:unit` runs Vitest in watch mode. `npm run check:clerk-privacy` checks the live Clerk environment and runs on a schedule in CI.
+With the harness repository checked out next to this one, also check the widget schemas against the harness's tool declarations: `node ../confidential-tinfoil-harness/scripts/check-widgets.cjs .`
+
+Reproduce a shuffled failure with the seed Vitest prints: `npm run test:shuffle -- --sequence.seed=42`. `npm run test:unit` runs Vitest in watch mode. `npm run check:clerk-privacy` checks the live Clerk environment and runs on a schedule in CI. See [HARNESS.md](./HARNESS.md) for ownership and cutover details.
 
 ## Releases
 

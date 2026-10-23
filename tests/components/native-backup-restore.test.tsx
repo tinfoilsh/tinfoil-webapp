@@ -1,9 +1,9 @@
 import { NativeBackupRestore } from '@/components/chat/native-backup-restore'
+import type { ImportStatusResponse } from '@/services/harness/archives'
 import type {
   NativeRestoreResult,
   restoreNativeBackup,
 } from '@/services/native-backup/orchestrate'
-import type { ImportStatusResponse } from '@/services/sync-enclave/sync-api'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { startTransition, useEffect, useLayoutEffect } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -161,11 +161,13 @@ describe('NativeBackupRestore', () => {
       },
     })
     const updated = vi.fn()
+    const projectsUpdated = vi.fn()
     const { container } = render(
       <NativeBackupRestore
         available
         ownerId="owner"
         onChatsUpdated={updated}
+        onProjectsUpdated={projectsUpdated}
       />,
     )
     selectArchive(container)
@@ -178,6 +180,8 @@ describe('NativeBackupRestore', () => {
     ).toBeVisible()
     expect(screen.queryByText('Backup restored successfully.')).toBeNull()
     expect(updated).toHaveBeenCalledOnce()
+    // A backup can restore projects as well as chats.
+    expect(projectsUpdated).toHaveBeenCalledOnce()
     expect(
       screen.getAllByRole('listitem').map((row) => row.textContent),
     ).toEqual([

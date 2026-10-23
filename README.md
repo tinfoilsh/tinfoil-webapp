@@ -2,7 +2,7 @@
 
 **Live at:** [chat.tinfoil.sh](https://chat.tinfoil.sh)
 
-Tinfoil Chat is a private AI chat app. Messages are encrypted in the browser directly to a verified secure enclave, so only the model inside the enclave can read them. Learn more at [docs.tinfoil.sh](https://docs.tinfoil.sh/chat/overview).
+Tinfoil Chat is a private AI chat app. Its chats run in the attested [chat harness](https://github.com/tinfoilsh/confidential-tinfoil-harness), inside a secure enclave. Learn more at [docs.tinfoil.sh](https://docs.tinfoil.sh/chat/overview).
 
 ## Development
 

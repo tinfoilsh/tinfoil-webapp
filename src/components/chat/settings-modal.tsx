@@ -7,32 +7,15 @@ import {
   PRIVACY_POLICY_URL,
   TERMS_URL,
 } from '@/constants/external-links'
-import {
-  BROWSER_TAB_CHAT_TITLE_CHANGED_EVENT,
-  ENTER_TO_NEWLINE_CHANGED_EVENT,
-  PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
-} from '@/constants/settings-events'
 import type { SettingsTab } from '@/constants/settings-tabs'
-import {
-  SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED,
-  SETTINGS_CHAT_FONT,
-  SETTINGS_ENTER_TO_NEWLINE_ENABLED,
-  SETTINGS_GENUI_ENABLED,
-  SETTINGS_PII_CHECK_ENABLED,
-  SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
-  SETTINGS_WEB_SEARCH_AVAILABLE,
-  USER_PREFS_ADDITIONAL_CONTEXT,
-  USER_PREFS_LANGUAGE,
-  USER_PREFS_NICKNAME,
-  USER_PREFS_PERSONALIZATION_ENABLED,
-  USER_PREFS_PROFESSION,
-  USER_PREFS_TRAITS,
-} from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
-import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
-import { buildChatExport } from '@/services/chat-export/export-archive'
+import {
+  buildChatExport,
+  type AttachmentBytesFetcher,
+} from '@/services/chat-export/export-archive'
+import { collectChatExport } from '@/services/chat-export/export-chats'
 import { isZipFile, readExportFiles } from '@/services/chat-import/export-files'
 import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
 import {
@@ -40,18 +23,24 @@ import {
   PremiumProjectImportRequiredError,
 } from '@/services/chat-import/local-tinfoil-import'
 import {
-  OffDeviceImportSequenceError,
-  runOffDeviceImports,
-  type OffDeviceImportProgress,
-  type OffDeviceImportSequenceResult,
-} from '@/services/chat-import/off-device-import'
-import type { AccountOperationGuard } from '@/services/cloud/account-operation'
-import { hasPrimaryKey } from '@/services/cloud/cek-encoding'
-import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
-import { cloudStorage } from '@/services/cloud/cloud-storage'
-import { cloudSync } from '@/services/cloud/cloud-sync'
-import { projectStorage } from '@/services/cloud/project-storage'
-import { encryptionService } from '@/services/encryption/encryption-service'
+  exportClaudeProjects,
+  ImportSequenceError,
+  importStatus,
+  runImports,
+  type ImportSequenceResult,
+  type ImportStatusResponse,
+} from '@/services/harness/archives'
+import {
+  importedLocalThread,
+  localThreadStore,
+} from '@/services/harness/local-threads'
+import { useHarness } from '@/services/harness/provider'
+import { reportHarnessError } from '@/services/harness/runtime'
+import {
+  useCloudSyncSetting,
+  useLocalChatsSetting,
+} from '@/services/harness/storage-mode'
+import { validateCurrentPrimaryKey } from '@/services/keys/cloud-key-preflight'
 import {
   deletePasskeyCredential,
   getLocalPasskeyCredentialId,
@@ -59,50 +48,25 @@ import {
   PrfNotSupportedError,
   type PasskeyCredentialEntry,
 } from '@/services/passkey'
-import {
-  buildClaudeProjectExport,
-  ClaudeProjectExportSizeError,
-  formatClaudeProjectExportCounts,
-  type ClaudeProjectExportCounts,
-} from '@/services/project-export/claude-project-export'
-import { clearDeletedProjectsForAccount } from '@/services/project/project-deletion'
-import { chatStorage } from '@/services/storage/chat-storage'
-import { projectCache } from '@/services/storage/project-cache'
-import { sessionChatStorage } from '@/services/storage/session-storage'
-import {
-  attachmentGet,
-  type ImportStatusResponse,
-} from '@/services/sync-enclave/sync-api'
-import { SyncRequestAbortedError } from '@/services/sync-enclave/sync-enclave-client'
 import { TINFOIL_COLORS } from '@/theme/colors'
 import {
   clearExplicitSignoutIntent,
   requestExplicitSignout,
 } from '@/utils/auth-signout-intent'
-import { base64ToUint8Array } from '@/utils/binary-codec'
 import {
   parseChatGPTConversations,
   parseClaudeConversations,
-  parseClaudeProjects,
   type ChatGPTConversation,
   type ClaudeConversation,
-  type ClaudeProject,
 } from '@/utils/chat-import-parsers'
 import {
-  CLOUD_SYNC_SETTING_CHANGED_EVENT,
-  isCloudSyncEnabled,
-  isLocalOnlyModeEnabled,
   recordCloudSyncPreference,
   setLocalOnlyModeEnabled,
 } from '@/utils/cloud-sync-settings'
-import { logError, logInfo, logWarning } from '@/utils/error-handling'
+import { logError } from '@/utils/error-handling'
 import { formatFileSize } from '@/utils/format-file-size'
+import { clearPersonalizationDetails } from '@/utils/personalization-settings'
 import {
-  clearPersonalizationDetails,
-  isPersonalizationEnabled,
-} from '@/utils/personalization-settings'
-import {
-  normalizeResponseLanguage,
   RESPONSE_LANGUAGES,
   SYSTEM_RESPONSE_LANGUAGE,
 } from '@/utils/response-language'
@@ -152,7 +116,6 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { BsQrCode } from 'react-icons/bs'
 import { PiSpinner } from 'react-icons/pi'
 import QRCode from 'react-qr-code'
-import { CloudSyncHealthCard } from './cloud-sync-health-card'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
@@ -167,7 +130,7 @@ import {
   countExcludedProjectChats,
   filterExportableChats,
 } from './settings-project-policy'
-import type { Attachment, Chat } from './types'
+import type { Chat } from './types'
 
 const CHARS = '0123456789ABCDEF!@#$%^&*()_+<>?/'
 
@@ -175,6 +138,7 @@ const DELETE_ALL_CHATS_CONFIRM_PHRASE = 'delete all chats'
 const DELETE_ALL_PROJECTS_CONFIRM_PHRASE = 'delete all projects'
 
 interface ImportResult {
+  jobId?: string
   success: boolean
   chatsImported: number
   projectsImported: number
@@ -198,6 +162,7 @@ export function describeOffDeviceImportKickoff(
   const pending = status.status === 'staging' || status.status === 'running'
   const failed = status.status === 'failed'
   return {
+    jobId: status.jobId,
     success: !failed,
     chatsImported: status.imported,
     projectsImported: 0,
@@ -206,9 +171,9 @@ export function describeOffDeviceImportKickoff(
     failed,
     message: failed
       ? describeImportFailure(
-          status.failure_reason,
+          status.failureReason ?? status.failure_reason,
           'chat_import',
-          status.failure_detail,
+          status.failureDetail ?? status.failure_detail,
         )
       : pending
         ? `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`
@@ -217,13 +182,13 @@ export function describeOffDeviceImportKickoff(
 }
 
 /**
- * Turns the outcome of an off-device import, possibly split across
- * several files, into the panel state. Chats from files that already
- * completed are counted, and a failure names its file and how many files
- * were never started.
+ * Turns the outcome of an import, possibly split across several files,
+ * into the panel state. Chats from files that already completed are
+ * counted, and a failure names its file and how many files were never
+ * started.
  */
 export function describeOffDeviceImportOutcome(
-  outcome: OffDeviceImportSequenceResult,
+  outcome: ImportSequenceResult,
   fileNames: readonly string[],
   sourceLabel: string,
 ): ImportResult {
@@ -255,7 +220,7 @@ export function describeOffDeviceImportError(
   fileNames: readonly string[],
 ): ImportResult {
   const message = err instanceof Error ? err.message : 'Failed to start import'
-  if (!(err instanceof OffDeviceImportSequenceError) || fileNames.length < 2) {
+  if (!(err instanceof ImportSequenceError) || fileNames.length < 2) {
     return {
       success: false,
       chatsImported: 0,
@@ -286,9 +251,18 @@ function fileFailureErrors(
   return errors
 }
 
+// The chat service receives each file of an export in one request, so an
+// upload advances a file at a time. An import on this device counts the
+// chats it stores.
 export type ImportProgress =
-  | { type: 'chats' | 'projects'; current: number; total: number }
-  | { type: 'upload'; progress: OffDeviceImportProgress }
+  | { type: 'chats'; current: number; total: number }
+  | {
+      type: 'upload'
+      file: number
+      files: number
+      uploadedBytes: number
+      totalBytes: number
+    }
   | {
       type: 'processing'
       file: number
@@ -296,14 +270,6 @@ export type ImportProgress =
       imported: number
       total: number
     }
-
-type StagedImportKind = 'chatgpt' | 'claude-conversations' | 'claude-projects'
-type ImportSourceKey = 'chatgpt' | 'claude'
-
-// Hashing is local and fast while uploading is network-bound, so the
-// combined bar gives hashing a small slice and never runs backward when
-// the phase changes.
-const UPLOAD_PROGRESS_HASHING_SHARE = 0.15
 
 export function describeImportProgress(progress: ImportProgress): {
   title: string
@@ -318,7 +284,7 @@ export function describeImportProgress(progress: ImportProgress): {
       percent: total > 0 ? (imported / total) * 100 : 0,
     }
   }
-  if (progress.type !== 'upload') {
+  if (progress.type === 'chats') {
     return {
       title: `Importing ${progress.type}...`,
       detail: `${progress.current} of ${progress.total}`,
@@ -326,24 +292,17 @@ export function describeImportProgress(progress: ImportProgress): {
         progress.total > 0 ? (progress.current / progress.total) * 100 : 0,
     }
   }
-  const { phase, processedBytes, totalBytes } = progress.progress
-  if (phase === 'starting') {
-    return {
-      title: 'Starting import...',
-      detail: 'Handing off to the secure enclave',
-      percent: 100,
-    }
-  }
-  const phaseFraction = totalBytes > 0 ? processedBytes / totalBytes : 0
-  const overallFraction =
-    phase === 'hashing'
-      ? phaseFraction * UPLOAD_PROGRESS_HASHING_SHARE
-      : UPLOAD_PROGRESS_HASHING_SHARE +
-        phaseFraction * (1 - UPLOAD_PROGRESS_HASHING_SHARE)
+  const { file, files, uploadedBytes, totalBytes } = progress
   return {
-    title: phase === 'hashing' ? 'Preparing export...' : 'Uploading export...',
-    detail: `${formatFileSize(processedBytes)} of ${formatFileSize(totalBytes)}`,
-    percent: overallFraction * 100,
+    title:
+      files > 1
+        ? `Uploading file ${file} of ${files}...`
+        : 'Uploading export...',
+    detail:
+      files > 1
+        ? `${formatFileSize(uploadedBytes)} of ${formatFileSize(totalBytes)} uploaded`
+        : formatFileSize(totalBytes),
+    percent: totalBytes > 0 ? (uploadedBytes / totalBytes) * 100 : 0,
   }
 }
 
@@ -469,6 +428,8 @@ function StepNumber({ step }: { step: keyof typeof STEP_ICONS }) {
 }
 
 type ImportSection = 'chatgpt' | 'claude' | 'tinfoil'
+type StagedImportKind = 'chatgpt' | 'claude-conversations' | 'claude-projects'
+type ImportSourceKey = 'chatgpt' | 'claude'
 
 function ImportAccordionHeader({
   title,
@@ -656,6 +617,10 @@ type SettingsModalProps = {
   onOpenPromptLibrary: () => void
   onCloudSyncSetupClick?: () => void
   onChatsUpdated?: () => void | Promise<void>
+  // Deletes the chats on this device, and with cloud sync the harness's.
+  onDeleteAllChats: () => Promise<{ cloudDeletionCompleted: boolean }>
+  onAllChatsDeleted?: () => void
+  onAllProjectsDeleted?: () => void
   isSignedIn?: boolean
   isPremium?: boolean
   encryptionKey: string | null
@@ -666,7 +631,8 @@ type SettingsModalProps = {
   onAddPasskeyToThisDevice?: () => Promise<boolean>
   onRefreshBundleState?: () => Promise<void>
   initialTab?: SettingsTab
-  chats?: Chat[]
+  // The listed chats, so a flagged chat links to its local or project route.
+  chats?: readonly Pick<Chat, 'id' | 'isLocalOnly' | 'projectId'>[]
 }
 
 function getAddPasskeyErrorTitle(error: unknown): string {
@@ -693,6 +659,9 @@ export function SettingsModal({
   onOpenPromptLibrary,
   onCloudSyncSetupClick,
   onChatsUpdated,
+  onDeleteAllChats,
+  onAllChatsDeleted,
+  onAllProjectsDeleted,
   isSignedIn,
   isPremium,
   encryptionKey,
@@ -703,11 +672,16 @@ export function SettingsModal({
   onAddPasskeyToThisDevice,
   onRefreshBundleState,
   initialTab,
-  chats = [],
+  chats,
 }: SettingsModalProps) {
   const { getToken, signOut } = useAuth()
   const { user } = useUser()
+  // The prompt new chats start with replaces the custom default prompt, as
+  // on main.
+  const { builtInPresets, userPresets, defaultPreset, setDefaultPreset } =
+    usePromptLibrary()
   const { toast } = useToast()
+  const { api, profile, keyReady } = useHarness()
 
   const { refresh: refreshProjects } = useProjects({ autoLoad: false })
   // Encryption key management state
@@ -725,7 +699,6 @@ export function SettingsModal({
     'match' | 'mismatch' | 'unverified'
   >('unverified')
   const passkeyRefreshSeqRef = useRef(0)
-  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -750,14 +723,10 @@ export function SettingsModal({
   // Language setting (separate from personalization)
   const [language, setLanguage] = useState<string>(SYSTEM_RESPONSE_LANGUAGE)
 
-  // Default prompt preset for new chats
-  const { builtInPresets, userPresets, defaultPreset, setDefaultPreset } =
-    usePromptLibrary()
-
-  // Cloud sync setting
-  const [cloudSyncEnabled, setCloudSyncEnabledState] = useState<boolean>(false)
-  const [localOnlyModeEnabledState, setLocalOnlyModeEnabledState] =
-    useState<boolean>(false)
+  // Without cloud sync every chat and setting stays on this device.
+  const cloudSyncSetting = useCloudSyncSetting()
+  const cloudSyncEnabled = !!isSignedIn && cloudSyncSetting
+  const localChatsEnabled = useLocalChatsSetting()
 
   // Web Search PII check setting (defaults to on)
   const [piiCheckEnabled, setPiiCheckEnabled] = useState<boolean>(true)
@@ -789,17 +758,6 @@ export function SettingsModal({
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     initialTab ?? 'account',
   )
-  const syncNeedsAttention = useSyncHealthAttention()
-
-  // Signed-in-only tabs disappear from the nav on sign-out; fall back to a
-  // tab that still exists so the modal is not left with blank content.
-  const signedInOnlyTab =
-    activeTab === 'cloud-sync' || activeTab === 'safeguards'
-  useEffect(() => {
-    if (!isSignedIn && signedInOnlyTab) {
-      setActiveTab('account')
-    }
-  }, [isSignedIn, signedInOnlyTab])
 
   // Update active tab when initialTab prop changes (e.g., opening to a specific tab)
   useEffect(() => {
@@ -807,6 +765,17 @@ export function SettingsModal({
       setActiveTab(initialTab)
     }
   }, [initialTab, isOpen])
+
+  // Signed-in-only tabs disappear from the nav on sign-out; fall back to a
+  // tab that still exists so the modal is not left with blank content. This
+  // runs after the initial-tab effect so a requested hidden tab cannot win.
+  const signedInOnlyTab =
+    activeTab === 'cloud-sync' || activeTab === 'safeguards'
+  useEffect(() => {
+    if (!isSignedIn && signedInOnlyTab) {
+      setActiveTab('account')
+    }
+  }, [isSignedIn, signedInOnlyTab])
 
   // Sync URL fragment with active tab
   useEffect(() => {
@@ -834,14 +803,11 @@ export function SettingsModal({
   // Import state
   const [importSource, setImportSource] = useState<ImportSection | null>(null)
   const [isImporting, setIsImporting] = useState(false)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(
     null,
   )
-  const [importResult, setImportResult] = useState<ImportResult | null>(null)
-  // ChatGPT and Claude exports arrive split across several files, so
-  // selections are staged for review before the import starts. Each source
-  // box keeps its own staged set so picking files for one never discards
-  // files staged for the other.
+  // Files picked for an import, shown for review before it starts.
   const [stagedImports, setStagedImports] = useState<
     Partial<Record<ImportSourceKey, { kind: StagedImportKind; files: File[] }>>
   >({})
@@ -860,9 +826,7 @@ export function SettingsModal({
     null,
   )
   const [projectExportResult, setProjectExportResult] = useState<{
-    counts?: ClaudeProjectExportCounts
-    warnings: string[]
-    error?: string
+    error: string
   } | null>(null)
 
   // Danger zone state
@@ -894,181 +858,31 @@ export function SettingsModal({
     'optimistic',
   ]
 
-  // Shared function to load settings from localStorage
-  const loadSettingsFromStorage = useCallback(() => {
-    // Load personalization settings
-    const savedNickname = localStorage.getItem(USER_PREFS_NICKNAME)
-    const savedProfession = localStorage.getItem(USER_PREFS_PROFESSION)
-    const savedTraits = localStorage.getItem(USER_PREFS_TRAITS)
-    const savedContext = localStorage.getItem(USER_PREFS_ADDITIONAL_CONTEXT)
-    const savedUsingPersonalization = localStorage.getItem(
-      USER_PREFS_PERSONALIZATION_ENABLED,
-    )
-
-    let parsedTraits: string[] = []
-    if (savedTraits) {
-      try {
-        parsedTraits = JSON.parse(savedTraits)
-      } catch {
-        parsedTraits = []
-      }
-    }
-    setNickname(savedNickname ?? '')
-    setProfession(savedProfession ?? '')
-    setSelectedTraits(parsedTraits)
-    setAdditionalContext(savedContext ?? '')
+  // Settings live in the encrypted profile held by the chat service.
+  useEffect(() => {
+    if (!isOpen) return
+    setNickname(profile.nickname ?? '')
+    setProfession(profile.profession ?? '')
+    setSelectedTraits(profile.traits ?? [])
+    setAdditionalContext(profile.additionalContext ?? '')
     setSavedPersonalization({
-      nickname: savedNickname ?? '',
-      profession: savedProfession ?? '',
-      traits: parsedTraits,
-      additionalContext: savedContext ?? '',
+      nickname: profile.nickname ?? '',
+      profession: profile.profession ?? '',
+      traits: profile.traits ?? [],
+      additionalContext: profile.additionalContext ?? '',
     })
-    setIsUsingPersonalization(
-      isPersonalizationEnabled(savedUsingPersonalization),
+    setIsUsingPersonalization(profile.isUsingPersonalization ?? true)
+    setLanguage(profile.language ?? SYSTEM_RESPONSE_LANGUAGE)
+    setPiiCheckEnabled(profile.piiCheckEnabled ?? true)
+    setEnterToNewlineEnabled(profile.enterToNewlineEnabled ?? false)
+    setPixelateSidebarChatTitles(
+      profile.pixelateSidebarChatTitlesEnabled ?? false,
     )
-
-    // Load language setting
-    const savedLanguage = localStorage.getItem(USER_PREFS_LANGUAGE)
-    setLanguage(normalizeResponseLanguage(savedLanguage))
-
-    // Load cloud sync setting
-    setCloudSyncEnabledState(isCloudSyncEnabled())
-    setLocalOnlyModeEnabledState(isLocalOnlyModeEnabled())
-
-    // Load PII check setting (defaults to true if not set)
-    const savedPiiCheck = localStorage.getItem(SETTINGS_PII_CHECK_ENABLED)
-    setPiiCheckEnabled(savedPiiCheck === null ? true : savedPiiCheck === 'true')
-
-    // Load Enter-inserts-newline setting (defaults to false if not set)
-    const savedEnterToNewline = localStorage.getItem(
-      SETTINGS_ENTER_TO_NEWLINE_ENABLED,
-    )
-    setEnterToNewlineEnabled(savedEnterToNewline === 'true')
-
-    const savedPixelateSidebarChatTitles = localStorage.getItem(
-      SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
-    )
-    setPixelateSidebarChatTitles(savedPixelateSidebarChatTitles === 'true')
-
-    const savedBrowserTabChatTitle = localStorage.getItem(
-      SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED,
-    )
-    setBrowserTabChatTitle(
-      savedBrowserTabChatTitle === null
-        ? true
-        : savedBrowserTabChatTitle === 'true',
-    )
-
-    const savedWebSearchAvailable = localStorage.getItem(
-      SETTINGS_WEB_SEARCH_AVAILABLE,
-    )
-    setWebSearchAvailable(
-      savedWebSearchAvailable === null
-        ? true
-        : savedWebSearchAvailable === 'true',
-    )
-
-    // Load Generative UI setting (defaults to true if not set)
-    const savedGenUI = localStorage.getItem(SETTINGS_GENUI_ENABLED)
-    setGenUIEnabled(savedGenUI === null ? true : savedGenUI === 'true')
-
-    // Load chat font setting
-    const savedChatFont = localStorage.getItem(SETTINGS_CHAT_FONT)
-    setChatFont(normalizeChatFont(savedChatFont))
-  }, [])
-
-  // Initial load settings from localStorage
-  useEffect(() => {
-    if (isClient) {
-      loadSettingsFromStorage()
-    }
-  }, [isClient, loadSettingsFromStorage])
-
-  // Listen for profile sync updates
-  useEffect(() => {
-    if (!isClient) return
-
-    // Listen for storage events (from other tabs or sync)
-    window.addEventListener('storage', loadSettingsFromStorage)
-
-    // Also listen for our custom events that fire after profile sync
-    const handleProfileSyncUpdate = () => {
-      loadSettingsFromStorage()
-    }
-    const handlePixelateSidebarChatTitlesUpdate = (
-      event: CustomEvent<{ enabled: boolean }>,
-    ) => {
-      setPixelateSidebarChatTitles(event.detail.enabled)
-    }
-    const handleBrowserTabChatTitleUpdate = (
-      event: CustomEvent<{ enabled: boolean }>,
-    ) => {
-      setBrowserTabChatTitle(event.detail.enabled)
-    }
-    const handleEnterToNewlineUpdate = (
-      event: CustomEvent<{ enabled: boolean }>,
-    ) => {
-      setEnterToNewlineEnabled(event.detail.enabled)
-    }
-
-    // Listen for cloud sync setting changes (e.g., from modal or other sources)
-    const handleCloudSyncUpdate = () => {
-      setCloudSyncEnabledState(isCloudSyncEnabled())
-    }
-
-    // These events are fired by the profile sync when it updates localStorage
-    window.addEventListener('personalizationChanged', handleProfileSyncUpdate)
-    window.addEventListener('languageChanged', handleProfileSyncUpdate)
-    window.addEventListener(
-      'webSearchAvailableChanged',
-      handleProfileSyncUpdate,
-    )
-    window.addEventListener(
-      PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
-      handlePixelateSidebarChatTitlesUpdate as EventListener,
-    )
-    window.addEventListener(
-      BROWSER_TAB_CHAT_TITLE_CHANGED_EVENT,
-      handleBrowserTabChatTitleUpdate as EventListener,
-    )
-    window.addEventListener(
-      ENTER_TO_NEWLINE_CHANGED_EVENT,
-      handleEnterToNewlineUpdate as EventListener,
-    )
-    window.addEventListener(
-      CLOUD_SYNC_SETTING_CHANGED_EVENT,
-      handleCloudSyncUpdate,
-    )
-
-    return () => {
-      window.removeEventListener('storage', loadSettingsFromStorage)
-      window.removeEventListener(
-        'personalizationChanged',
-        handleProfileSyncUpdate,
-      )
-      window.removeEventListener('languageChanged', handleProfileSyncUpdate)
-      window.removeEventListener(
-        'webSearchAvailableChanged',
-        handleProfileSyncUpdate,
-      )
-      window.removeEventListener(
-        PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
-        handlePixelateSidebarChatTitlesUpdate as EventListener,
-      )
-      window.removeEventListener(
-        BROWSER_TAB_CHAT_TITLE_CHANGED_EVENT,
-        handleBrowserTabChatTitleUpdate as EventListener,
-      )
-      window.removeEventListener(
-        ENTER_TO_NEWLINE_CHANGED_EVENT,
-        handleEnterToNewlineUpdate as EventListener,
-      )
-      window.removeEventListener(
-        CLOUD_SYNC_SETTING_CHANGED_EVENT,
-        handleCloudSyncUpdate,
-      )
-    }
-  }, [isClient, loadSettingsFromStorage])
+    setBrowserTabChatTitle(profile.browserTabChatTitleEnabled ?? true)
+    setWebSearchAvailable(profile.webSearchEnabled ?? true)
+    setGenUIEnabled(profile.genUIEnabled ?? true)
+    setChatFont(normalizeChatFont(profile.chatFont))
+  }, [isOpen, profile])
 
   const refreshPasskeyBundles = useCallback(async () => {
     // Latest-wins sequencing: overlapping refreshes (panel-open effect
@@ -1123,7 +937,7 @@ export function SettingsModal({
     passkeyAddDeviceAvailable,
   ])
 
-  // Save personalization settings and notify components
+  // Save personalization settings to the profile
   const savePersonalizationSettings = (values?: {
     nickname?: string
     profession?: string
@@ -1131,52 +945,20 @@ export function SettingsModal({
     additionalContext?: string
     isEnabled?: boolean
   }) => {
-    if (isClient) {
-      const currentNickname = values?.nickname ?? nickname
-      const currentProfession = values?.profession ?? profession
-      const currentTraits = values?.traits ?? selectedTraits
-      const currentContext = values?.additionalContext ?? additionalContext
-      const currentEnabled = values?.isEnabled ?? isUsingPersonalization
-
-      localStorage.setItem(USER_PREFS_NICKNAME, currentNickname)
-      localStorage.setItem(USER_PREFS_PROFESSION, currentProfession)
-      localStorage.setItem(USER_PREFS_TRAITS, JSON.stringify(currentTraits))
-      localStorage.setItem(USER_PREFS_ADDITIONAL_CONTEXT, currentContext)
-      localStorage.setItem(
-        USER_PREFS_PERSONALIZATION_ENABLED,
-        currentEnabled.toString(),
-      )
-
-      // Trigger event to notify other components
-      window.dispatchEvent(
-        new CustomEvent('personalizationChanged', {
-          detail: {
-            nickname: currentNickname,
-            profession: currentProfession,
-            traits: currentTraits,
-            additionalContext: currentContext,
-            language,
-            isEnabled: currentEnabled,
-          },
-        }),
-      )
-    }
+    void api
+      .updateProfile({
+        nickname: values?.nickname ?? nickname,
+        profession: values?.profession ?? profession,
+        traits: values?.traits ?? selectedTraits,
+        additionalContext: values?.additionalContext ?? additionalContext,
+        isUsingPersonalization: values?.isEnabled ?? isUsingPersonalization,
+      })
+      .catch(reportHarnessError)
   }
 
   // Save language setting separately
   const saveLanguageSetting = (newLanguage: string) => {
-    if (isClient) {
-      localStorage.setItem(USER_PREFS_LANGUAGE, newLanguage)
-
-      // Trigger event to notify other components about language change
-      window.dispatchEvent(
-        new CustomEvent('languageChanged', {
-          detail: {
-            language: newLanguage,
-          },
-        }),
-      )
-    }
+    void api.updateProfile({ language: newLanguage }).catch(reportHarnessError)
   }
 
   // Handle individual field changes. Edits are buffered locally and only
@@ -1269,82 +1051,35 @@ export function SettingsModal({
 
   const handleChatFontChange = (font: ChatFont) => {
     setChatFont(font)
-    if (isClient) {
-      localStorage.setItem(SETTINGS_CHAT_FONT, font)
-      window.dispatchEvent(
-        new CustomEvent('chatFontChanged', {
-          detail: font,
-        }),
-      )
-    }
+    void api.updateProfile({ chatFont: font }).catch(reportHarnessError)
   }
 
+  // Turning cloud sync on needs the encryption key, which a passkey can
+  // create; turning it off keeps the harness's chats for when it returns.
   const handleCloudSyncToggle = async (enabled: boolean) => {
-    if (enabled) {
-      // Check if encryption key exists
-      if (!encryptionService.getKey()) {
-        // Prefer passkey setup when available
-        if (passkeySetupAvailable && onSetupPasskey) {
-          setIsOpen(false)
-          try {
-            const success = await onSetupPasskey()
-            if (success) return
-          } catch (error) {
-            toast({
-              title:
-                error instanceof PrfNotSupportedError
-                  ? 'Passkey provider not supported'
-                  : 'Passkey setup failed',
-              description:
-                error instanceof PrfNotSupportedError
-                  ? error.message
-                  : 'Could not create passkey backup. You can try again later.',
-              variant: 'destructive',
-            })
-          }
-          // Passkey setup didn't succeed — fall through to manual key setup
-          if (onCloudSyncSetupClick) {
-            onCloudSyncSetupClick()
-          }
-          return
-        }
-
-        // Close settings modal and show the cloud sync setup modal
-        setIsOpen(false)
-        if (onCloudSyncSetupClick) {
-          onCloudSyncSetupClick()
-        }
-        return
-      }
-
-      // If key exists, proceed with enabling
-      setCloudSyncEnabledState(true)
-      recordCloudSyncPreference(true)
-    } else {
-      // Disabling cloud sync
-      setCloudSyncEnabledState(false)
-      recordCloudSyncPreference(false)
-
+    if (!enabled || encryptionKey) {
+      recordCloudSyncPreference(enabled)
+      return
+    }
+    setIsOpen(false)
+    if (passkeySetupAvailable && onSetupPasskey) {
       try {
-        const deletedCount = await chatStorage.deleteAllNonLocalChats()
-        logInfo(
-          `Deleted ${deletedCount} synced chats when disabling cloud sync`,
-          {
-            component: 'SettingsModal',
-            action: 'handleCloudSyncToggle',
-          },
-        )
-        if (deletedCount > 0 && onChatsUpdated) {
-          onChatsUpdated()
-        }
+        if (await onSetupPasskey()) return
       } catch (error) {
-        logInfo('Failed to delete synced chats', {
-          component: 'SettingsModal',
-          action: 'handleCloudSyncToggle',
-          metadata: { error },
+        toast({
+          title:
+            error instanceof PrfNotSupportedError
+              ? 'Passkey provider not supported'
+              : 'Passkey setup failed',
+          description:
+            error instanceof PrfNotSupportedError
+              ? error.message
+              : 'Could not create passkey backup. You can try again later.',
+          variant: 'destructive',
         })
       }
     }
+    onCloudSyncSetupClick?.()
   }
 
   const handleUpgradeToPro = useCallback(async () => {
@@ -1438,7 +1173,103 @@ export function SettingsModal({
     }
   }, [signOut])
 
-  // Import handlers
+  // Imports upload the original export to the chat service, which converts
+  // and stores it off device and emails the user when a long job finishes.
+  // An export split across files runs as a sequence of jobs, each finishing
+  // before the next file is uploaded.
+  const importFiles = async (
+    source: ImportSection,
+    files: readonly File[],
+    sourceLabel: string,
+  ) => {
+    if (files.length === 0) return
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+    const bytesBefore = files.map((_, index) =>
+      files.slice(0, index).reduce((sum, file) => sum + file.size, 0),
+    )
+    const fileNames = files.map((file) => file.name)
+    setIsImporting(true)
+    setImportSource(source)
+    setImportResult(null)
+    localTinfoilImportAbortControllerRef.current?.abort()
+    const controller = new AbortController()
+    localTinfoilImportAbortControllerRef.current = controller
+    try {
+      const outcome = await runImports(source, files, {
+        signal: controller.signal,
+        onUpload: (fileIndex) =>
+          setImportProgress({
+            type: 'upload',
+            file: fileIndex + 1,
+            files: files.length,
+            uploadedBytes: bytesBefore[fileIndex],
+            totalBytes,
+          }),
+        onProcessing: (fileIndex, status) =>
+          setImportProgress({
+            type: 'processing',
+            file: fileIndex + 1,
+            files: files.length,
+            imported: status.imported,
+            total: status.total,
+          }),
+      })
+      const result = describeOffDeviceImportOutcome(
+        outcome,
+        fileNames,
+        sourceLabel,
+      )
+      setImportResult(result)
+      if (result.failed) {
+        toast({
+          title: 'Import failed',
+          description: result.errors[0] ?? result.message,
+          variant: 'destructive',
+        })
+      } else if (result.pending) {
+        toast({ title: 'Import started', description: result.message })
+      }
+      if (!result.pending || result.chatsImported > 0) {
+        await onChatsUpdated?.()
+        await refreshProjects()
+      }
+    } catch (cause) {
+      if (controller.signal.aborted) return
+      const result = describeOffDeviceImportError(cause, fileNames)
+      setImportResult(result)
+      toast({
+        title: 'Import failed',
+        description: `Could not start the ${sourceLabel} import`,
+        variant: 'destructive',
+      })
+      if (result.chatsImported > 0) await onChatsUpdated?.()
+    } finally {
+      if (localTinfoilImportAbortControllerRef.current === controller) {
+        localTinfoilImportAbortControllerRef.current = null
+        setIsImporting(false)
+        setImportProgress(null)
+      }
+    }
+  }
+
+  const checkImportProgress = async (jobId: string) => {
+    try {
+      const status = await importStatus(jobId)
+      setImportResult(describeOffDeviceImportKickoff(status, 'archive'))
+      if (status.status === 'completed' || status.status === 'partial') {
+        await onChatsUpdated?.()
+        await refreshProjects()
+      }
+    } catch (cause) {
+      reportHarnessError(cause)
+    }
+  }
+
+  // Chats kept on this device are imported in the browser, as on main: an
+  // export is parsed here and its chats are stored on this device (in this
+  // tab when signed out). With cloud sync the chat service imports it.
+  const importsOnDevice = !cloudSyncEnabled
+
   const generateChatId = (createdAt?: Date) => {
     const timestampMs = createdAt?.getTime() || Date.now()
     return generateReverseId(timestampMs).id
@@ -1446,23 +1277,49 @@ export function SettingsModal({
 
   const getParseOptions = () => ({
     generateChatId,
-    isCloudSyncEnabled: isCloudSyncEnabled(),
+    isCloudSyncEnabled: false,
   })
+
+  // An import on this device ends with the modal or the account.
+  const startDeviceImport = (source: ImportSection) => {
+    setImportSource(source)
+    setIsImporting(true)
+    setImportResult(null)
+    localTinfoilImportAbortControllerRef.current?.abort()
+    const controller = new AbortController()
+    localTinfoilImportAbortControllerRef.current = controller
+    return {
+      controller,
+      signal: AbortSignal.any([controller.signal, api.lifetime.signal]),
+    }
+  }
+
+  const finishDeviceImport = (controller: AbortController) => {
+    if (localTinfoilImportAbortControllerRef.current !== controller) return
+    localTinfoilImportAbortControllerRef.current = null
+    setIsImporting(false)
+    setImportProgress(null)
+  }
 
   const saveImportedChats = async (
     chats: Chat[],
+    signal: AbortSignal,
   ): Promise<{ imported: number; errors: string[] }> => {
     setImportProgress({ current: 0, total: chats.length, type: 'chats' })
+    const store = localThreadStore(api.userId ? 'device' : 'tab')
 
     let imported = 0
     const errors: string[] = []
 
-    // Save all chats to IndexedDB first (skip cloud sync on individual saves)
     for (let i = 0; i < chats.length; i++) {
+      signal.throwIfAborted()
       try {
-        await chatStorage.saveChat(chats[i], true) // skipCloudSync = true
+        const chat = chats[i]
+        if (!(await store.update(chat.id, () => importedLocalThread(chat))))
+          throw new Error('The chat was not saved')
         imported++
       } catch {
+        signal.throwIfAborted()
         errors.push(`Failed to save "${chats[i].title}" locally`)
       }
       setImportProgress({
@@ -1472,47 +1329,314 @@ export function SettingsModal({
       })
     }
 
-    // Bulk upload to cloud if sync is enabled
-    if (isCloudSyncEnabled() && (await cloudStorage.isAuthenticated())) {
-      const CHUNK_SIZE = 100
-      const chatsToUpload = chats.filter((c) => !c.isLocalOnly)
-      let cloudUploadFailed = false
-
-      for (let i = 0; i < chatsToUpload.length; i += CHUNK_SIZE) {
-        const chunk = chatsToUpload.slice(i, i + CHUNK_SIZE)
-        try {
-          const result = await cloudStorage.bulkUploadChats(chunk)
-          if (result.failed > 0) {
-            result.results
-              .filter((r) => !r.success)
-              .forEach((r) =>
-                errors.push(
-                  `Cloud upload failed: ${r.error || r.conversationId}`,
-                ),
-              )
-          }
-        } catch (err) {
-          if (!cloudUploadFailed) {
-            errors.push(
-              `Cloud sync failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
-            )
-            cloudUploadFailed = true
-          }
-        }
-      }
-    }
-
     return { imported, errors }
+  }
+
+  const importChatGPT = async (files: File[]) => {
+    if (!importsOnDevice) {
+      await importFiles('chatgpt', files, 'ChatGPT')
+      return
+    }
+    const { controller, signal } = startDeviceImport('chatgpt')
+
+    try {
+      const data = await readExportFiles<ChatGPTConversation>(
+        files,
+        'ChatGPT conversations',
+      )
+
+      const chats = parseChatGPTConversations(data, getParseOptions())
+      const { imported, errors } = await saveImportedChats(chats, signal)
+
+      setImportResult({
+        success: errors.length === 0,
+        chatsImported: imported,
+        projectsImported: 0,
+        errors,
+      })
+
+      void onChatsUpdated?.()
+
+      toast({
+        title: 'Import complete',
+        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from ChatGPT`,
+      })
+    } catch (err) {
+      if (signal.aborted) return
+      setImportResult({
+        success: false,
+        chatsImported: 0,
+        projectsImported: 0,
+        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
+      })
+      toast({
+        title: 'Import failed',
+        description: 'Could not parse the ChatGPT export file',
+        variant: 'destructive',
+      })
+    } finally {
+      finishDeviceImport(controller)
+    }
+  }
+
+  const importClaudeConversations = async (files: File[]) => {
+    if (!importsOnDevice) {
+      await importFiles('claude', files, 'Claude')
+      return
+    }
+    const { controller, signal } = startDeviceImport('claude')
+
+    try {
+      const data = await readExportFiles<ClaudeConversation>(
+        files,
+        'Claude conversations',
+      )
+
+      const chats = parseClaudeConversations(data, getParseOptions())
+      const { imported, errors } = await saveImportedChats(chats, signal)
+
+      setImportResult({
+        success: errors.length === 0,
+        chatsImported: imported,
+        projectsImported: 0,
+        errors,
+      })
+
+      void onChatsUpdated?.()
+
+      toast({
+        title: 'Import complete',
+        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from Claude`,
+      })
+    } catch (err) {
+      if (signal.aborted) return
+      setImportResult({
+        success: false,
+        chatsImported: 0,
+        projectsImported: 0,
+        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
+      })
+      toast({
+        title: 'Import failed',
+        description: 'Could not parse the Claude export file',
+        variant: 'destructive',
+      })
+    } finally {
+      finishDeviceImport(controller)
+    }
+  }
+
+  const handleImportTinfoil = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    if (!importsOnDevice) {
+      await importFiles('tinfoil', [file], 'Tinfoil')
+      return
+    }
+    const { controller, signal } = startDeviceImport('tinfoil')
+
+    try {
+      const { chats, skippedProjectChats } =
+        await parseLocalTinfoilExportForAccess(
+          file,
+          {
+            ...getParseOptions(),
+            signal,
+          },
+          Boolean(isPremium),
+        )
+      const { imported, errors } = await saveImportedChats(chats, signal)
+      const projectErrors =
+        skippedProjectChats > 0
+          ? [
+              `Skipped ${skippedProjectChats} project chat${skippedProjectChats === 1 ? '' : 's'}. Premium is required to import project chats.`,
+            ]
+          : []
+      const importErrors = [...errors, ...projectErrors]
+
+      setImportResult({
+        success: importErrors.length === 0,
+        chatsImported: imported,
+        projectsImported: 0,
+        errors: importErrors,
+      })
+
+      void onChatsUpdated?.()
+
+      toast({
+        title:
+          skippedProjectChats > 0
+            ? 'Chats imported; project chats skipped'
+            : 'Import complete',
+        description:
+          skippedProjectChats > 0
+            ? `Imported ${imported} chat${imported !== 1 ? 's' : ''}. Premium is required to import the ${skippedProjectChats} project chat${skippedProjectChats === 1 ? '' : 's'}.`
+            : `Imported ${imported} chat${imported !== 1 ? 's' : ''} from Tinfoil`,
+      })
+    } catch (err) {
+      if (signal.aborted) return
+      const projectOnly = err instanceof PremiumProjectImportRequiredError
+      setImportResult({
+        success: false,
+        chatsImported: 0,
+        projectsImported: 0,
+        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
+      })
+      toast({
+        title: projectOnly ? 'Premium required' : 'Import failed',
+        description: projectOnly
+          ? err.message
+          : 'Could not parse the Tinfoil export file',
+        variant: 'destructive',
+      })
+    } finally {
+      finishDeviceImport(controller)
+    }
+  }
+
+  // File pickers only stage the selection; the import runs once the user
+  // confirms the set from the staged file list.
+  const stageImportFiles = (
+    kind: StagedImportKind,
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const selected = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (selected.length === 0) return
+    if (
+      kind === 'claude-conversations' &&
+      !isPremium &&
+      selected.some((file) => isZipFile(file))
+    ) {
+      toast({
+        title: 'Premium required',
+        description: 'Claude archives containing projects require Premium',
+        variant: 'destructive',
+      })
+      return
+    }
+    setImportResult(null)
+    const source = stagedImportSource(kind)
+    setStagedImports((previous) => {
+      const current = previous[source]
+      const existing = current?.kind === kind ? current.files : []
+      const isDuplicate = (file: File) =>
+        existing.some(
+          (other) =>
+            other.name === file.name &&
+            other.size === file.size &&
+            other.lastModified === file.lastModified,
+        )
+      return {
+        ...previous,
+        [source]: {
+          kind,
+          files: [
+            ...existing,
+            ...selected.filter((file) => !isDuplicate(file)),
+          ],
+        },
+      }
+    })
+  }
+
+  const clearStagedImport = (source: ImportSourceKey) => {
+    setStagedImports((previous) => {
+      const { [source]: _removed, ...rest } = previous
+      return rest
+    })
+  }
+
+  const removeStagedFile = (source: ImportSourceKey, index: number) => {
+    setStagedImports((previous) => {
+      const current = previous[source]
+      if (!current) return previous
+      const files = current.files.filter((_, i) => i !== index)
+      if (files.length === 0) {
+        const { [source]: _removed, ...rest } = previous
+        return rest
+      }
+      return { ...previous, [source]: { ...current, files } }
+    })
+  }
+
+  // Claude's project files are always imported by the chat service, which
+  // keeps projects; it reads them as a Claude export.
+  const runStagedImport = async (source: ImportSourceKey) => {
+    const staged = stagedImports[source]
+    if (!staged) return
+    const { kind, files } = staged
+    clearStagedImport(source)
+    switch (kind) {
+      case 'chatgpt':
+        await importChatGPT(files)
+        break
+      case 'claude-projects':
+        await importFiles('claude', files, 'Claude')
+        break
+      case 'claude-conversations':
+        await importClaudeConversations(files)
+        break
+    }
+  }
+
+  const stagedImportSource = (kind: StagedImportKind): ImportSourceKey =>
+    kind === 'chatgpt' ? 'chatgpt' : 'claude'
+
+  const stagedImportInputRef = (kind: StagedImportKind) => {
+    switch (kind) {
+      case 'chatgpt':
+        return chatGptFileInputRef
+      case 'claude-projects':
+        return claudeProjectsFileInputRef
+      case 'claude-conversations':
+        return claudeConversationsFileInputRef
+    }
+  }
+
+  const stagedImportLabel = (kind: StagedImportKind) =>
+    kind === 'claude-projects' ? 'Import projects' : 'Import conversations'
+
+  const renderStagedImport = (source: ImportSourceKey) => {
+    const staged = stagedImports[source]
+    if (!staged) return null
+    return (
+      <ImportFileList
+        files={staged.files}
+        isDarkMode={isDarkMode}
+        onRemove={(index) => removeStagedFile(source, index)}
+        onAddMore={() => stagedImportInputRef(staged.kind).current?.click()}
+        onImport={() => void runStagedImport(source)}
+        onCancel={() => clearStagedImport(source)}
+        importLabel={stagedImportLabel(staged.kind)}
+        importDisabled={isImporting}
+      />
+    )
   }
 
   // Rendered in place of a source's upload button so progress and the
   // outcome appear inside the box the user is importing from.
   const renderImportStatus = (source: ImportSection) => {
     if (importSource !== source) return null
-    if (isImporting && importProgress) {
-      const { title, detail, percent } = describeImportProgress(importProgress)
+    // An import on this device shows its progress once it stores chats.
+    if (isImporting && !importProgress && importsOnDevice) return null
+    if (isImporting) {
+      const { title, detail, percent } = describeImportProgress(
+        importProgress ?? {
+          type: 'upload',
+          file: 1,
+          files: 1,
+          uploadedBytes: 0,
+          totalBytes: 0,
+        },
+      )
       return (
         <div
+          role="status"
           className={cn(
             'rounded-lg border border-border-subtle p-4',
             isDarkMode ? 'bg-surface-chat' : 'bg-surface-sidebar',
@@ -1527,9 +1651,11 @@ export function SettingsModal({
               <div className="font-aeonik text-sm font-medium text-content-primary">
                 {title}
               </div>
-              <div className="font-aeonik-fono text-xs text-content-muted">
-                {detail}
-              </div>
+              {detail && (
+                <div className="font-aeonik-fono text-xs text-content-muted">
+                  {detail}
+                </div>
+              )}
             </div>
           </div>
           <div
@@ -1594,6 +1720,15 @@ export function SettingsModal({
                 {importResult.projectsImported > 0 &&
                   `${importResult.projectsImported} project${importResult.projectsImported !== 1 ? 's' : ''} imported`}
               </div>
+              {importResult.pending && importResult.jobId && (
+                <button
+                  type="button"
+                  className="mt-2 font-aeonik-fono text-xs text-content-primary hover:underline"
+                  onClick={() => void checkImportProgress(importResult.jobId!)}
+                >
+                  Check import progress
+                </button>
+              )}
               {importResult.errors.length > 0 && (
                 <div className="mt-2 text-xs text-red-400">
                   {importResult.errors.slice(0, 3).map((err, i) => (
@@ -1623,510 +1758,13 @@ export function SettingsModal({
     return null
   }
 
-  // Cloud-sync users import off-device: the raw export is uploaded to
-  // the enclave, which parses, seals, and stores everything without the
-  // plaintext touching app servers, then emails the user on completion.
-  const shouldImportOffDevice = () =>
-    Boolean(isSignedIn) && isCloudSyncEnabled() && hasPrimaryKey()
-
-  // The enclave takes one archive per job, so a split export runs as a
-  // sequence of jobs, each finishing before the next file is uploaded.
-  // Upload progress is reported against the whole set.
-  const importOffDevice = async (
-    source: ImportSection,
-    files: readonly File[],
-    sourceLabel: string,
-  ) => {
-    const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
-    const bytesBefore = files.map((_, index) =>
-      files.slice(0, index).reduce((sum, file) => sum + file.size, 0),
-    )
-    setImportSource(source)
-    setIsImporting(true)
-    setImportResult(null)
-    setImportProgress({
-      type: 'upload',
-      progress: { phase: 'hashing', processedBytes: 0, totalBytes },
-    })
-    try {
-      const outcome = await runOffDeviceImports(source, files, {
-        onUploadProgress: (fileIndex, progress) =>
-          setImportProgress({
-            type: 'upload',
-            progress: {
-              ...progress,
-              processedBytes: bytesBefore[fileIndex] + progress.processedBytes,
-              totalBytes,
-            },
-          }),
-        onProcessing: (fileIndex, status) =>
-          setImportProgress({
-            type: 'processing',
-            file: fileIndex + 1,
-            files: files.length,
-            imported: status.imported,
-            total: status.total,
-          }),
-      })
-      const result = describeOffDeviceImportOutcome(
-        outcome,
-        files.map((file) => file.name),
-        sourceLabel,
-      )
-      setImportResult(result)
-      if (result.failed) {
-        toast({
-          title: 'Import failed',
-          description: result.errors[0],
-          variant: 'destructive',
-        })
-      } else if (result.pending) {
-        toast({ title: 'Import started', description: result.message })
-      }
-      if (!result.pending && onChatsUpdated) {
-        onChatsUpdated()
-      }
-    } catch (err) {
-      const result = describeOffDeviceImportError(
-        err,
-        files.map((file) => file.name),
-      )
-      setImportResult(result)
-      toast({
-        title: 'Import failed',
-        description: `Could not start the ${sourceLabel} import`,
-        variant: 'destructive',
-      })
-      if (result.chatsImported > 0 && onChatsUpdated) {
-        onChatsUpdated()
-      }
-    } finally {
-      setIsImporting(false)
-      setImportProgress(null)
-    }
-  }
-
-  const importChatGPT = async (files: File[]) => {
-    if (shouldImportOffDevice()) {
-      await importOffDevice('chatgpt', files, 'ChatGPT')
-      return
-    }
-
-    setImportSource('chatgpt')
-    setIsImporting(true)
-    setImportResult(null)
-
-    try {
-      const data = await readExportFiles<ChatGPTConversation>(
-        files,
-        'ChatGPT conversations',
-      )
-
-      const chats = parseChatGPTConversations(data, getParseOptions())
-      const { imported, errors } = await saveImportedChats(chats)
-
-      setImportResult({
-        success: errors.length === 0,
-        chatsImported: imported,
-        projectsImported: 0,
-        errors,
-      })
-
-      if (onChatsUpdated) {
-        onChatsUpdated()
-      }
-
-      toast({
-        title: 'Import complete',
-        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from ChatGPT`,
-      })
-    } catch (err) {
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: 'Import failed',
-        description: 'Could not parse the ChatGPT export file',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsImporting(false)
-      setImportProgress(null)
-    }
-  }
-
-  const handleImportTinfoil = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    if (isPremium && shouldImportOffDevice()) {
-      await importOffDevice('tinfoil', [file], 'Tinfoil')
-      e.target.value = ''
-      return
-    }
-
-    setImportSource('tinfoil')
-    setIsImporting(true)
-    setImportResult(null)
-    localTinfoilImportAbortControllerRef.current?.abort()
-    const abortController = new AbortController()
-    localTinfoilImportAbortControllerRef.current = abortController
-
-    try {
-      const { chats, skippedProjectChats } =
-        await parseLocalTinfoilExportForAccess(
-          file,
-          {
-            ...getParseOptions(),
-            signal: abortController.signal,
-          },
-          Boolean(isPremium),
-        )
-      const { imported, errors } = await saveImportedChats(chats)
-      const projectErrors =
-        skippedProjectChats > 0
-          ? [
-              `Skipped ${skippedProjectChats} project chat${skippedProjectChats === 1 ? '' : 's'}. Premium is required to import project chats.`,
-            ]
-          : []
-      const importErrors = [...errors, ...projectErrors]
-
-      setImportResult({
-        success: importErrors.length === 0,
-        chatsImported: imported,
-        projectsImported: 0,
-        errors: importErrors,
-      })
-
-      if (onChatsUpdated) {
-        onChatsUpdated()
-      }
-
-      toast({
-        title:
-          skippedProjectChats > 0
-            ? 'Chats imported; project chats skipped'
-            : 'Import complete',
-        description:
-          skippedProjectChats > 0
-            ? `Imported ${imported} chat${imported !== 1 ? 's' : ''}. Premium is required to import the ${skippedProjectChats} project chat${skippedProjectChats === 1 ? '' : 's'}.`
-            : `Imported ${imported} chat${imported !== 1 ? 's' : ''} from Tinfoil`,
-      })
-    } catch (err) {
-      if (abortController.signal.aborted) return
-      const projectOnly = err instanceof PremiumProjectImportRequiredError
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: projectOnly ? 'Premium required' : 'Import failed',
-        description: projectOnly
-          ? err.message
-          : 'Could not parse the Tinfoil export file',
-        variant: 'destructive',
-      })
-    } finally {
-      if (localTinfoilImportAbortControllerRef.current === abortController) {
-        localTinfoilImportAbortControllerRef.current = null
-        setIsImporting(false)
-        setImportProgress(null)
-        e.target.value = ''
-      }
-    }
-  }
-
-  // File pickers only stage the selection; the import runs once the user
-  // confirms the set from the staged file list.
-  const stageImportFiles = (
-    kind: StagedImportKind,
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const selected = Array.from(e.target.files ?? [])
-    e.target.value = ''
-    if (selected.length === 0) return
-
-    if (
-      kind === 'claude-conversations' &&
-      !isPremium &&
-      selected.some((file) => isZipFile(file))
-    ) {
-      toast({
-        title: 'Premium required',
-        description: 'Claude archives containing projects require Premium',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    setImportResult(null)
-    const source = stagedImportSource(kind)
-    setStagedImports((previous) => {
-      const current = previous[source]
-      const existing = current?.kind === kind ? current.files : []
-      const isDuplicate = (file: File) =>
-        existing.some(
-          (other) =>
-            other.name === file.name &&
-            other.size === file.size &&
-            other.lastModified === file.lastModified,
-        )
-      return {
-        ...previous,
-        [source]: {
-          kind,
-          files: [
-            ...existing,
-            ...selected.filter((file) => !isDuplicate(file)),
-          ],
-        },
-      }
-    })
-  }
-
-  const clearStagedImport = (source: ImportSourceKey) => {
-    setStagedImports((previous) => {
-      const { [source]: _removed, ...rest } = previous
-      return rest
-    })
-  }
-
-  const removeStagedFile = (source: ImportSourceKey, index: number) => {
-    setStagedImports((previous) => {
-      const current = previous[source]
-      if (!current) return previous
-      const files = current.files.filter((_, i) => i !== index)
-      if (files.length === 0) {
-        const { [source]: _removed, ...rest } = previous
-        return rest
-      }
-      return { ...previous, [source]: { ...current, files } }
-    })
-  }
-
-  const runStagedImport = async (source: ImportSourceKey) => {
-    const staged = stagedImports[source]
-    if (!staged) return
-    const { kind, files } = staged
-    clearStagedImport(source)
-    switch (kind) {
-      case 'chatgpt':
-        await importChatGPT(files)
-        break
-      case 'claude-projects':
-        await importClaudeProjects(files)
-        break
-      case 'claude-conversations':
-        await importClaudeConversations(files)
-        break
-    }
-  }
-
-  const stagedImportSource = (kind: StagedImportKind): ImportSourceKey =>
-    kind === 'chatgpt' ? 'chatgpt' : 'claude'
-
-  const stagedImportInputRef = (kind: StagedImportKind) => {
-    switch (kind) {
-      case 'chatgpt':
-        return chatGptFileInputRef
-      case 'claude-projects':
-        return claudeProjectsFileInputRef
-      case 'claude-conversations':
-        return claudeConversationsFileInputRef
-    }
-  }
-
-  const stagedImportLabel = (kind: StagedImportKind) =>
-    kind === 'claude-projects' ? 'Import projects' : 'Import conversations'
-
-  const renderStagedImport = (source: ImportSourceKey) => {
-    const staged = stagedImports[source]
-    if (!staged) return null
-    return (
-      <ImportFileList
-        files={staged.files}
-        isDarkMode={isDarkMode}
-        onRemove={(index) => removeStagedFile(source, index)}
-        onAddMore={() => stagedImportInputRef(staged.kind).current?.click()}
-        onImport={() => runStagedImport(source)}
-        onCancel={() => clearStagedImport(source)}
-        importLabel={stagedImportLabel(staged.kind)}
-        importDisabled={isImporting}
-      />
-    )
-  }
-
-  const importClaudeConversations = async (files: File[]) => {
-    if (shouldImportOffDevice()) {
-      await importOffDevice('claude', files, 'Claude')
-      return
-    }
-
-    setImportSource('claude')
-    setIsImporting(true)
-    setImportResult(null)
-
-    try {
-      const data = await readExportFiles<ClaudeConversation>(
-        files,
-        'Claude conversations',
-      )
-
-      const chats = parseClaudeConversations(data, getParseOptions())
-      const { imported, errors } = await saveImportedChats(chats)
-
-      setImportResult({
-        success: errors.length === 0,
-        chatsImported: imported,
-        projectsImported: 0,
-        errors,
-      })
-
-      if (onChatsUpdated) {
-        onChatsUpdated()
-      }
-
-      toast({
-        title: 'Import complete',
-        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from Claude`,
-      })
-    } catch (err) {
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: 'Import failed',
-        description: 'Could not parse the Claude export file',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsImporting(false)
-      setImportProgress(null)
-    }
-  }
-
-  const importClaudeProjects = async (files: File[]) => {
-    if (!isPremium) {
-      toast({
-        title: 'Premium required',
-        description: 'Project import is only available for premium users',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    setImportSource('claude')
-    setIsImporting(true)
-    setImportResult(null)
-
-    try {
-      const data = await readExportFiles<ClaudeProject>(
-        files,
-        'Claude projects',
-        { allowSingleRecord: true },
-      )
-
-      const parsedProjects = parseClaudeProjects(data)
-      setImportProgress({
-        current: 0,
-        total: parsedProjects.length,
-        type: 'projects',
-      })
-
-      let imported = 0
-      const errors: string[] = []
-      const projectCacheGeneration = projectCache.captureGeneration()
-
-      // Dynamically import project storage to avoid circular dependencies
-      const { projectStorage } =
-        await import('@/services/cloud/project-storage')
-
-      for (let i = 0; i < parsedProjects.length; i++) {
-        const project = parsedProjects[i]
-        try {
-          const createdProject = await projectStorage.createProject({
-            name: project.name,
-            description: project.description,
-            systemInstructions: project.systemInstructions,
-          })
-
-          for (const doc of project.docs) {
-            try {
-              await projectStorage.uploadDocument(
-                createdProject.id,
-                doc.filename,
-                'text/markdown',
-                doc.content,
-              )
-            } catch {
-              errors.push(
-                `Failed to import document "${doc.filename}" for project "${project.name}"`,
-              )
-            }
-          }
-
-          imported++
-        } catch (err) {
-          errors.push(`Failed to import project "${project.name}"`)
-        }
-        setImportProgress({
-          current: i + 1,
-          total: parsedProjects.length,
-          type: 'projects',
-        })
-      }
-
-      if (imported > 0) {
-        projectCache.commitMutation(projectCacheGeneration)
-      }
-
-      await refreshProjects()
-
-      setImportResult({
-        success: errors.length === 0,
-        chatsImported: 0,
-        projectsImported: imported,
-        errors,
-      })
-
-      toast({
-        title: 'Import complete',
-        description: `Imported ${imported} project${imported !== 1 ? 's' : ''} from Claude`,
-      })
-    } catch (err) {
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: 'Import failed',
-        description: 'Could not parse the Claude projects file',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsImporting(false)
-      setImportProgress(null)
-    }
-  }
-
-  // Export chats as conversations.json
+  // Export chats as conversations.json, or a ZIP holding their images
   const downloadChats = async (
     chatsToExport: Chat[],
-    guard: AccountOperationGuard,
+    fetchAttachmentBytes: AttachmentBytesFetcher,
+    signal: AbortSignal,
   ) => {
-    guard.assertCurrent()
+    signal.throwIfAborted()
     if (chatsToExport.length === 0) {
       toast({
         title: 'No chats to export',
@@ -2140,71 +1778,36 @@ export function SettingsModal({
     setExportType('chats')
 
     try {
-      // Fetch one binary attachment at a time so the browser never
+      // One binary attachment is fetched at a time so the browser never
       // holds every attachment's bytes in memory at once.
-      const fetchAttachmentBytes = async (
-        att: Attachment,
-      ): Promise<Uint8Array | null> => {
-        guard.assertCurrent()
-        try {
-          if (att.base64) {
-            return base64ToUint8Array(att.base64)
-          }
-          if (att.encryptionKey) {
-            const bytes = await attachmentGet({
-              id: att.id,
-              attKeyB64: att.encryptionKey,
-            })
-            guard.assertCurrent()
-            return bytes
-          }
-        } catch (error) {
-          guard.assertCurrent()
-          if (
-            error instanceof SyncRequestAbortedError ||
-            (error instanceof DOMException && error.name === 'AbortError')
-          )
-            throw error
-          logWarning('Failed to fetch attachment for export', {
-            component: 'SettingsModal',
-            action: 'downloadChats',
-            metadata: { attachmentId: att.id },
-          })
-        }
-        guard.assertCurrent()
-        return null
-      }
-
-      guard.assertCurrent()
       const archive = await buildChatExport(chatsToExport, fetchAttachmentBytes)
-      guard.assertCurrent()
+      signal.throwIfAborted()
       const blob =
         typeof archive.data === 'string'
           ? new Blob([archive.data], { type: archive.mimeType })
           : new Blob([new Uint8Array(archive.data)], {
               type: archive.mimeType,
             })
-      guard.assertCurrent()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = archive.filename
       document.body.appendChild(a)
       try {
-        guard.assertCurrent()
+        signal.throwIfAborted()
         a.click()
       } finally {
         document.body.removeChild(a)
         window.URL.revokeObjectURL(url)
       }
 
-      guard.assertCurrent()
+      signal.throwIfAborted()
       toast({
         title: 'Export complete',
         description: `Exported ${chatsToExport.length} conversation${chatsToExport.length !== 1 ? 's' : ''} successfully.`,
       })
     } catch (error) {
-      if (!guard.isCurrent()) return
+      if (signal.aborted) return
       logError('Failed to create conversations export', error, {
         component: 'SettingsModal',
         action: 'downloadChats',
@@ -2220,74 +1823,25 @@ export function SettingsModal({
     }
   }
 
-  // Fetch all chats (including cloud) and export them
+  // Exports the chats kept on this device and, with cloud sync, the stored
+  // chats. An account change ends the export without a download.
   const handleExportAllChats = async () => {
-    const guard = cloudSync.createAccountOperationGuard()
+    const signal = api.lifetime.signal
     setIsPreparingExport(true)
     setExportType('chats')
 
     try {
-      guard.assertCurrent()
-      const chatsById = new Map<string, Chat>()
-      const addChat = (chat: Chat) => {
-        if (!chat.id || chatsById.has(chat.id)) return
-        chatsById.set(chat.id, chat)
-      }
-
-      const indexedDbChats = await chatStorage.getAllChats()
-      guard.assertCurrent()
-      indexedDbChats.forEach(addChat)
-      if (!isSignedIn) {
-        sessionChatStorage.getAllChats().forEach(addChat)
-      }
-
-      // If cloud sync is enabled, fetch all chats with pagination
-      if (isCloudSyncEnabled() && isSignedIn) {
-        let hasMore = true
-        let continuationToken: string | undefined
-
-        while (hasMore) {
-          guard.assertCurrent()
-          const result = await cloudSync.loadChatsWithPagination(
-            {
-              limit: 50,
-              continuationToken,
-              loadLocal: !continuationToken, // Only load local on first page to avoid duplicates
-            },
-            guard,
-          )
-          guard.assertCurrent()
-
-          // Convert StoredChat to Chat
-          for (const storedChat of result.chats) {
-            addChat({
-              id: storedChat.id,
-              title: storedChat.title,
-              messages: storedChat.messages,
-              createdAt: new Date(storedChat.createdAt),
-              updatedAt: storedChat.updatedAt,
-              isLocalOnly: storedChat.isLocalOnly,
-              isBlankChat: storedChat.isBlankChat,
-              syncedAt: storedChat.syncedAt,
-              projectId: storedChat.projectId,
-            })
-          }
-
-          hasMore = result.hasMore
-          continuationToken = result.nextToken
-        }
-      }
-
-      // Filter out blank chats and chats that failed decryption
-      guard.assertCurrent()
-      const allChats = Array.from(chatsById.values())
+      const source = await collectChatExport(api, {
+        cloud: cloudSyncEnabled,
+        signal,
+      })
       const hasPremiumProjectAccess = Boolean(isPremium)
       const exportableChats = filterExportableChats(
-        allChats,
+        source.chats,
         hasPremiumProjectAccess,
       )
       const excludedProjectChats = countExcludedProjectChats(
-        allChats,
+        source.chats,
         hasPremiumProjectAccess,
       )
 
@@ -2298,11 +1852,9 @@ export function SettingsModal({
           description: `${excludedProjectChats} project chat${excludedProjectChats === 1 ? '' : 's'} could not be exported. Premium is required to export project chats.`,
         })
       }
-      guard.assertCurrent()
-      await downloadChats(exportableChats, guard)
-      guard.assertCurrent()
+      await downloadChats(exportableChats, source.fetchAttachmentBytes, signal)
     } catch (error) {
-      if (!guard.isCurrent()) {
+      if (signal.aborted) {
         setIsPreparingExport(false)
         setExportType(null)
         return
@@ -2321,168 +1873,85 @@ export function SettingsModal({
     }
   }
 
-  // Delete every chat the user owns (local IndexedDB + cloud + session).
-  // Defense in depth: re-check the typed confirmation phrase here in addition
-  // to gating the submit button on it, so the destructive action cannot be
-  // triggered accidentally even if the UI layer is bypassed.
   const handleDeleteAllChats = async () => {
     if (
       deleteAllChatsConfirmText.trim().toLowerCase() !==
       DELETE_ALL_CHATS_CONFIRM_PHRASE
-    ) {
+    )
       return
-    }
-
     setIsDeletingAllChats(true)
     try {
-      if (isSignedIn) {
-        const result = await chatStorage.deleteAllChats()
-        toast({
-          title: getDeleteAllChatsSuccessTitle(
-            true,
-            result.cloudDeletionCompleted,
-          ),
-          description: getDeleteAllChatsSuccessDescription(
-            true,
-            result.cloudDeletionCompleted,
-          ),
-        })
-      } else {
-        sessionChatStorage.clearAll()
-        toast({
-          title: getDeleteAllChatsSuccessTitle(false, false),
-          description: getDeleteAllChatsSuccessDescription(false, false),
-        })
-      }
-
-      if (onChatsUpdated) {
-        onChatsUpdated()
-      }
-    } catch (error) {
-      logError('Failed to delete all chats', error, {
-        component: 'SettingsModal',
-        action: 'handleDeleteAllChats',
-      })
+      const { cloudDeletionCompleted } = await onDeleteAllChats()
+      onAllChatsDeleted?.()
+      await onChatsUpdated?.()
+      setShowDeleteAllChatsConfirm(false)
+      setDeleteAllChatsConfirmText('')
+      toast(
+        cloudSyncEnabled || !isSignedIn
+          ? {
+              title: getDeleteAllChatsSuccessTitle(
+                Boolean(isSignedIn),
+                cloudDeletionCompleted,
+              ),
+              description: getDeleteAllChatsSuccessDescription(
+                Boolean(isSignedIn),
+                cloudDeletionCompleted,
+              ),
+            }
+          : {
+              title: 'All chats deleted',
+              description: 'Removed all chats from this device.',
+            },
+      )
+    } catch (cause) {
       toast({
         title: 'Delete failed',
-        description: 'Failed to delete all chats. Please try again.',
+        description:
+          cause instanceof Error ? cause.message : 'Unable to delete chats.',
         variant: 'destructive',
       })
     } finally {
       setIsDeletingAllChats(false)
-      setShowDeleteAllChatsConfirm(false)
-      setDeleteAllChatsConfirmText('')
     }
   }
 
-  // Delete every project the user owns. Same defense-in-depth confirmation
-  // gate as handleDeleteAllChats.
   const handleDeleteAllProjects = async () => {
     if (
       deleteAllProjectsConfirmText.trim().toLowerCase() !==
       DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-    ) {
+    )
       return
-    }
-
     setIsDeletingAllProjects(true)
-    const guard = cloudSync.createAccountOperationGuard()
     try {
-      const deleted = await projectStorage.deleteAllProjects(guard)
-      await clearDeletedProjectsForAccount(guard, (cacheError) => {
-        logError('Failed to clear cached projects', cacheError, {
-          component: 'SettingsModal',
-          action: 'handleDeleteAllProjects.clearCache',
-        })
-      })
-      setProjectExportResult(null)
-      toast({
-        title: 'All projects deleted',
-        description: `Deleted ${deleted} ${deleted === 1 ? 'project' : 'projects'}.`,
-      })
-
-      // Project deletion detaches chats from projects on the server, so the
-      // chat list in the sidebar may need to refresh too.
-      if (onChatsUpdated) {
-        onChatsUpdated()
-      }
-    } catch (error) {
-      logError('Failed to delete all projects', error, {
-        component: 'SettingsModal',
-        action: 'handleDeleteAllProjects',
-      })
+      await api.post('/v1/projects/delete-all')
+      onAllProjectsDeleted?.()
+      await refreshProjects()
+      await onChatsUpdated?.()
+      setShowDeleteAllProjectsConfirm(false)
+      setDeleteAllProjectsConfirmText('')
+      toast({ title: 'All projects deleted' })
+    } catch (cause) {
       toast({
         title: 'Delete failed',
-        description: 'Failed to delete all projects. Please try again.',
+        description:
+          cause instanceof Error ? cause.message : 'Unable to delete projects.',
         variant: 'destructive',
       })
     } finally {
       setIsDeletingAllProjects(false)
-      setShowDeleteAllProjectsConfirm(false)
-      setDeleteAllProjectsConfirmText('')
     }
   }
 
   const downloadProjectsForClaude = async () => {
-    if (!isPremium) {
-      toast({
-        title: 'Premium required',
-        description: 'Project export is only available for premium users',
-        variant: 'destructive',
-      })
-      return
-    }
     setIsExporting(true)
     setExportType('projects')
     setProjectExportResult(null)
-
     try {
-      const result = await buildClaudeProjectExport(projectStorage)
+      await exportClaudeProjects()
+    } catch (cause) {
       setProjectExportResult({
-        counts: result.counts,
-        warnings: result.warnings,
-      })
-
-      if (result.counts.exportedProjects === 0) {
-        toast({
-          title: 'No projects exported',
-          description:
-            result.counts.skippedProjects > 0
-              ? 'The available projects could not be read.'
-              : 'You have no projects to export yet.',
-          variant: 'destructive',
-        })
-        return
-      }
-
-      const blob = new Blob([result.json], { type: 'application/json' })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'projects.json'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
-
-      toast({
-        title: 'Export complete',
-        description: `Exported ${result.counts.exportedProjects} project${result.counts.exportedProjects !== 1 ? 's' : ''} for Claude.`,
-      })
-    } catch (error) {
-      logError('Failed to create projects export', error, {
-        component: 'SettingsModal',
-        action: 'downloadProjectsForClaude',
-      })
-      const message =
-        error instanceof ClaudeProjectExportSizeError
-          ? error.message
-          : 'The Claude-compatible project export could not be created.'
-      setProjectExportResult({ warnings: [], error: message })
-      toast({
-        title: 'Export failed',
-        description: message,
-        variant: 'destructive',
+        error:
+          cause instanceof Error ? cause.message : 'Unable to export projects.',
       })
     } finally {
       setIsExporting(false)
@@ -2511,7 +1980,6 @@ export function SettingsModal({
   useEffect(() => {
     if (!isOpen) {
       setIsQRCodeExpanded(false)
-      setShowSignOutConfirm(false)
       setShowDeleteAllChatsConfirm(false)
       setDeleteAllChatsConfirmText('')
       setShowDeleteAllProjectsConfirm(false)
@@ -2658,11 +2126,6 @@ ${encryptionKey.replace('key_', '')}
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                aria-label={
-                  item.id === 'cloud-sync' && syncNeedsAttention
-                    ? `${item.label} (needs attention)`
-                    : undefined
-                }
                 className={cn(
                   'flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
                   activeTab === item.id
@@ -2676,13 +2139,6 @@ ${encryptionKey.replace('key_', '')}
                   <item.icon className="h-4 w-4" aria-hidden="true" />
                 )}
                 {item.label}
-                {item.id === 'cloud-sync' && syncNeedsAttention && (
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-full bg-orange-500"
-                    title="Cloud sync needs attention"
-                    aria-hidden="true"
-                  />
-                )}
               </button>
             ))}
           </nav>
@@ -2699,11 +2155,6 @@ ${encryptionKey.replace('key_', '')}
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                aria-label={
-                  item.id === 'cloud-sync' && syncNeedsAttention
-                    ? `${item.label} (needs attention)`
-                    : undefined
-                }
                 className={cn(
                   'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                   activeTab === item.id
@@ -2717,13 +2168,6 @@ ${encryptionKey.replace('key_', '')}
                   <item.icon className="h-5 w-5" aria-hidden="true" />
                 )}
                 {item.label}
-                {item.id === 'cloud-sync' && syncNeedsAttention && (
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-full bg-orange-500"
-                    title="Cloud sync needs attention"
-                    aria-hidden="true"
-                  />
-                )}
               </button>
             ))}
           </nav>
@@ -2847,20 +2291,11 @@ ${encryptionKey.replace('key_', '')}
                             onChange={(e) => {
                               const newValue = e.target.checked
                               setPixelateSidebarChatTitles(newValue)
-                              if (isClient) {
-                                localStorage.setItem(
-                                  SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
-                                  newValue.toString(),
-                                )
-                                window.dispatchEvent(
-                                  new CustomEvent(
-                                    PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
-                                    {
-                                      detail: { enabled: newValue },
-                                    },
-                                  ),
-                                )
-                              }
+                              void api
+                                .updateProfile({
+                                  pixelateSidebarChatTitlesEnabled: newValue,
+                                })
+                                .catch(reportHarnessError)
                             }}
                             className="peer sr-only"
                           />
@@ -2892,20 +2327,11 @@ ${encryptionKey.replace('key_', '')}
                             onChange={(e) => {
                               const newValue = e.target.checked
                               setBrowserTabChatTitle(newValue)
-                              if (isClient) {
-                                localStorage.setItem(
-                                  SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED,
-                                  newValue.toString(),
-                                )
-                                window.dispatchEvent(
-                                  new CustomEvent(
-                                    BROWSER_TAB_CHAT_TITLE_CHANGED_EVENT,
-                                    {
-                                      detail: { enabled: newValue },
-                                    },
-                                  ),
-                                )
-                              }
+                              void api
+                                .updateProfile({
+                                  browserTabChatTitleEnabled: newValue,
+                                })
+                                .catch(reportHarnessError)
                             }}
                             className="peer sr-only"
                           />
@@ -3053,20 +2479,11 @@ ${encryptionKey.replace('key_', '')}
                             onChange={(e) => {
                               const newValue = e.target.checked
                               setEnterToNewlineEnabled(newValue)
-                              if (isClient) {
-                                localStorage.setItem(
-                                  SETTINGS_ENTER_TO_NEWLINE_ENABLED,
-                                  newValue.toString(),
-                                )
-                                window.dispatchEvent(
-                                  new CustomEvent(
-                                    ENTER_TO_NEWLINE_CHANGED_EVENT,
-                                    {
-                                      detail: { enabled: newValue },
-                                    },
-                                  ),
-                                )
-                              }
+                              void api
+                                .updateProfile({
+                                  enterToNewlineEnabled: newValue,
+                                })
+                                .catch(reportHarnessError)
                             }}
                             className="peer sr-only"
                           />
@@ -3105,20 +2522,9 @@ ${encryptionKey.replace('key_', '')}
                               onChange={(e) => {
                                 const newValue = e.target.checked
                                 setWebSearchAvailable(newValue)
-                                if (isClient) {
-                                  localStorage.setItem(
-                                    SETTINGS_WEB_SEARCH_AVAILABLE,
-                                    newValue.toString(),
-                                  )
-                                  window.dispatchEvent(
-                                    new CustomEvent(
-                                      'webSearchAvailableChanged',
-                                      {
-                                        detail: { enabled: newValue },
-                                      },
-                                    ),
-                                  )
-                                }
+                                void api
+                                  .updateProfile({ webSearchEnabled: newValue })
+                                  .catch(reportHarnessError)
                               }}
                               className="peer sr-only"
                             />
@@ -3145,20 +2551,11 @@ ${encryptionKey.replace('key_', '')}
                                 onChange={(e) => {
                                   const newValue = e.target.checked
                                   setPiiCheckEnabled(newValue)
-                                  if (isClient) {
-                                    localStorage.setItem(
-                                      SETTINGS_PII_CHECK_ENABLED,
-                                      newValue.toString(),
-                                    )
-                                    window.dispatchEvent(
-                                      new CustomEvent(
-                                        'piiCheckEnabledChanged',
-                                        {
-                                          detail: { enabled: newValue },
-                                        },
-                                      ),
-                                    )
-                                  }
+                                  void api
+                                    .updateProfile({
+                                      piiCheckEnabled: newValue,
+                                    })
+                                    .catch(reportHarnessError)
                                 }}
                                 className="peer sr-only"
                               />
@@ -3193,17 +2590,9 @@ ${encryptionKey.replace('key_', '')}
                               onChange={(e) => {
                                 const newValue = e.target.checked
                                 setGenUIEnabled(newValue)
-                                if (isClient) {
-                                  localStorage.setItem(
-                                    SETTINGS_GENUI_ENABLED,
-                                    newValue.toString(),
-                                  )
-                                  window.dispatchEvent(
-                                    new CustomEvent('genUIEnabledChanged', {
-                                      detail: { enabled: newValue },
-                                    }),
-                                  )
-                                }
+                                void api
+                                  .updateProfile({ genUIEnabled: newValue })
+                                  .catch(reportHarnessError)
                               }}
                               className="peer sr-only"
                             />
@@ -3613,44 +3002,45 @@ ${encryptionKey.replace('key_', '')}
                         isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                       )}
                     >
-                      <div className="flex items-start justify-between">
+                      <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="font-aeonik text-sm font-medium text-content-primary">
                             Encrypted Cloud Sync
                           </div>
                           <div className="font-aeonik-fono text-xs text-content-muted">
-                            {cloudSyncEnabled
-                              ? 'End-to-end encrypted. Only you can access your chats and data.'
-                              : 'Turn on Cloud Sync to back up and access your data across devices.'}
+                            {!cloudSyncEnabled
+                              ? 'Turn on Cloud Sync to back up and access your data across devices.'
+                              : keyReady
+                                ? 'End-to-end encrypted. Only you can access your chats and data.'
+                                : 'Unlock your encryption key to access your saved chats.'}
                           </div>
                         </div>
                         <label className="relative inline-flex cursor-pointer items-center">
                           <input
                             type="checkbox"
+                            aria-label="Encrypted Cloud Sync"
                             checked={cloudSyncEnabled}
                             onChange={(e) =>
-                              handleCloudSyncToggle(e.target.checked)
+                              void handleCloudSyncToggle(e.target.checked)
                             }
                             className="peer sr-only"
                           />
                           <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
                         </label>
                       </div>
+                      {cloudSyncEnabled && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsOpen(false)
+                            onCloudSyncSetupClick?.()
+                          }}
+                          className="mt-3 rounded-site-control border border-border-subtle px-3 py-1.5 text-sm text-content-primary transition-colors hover:bg-surface-chat"
+                        >
+                          {keyReady ? 'Manage key' : 'Unlock'}
+                        </button>
+                      )}
                     </div>
-                    {cloudSyncEnabled && (
-                      <CloudSyncHealthCard
-                        isDarkMode={isDarkMode}
-                        chats={chats}
-                        onRecoverClick={
-                          onCloudSyncSetupClick
-                            ? () => {
-                                setIsOpen(false)
-                                onCloudSyncSetupClick()
-                              }
-                            : undefined
-                        }
-                      />
-                    )}
                     <NativeBackupExport
                       available={Boolean(
                         isSignedIn &&
@@ -3667,6 +3057,7 @@ ${encryptionKey.replace('key_', '')}
                       )}
                       ownerId={user?.id}
                       onChatsUpdated={onChatsUpdated}
+                      onProjectsUpdated={refreshProjects}
                     />
                   </div>
 
@@ -4126,18 +3517,17 @@ ${encryptionKey.replace('key_', '')}
                             <label className="relative inline-flex cursor-pointer items-center">
                               <input
                                 type="checkbox"
-                                checked={localOnlyModeEnabledState}
-                                onChange={(e) => {
-                                  const newValue = e.target.checked
-                                  setLocalOnlyModeEnabledState(newValue)
-                                  setLocalOnlyModeEnabled(newValue)
-                                }}
+                                aria-label="Enable local chats"
+                                checked={localChatsEnabled}
+                                onChange={(e) =>
+                                  setLocalOnlyModeEnabled(e.target.checked)
+                                }
                                 className="peer sr-only"
                               />
                               <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
                             </label>
                           </div>
-                          {localOnlyModeEnabledState && (
+                          {localChatsEnabled && (
                             <div className="rounded-md border border-orange-500/30 bg-orange-500/10 px-3 py-2">
                               <p className="text-xs font-medium text-orange-500">
                                 Local chats will be permanently erased when you
@@ -4174,9 +3564,11 @@ ${encryptionKey.replace('key_', '')}
                                 Delete all saved chats
                               </div>
                               <div className="font-aeonik-fono text-xs text-content-muted">
-                                {isSignedIn
-                                  ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
-                                  : 'Permanently delete every chat from this browser. This cannot be undone.'}
+                                {!isSignedIn
+                                  ? 'Permanently delete every chat from this browser. This cannot be undone.'
+                                  : cloudSyncEnabled
+                                    ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
+                                    : 'Permanently delete every chat from this device. This cannot be undone.'}
                               </div>
                             </div>
                             {!showDeleteAllChatsConfirm && (
@@ -4280,129 +3672,130 @@ ${encryptionKey.replace('key_', '')}
                       </div>
 
                       {/* Delete all projects remains available for account data control. */}
-                      {canDeleteAllProjects(Boolean(isSignedIn)) && (
-                        <div
-                          className={cn(
-                            'rounded-lg border border-border-subtle p-4',
-                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                          )}
-                        >
-                          <div className="space-y-3">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                              <div>
-                                <div className="font-aeonik text-sm font-medium text-content-primary">
-                                  Delete all projects
+                      {cloudSyncEnabled &&
+                        canDeleteAllProjects(Boolean(isSignedIn)) && (
+                          <div
+                            className={cn(
+                              'rounded-lg border border-border-subtle p-4',
+                              isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                            )}
+                          >
+                            <div className="space-y-3">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                                <div>
+                                  <div className="font-aeonik text-sm font-medium text-content-primary">
+                                    Delete all projects
+                                  </div>
+                                  <div className="font-aeonik-fono text-xs text-content-muted">
+                                    Permanently delete every project and its
+                                    documents. Chats inside projects will be
+                                    detached but kept. This cannot be undone.
+                                  </div>
                                 </div>
-                                <div className="font-aeonik-fono text-xs text-content-muted">
-                                  Permanently delete every project and its
-                                  documents. Chats inside projects will be
-                                  detached but kept. This cannot be undone.
-                                </div>
+                                {!showDeleteAllProjectsConfirm && (
+                                  <button
+                                    onClick={() =>
+                                      setShowDeleteAllProjectsConfirm(true)
+                                    }
+                                    className={cn(
+                                      'flex w-full shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-52',
+                                      isDarkMode
+                                        ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                        : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                                    )}
+                                  >
+                                    <TfTrash
+                                      className="h-4 w-4 shrink-0"
+                                      aria-hidden="true"
+                                    />
+                                    Delete all projects
+                                  </button>
+                                )}
                               </div>
-                              {!showDeleteAllProjectsConfirm && (
-                                <button
-                                  onClick={() =>
-                                    setShowDeleteAllProjectsConfirm(true)
-                                  }
-                                  className={cn(
-                                    'flex w-full shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-52',
-                                    isDarkMode
-                                      ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                      : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                                  )}
-                                >
-                                  <TfTrash
-                                    className="h-4 w-4 shrink-0"
-                                    aria-hidden="true"
-                                  />
-                                  Delete all projects
-                                </button>
+                              {showDeleteAllProjectsConfirm && (
+                                <div className="space-y-2">
+                                  <label className="block">
+                                    <span className="font-aeonik-fono text-xs text-content-muted">
+                                      Type{' '}
+                                      <code className="font-mono text-content-primary">
+                                        {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
+                                      </code>{' '}
+                                      to confirm.
+                                    </span>
+                                    <input
+                                      type="text"
+                                      autoComplete="off"
+                                      autoCorrect="off"
+                                      autoCapitalize="off"
+                                      spellCheck={false}
+                                      value={deleteAllProjectsConfirmText}
+                                      onChange={(e) =>
+                                        setDeleteAllProjectsConfirmText(
+                                          e.target.value,
+                                        )
+                                      }
+                                      disabled={isDeletingAllProjects}
+                                      placeholder={
+                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
+                                      }
+                                      className={cn(
+                                        'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
+                                        isDarkMode
+                                          ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                          : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
+                                      )}
+                                    />
+                                  </label>
+                                  <div className="flex flex-col gap-2 sm:flex-row">
+                                    <button
+                                      onClick={handleDeleteAllProjects}
+                                      disabled={
+                                        isDeletingAllProjects ||
+                                        deleteAllProjectsConfirmText
+                                          .trim()
+                                          .toLowerCase() !==
+                                          DELETE_ALL_PROJECTS_CONFIRM_PHRASE
+                                      }
+                                      className={cn(
+                                        'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                        isDarkMode
+                                          ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
+                                          : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
+                                      )}
+                                    >
+                                      {isDeletingAllProjects && (
+                                        <PiSpinner
+                                          className="h-4 w-4 animate-spin"
+                                          aria-hidden="true"
+                                        />
+                                      )}
+                                      <span>
+                                        {isDeletingAllProjects
+                                          ? 'Requesting…'
+                                          : 'Yes, delete all my projects'}
+                                      </span>
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setShowDeleteAllProjectsConfirm(false)
+                                        setDeleteAllProjectsConfirmText('')
+                                      }}
+                                      disabled={isDeletingAllProjects}
+                                      className={cn(
+                                        'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                        isDarkMode
+                                          ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
+                                          : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
+                                      )}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
                               )}
                             </div>
-                            {showDeleteAllProjectsConfirm && (
-                              <div className="space-y-2">
-                                <label className="block">
-                                  <span className="font-aeonik-fono text-xs text-content-muted">
-                                    Type{' '}
-                                    <code className="font-mono text-content-primary">
-                                      {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
-                                    </code>{' '}
-                                    to confirm.
-                                  </span>
-                                  <input
-                                    type="text"
-                                    autoComplete="off"
-                                    autoCorrect="off"
-                                    autoCapitalize="off"
-                                    spellCheck={false}
-                                    value={deleteAllProjectsConfirmText}
-                                    onChange={(e) =>
-                                      setDeleteAllProjectsConfirmText(
-                                        e.target.value,
-                                      )
-                                    }
-                                    disabled={isDeletingAllProjects}
-                                    placeholder={
-                                      DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                    }
-                                    className={cn(
-                                      'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
-                                      isDarkMode
-                                        ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                        : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
-                                    )}
-                                  />
-                                </label>
-                                <div className="flex flex-col gap-2 sm:flex-row">
-                                  <button
-                                    onClick={handleDeleteAllProjects}
-                                    disabled={
-                                      isDeletingAllProjects ||
-                                      deleteAllProjectsConfirmText
-                                        .trim()
-                                        .toLowerCase() !==
-                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                    }
-                                    className={cn(
-                                      'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                                      isDarkMode
-                                        ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
-                                        : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
-                                    )}
-                                  >
-                                    {isDeletingAllProjects && (
-                                      <PiSpinner
-                                        className="h-4 w-4 animate-spin"
-                                        aria-hidden="true"
-                                      />
-                                    )}
-                                    <span>
-                                      {isDeletingAllProjects
-                                        ? 'Requesting…'
-                                        : 'Yes, delete all my projects'}
-                                    </span>
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setShowDeleteAllProjectsConfirm(false)
-                                      setDeleteAllProjectsConfirmText('')
-                                    }}
-                                    disabled={isDeletingAllProjects}
-                                    className={cn(
-                                      'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                      isDarkMode
-                                        ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
-                                        : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
-                                    )}
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            )}
                           </div>
-                        </div>
-                      )}
+                        )}
                     </>
                   </div>
 
@@ -4449,12 +3842,21 @@ ${encryptionKey.replace('key_', '')}
                             export.
                           </ImportStep>
                           <ImportStep step={3}>
-                            {shouldImportOffDevice()
-                              ? 'Download the ZIP file you receive by email.'
-                              : 'Download and unzip the file you receive by email.'}
+                            {importsOnDevice
+                              ? 'Download and unzip the file you receive by email.'
+                              : 'Download the ZIP file you receive by email.'}
                           </ImportStep>
                           <ImportStep step={4}>
-                            {shouldImportOffDevice() ? (
+                            {importsOnDevice ? (
+                              <>
+                                Select the{' '}
+                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                  conversations*.json
+                                </code>{' '}
+                                files from the unzipped folder. Large exports
+                                are split into several files; select them all.
+                              </>
+                            ) : (
                               <>
                                 Select the ZIP export to include attachments, or
                                 the{' '}
@@ -4464,23 +3866,12 @@ ${encryptionKey.replace('key_', '')}
                                 files for chat text only. Large exports are
                                 split into several files; select them all.
                               </>
-                            ) : (
-                              <>
-                                Select the{' '}
-                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                  conversations*.json
-                                </code>{' '}
-                                files from the unzipped folder. Large exports
-                                are split into several files; select them all.
-                              </>
                             )}
                           </ImportStep>
                           <input
                             ref={chatGptFileInputRef}
                             type="file"
-                            accept={
-                              shouldImportOffDevice() ? '.json,.zip' : '.json'
-                            }
+                            accept={importsOnDevice ? '.json' : '.json,.zip'}
                             onChange={(e) => stageImportFiles('chatgpt', e)}
                             className="hidden"
                             disabled={isImporting}
@@ -4553,12 +3944,12 @@ ${encryptionKey.replace('key_', '')}
                             export.
                           </ImportStep>
                           <ImportStep step={3}>
-                            {isPremium && shouldImportOffDevice()
+                            {isPremium && !importsOnDevice
                               ? 'Download the ZIP file you receive by email.'
                               : 'Download and unzip the file you receive by email.'}
                           </ImportStep>
                           <ImportStep step={4}>
-                            {isPremium && shouldImportOffDevice() ? (
+                            {isPremium && !importsOnDevice ? (
                               <>
                                 Select the ZIP export with the Conversations
                                 button to include attachments. For projects,
@@ -4601,7 +3992,7 @@ ${encryptionKey.replace('key_', '')}
                             ref={claudeConversationsFileInputRef}
                             type="file"
                             accept={
-                              isPremium && shouldImportOffDevice()
+                              isPremium && !importsOnDevice
                                 ? '.json,.zip'
                                 : '.json'
                             }
@@ -4697,15 +4088,17 @@ ${encryptionKey.replace('key_', '')}
                           className="space-y-3 border-t border-border-subtle p-4"
                         >
                           <div className="font-aeonik-fono text-xs text-content-muted">
-                            Re-import a Tinfoil conversations export. When cloud
-                            sync is off, chats and attachments stay in this
-                            browser.
+                            {importsOnDevice
+                              ? 'Re-import a Tinfoil conversations export. When cloud sync is off, chats and attachments stay in this browser.'
+                              : 'Re-import a Tinfoil conversations export or backup archive into your encrypted account.'}
                           </div>
                           <input
                             ref={tinfoilFileInputRef}
                             type="file"
                             accept=".json,.zip"
-                            onChange={handleImportTinfoil}
+                            onChange={(event) =>
+                              void handleImportTinfoil(event)
+                            }
                             className="hidden"
                             disabled={isImporting}
                           />
@@ -4784,7 +4177,7 @@ ${encryptionKey.replace('key_', '')}
                   </div>
 
                   {/* Export Projects (premium only) */}
-                  {isPremium && (
+                  {cloudSyncEnabled && isPremium && (
                     <div className="space-y-3">
                       <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                         Export Projects for Claude
@@ -4835,19 +4228,7 @@ ${encryptionKey.replace('key_', '')}
                             className="space-y-1 font-aeonik-fono text-xs text-content-muted"
                             role="status"
                           >
-                            {projectExportResult.counts && (
-                              <div>
-                                {formatClaudeProjectExportCounts(
-                                  projectExportResult.counts,
-                                )}
-                              </div>
-                            )}
-                            {projectExportResult.error && (
-                              <div>{projectExportResult.error}</div>
-                            )}
-                            {projectExportResult.warnings.map((warning) => (
-                              <div key={warning}>{warning}</div>
-                            ))}
+                            <div>{projectExportResult.error}</div>
                           </div>
                         )}
                       </div>
@@ -4892,13 +4273,7 @@ ${encryptionKey.replace('key_', '')}
                             </div>
                           </div>
                           <button
-                            onClick={() => {
-                              if (isLocalOnlyModeEnabled()) {
-                                setShowSignOutConfirm(true)
-                              } else {
-                                void handleSignOut()
-                              }
-                            }}
+                            onClick={() => void handleSignOut()}
                             disabled={isSigningOut}
                             className={cn(
                               'flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
@@ -5126,70 +4501,6 @@ ${encryptionKey.replace('key_', '')}
           </div>
         </div>
       </Dialog.Panel>
-
-      {/* Sign-out confirmation when local-only mode is enabled */}
-      {showSignOutConfirm && (
-        <Dialog
-          open={showSignOutConfirm}
-          onClose={() => setShowSignOutConfirm(false)}
-          autoFocus
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
-        >
-          <Dialog.Panel className="mx-4 w-full max-w-sm rounded-site-lg border border-border-subtle bg-surface-card p-6 shadow-xl">
-            <Dialog.Title
-              as="h3"
-              className="font-aeonik text-lg font-medium text-content-primary"
-            >
-              Sign Out
-            </Dialog.Title>
-            <div className="mt-3 space-y-2 text-sm text-content-secondary">
-              <p>
-                {passkeyActive
-                  ? 'All local data will be cleared. You can recover your cloud chats by signing back in.'
-                  : 'All local data will be cleared. You will need your encryption key to recover your cloud chats.'}
-              </p>
-              <p className="font-medium text-orange-500">
-                Your local chats will be deleted forever.
-              </p>
-            </div>
-            <div className="mt-5 flex gap-3">
-              <button
-                onClick={() => setShowSignOutConfirm(false)}
-                className={cn(
-                  'flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
-                  isDarkMode
-                    ? 'border-border-strong bg-surface-chat text-content-primary hover:bg-surface-chat/80'
-                    : 'border-border-subtle bg-white text-content-primary hover:bg-gray-50',
-                )}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowSignOutConfirm(false)
-                  void handleSignOut()
-                }}
-                disabled={isSigningOut}
-                className={cn(
-                  'flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
-                  'disabled:cursor-not-allowed disabled:opacity-70',
-                  isDarkMode
-                    ? 'border-red-500/30 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                    : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
-                )}
-              >
-                {isSigningOut && (
-                  <PiSpinner
-                    className="h-4 w-4 animate-spin"
-                    aria-hidden="true"
-                  />
-                )}
-                {isSigningOut ? 'Signing out...' : 'Sign Out'}
-              </button>
-            </div>
-          </Dialog.Panel>
-        </Dialog>
-      )}
     </Dialog>
   )
 }

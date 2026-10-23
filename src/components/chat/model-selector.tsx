@@ -1,11 +1,11 @@
 import { SteppedSlider } from '@/components/ui/stepped-slider'
 import {
-  AUTO_INTELLIGENCE_LEVELS,
+  findSelectableModel,
   getAutoIntelligenceLevel,
+  getAutoIntelligenceLevels,
   getAutoModel,
   getSelectableChatModels,
   isAutoModelId,
-  resolveModelSelection,
   type AutoIntelligenceLevelId,
   type BaseModel,
 } from '@/config/models'
@@ -304,7 +304,7 @@ export function ModelSelector({
   // them: the router chooses the effort from the intelligence level.
   const resolvedModel = isAutoSelected
     ? undefined
-    : resolveModelSelection(selectedModel, models).model
+    : findSelectableModel(selectedModel, models)
   const showEffort =
     supportsReasoningEffort(resolvedModel) &&
     reasoningEffort !== undefined &&
@@ -513,7 +513,7 @@ export function ModelSelector({
               </span>
             </div>
             <SteppedSlider
-              steps={AUTO_INTELLIGENCE_LEVELS}
+              steps={getAutoIntelligenceLevels()}
               value={autoIntelligence}
               onValueChange={onAutoIntelligenceChange}
               aria-label="Auto intelligence"
