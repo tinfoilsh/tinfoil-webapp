@@ -1002,6 +1002,90 @@ describe('DefaultMessageRenderer work traces', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('shows each page back-to-back reads asked for, and which failed', () => {
+    const fetch = (
+      id: string,
+      urls: string[],
+      result: WireBlock['result'],
+    ): WireBlock => ({
+      id,
+      type: 'tool_call',
+      toolCallId: id,
+      name: 'web_fetch',
+      arguments: JSON.stringify({ urls }),
+      complete: true,
+      result,
+      display: { url: urls[0], status: 'completed', sources: [] },
+    })
+    const { container } = renderReply(
+      {
+        id: 'a1',
+        role: 'assistant',
+        createdAt: '2026-08-07T00:00:01.000Z',
+        content: 'Read them.',
+        timeline: [
+          fetch('f1', ['https://a.example/one', 'https://b.example/two'], {
+            pages: [{ url: 'https://a.example/one', text: 'One' }],
+            failed: [{ url: 'https://b.example/two', error: 'timeout' }],
+          }),
+          fetch('f2', ['https://c.example/three'], {
+            pages: [{ url: 'https://c.example/three', text: 'Three' }],
+            failed: [],
+          }),
+          { id: 'c', type: 'content', content: 'Read them.' },
+        ],
+      },
+      false,
+    )
+
+    // One step lists every page; only the pages read count as read.
+    expect(screen.getByRole('button', { name: 'Read 2 links' })).toBeVisible()
+    expect(container).not.toHaveTextContent('Read 1 link')
+    expect(container).not.toHaveTextContent('Worked')
+    for (const page of ['a.example/one', 'b.example/two', 'c.example/three'])
+      expect(screen.getByText(page)).toBeInTheDocument()
+  })
+
+  it('times back-to-back reads from the first start to the last end', () => {
+    const fetch = (id: string, startedAt: number, endedAt: number) => ({
+      id,
+      type: 'tool_call' as const,
+      toolCallId: id,
+      name: 'web_fetch',
+      arguments: JSON.stringify({ urls: [`https://${id}.example/`] }),
+      complete: true,
+      display: { status: 'completed' as const, sources: [] },
+      startedAt,
+      endedAt,
+    })
+    renderReply(
+      {
+        id: 'a1',
+        role: 'assistant',
+        createdAt: '2026-08-07T00:00:01.000Z',
+        content: 'Read them.',
+        timeline: [
+          fetch('first', 1_000, 4_000),
+          fetch('second', 4_000, 9_000),
+          {
+            id: 't',
+            type: 'thinking',
+            content: 'Both read.',
+            startedAt: 5_000,
+            endedAt: 6_000,
+            duration: 1,
+          },
+          { id: 'c', type: 'content', content: 'Read them.' },
+        ],
+      },
+      false,
+    )
+
+    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
+      'Worked for 8.0 seconds',
+    )
+  })
+
   it('shows nothing of the code an older chat ran, unlike a retired widget', () => {
     renderReply(
       {
