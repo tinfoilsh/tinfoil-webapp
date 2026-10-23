@@ -5,6 +5,7 @@ import {
   UI_SIDEBAR_OPEN,
   USER_PREFS_LOCAL_PROFILE,
 } from '@/constants/storage-keys'
+import { useToast } from '@/hooks/use-toast'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
@@ -13,11 +14,12 @@ import {
   act,
   fireEvent,
   render,
+  renderHook,
   screen,
   waitFor,
   within,
 } from '@testing-library/react'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { client, KEY, signIn, testSession } from '../../harness-fixture'
 import {
   resetChatStoresAroundEachTest,
@@ -87,6 +89,13 @@ beforeEach(() => {
   chatPage.router.replace.mockReset().mockResolvedValue(true)
   chatPage.router.push.mockReset().mockResolvedValue(true)
   refuseFetch()
+})
+
+// The toast module keeps its toasts across tests.
+afterEach(() => {
+  const { result, unmount } = renderHook(() => useToast())
+  act(() => result.current.dismiss())
+  unmount()
 })
 
 function view(localChatId?: string) {
