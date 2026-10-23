@@ -543,21 +543,17 @@ interface RestoreEvents {
   onPhase?(phase?: string): void
 }
 
-// A backup is restored to the cloud with cloud sync, and its chats kept on a
-// device, or all of it without cloud sync, are stored on this device. The
-// cloud job is followed for a while; a longer one goes on, and the user is
-// emailed when it ends.
+// A backup's cloud data is restored to the cloud, which the account's key
+// opens with or without cloud sync, and its chats kept on a device are stored
+// on this device. The cloud job is followed for a while; a longer one goes
+// on, and the user is emailed when it ends.
 export async function restoreBackup(
   file: File,
   signal: AbortSignal,
   events: RestoreEvents = {},
 ): Promise<RestoreResult> {
   const api = harnessAPI()
-  const { jobId, ...restored } = await importFile(
-    file,
-    api.cloud ? 'cloud' : 'device',
-    signal,
-  )
+  const { jobId, ...restored } = await importFile(file, 'cloud', signal)
   if (!jobId)
     return {
       ...restored,

@@ -1,6 +1,5 @@
 import { NativeBackupRestore } from '@/components/chat/native-backup-restore'
 import { localThreadStore } from '@/services/harness/local-threads'
-import { HarnessError } from '@/services/harness/sse'
 import type { StoredThread } from '@/services/harness/types'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -212,9 +211,16 @@ describe('NativeBackupRestore', () => {
     ])
   })
 
-  it('restores on this device without cloud sync, skipping chats it holds', async () => {
+  it('restores to the cloud without cloud sync, as with it, skipping device chats it holds', async () => {
     signIn()
-    answerRestore([deviceChat], { jobId: null, warnings: [] })
+    answerRestore([deviceChat], { jobId: 'job-1', warnings: [] })
+    answerStatus({
+      status: 'completed',
+      imported: 1,
+      failed: 0,
+      total: 1,
+      counts: { project: { imported: 1, skipped: 0, failed: 0, blocked: 0 } },
+    })
     const { container } = render(
       <NativeBackupRestore available ownerId="alice" />,
     )
@@ -224,16 +230,24 @@ describe('NativeBackupRestore', () => {
     expect(
       await screen.findByText('Backup restored successfully.'),
     ).toBeVisible()
-    expect((await sentOptions()).options).toEqual({ target: 'device' })
-    expect(client.post).not.toHaveBeenCalled()
-    expect(listed()).toEqual(['chats on this device: 1 imported, 0 skipped'])
+    expect((await sentOptions()).options).toEqual({
+      target: 'cloud',
+      key: KEY,
+    })
+    expect(listed()).toEqual([
+      'projects: 1 imported, 0 skipped, 0 failed, 0 blocked',
+      'chats on this device: 1 imported, 0 skipped',
+    ])
 
     const renamed = { ...deviceChat, title: 'Renamed trip' }
     await localThreadStore('device').update(deviceChat.id, () => renamed)
     selectArchive(container)
 
     await waitFor(() =>
-      expect(listed()).toEqual(['chats on this device: 0 imported, 1 skipped']),
+      expect(listed()).toEqual([
+        'projects: 1 imported, 0 skipped, 0 failed, 0 blocked',
+        'chats on this device: 0 imported, 1 skipped',
+      ]),
     )
     expect(await localThreadStore('device').get(deviceChat.id)).toEqual(renamed)
   })
@@ -262,31 +276,6 @@ describe('NativeBackupRestore', () => {
     expect(await localThreadStore('device').get(deviceChat.id)).toEqual(
       deviceChat,
     )
-  })
-
-  it('explains a restore of projects refused without cloud sync', async () => {
-    signIn()
-    client.multipart.mockRejectedValue(
-      new HarnessError(
-        {
-          code: 'PROJECTS_REQUIRE_CLOUD',
-          message: 'Projects are kept in the cloud',
-        },
-        400,
-      ),
-    )
-    const { container } = render(
-      <NativeBackupRestore available ownerId="alice" />,
-    )
-
-    selectArchive(container)
-
-    await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(
-        /^This file includes projects, which are kept in the cloud\. Turn on cloud sync, then try again\.$/,
-      ),
-    )
-    expect((await sentOptions()).options).toEqual({ target: 'device' })
   })
 
   it('cancels a restore that is still uploading', async () => {
