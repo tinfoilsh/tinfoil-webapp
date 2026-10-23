@@ -1,5 +1,6 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { authTokenManager } from '@/services/auth'
+import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Thread } from '@/services/harness/types'
 import { resetSafeguards } from '@/services/safeguards'
@@ -93,21 +94,29 @@ afterEach(() => {
   authTokenManager.reset()
 })
 
-// Opens the chat, and retries its widget with a harness that answers the
-// retry's run with `run`.
-async function retryWidget(run: () => AsyncGenerator<Frame>) {
+// Opens the chat, whose widget's retry run the harness answers with `run`.
+async function openChat(run?: () => AsyncGenerator<Frame>) {
   signIn({ cloud: true })
   client.post.mockImplementation(async (path: string) => {
     if (path === '/v1/threads/get') return structuredClone(thread)
     if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
     throw new Error(`Unexpected ${path}`)
   })
-  client.events.mockImplementation(run)
+  if (run) client.events.mockImplementation(run)
   render(<ChatInterface initialChatId={THREAD_ID} />)
   await screen.findByText("Couldn't display message compose")
-  await act(async () =>
+}
+
+const clickRetry = () =>
+  act(async () =>
     fireEvent.click(screen.getByRole('button', { name: 'Retry widget' })),
   )
+
+// Opens the chat, and retries its widget with a harness that answers the
+// retry's run with `run`.
+async function retryWidget(run: () => AsyncGenerator<Frame>) {
+  await openChat(run)
+  await clickRetry()
   expect(client.events).toHaveBeenCalledExactlyOnceWith(
     '/v1/threads/turn',
     expect.objectContaining({
@@ -138,6 +147,26 @@ const failedRun = (code: string) =>
   }
 
 describe('retrying a widget on the chat page', () => {
+  it('asks a free account out of daily requests to subscribe instead', async () => {
+    await openChat()
+    act(() =>
+      publish({
+        rateLimit: { kind: 'free_daily', maxRequests: 10, remaining: 0 },
+      }),
+    )
+    await clickRetry()
+
+    expect(
+      await screen.findByRole('dialog', { name: 'No more free requests' }),
+    ).toBeVisible()
+    expect(
+      screen.getByText(
+        'Could not request a replacement. Try the widget again.',
+      ),
+    ).toBeInTheDocument()
+    expect(client.events).not.toHaveBeenCalled()
+  })
+
   it('draws the widget again from the arguments the harness sends', async () => {
     await retryWidget(async function* (): AsyncGenerator<Frame> {
       const events: Frame['event'][] = [
