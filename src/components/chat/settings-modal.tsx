@@ -765,7 +765,7 @@ export function SettingsModal({
     usePromptLibrary()
   const { toast } = useToast()
   // Without cloud sync every chat and setting stays on this device.
-  const { api, profile, keyReady, cloud: cloudSyncEnabled } = useHarness()
+  const { api, profile, keyLocked, cloud: cloudSyncEnabled } = useHarness()
 
   const { refresh: refreshProjects } = useProjects({ autoLoad: false })
   // Encryption key management state
@@ -2790,9 +2790,9 @@ ${encryptionKey.replace('key_', '')}
                           <div className="font-aeonik-fono text-xs text-content-muted">
                             {!cloudSyncEnabled
                               ? 'Turn on Cloud Sync to back up and access your data across devices.'
-                              : keyReady
-                                ? 'End-to-end encrypted. Only you can access your chats and data.'
-                                : 'Unlock your encryption key to access your saved chats.'}
+                              : keyLocked
+                                ? 'Unlock your encryption key to access your saved chats.'
+                                : 'End-to-end encrypted. Only you can access your chats and data.'}
                           </div>
                         </div>
                         <label className="relative inline-flex cursor-pointer items-center">
@@ -2808,7 +2808,7 @@ ${encryptionKey.replace('key_', '')}
                           <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
                         </label>
                       </div>
-                      {cloudSyncEnabled && (
+                      {keyLocked && (
                         <button
                           type="button"
                           onClick={() => {
@@ -2817,7 +2817,7 @@ ${encryptionKey.replace('key_', '')}
                           }}
                           className="mt-3 rounded-site-control border border-border-subtle px-3 py-1.5 text-sm text-content-primary transition-colors hover:bg-surface-chat"
                         >
-                          {keyReady ? 'Manage key' : 'Unlock'}
+                          Unlock
                         </button>
                       )}
                     </div>
