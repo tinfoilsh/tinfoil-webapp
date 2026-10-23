@@ -278,6 +278,19 @@ export function reduceEvent(
         ...next,
         messages: withReply(next.messages, id, event.timestamp, (blocks) => {
           const last = blocks.at(-1)
+          const before = blocks.at(-2)
+          // Reasoning that arrives after the reply's text began is the tail
+          // of the reasoning before that text, as the harness keeps it.
+          if (
+            thinking &&
+            blocks.length - 2 >= sealed &&
+            last?.type === 'content' &&
+            before?.type === 'thinking'
+          )
+            return replaceAt(blocks, blocks.length - 2, {
+              ...before,
+              content: (before.content ?? '') + event.delta,
+            })
           if (last?.type === type && blocks.length > sealed)
             return replaceAt(blocks, blocks.length - 1, {
               ...last,

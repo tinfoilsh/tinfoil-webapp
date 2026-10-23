@@ -453,6 +453,56 @@ describe('harness reducer', () => {
       },
     ])
   })
+  it('keeps late reasoning with the thought the reply text closed', () => {
+    const start = Date.UTC(2026, 9, 1)
+    const at = (seconds: number) =>
+      new Date(start + seconds * 1000).toISOString()
+    const events: Frame['event'][] = [
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'r-reasoning',
+        delta: 'Plan',
+        timestamp: at(0),
+      },
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'r-reasoning',
+        delta: 'ning',
+        timestamp: at(2.5),
+      },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'r',
+        delta: 'Answer',
+        timestamp: at(3),
+      },
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'r-reasoning',
+        delta: ' late',
+        timestamp: at(3.2),
+      },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'r',
+        delta: ' done',
+        timestamp: at(3.4),
+      },
+    ]
+    let state = initialChat()
+    for (const event of events) state = reduceEvent(state, { event })
+    expect(state.messages[0].timeline).toEqual([
+      {
+        id: 'r_thinking_0',
+        type: 'thinking',
+        content: 'Planning late',
+        startedAt: start,
+        endedAt: start + 2_500,
+        duration: 2.5,
+      },
+      { id: 'r_content_1', type: 'content', content: 'Answer done' },
+    ])
+  })
   it('leaves the state a frame was applied to as it was', () => {
     const started = reduceEvent(initialChat(), {
       id: 0,
@@ -567,6 +617,28 @@ describe('continuing a reply', () => {
     expect(state.messages[1].timeline).toEqual([
       { id: 'r', type: 'thinking', content: 'first' },
       { id: 'a1_thinking_1', type: 'thinking', content: 'second' },
+    ])
+  })
+
+  it('does not add new reasoning to a thought the stored reply finished', () => {
+    const state = run(
+      [
+        user,
+        reply(
+          { id: 'r', type: 'thinking', content: 'first' },
+          { id: 'c', type: 'content', content: 'Once upon' },
+        ),
+      ],
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'a1-reasoning',
+        delta: 'second',
+      },
+    )
+    expect(state.messages[1].timeline).toEqual([
+      { id: 'r', type: 'thinking', content: 'first' },
+      { id: 'c', type: 'content', content: 'Once upon' },
+      { id: 'a1_thinking_2', type: 'thinking', content: 'second' },
     ])
   })
 })
