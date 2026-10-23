@@ -3,6 +3,7 @@
 import { initializeRenderers } from '@/components/chat/renderers/client'
 import { SharedChatView } from '@/components/chat/shared-chat-view'
 import type { BaseModel } from '@/config/models'
+import { ERROR_CODES } from '@/services/harness/protocol'
 import { useHarness } from '@/services/harness/provider'
 import { openShare } from '@/services/harness/shares'
 import { HarnessError } from '@/services/harness/sse'
@@ -30,6 +31,25 @@ const SHARED_CHAT_MODEL: BaseModel = {
   badges: [],
   reasoning: null,
   deprecated: false,
+}
+// The status with which the sync service refuses to decrypt a share.
+const SHARE_DECRYPT_REFUSED_STATUS = 400
+
+// Why the harness could not open a share: the share store has none, the
+// sync service could not decrypt it with the link's key, or the harness
+// refused what it decrypted.
+function shareErrorMessage(error: unknown): string {
+  if (error instanceof HarnessError) {
+    if (error.code === ERROR_CODES.threadNotFound)
+      return 'This shared chat does not exist or has been deleted'
+    if (
+      error.code === ERROR_CODES.upstreamRefused &&
+      error.detail.status === SHARE_DECRYPT_REFUSED_STATUS
+    )
+      return 'Failed to decrypt chat data'
+    if (error.code === ERROR_CODES.badRequest) return 'Invalid chat data format'
+  }
+  return 'Failed to load shared chat'
 }
 
 export default function SharePage({ chatId }: { chatId?: string }) {
@@ -101,11 +121,7 @@ export default function SharePage({ chatId }: { chatId?: string }) {
         setLoadingState('success')
       } catch (error) {
         if (cancelled) return
-        setErrorMessage(
-          error instanceof HarnessError && error.code === 'THREAD_NOT_FOUND'
-            ? 'This shared chat does not exist or has been deleted'
-            : 'Failed to load shared chat',
-        )
+        setErrorMessage(shareErrorMessage(error))
         setLoadingState('error')
       }
     }

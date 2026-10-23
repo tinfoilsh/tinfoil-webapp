@@ -178,9 +178,32 @@ describe('SharePage', () => {
       message: 'This shared chat does not exist or has been deleted',
     },
     {
+      // The sync service could not decrypt the share with the link's key.
+      error: new HarnessError(
+        {
+          code: 'UPSTREAM_REFUSED',
+          message: 'A downstream service refused the request',
+          status: 400,
+        },
+        502,
+      ),
+      message: 'Failed to decrypt chat data',
+    },
+    {
       error: new HarnessError(
         { code: 'BAD_REQUEST', message: 'Invalid shared thread' },
         400,
+      ),
+      message: 'Invalid chat data format',
+    },
+    {
+      error: new HarnessError(
+        {
+          code: 'UPSTREAM_REFUSED',
+          message: 'A downstream service refused the request',
+          status: 500,
+        },
+        502,
       ),
       message: 'Failed to load shared chat',
     },
