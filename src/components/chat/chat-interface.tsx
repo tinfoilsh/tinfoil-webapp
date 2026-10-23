@@ -2093,6 +2093,7 @@ export function ChatInterface({
           chats={chats}
           projects={projects}
           searchEnabled={cloudSyncEnabled && keyReady}
+          projectScoped={!!(activeProject?.id ?? initialProjectId)}
           isPremium={isPremium}
           onOpenChat={handleOpenFavorite}
           onOpenProject={(project) =>

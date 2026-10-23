@@ -17,6 +17,7 @@ const searchState = {
 
 vi.mock('@/hooks/use-chat-search', () => ({
   useChatSearch: () => searchState,
+  useChatsOutsideProjects: () => [],
 }))
 
 const chats = [

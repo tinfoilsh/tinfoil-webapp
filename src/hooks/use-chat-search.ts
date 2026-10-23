@@ -1,6 +1,8 @@
 import { useHarness } from '@/services/harness/provider'
-import { searchChats } from '@/services/harness/search'
+import type { HarnessAPI } from '@/services/harness/runtime'
+import { latestChats, searchChats } from '@/services/harness/search'
 import type { ThreadSummary } from '@/services/harness/types'
+import { logError } from '@/utils/error-handling'
 import { useEffect, useState } from 'react'
 const SEARCH_DEBOUNCE_MS = 250
 const INDEX_POLL_INTERVAL_MS = 1000
@@ -72,4 +74,38 @@ export function useChatSearch(
     available,
     isIndexing: active && isIndexing,
   }
+}
+
+const NO_CHATS: ThreadSummary[] = []
+
+// The stored chats outside any project, for a search opened in a project,
+// whose chat list holds only that project's chats.
+export function useChatsOutsideProjects(enabled: boolean) {
+  const { api, keyReady } = useHarness()
+  const [listed, setListed] = useState<{
+    api: HarnessAPI
+    threads: ThreadSummary[]
+  } | null>(null)
+  const active = enabled && !!api.userId && keyReady
+  useEffect(() => {
+    if (!active) return
+    const controller = new AbortController()
+    void latestChats(api, controller.signal)
+      .then((threads) => {
+        if (controller.signal.aborted) return
+        setListed({
+          api,
+          threads: threads.filter((thread) => !thread.projectId),
+        })
+      })
+      .catch((cause) => {
+        if (controller.signal.aborted) return
+        logError('Failed to list chats outside projects', cause, {
+          component: 'useChatsOutsideProjects',
+          action: 'list',
+        })
+      })
+    return () => controller.abort()
+  }, [api, active])
+  return active && listed?.api === api ? listed.threads : NO_CHATS
 }

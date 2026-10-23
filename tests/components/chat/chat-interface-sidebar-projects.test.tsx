@@ -13,7 +13,7 @@ import {
   within,
 } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { client, signIn } from '../../harness-fixture'
+import { client, KEY, signIn } from '../../harness-fixture'
 import {
   resetChatStoresAroundEachTest,
   storedThread,
@@ -24,7 +24,27 @@ import { chatPage } from './chat-page-mocks'
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
 vi.mock('next/router', async () => (await import('./chat-page-mocks')).router)
 vi.mock('next/head', async () => (await import('./chat-page-mocks')).head)
-vi.mock('next/dynamic', async () => (await import('./chat-page-mocks')).dynamic)
+// Lazy parts load as the page loads them.
+vi.mock('next/dynamic', async () => {
+  const { lazy, Suspense } = await import('react')
+  return {
+    default: (
+      load: () => Promise<React.ComponentType<Record<string, unknown>>>,
+    ) => {
+      const Component = lazy(async () => ({ default: await load() }))
+      return function Loaded(props: Record<string, unknown>) {
+        return (
+          <Suspense fallback={null}>
+            <Component {...props} />
+          </Suspense>
+        )
+      }
+    },
+  }
+})
+vi.mock('@/components/verification-sidebar', () => ({
+  VerifierSidebar: () => null,
+}))
 vi.mock(
   '@/components/ui/logo-loading',
   async () => (await import('./chat-page-mocks')).logoLoading,
@@ -151,4 +171,46 @@ it("leaves a deleted open project chat for the project's new chat", async () => 
       screen.queryByRole('link', { name: /^Opened discussion/ }),
     ).not.toBeInTheDocument(),
   )
+})
+
+it('lists recent chats outside projects in search opened in a project', async () => {
+  const inProject = projectChat('project-chat', 'Project discussion')
+  const outside = {
+    ...summaryOf(projectChat('outside-chat', 'Outside discussion')),
+    projectId: null,
+  }
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/projects/list')
+      return { projects: [project], nextCursor: null }
+    if (path === '/v1/projects/get') return project
+    if (path === '/v1/threads/list')
+      return {
+        threads: (input as { projectId?: string }).projectId
+          ? [summaryOf(inProject)]
+          : [summaryOf(inProject), outside],
+        pinned: [],
+        nextCursor: null,
+      }
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  render(
+    <ProjectProvider initialProjectId={project.id}>
+      <ChatInterface initialProjectId={project.id} suppressIntroModals />
+    </ProjectProvider>,
+  )
+  await screen.findByRole('link', { name: /^Project discussion/ })
+  fireEvent.keyDown(window, { key: 'k', metaKey: true })
+  const recent = await screen.findByRole('listbox', { name: 'Recent chats' })
+  await waitFor(() =>
+    expect(
+      within(recent)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Outside discussion']),
+  )
+  expect(
+    client.post.mock.calls
+      .filter(([path]) => path === '/v1/threads/list')
+      .map(([, input]) => input),
+  ).toContainEqual({ key: KEY, limit: 100 })
 })
