@@ -79,13 +79,25 @@ interface ExportOptions {
   onProgress?: (received: number) => void
 }
 
+// Whether the account's cloud holds a chat a conversations export would
+// include.
+async function hasCloudChats(api: HarnessAPI, signal?: AbortSignal) {
+  const page = await api.post<{ threads: unknown[]; nextCursor?: string }>(
+    ROUTES.list,
+    { limit: 1 },
+    { signal },
+  )
+  return page.threads.length > 0 || !!page.nextCursor
+}
+
 // The chat service writes one archive of the chats kept here, sent as they
 // are stored with the originals of their images, and of the account's cloud
-// data. With nothing to export nothing is sent, and false is returned.
+// data. With nothing to export nothing is sent, and null is returned. An
+// archive of this device's chats alone counts them.
 export async function exportArchive(
   format: ExportFormat,
   { cloud, signal, onProgress }: ExportOptions,
-): Promise<boolean> {
+): Promise<{ chats?: number } | null> {
   const api = harnessAPI()
   const key = cloud ? api.key() : undefined
   const form = new FormData()
@@ -113,7 +125,12 @@ export async function exportArchive(
       form.append('file', new File([image], attachmentId, { type: image.type }))
     }
   }
-  if (!key && chats === 0) return false
+  if (
+    chats === 0 &&
+    (!key ||
+      (format === 'conversations' && !(await hasCloudChats(api, signal))))
+  )
+    return null
   const response = await api.multipart(ROUTES.export, form, {
     signal,
     keyless: !key,
@@ -121,7 +138,7 @@ export async function exportArchive(
   const archive = await receive(response, onProgress)
   signal?.throwIfAborted()
   saveDownload(archive, EXPORT_FILENAMES[format])
-  return true
+  return key ? {} : { chats }
 }
 
 // What a Claude projects export holds.

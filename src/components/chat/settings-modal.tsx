@@ -1682,9 +1682,13 @@ export function SettingsModal({
         })
         return
       }
+      const { chats: exportedChats } = exported
       toast({
         title: 'Export complete',
-        description: 'Your chats were exported.',
+        description:
+          exportedChats === undefined
+            ? 'Your chats were exported.'
+            : `Exported ${exportedChats} conversation${exportedChats !== 1 ? 's' : ''} successfully.`,
       })
     } catch (error) {
       if (api.lifetime.signal.aborted) return

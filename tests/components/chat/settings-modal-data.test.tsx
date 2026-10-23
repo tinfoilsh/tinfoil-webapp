@@ -157,6 +157,14 @@ function answerExport() {
   )
 }
 
+// The account's cloud chats, of which the harness lists the first.
+function answerCloudChats(threads: object[]) {
+  client.post.mockImplementation(async (path: string) => {
+    if (path !== '/v1/threads/list') throw new Error(`Unexpected ${path}`)
+    return { threads: threads.slice(0, 1), nextCursor: null }
+  })
+}
+
 // The parts of the one multipart request, in order: JSON parts parsed, and
 // files by name, type and content.
 async function sentForm() {
@@ -194,7 +202,7 @@ describe('exporting chats from the Data tab', () => {
     })
     expect(page.toast).toHaveBeenCalledExactlyOnceWith({
       title: 'Export complete',
-      description: 'Your chats were exported.',
+      description: 'Exported 2 conversations successfully.',
     })
     expect(downloads.map(({ name }) => name)).toEqual(['tinfoil-chats.zip'])
     expect(new Uint8Array(await downloads[0].blob.arrayBuffer())).toEqual(
@@ -254,8 +262,30 @@ describe('exporting chats from the Data tab', () => {
     expect(downloads).toEqual([])
   })
 
+  it('says when a cloud account has nothing to export', async () => {
+    connect({ cloud: true })
+    answerCloudChats([])
+    renderData()
+
+    await exportChats()
+
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'No chats to export',
+      description: 'You have no chats to export yet.',
+      variant: 'destructive',
+    })
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/list',
+      { key: KEY, limit: 1 },
+      expect.any(AbortSignal),
+    )
+    expect(client.multipart).not.toHaveBeenCalled()
+    expect(downloads).toEqual([])
+  })
+
   it('reports an export the chat service refuses', async () => {
     connect({ cloud: true })
+    answerCloudChats([deviceChat])
     client.multipart.mockRejectedValue(
       new HarnessError({ code: 'UPSTREAM_REFUSED', message: 'Down' }, 503),
     )
@@ -273,6 +303,7 @@ describe('exporting chats from the Data tab', () => {
 
   it('explains an export refused while other archives fill the temporary space', async () => {
     connect({ cloud: true })
+    answerCloudChats([deviceChat])
     client.multipart.mockRejectedValue(
       new HarnessError(
         { code: 'TEMP_SPACE_BUSY', message: 'retry shortly', retryAfter: 30 },
