@@ -338,7 +338,7 @@ export function ChatSidebar({
     loading: projectsLoading,
     refresh: refreshProjects,
   } = useProjects({
-    autoLoad: cloudSyncEnabled && isPremium,
+    autoLoad: cloudSyncEnabled && isPremium && !keyLocked,
   })
 
   const { activeProject } = useProject()
@@ -1381,7 +1381,11 @@ export function ChatSidebar({
                           )}
 
                           {/* Projects list */}
-                          {projectsLoading && projects.length === 0 ? (
+                          {keyLocked ? (
+                            <div className="px-3 py-2 text-xs text-content-muted">
+                              Your projects are locked
+                            </div>
+                          ) : projectsLoading && projects.length === 0 ? (
                             <div className="flex justify-center px-3 py-2">
                               <PiSpinner className="h-4 w-4 animate-spin text-content-muted" />
                             </div>

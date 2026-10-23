@@ -767,6 +767,17 @@ it('reports a project that could not be created', async () => {
   expect(requested('/v1/projects/get')).toEqual([])
 })
 
+it('says the projects are locked while the key is refused, without listing them', async () => {
+  sessionStorage.setItem(UI_SIDEBAR_PROJECTS_EXPANDED, 'true')
+  publish({ keyReady: false, keyLocked: true, profileReady: false })
+  render(routeView({}))
+  expect(
+    await screen.findByText('Your projects are locked'),
+  ).toBeInTheDocument()
+  expect(screen.queryByText('No projects yet')).not.toBeInTheDocument()
+  expect(requested('/v1/projects/list')).toEqual([])
+})
+
 it('shows the projects loading rather than missing until the key lets them be listed', async () => {
   sessionStorage.setItem(UI_SIDEBAR_PROJECTS_EXPANDED, 'true')
   publish({ keyReady: false, profileReady: false })
