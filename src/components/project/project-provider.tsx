@@ -44,6 +44,9 @@ export function ProjectProvider({
   const openProjectId = useRef<string | null>(null)
   const committedProjectId = useRef<string | null>(null)
   const previousInitialProjectId = useRef(initialProjectId)
+  // Documents being removed, which a project read before their removal
+  // finished must not show again.
+  const removingDocuments = useRef(new Set<string>())
   const changed = () => window.dispatchEvent(new Event(PROJECTS_CHANGED))
   const requirePremiumAccess = useCallback(() => {
     if (!hasPremiumAccessRef.current) {
@@ -76,7 +79,11 @@ export function ProjectProvider({
           return false
         committedProjectId.current = project.id
         setActiveProject(project)
-        setProjectDocuments(project.documents)
+        setProjectDocuments(
+          project.documents.filter(
+            (doc) => !removingDocuments.current.has(doc.id),
+          ),
+        )
         setError(null)
         return true
       } catch (cause) {
@@ -199,11 +206,29 @@ export function ProjectProvider({
       await reloadProject(projectId)
       return doc
     },
+    // The document leaves the list at once, and returns if its removal fails.
     removeDocument: async (documentId) => {
       requirePremiumAccess()
-      if (!activeProject) return
+      if (!activeProject || removingDocuments.current.has(documentId)) return
       const projectId = activeProject.id
-      await projects.deleteProjectDocument(api, projectId, documentId)
+      const removed = projectDocuments.find((doc) => doc.id === documentId)
+      removingDocuments.current.add(documentId)
+      setProjectDocuments((previous) =>
+        previous.filter((doc) => doc.id !== documentId),
+      )
+      try {
+        await projects.deleteProjectDocument(api, projectId, documentId)
+      } catch (cause) {
+        if (removed && committedProjectId.current === projectId)
+          setProjectDocuments((previous) =>
+            previous.some((doc) => doc.id === documentId)
+              ? previous
+              : [...previous, removed],
+          )
+        throw cause
+      } finally {
+        removingDocuments.current.delete(documentId)
+      }
       await reloadProject(projectId)
     },
     refreshDocuments,

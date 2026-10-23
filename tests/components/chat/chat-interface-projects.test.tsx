@@ -191,3 +191,65 @@ it('keeps the document controls usable while the open project refreshes', async 
   expect(screen.getByRole('button', { name: 'Remove plan.md' })).toBeEnabled()
   expect(upload).toBeEnabled()
 })
+
+it('removes a document at once and keeps it gone through a refresh read before the removal', async () => {
+  routes['/v1/projects/get'] = () => ({
+    ...structuredClone(project),
+    documents: [notes, plan],
+  })
+  const removal = deferred<unknown>()
+  routes['/v1/projects/documents/delete'] = () => removal.promise
+  render(projectView())
+  await openDocuments()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Remove notes.md' }))
+  expect(
+    screen.queryByRole('button', { name: 'Remove notes.md' }),
+  ).not.toBeInTheDocument()
+  act(() => publish({ projectRevision: 'remote-change' }))
+  await waitFor(() => expect(requested('/v1/projects/get')).toHaveLength(2))
+  expect(
+    screen.queryByRole('button', { name: 'Remove notes.md' }),
+  ).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Remove plan.md' })).toBeEnabled()
+
+  routes['/v1/projects/get'] = () => ({
+    ...structuredClone(project),
+    documents: [plan],
+  })
+  await act(async () => removal.resolve({}))
+  await waitFor(() => expect(requested('/v1/projects/get')).toHaveLength(3))
+  expect(
+    screen.queryByRole('button', { name: 'Remove notes.md' }),
+  ).not.toBeInTheDocument()
+  expect(requested('/v1/projects/documents/delete')).toEqual([
+    { key: KEY, projectId: project.id, documentId: notes.id },
+  ])
+  expect(page.toast).not.toHaveBeenCalled()
+})
+
+it('returns a document whose removal fails', async () => {
+  routes['/v1/projects/get'] = () => ({
+    ...structuredClone(project),
+    documents: [notes, plan],
+  })
+  const removal = deferred<unknown>()
+  routes['/v1/projects/documents/delete'] = () => removal.promise
+  render(projectView())
+  await openDocuments()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Remove notes.md' }))
+  expect(
+    screen.queryByRole('button', { name: 'Remove notes.md' }),
+  ).not.toBeInTheDocument()
+  await act(async () => removal.reject(new Error('Sync is unavailable')))
+
+  expect(screen.getByRole('button', { name: 'Remove notes.md' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'Remove plan.md' })).toBeEnabled()
+  expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+    title: 'Failed to delete document',
+    description: 'The document could not be deleted. Please try again.',
+    variant: 'destructive',
+  })
+  expect(requested('/v1/projects/get')).toHaveLength(1)
+})
