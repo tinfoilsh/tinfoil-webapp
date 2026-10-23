@@ -37,7 +37,7 @@ import { FilePreview, imageDataUrl } from './components/file-preview'
 import { UnsavedImagesNotice } from './components/unsaved-images-notice'
 import { CONSTANTS } from './constants'
 import { useEnterToNewline } from './hooks/use-enter-to-newline'
-import { isImeComposition } from './keyboard-utils'
+import { isImeComposition, isMobileDevice } from './keyboard-utils'
 import type { PromptPreset } from './prompts/types'
 import { RecordingWaveform } from './recording-waveform'
 import type { ProcessedDocument } from './renderers/types'
@@ -1078,10 +1078,7 @@ export function ChatInput({
                     (!enterToNewline || e.metaKey || e.ctrlKey)
                   ) {
                     // On mobile, Enter should insert a newline, not submit
-                    const isMobile = /iPhone|iPad|iPod|Android/i.test(
-                      navigator.userAgent,
-                    )
-                    if (isMobile && !e.metaKey && !e.ctrlKey) {
+                    if (isMobileDevice() && !e.metaKey && !e.ctrlKey) {
                       return
                     }
                     e.preventDefault()
@@ -1400,12 +1397,7 @@ export function ChatInput({
                           handleSubmit(e)
                           // On iOS Safari, forcing blur here can lead to a "dead" touch region
                           // after the keyboard dismisses. Keep focus on mobile; desktop can blur.
-                          const isMobile =
-                            typeof navigator !== 'undefined' &&
-                            /iPhone|iPad|iPod|Android/i.test(
-                              navigator.userAgent,
-                            )
-                          if (!isMobile) {
+                          if (!isMobileDevice()) {
                             ownTextareaRef.current?.blur()
                           }
                         }
