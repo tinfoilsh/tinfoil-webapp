@@ -12,6 +12,11 @@ import {
 } from '@/utils/cloud-sync-settings'
 import { logError } from '@/utils/error-handling'
 import { HarnessClient } from './client'
+import {
+  clearCloudProfileCache,
+  readCloudProfileCache,
+  writeCloudProfileCache,
+} from './cloud-profile-cache'
 import { prepareUpload } from './composer'
 import {
   clearLocalProfileChanges,
@@ -160,19 +165,21 @@ export class HarnessAPI {
     this.contentLifetime.abort()
     this.contentLifetime = new AbortController()
     this.profileVersion++
-    this.showProfile(
-      {},
-      {
-        keyReady: false,
-        keyLocked: false,
-        profileReady: false,
-      },
-    )
+    this.showProfile(this.keptProfile(), {
+      keyReady: false,
+      keyLocked: false,
+      profileReady: false,
+    })
   }
   // The storage mode, which only a change of the cloud sync setting moves.
   private cloudSync = isCloudSyncEnabled()
   get cloud() {
     return !!this.userId && this.cloudSync
+  }
+  // The cloud profile this device kept, shown until the harness's loads and
+  // while the key is refused.
+  keptProfile(): Profile {
+    return this.cloud ? readCloudProfileCache(this.userId) : {}
   }
   constructor(
     readonly client: HarnessClient,
@@ -369,26 +376,24 @@ export class HarnessAPI {
           profileReady: true,
           error: undefined,
         })
+        writeCloudProfileCache(this.userId, profile)
       }
     } catch (cause) {
       this.lifetime.signal.throwIfAborted()
       if (version !== this.profileVersion) return
       if (background) throw cause
-      this.showProfile(
-        {},
-        {
-          keyReady: false,
-          keyLocked:
-            cause instanceof HarnessError &&
-            (cause.code === ERROR_CODES.keyRequired ||
-              cause.code === ERROR_CODES.keyMismatch),
-          profileReady: false,
-          error:
-            cause instanceof Error
-              ? cause.message
-              : 'Unable to unlock your chats.',
-        },
-      )
+      this.showProfile(this.keptProfile(), {
+        keyReady: false,
+        keyLocked:
+          cause instanceof HarnessError &&
+          (cause.code === ERROR_CODES.keyRequired ||
+            cause.code === ERROR_CODES.keyMismatch),
+        profileReady: false,
+        error:
+          cause instanceof Error
+            ? cause.message
+            : 'Unable to unlock your chats.',
+      })
     }
   }
   // Cloud sync was turned on or off. Turning it off keeps the settings the
@@ -416,7 +421,10 @@ export class HarnessAPI {
       clearLocalProfileChanges()
       localStorage.setItem(USER_PREFS_LOCAL_PROFILE_UPGRADED, 'true')
     }
-    if (!this.cloud) localStorage.removeItem(USER_PREFS_PENDING_PROFILE_MERGE)
+    if (!this.cloud) {
+      localStorage.removeItem(USER_PREFS_PENDING_PROFILE_MERGE)
+      clearCloudProfileCache(this.userId)
+    }
     this.invalidateKey()
     return this.refreshProfile()
   }
@@ -461,6 +469,7 @@ export class HarnessAPI {
             ? profile
             : { ...this.storedProfile, ...patch },
         )
+        if (cloud) writeCloudProfileCache(this.userId, this.storedProfile)
         return profile
       })
       .catch((cause) => {
@@ -505,7 +514,7 @@ export function activateAPI(api: HarnessAPI) {
   deactivate()
   active = api
   unfollow = followStorage(api)
-  publish({ cloud: api.cloud })
+  publish({ cloud: api.cloud, profile: api.keptProfile() })
   return () => {
     api.lifetime.abort()
     api.client.dispose?.()

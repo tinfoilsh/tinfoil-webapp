@@ -3,6 +3,7 @@ import {
   AUTH_ACCOUNT_RESET_FAILED,
   AUTH_ACCOUNT_RESET_SIGNAL,
   AUTH_ACTIVE_USER_ID,
+  CLOUD_PROFILE_CACHE_PREFIX,
   SETTINGS_HAS_SEEN_ONBOARDING,
   USER_ENCRYPTION_KEY,
 } from '@/constants/storage-keys'
@@ -23,6 +24,7 @@ import {
 } from '@/utils/signout-cleanup'
 import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { client, signIn } from '../harness-fixture'
 import { controlledSpeech, FakeAudioContext } from '../services/speech/fixtures'
 
 const speechMocks = vi.hoisted(() => ({
@@ -227,6 +229,34 @@ describe('speech during cleanup', () => {
       }
     },
   )
+})
+
+describe('cloud settings kept on this device', () => {
+  const keptProfiles = () =>
+    Array.from({ length: localStorage.length }, (_, index) =>
+      localStorage.key(index),
+    ).filter((key) => key?.startsWith(CLOUD_PROFILE_CACHE_PREFIX))
+
+  it.each([
+    ['signout', () => performSignoutCleanup()],
+    [
+      'signout preserving the encryption key',
+      () => performSignoutCleanup({ preserveEncryptionKey: true }),
+    ],
+    ['account switch', () => performUserSwitchCleanup('bob')],
+  ])('are forgotten on %s', async (_name, cleanup) => {
+    const api = signIn({ cloud: true })
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/profile/get') return { nickname: 'Private' }
+      throw new Error(`Unexpected ${path}`)
+    })
+    await api.refreshProfile()
+    expect(keptProfiles()).toHaveLength(1)
+
+    await cleanup()
+
+    expect(keptProfiles()).toEqual([])
+  })
 })
 
 describe('performUserSwitchCleanup', () => {

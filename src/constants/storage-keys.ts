@@ -28,6 +28,12 @@ export const AUTH_SIGNOUT_REQUESTED_AT = 'tinfoil-auth-signout-requested-at'
 // --- localStorage: Sidebar cache --------------------------------------------
 export const CLOUD_CHAT_LIST_CACHE_PREFIX = 'tinfoil-cloud-chat-list-v1'
 
+// --- localStorage: Cloud settings cache -------------------------------------
+// The settings the chat service last stored for an account with cloud sync,
+// shown on this device until they load and while the account's key is
+// refused.
+export const CLOUD_PROFILE_CACHE_PREFIX = 'tinfoil-cloud-profile-v1'
+
 // --- localStorage: App settings --------------------------------------------
 export const SETTINGS_CLOUD_SYNC_ENABLED = 'tinfoil-settings-cloud-sync-enabled'
 export const SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED =

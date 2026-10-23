@@ -4,7 +4,19 @@ import {
   useThinkingEnabled,
 } from '@/components/chat/hooks/use-reasoning-effort'
 import { Toaster } from '@/components/ui/toaster'
+import {
+  AUTH_ACTIVE_USER_ID,
+  SETTINGS_CLOUD_SYNC_ENABLED,
+} from '@/constants/storage-keys'
 import { useToast } from '@/hooks/use-toast'
+import type { HarnessClient } from '@/services/harness/client'
+import { useHarness } from '@/services/harness/provider'
+import {
+  activateAPI,
+  getView,
+  HarnessAPI,
+  harnessAPI,
+} from '@/services/harness/runtime'
 import {
   act,
   render,
@@ -124,4 +136,59 @@ it('takes back a favorite prompt the harness refused and says so', async () => {
 
   expect(result.current.favoritePresetIds).toEqual([])
   expect(screen.getByText('Failed to save settings')).toBeInTheDocument()
+})
+
+// The page loads again for an account, whose harness answers as before.
+function reload(userId: string) {
+  act(() => {
+    activateAPI(new HarnessAPI(client as unknown as HarnessClient, userId))
+  })
+}
+
+it('shows the cloud settings this device kept until they load and while the key is refused', async () => {
+  const api = signIn({ cloud: true })
+  const stored = { enterToNewlineEnabled: true, nickname: 'Sam' }
+  client.post.mockImplementation(async (path: string, input: unknown) => {
+    if (path === '/v1/profile/get') return stored
+    if (path === '/v1/profile/update')
+      return { ...stored, ...(input as { patch: object }).patch }
+    throw new Error(`Unexpected ${path}`)
+  })
+  await act(() => api.refreshProfile())
+  await act(() => api.updateProfile({ piiCheckEnabled: false }))
+  const kept = { ...stored, piiCheckEnabled: false }
+
+  reload('alice')
+  const { result } = renderHook(() => useHarness())
+  expect(result.current).toMatchObject({ profile: kept, profileReady: false })
+
+  // This device holds no key for the account.
+  await act(() => harnessAPI().refreshProfile())
+  expect(result.current).toMatchObject({
+    profile: kept,
+    keyLocked: true,
+    profileReady: false,
+  })
+
+  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'bob')
+  reload('bob')
+  expect(result.current.profile).toEqual({})
+})
+
+it('drops the kept cloud settings once cloud sync is turned off', async () => {
+  const api = signIn({ cloud: true })
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/profile/get') return { nickname: 'Sam' }
+    throw new Error(`Unexpected ${path}`)
+  })
+  await act(() => api.refreshProfile())
+  reload('alice')
+  expect(getView().profile).toEqual({ nickname: 'Sam' })
+
+  localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'false')
+  await act(() => harnessAPI().storageModeChanged())
+  localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+  reload('alice')
+
+  expect(getView().profile).toEqual({})
 })
