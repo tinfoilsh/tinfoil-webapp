@@ -8,6 +8,15 @@ import { messageView } from '@/services/harness/view-model'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LoadingState, Message } from '../types'
 const CONTEXT_UNREADABLE = 'The chat could not be read.'
+type AskedRun = { key?: string; threadId?: string; runId?: string }
+const inFlight = (status: string) =>
+  status === 'submitting' || status === 'streaming' || status === 'queued'
+// The harness runs an ask to its end unless asked to stop it.
+function stopAsk(controller: RunController, asked: AskedRun) {
+  const { key, threadId, runId } = asked
+  if (threadId && runId && inFlight(controller.view.get().status))
+    void controller.cancel({ key, threadId, runId }).catch(() => {})
+}
 export interface SidebarChatState {
   messages: Message[]
   quote: string | null
@@ -35,17 +44,24 @@ export function useSidebarChat({
   const [contextError, setContextError] = useState<string | null>(null)
   // The ask's run, which the harness runs as a thread of its own, and the
   // key it carries.
-  const asked = useRef<{ key?: string; threadId?: string; runId?: string }>({})
+  const asked = useRef<AskedRun>({})
   controller.hooks = {
     started: (run) => Object.assign(asked.current, run),
   }
   const reset = () => {
+    stopAsk(controller, asked.current)
     controller.reset()
     asked.current = {}
     setQuestion(null)
     setContextError(null)
   }
-  useEffect(() => () => controller.reset(), [controller])
+  useEffect(
+    () => () => {
+      stopAsk(controller, asked.current)
+      controller.reset()
+    },
+    [controller],
+  )
   const askQuote = (text: string) => {
     reset()
     setQuestion({
@@ -82,10 +98,7 @@ export function useSidebarChat({
       })
     })()
   }
-  const isStreaming =
-    state.status === 'submitting' ||
-    state.status === 'streaming' ||
-    state.status === 'queued'
+  const isStreaming = inFlight(state.status)
   // A failed ask shows why as an error reply, also when it failed before the
   // harness sent any message.
   const failed =
@@ -129,18 +142,12 @@ export function useSidebarChat({
     askQuote,
     reset,
     cancel: () => {
-      const { key, threadId, runId } = asked.current
-      if (threadId && runId)
-        void controller.cancel({ key, threadId, runId }).catch(() => {})
+      stopAsk(controller, asked.current)
       // The stopped stream reports nothing more, so the ask stops here and
       // keeps what it received.
       const shown = controller.view.get()
       controller.reset(
-        shown.status === 'submitting' ||
-          shown.status === 'streaming' ||
-          shown.status === 'queued'
-          ? { ...shown, status: 'idle' }
-          : shown,
+        inFlight(shown.status) ? { ...shown, status: 'idle' } : shown,
       )
     },
   }

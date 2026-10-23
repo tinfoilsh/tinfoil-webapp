@@ -245,3 +245,74 @@ it('shows why the chat an ask reads could not be read, and sends no turn', async
   act(() => result.current.reset())
   expect(result.current.messages).toEqual([])
 })
+
+// An ask whose run has started, streaming until its request is aborted, or
+// ending when `finish` says.
+function askInProgress(finish: boolean) {
+  vi.mocked(harnessAPI().client.events).mockImplementation(
+    async function* (_path, _input, signal) {
+      yield {
+        id: 0,
+        event: { type: 'RUN_STARTED', threadId: 'thread-1', runId: 'run-1' },
+      }
+      yield {
+        id: 1,
+        event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'answer', delta: 'It' },
+      }
+      if (finish) {
+        yield {
+          id: 2,
+          event: { type: 'RUN_FINISHED', threadId: 'thread-1', runId: 'run-1' },
+        }
+        return
+      }
+      await new Promise((_, reject) =>
+        signal!.addEventListener('abort', () => reject(signal!.reason)),
+      )
+    },
+  )
+  vi.mocked(harnessAPI().client.post).mockImplementation(async (path) => {
+    if (path !== '/v1/threads/cancel')
+      throw new Error(`Unexpected request: ${path}`)
+    return {}
+  })
+  return renderHook(() =>
+    useSidebarChat({
+      context: async () => ({ threadId: 'thread-1', key: 'content-key' }),
+      options: {},
+    }),
+  )
+}
+
+it.each(['closed', 'unmounted'] as const)(
+  'stops the harness running an ask that is %s mid-answer',
+  async (how) => {
+    const { result, unmount } = askInProgress(false)
+    act(() => result.current.askQuote('What does this mean?'))
+    await waitFor(() => expect(result.current.isStreaming).toBe(true))
+    await waitFor(() =>
+      expect(result.current.messages.map((m) => m.content)).toEqual(['', 'It']),
+    )
+
+    act(() => (how === 'closed' ? result.current.reset() : unmount()))
+
+    expect(vi.mocked(harnessAPI().client.post)).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/cancel',
+      { key: 'content-key', threadId: 'thread-1', runId: 'run-1' },
+      expect.any(AbortSignal),
+    )
+  },
+)
+
+it('asks the harness to stop nothing when a finished ask is closed', async () => {
+  const { result } = askInProgress(true)
+  act(() => result.current.askQuote('What does this mean?'))
+  await waitFor(() => {
+    expect(result.current.messages.map((m) => m.content)).toEqual(['', 'It'])
+    expect(result.current.loadingState).toBe('idle')
+  })
+
+  act(() => result.current.reset())
+
+  expect(vi.mocked(harnessAPI().client.post)).not.toHaveBeenCalled()
+})
