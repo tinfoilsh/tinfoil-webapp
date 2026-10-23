@@ -3,8 +3,7 @@ import {
   SETTINGS_THEME_MODE,
   UI_SIDEBAR_OPEN,
 } from '@/constants/storage-keys'
-import { useHarness } from '@/services/harness/provider'
-import { reportHarnessError } from '@/services/harness/runtime'
+import { reportProfileError, useHarness } from '@/services/harness/provider'
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
@@ -159,7 +158,7 @@ export function useUIState(): UseUIStateReturn {
         localStorage.setItem(SETTINGS_THEME, mode)
       }
 
-      void api.updateProfile({ themeMode: mode }).catch(reportHarnessError)
+      void api.updateProfile({ themeMode: mode }).catch(reportProfileError)
     },
     [api],
   )

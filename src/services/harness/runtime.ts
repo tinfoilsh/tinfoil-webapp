@@ -85,7 +85,19 @@ export class HarnessAPI {
   private profileVersion = 0
   private profileWrites: Promise<unknown> = Promise.resolve()
   private profileSource: 'cloud' | 'local' | null = null
+  // The profile as last stored, and the changes still being saved, which the
+  // view shows over it in the order they were made.
+  private storedProfile: Profile = {}
+  private unsavedProfile: Profile[] = []
   private changeTokens: ChangeTokens | undefined
+
+  private showProfile(stored: Profile, fields: Partial<View> = {}) {
+    this.storedProfile = stored
+    publish({
+      ...fields,
+      profile: Object.assign({}, stored, ...this.unsavedProfile),
+    })
+  }
 
   watchChanges() {
     let pending = false
@@ -148,12 +160,14 @@ export class HarnessAPI {
     this.contentLifetime.abort()
     this.contentLifetime = new AbortController()
     this.profileVersion++
-    publish({
-      profile: {},
-      keyReady: false,
-      keyLocked: false,
-      profileReady: false,
-    })
+    this.showProfile(
+      {},
+      {
+        keyReady: false,
+        keyLocked: false,
+        profileReady: false,
+      },
+    )
   }
   // The storage mode, which only a change of the cloud sync setting moves.
   private cloudSync = isCloudSyncEnabled()
@@ -313,7 +327,7 @@ export class HarnessAPI {
       )
       if (JSON.stringify(loadLocalProfile()) !== sent) return
       const saved = saveLocalProfile(upgraded.profile, true)
-      if (version === this.profileVersion) publish({ profile: saved })
+      if (version === this.profileVersion) this.showProfile(saved)
     }
     localStorage.setItem(USER_PREFS_LOCAL_PROFILE_UPGRADED, 'true')
   }
@@ -322,8 +336,7 @@ export class HarnessAPI {
     if (!this.cloud) {
       this.profileSource = 'local'
       const profile = loadLocalProfile()
-      publish({
-        profile,
+      this.showProfile(profile, {
         keyReady: !this.userId,
         keyLocked: false,
         profileReady: true,
@@ -350,8 +363,7 @@ export class HarnessAPI {
           localStorage.removeItem(USER_PREFS_PENDING_PROFILE_MERGE)
         }
         this.profileSource = 'cloud'
-        publish({
-          profile,
+        this.showProfile(profile, {
           keyReady: true,
           keyLocked: false,
           profileReady: true,
@@ -362,19 +374,21 @@ export class HarnessAPI {
       this.lifetime.signal.throwIfAborted()
       if (version !== this.profileVersion) return
       if (background) throw cause
-      publish({
-        profile: {},
-        keyReady: false,
-        keyLocked:
-          cause instanceof HarnessError &&
-          (cause.code === ERROR_CODES.keyRequired ||
-            cause.code === ERROR_CODES.keyMismatch),
-        profileReady: false,
-        error:
-          cause instanceof Error
-            ? cause.message
-            : 'Unable to unlock your chats.',
-      })
+      this.showProfile(
+        {},
+        {
+          keyReady: false,
+          keyLocked:
+            cause instanceof HarnessError &&
+            (cause.code === ERROR_CODES.keyRequired ||
+              cause.code === ERROR_CODES.keyMismatch),
+          profileReady: false,
+          error:
+            cause instanceof Error
+              ? cause.message
+              : 'Unable to unlock your chats.',
+        },
+      )
     }
   }
   // Cloud sync was turned on or off. Turning it off keeps the settings the
@@ -406,18 +420,32 @@ export class HarnessAPI {
     this.invalidateKey()
     return this.refreshProfile()
   }
+  // A change shows at once. Once saved the view shows the profile the
+  // harness stored under any later changes still being saved; a refused
+  // change is taken back.
   updateProfile(
     change: Profile | ((current: Profile) => Profile),
   ): Promise<Profile> {
     const cloud = this.cloud
     const signal = this.signal({ keyless: !cloud })
+    const shown = typeof change === 'function' ? change(view.profile) : change
+    if (!signal.aborted) {
+      if (!this.unsavedProfile.length) this.storedProfile = view.profile
+      this.unsavedProfile.push(shown)
+      this.showProfile(this.storedProfile)
+    }
+    const settle = () => {
+      this.unsavedProfile = this.unsavedProfile.filter(
+        (unsaved) => unsaved !== shown,
+      )
+    }
     const update = this.profileWrites
       .catch(() => {})
       .then(async () => {
         signal.throwIfAborted()
         const version = ++this.profileVersion
         const patch =
-          typeof change === 'function' ? change(view.profile) : change
+          typeof change === 'function' ? change(this.storedProfile) : change
         const profile = cloud
           ? await this.post<Profile>(
               ROUTES.profileUpdate,
@@ -426,8 +454,19 @@ export class HarnessAPI {
             )
           : saveLocalProfile(patch)
         signal.throwIfAborted()
-        if (version === this.profileVersion) publish({ profile })
+        settle()
+        // A profile read since this change began answers for it later.
+        this.showProfile(
+          version === this.profileVersion
+            ? profile
+            : { ...this.storedProfile, ...patch },
+        )
         return profile
+      })
+      .catch((cause) => {
+        settle()
+        if (!this.lifetime.signal.aborted) this.showProfile(this.storedProfile)
+        throw cause
       })
     this.profileWrites = update
     return update

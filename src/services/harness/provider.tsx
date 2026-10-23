@@ -1,11 +1,13 @@
 import { LogoLoading } from '@/components/ui/logo-loading'
 import { AUTH_ACTIVE_USER_CHANGED_EVENT } from '@/constants/auth-events'
+import { toast } from '@/hooks/use-toast'
 import { authTokenManager, AuthTokenUnavailableError } from '@/services/auth'
 import {
   ENCRYPTION_KEY_CHANGED_EVENT,
   encryptionService,
 } from '@/services/encryption/encryption-service'
 import { enableCloudSyncForExistingKey } from '@/utils/cloud-sync-settings'
+import { logError } from '@/utils/error-handling'
 import { useAuth } from '@clerk/react'
 import {
   createContext,
@@ -162,6 +164,20 @@ export function useSessionFeature(
     () => whileLoading,
   )
 }
+// A setting the harness did not save returns to its saved value, and the
+// user is told.
+export function reportProfileError(cause: unknown) {
+  if (cause instanceof DOMException && cause.name === 'AbortError') return
+  logError('Failed to save settings', cause, {
+    component: 'HarnessProvider',
+    action: 'updateProfile',
+  })
+  toast({
+    title: 'Failed to save settings',
+    description: 'Please try again.',
+    variant: 'destructive',
+  })
+}
 export function useProfileSetting<T>(
   field: string,
   fallback: T,
@@ -170,7 +186,7 @@ export function useProfileSetting<T>(
   return [
     profile[field] ?? fallback,
     (value) => {
-      void api.updateProfile({ [field]: value }).catch(reportHarnessError)
+      void api.updateProfile({ [field]: value }).catch(reportProfileError)
     },
   ]
 }

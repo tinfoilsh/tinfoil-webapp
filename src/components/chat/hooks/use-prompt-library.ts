@@ -1,5 +1,4 @@
-import { useHarness } from '@/services/harness/provider'
-import { reportHarnessError } from '@/services/harness/runtime'
+import { reportProfileError, useHarness } from '@/services/harness/provider'
 import {
   TfCode2,
   TfLightbulb,
@@ -78,7 +77,7 @@ export function usePromptLibrary() {
       .updateProfile((current) => ({
         customPromptPresets: change(current.customPromptPresets ?? []),
       }))
-      .catch(reportHarnessError)
+      .catch(reportProfileError)
   }
   const createUserPreset = (
     input: Pick<UserPromptPreset, 'name' | 'description' | 'systemPrompt'> &
@@ -131,7 +130,7 @@ export function usePromptLibrary() {
             ? { defaultPromptPresetId: '' }
             : {}),
         }))
-        .catch(reportHarnessError)
+        .catch(reportProfileError)
     },
     duplicatePreset: (id: string) => {
       const p = allPresets.find((p) => p.id === id)
@@ -154,7 +153,7 @@ export function usePromptLibrary() {
             ? { favoritePromptPresetIds: [...ids, id] }
             : {}
         })
-        .catch(reportHarnessError)
+        .catch(reportProfileError)
     },
     defaultPresetId,
     defaultPreset: getPresetById(defaultPresetId),
@@ -163,7 +162,7 @@ export function usePromptLibrary() {
     setDefaultPreset: (id: string | null) => {
       void api
         .updateProfile({ defaultPromptPresetId: id ?? '' })
-        .catch(reportHarnessError)
+        .catch(reportProfileError)
     },
   }
 }
