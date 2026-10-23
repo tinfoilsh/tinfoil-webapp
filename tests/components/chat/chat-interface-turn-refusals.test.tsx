@@ -216,7 +216,7 @@ describe('a turn the harness refuses', () => {
     [
       'a connection lost once the harness queued it',
       new TypeError('Failed to fetch'),
-      'Connection problem',
+      'Connection problemCheck your internet connection, then resend your message. Your message was not lost.',
       true,
     ],
   ])(
