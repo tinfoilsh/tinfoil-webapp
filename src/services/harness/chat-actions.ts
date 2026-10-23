@@ -2,6 +2,7 @@ import type { ChatList } from './chat-list'
 import { localSummary, type LocalThreadStore } from './local-threads'
 import type { OpenChat, OpenChatResult } from './open-chat'
 import { ROUTES } from './protocol'
+import { afterLoaded } from './reducer'
 import type { RunController } from './run-controller'
 import type { HarnessAPI } from './runtime'
 import type { Store } from './store'
@@ -14,7 +15,33 @@ import {
   transferInFlight,
   type DeviceChatCopy,
 } from './transfer'
-import type { Thread, ThreadSummary } from './types'
+import type { Message, Thread, ThreadSummary, TimelineBlock } from './types'
+
+// The id of the block holding a reply's rewritten text when it had none.
+const EDITED_CONTENT_ID = 'edited-content'
+
+// A reply with its text rewritten, as the harness rewrites it: its content
+// blocks collapse into one holding the text, where the first was.
+function rewrittenReply(message: Message, text: string): Message {
+  const timeline = message.timeline ?? []
+  const first = timeline.findIndex((block) => block.type === 'content')
+  const edited: TimelineBlock = {
+    id: first < 0 ? EDITED_CONTENT_ID : timeline[first].id,
+    type: 'content',
+    content: text,
+  }
+  const blocks = timeline.flatMap((block, index) => [
+    ...(index === first && text ? [edited] : []),
+    ...(block.type === 'content' ? [] : [block]),
+  ])
+  if (first < 0 && text) blocks.push(edited)
+  const { timeline: _timeline, ...rest } = message
+  return {
+    ...rest,
+    content: text,
+    ...(blocks.length ? { timeline: blocks } : {}),
+  }
+}
 
 export interface ChatContext {
   api: HarnessAPI
@@ -83,7 +110,8 @@ export function chatActions({
     }
   }
   // Message actions change one message of the open chat, and show the
-  // chat as its store answers.
+  // chat as its store answers, after the earlier messages the view loaded
+  // with the same change.
   async function changeMessage(
     index: number,
     change: (
@@ -91,6 +119,7 @@ export function chatActions({
       threadId: string,
       messageId: string,
     ) => Promise<Thread | null>,
+    changeLoaded: (messages: Message[], messageId: string) => Message[],
   ) {
     const threadId = open.get().id
     const messageId = controller.view.get().messages[index]?.id
@@ -107,8 +136,11 @@ export function chatActions({
     } = thread
     controller.view.update((state) => ({
       ...state,
-      messages,
-      hasOlder,
+      ...afterLoaded(
+        { ...state, messages: changeLoaded(state.messages, messageId) },
+        messages,
+        hasOlder,
+      ),
       snapshot: { ...state.snapshot, thread: summary },
     }))
   }
@@ -191,16 +223,28 @@ export function chatActions({
     // chat keeps its last message.
     deleteMessage(index: number) {
       if (controller.view.get().messages.length <= 1) return Promise.resolve()
-      return changeMessage(index, (store, threadId, messageId) =>
-        store.deleteMessage(threadId, messageId),
+      return changeMessage(
+        index,
+        (store, threadId, messageId) =>
+          store.deleteMessage(threadId, messageId),
+        (messages, messageId) =>
+          messages.filter((message) => message.id !== messageId),
       )
     },
     // Rewrites a reply's text in place; later messages stay.
     editReply(index: number, content: string) {
       if (controller.view.get().messages[index]?.role !== 'assistant')
         return Promise.resolve()
-      return changeMessage(index, (store, threadId, messageId) =>
-        store.editReply(threadId, messageId, content),
+      return changeMessage(
+        index,
+        (store, threadId, messageId) =>
+          store.editReply(threadId, messageId, content),
+        (messages, messageId) =>
+          messages.map((message) =>
+            message.id === messageId
+              ? rewrittenReply(message, content)
+              : message,
+          ),
       )
     },
     share: (threadId: string) => storeOf(threadId).share(threadId),

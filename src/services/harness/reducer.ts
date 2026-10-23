@@ -202,6 +202,23 @@ function sealOf(messages: Message[], id: string): Record<string, number> {
   }
 }
 
+// A window of the chat's latest messages, after the earlier messages the
+// view loaded before the window's first.
+export function afterLoaded(
+  view: Pick<ChatState, 'messages' | 'hasOlder'>,
+  messages: Message[],
+  hasOlder: boolean,
+): Pick<ChatState, 'messages' | 'hasOlder'> {
+  const start = view.messages.findIndex(
+    (message) => message.id === messages[0]?.id,
+  )
+  if (start <= 0) return { messages, hasOlder }
+  return {
+    messages: [...view.messages.slice(0, start), ...messages],
+    hasOlder: view.hasOlder,
+  }
+}
+
 const withoutQueued = (snapshot: Snapshot, runId?: string): Snapshot => ({
   ...snapshot,
   queue: snapshot.queue.filter((item) => item.queueId !== runId),
@@ -296,13 +313,14 @@ export function reduceEvent(
         : { ...next, snapshot }
     }
     case 'MESSAGES_SNAPSHOT': {
-      const messages = event.messages
+      const shown = afterLoaded(next, event.messages, event.hasOlder ?? false)
       return {
         ...next,
-        messages,
-        hasOlder: event.hasOlder ?? false,
+        ...shown,
         // The window holds the continued reply as the harness stored it.
-        ...(next.continued ? { sealed: sealOf(messages, next.continued) } : {}),
+        ...(next.continued
+          ? { sealed: sealOf(shown.messages, next.continued) }
+          : {}),
       }
     }
     case 'TEXT_MESSAGE_CHUNK':
