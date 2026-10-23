@@ -200,12 +200,13 @@ it('shows the loader without contacting services until Clerk loads', async () =>
 
 it('opens a shared chat as a visitor before Clerk loads, and keeps that session until the page is left', async () => {
   auth.isLoaded = false
-  const shared = (
+  // A new element each time, so a rerender reads the auth state again.
+  const shared = () => (
     <HarnessProvider anonymous>
       <SessionStatus />
     </HarnessProvider>
   )
-  const view = render(shared)
+  const view = render(shared())
   await waitFor(() =>
     expect(
       screen.getByText('Anonymous chat ready with 9 requests'),
@@ -224,7 +225,7 @@ it('opens a shared chat as a visitor before Clerk loads, and keeps that session 
   auth.isLoaded = true
   auth.userId = 'alice'
   auth.getToken.mockResolvedValue('alice-jwt')
-  view.rerender(shared)
+  view.rerender(shared())
   await act(async () => {})
 
   expect(

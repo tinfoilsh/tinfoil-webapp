@@ -83,7 +83,7 @@ describe('the chat service around pages', () => {
     },
     {
       pathname: '/[...slug]',
-      slug: undefined,
+      slug: ['share', 's1'],
       isReady: false,
       anonymous: 'false',
     },
