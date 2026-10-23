@@ -11,7 +11,14 @@ import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
 import type { Frame, Turn } from '@/services/harness/types'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
 import {
@@ -402,7 +409,7 @@ it('clears a failed preparation and retries it without duplicating the message',
   )
 })
 
-it('shows the chat loading shell while the key is locked and until history arrives', async () => {
+it('shows a chat the locked key keeps closed as unavailable, then loads it once unlocked', async () => {
   const api = signIn({ cloud: true, locked: true })
   const history = gate()
   const thread = {
@@ -434,15 +441,21 @@ it('shows the chat loading shell while the key is locked and until history arriv
   expect(
     await screen.findByRole('heading', { name: 'Unlock chat history' }),
   ).toBeVisible()
-  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-    'Loading chat',
-  )
+  const header = within(screen.getByRole('banner'))
+  expect(header.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
+  expect(header.queryByText('Loading chat')).not.toBeInTheDocument()
+  const composer = document.querySelector('[data-chat-input-area]')!
+  expect(composer).not.toHaveAttribute('aria-busy')
   expect(screen.getByRole('textbox', { name: /message/i })).toBeDisabled()
   vi.spyOn(api, 'key').mockReturnValue(KEY)
   await act(async () => publish({ keyReady: true }))
   expect(
     screen.getByRole('status', { name: 'Loading chat history' }),
   ).toBeVisible()
+  expect(header.getByRole('heading', { level: 1 })).toHaveTextContent(
+    'Loading chat',
+  )
+  expect(composer).toHaveAttribute('aria-busy', 'true')
   await act(async () => history.resolve())
   expect(screen.getByRole('article', { name: 'You said' })).toHaveTextContent(
     'Saved question',

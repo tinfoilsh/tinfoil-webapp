@@ -1628,6 +1628,7 @@ export function ChatInterface({
 
   const showChatHeader =
     currentChat.messages.length > 0 || isChatHydrating || !!historyProblem
+  const showChatLoading = isChatHydrating && !historyProblem
   // A chat whose history could not open explains why in its place.
   const streamErrorBanner = streamError && !historyProblem && (
     <StreamErrorBanner
@@ -2370,8 +2371,8 @@ export function ChatInterface({
               <ChatHeader
                 chat={currentChat}
                 isStreaming={isStreaming}
-                isLoading={isChatHydrating}
-                isUnavailable={!!historyProblem && !isChatHydrating}
+                isLoading={showChatLoading}
+                isUnavailable={!!historyProblem}
                 actions={topControls}
                 leadingAction={sidebarToggle}
                 notice={
@@ -2551,7 +2552,7 @@ export function ChatInterface({
                   ref={inputAreaRef}
                   data-chat-input-area
                   disabled={isChatHydrating || !!historyProblem}
-                  aria-busy={isForking || isChatHydrating || undefined}
+                  aria-busy={isForking || showChatLoading || undefined}
                   className={cn(
                     'pointer-events-none absolute inset-x-0 bottom-0 isolate z-20 min-w-0 px-4 pb-4',
                     // The fork overlay only covers the transcript; the
