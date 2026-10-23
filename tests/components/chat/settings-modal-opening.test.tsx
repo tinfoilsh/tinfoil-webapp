@@ -466,6 +466,60 @@ describe('settings opening', () => {
   })
 })
 
+describe('settings while the key is refused', () => {
+  const EXPLANATION =
+    'Unlock your encryption key in Cloud Sync to change these settings.'
+
+  beforeEach(() => {
+    authState.isSignedIn = true
+    toasts.mockReset()
+  })
+
+  it('shows the settings it kept as unavailable and keeps Cloud Sync usable', () => {
+    signIn({
+      cloud: true,
+      locked: true,
+      profile: { pixelateSidebarChatTitlesEnabled: true, nickname: 'Sam' },
+    })
+    const onCloudSyncSetupClick = vi.fn()
+    render(
+      <Harness
+        initialTab="general"
+        isSignedIn
+        isClient
+        encryptionKey={`key_${'ab'.repeat(32)}`}
+        onCloudSyncSetupClick={onCloudSyncSetupClick}
+      />,
+    )
+    const redact = screen.getByRole('checkbox', {
+      name: 'Redact sidebar chat titles',
+    })
+    expect(redact).toBeChecked()
+    expect(redact).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Dark' })).toBeDisabled()
+    expect(screen.getByText(EXPLANATION)).toBeVisible()
+
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Personalization' })[0],
+    )
+    expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Sam')
+    expect(screen.getByPlaceholderText('Nickname')).toBeDisabled()
+    expect(screen.getByText(EXPLANATION)).toBeVisible()
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Cloud Sync (needs attention)',
+      })[0],
+    )
+    expect(screen.queryByText(EXPLANATION)).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('checkbox', { name: 'Encrypted Cloud Sync' }),
+    ).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Recover Key' }))
+    expect(onCloudSyncSetupClick).toHaveBeenCalledOnce()
+  })
+})
+
 describe('settings prompts', () => {
   beforeEach(() => {
     authState.isSignedIn = false

@@ -135,6 +135,14 @@ const MAX_LISTED_IMPORT_WARNINGS = 3
 // The part of a file's share of the progress bar that its cloud job fills
 // while it is processed before the next file is uploaded.
 const IMPORT_PROCESSING_SHARE = 0.5
+// The tabs of settings the profile holds, which the chat service cannot
+// save while the account's key is refused.
+const PROFILE_SETTINGS_TABS: readonly SettingsTab[] = [
+  'general',
+  'chat',
+  'personalization',
+  'prompts',
+]
 
 interface ImportResult {
   jobId?: string
@@ -895,6 +903,7 @@ export function SettingsModal({
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     initialTab ?? 'account',
   )
+  const profileLocked = keyLocked && PROFILE_SETTINGS_TABS.includes(activeTab)
 
   // Update active tab when initialTab prop changes (e.g., opening to a specific tab)
   useEffect(() => {
@@ -2106,7 +2115,16 @@ ${encryptionKey.replace('key_', '')}
           {/* Content */}
           <div className="relative flex-1 overflow-y-auto p-6">
             <TextureGrid />
-            <div className="relative z-10 space-y-6">
+            {profileLocked && (
+              <p className="relative z-10 mb-6 rounded-lg border border-orange-500/30 bg-orange-500/10 p-4 font-aeonik-fono text-xs text-content-secondary">
+                Unlock your encryption key in Cloud Sync to change these
+                settings.
+              </p>
+            )}
+            <fieldset
+              disabled={profileLocked}
+              className="relative z-10 min-w-0 space-y-6 disabled:opacity-60"
+            >
               {/* General Tab */}
               {activeTab === 'general' && (
                 <>
@@ -4383,7 +4401,7 @@ ${encryptionKey.replace('key_', '')}
                   </div>
                 </>
               )}
-            </div>
+            </fieldset>
           </div>
         </div>
       </Dialog.Panel>
