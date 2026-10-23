@@ -33,6 +33,7 @@ type View = {
   // The content key is unlocked for the harness's stored chats. A signed-out
   // visitor needs no key.
   keyReady: boolean
+  keyLocked: boolean
   // The harness stores this account's chats and settings. Without cloud
   // sync, and for a signed-out visitor, both stay in the browser.
   cloud: boolean
@@ -51,6 +52,7 @@ interface ChangeTokens {
 const empty: View = {
   profile: {},
   keyReady: false,
+  keyLocked: false,
   profileReady: false,
   cloud: false,
 }
@@ -146,7 +148,12 @@ export class HarnessAPI {
     this.contentLifetime.abort()
     this.contentLifetime = new AbortController()
     this.profileVersion++
-    publish({ profile: {}, keyReady: false, profileReady: false })
+    publish({
+      profile: {},
+      keyReady: false,
+      keyLocked: false,
+      profileReady: false,
+    })
   }
   // The storage mode, which only a change of the cloud sync setting moves.
   private cloudSync = isCloudSyncEnabled()
@@ -318,12 +325,14 @@ export class HarnessAPI {
       publish({
         profile,
         keyReady: !this.userId,
+        keyLocked: false,
         profileReady: true,
         error: undefined,
       })
       await this.upgradeLocalProfile(profile, version).catch(reportHarnessError)
       return
     }
+    if (!background) publish({ keyLocked: false, error: undefined })
     try {
       const local =
         localStorage.getItem(USER_PREFS_PENDING_PROFILE_MERGE) === this.userId
@@ -344,6 +353,7 @@ export class HarnessAPI {
         publish({
           profile,
           keyReady: true,
+          keyLocked: false,
           profileReady: true,
           error: undefined,
         })
@@ -355,6 +365,10 @@ export class HarnessAPI {
       publish({
         profile: {},
         keyReady: false,
+        keyLocked:
+          cause instanceof HarnessError &&
+          (cause.code === ERROR_CODES.keyRequired ||
+            cause.code === ERROR_CODES.keyMismatch),
         profileReady: false,
         error:
           cause instanceof Error

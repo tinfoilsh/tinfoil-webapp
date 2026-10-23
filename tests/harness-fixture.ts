@@ -140,6 +140,7 @@ export function signIn({
     session,
     profile,
     keyReady: unlocked || !userId,
+    keyLocked: cloud && !unlocked,
     profileReady: true,
   })
   return api

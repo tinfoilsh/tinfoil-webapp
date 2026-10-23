@@ -1,3 +1,4 @@
+import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -14,6 +15,77 @@ function gate() {
   })
   return { promise, resolve }
 }
+
+it('keeps the run receipt when an early stop is refused, so reopening rejoins it', async () => {
+  signIn()
+  const accepted = gate()
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/cancel')
+      throw new HarnessError(
+        { code: 'UPSTREAM_REFUSED', message: 'Stop unavailable' },
+        503,
+      )
+    throw new Error(`Unexpected ${path}`)
+  })
+  client.events.mockImplementation(async function* (
+    path: string,
+    turn: Turn,
+  ): AsyncGenerator<Frame> {
+    if (path === '/v1/threads/turn') await accepted.promise
+    yield {
+      id: 0,
+      event: {
+        type: 'RUN_STARTED',
+        threadId: turn.threadId!,
+        runId: 'recoverable',
+      },
+    }
+    yield {
+      id: 1,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'reply',
+        delta: 'Recovered answer',
+      },
+    }
+    yield {
+      id: 2,
+      event: {
+        type: 'RUN_FINISHED',
+        threadId: turn.threadId!,
+        runId: 'recoverable',
+      },
+    }
+  })
+  const first = renderHook(() => useThread())
+  let sending: Promise<unknown> | undefined
+  act(() => {
+    sending = first.result.current.send({ content: 'Question to keep' })
+  })
+  await waitFor(() => expect(client.events).toHaveBeenCalledTimes(1))
+  const threadId = first.result.current.chat.id
+  await act(() => first.result.current.cancel())
+  await act(async () => {
+    accepted.resolve()
+    await sending
+  })
+  expect(first.result.current.error).toBe('Stop unavailable')
+  expect(JSON.parse(sessionStorage.getItem('harness-run:alice')!)).toEqual({
+    threadId,
+    runId: 'recoverable',
+  })
+  first.unmount()
+  const second = renderHook(() => useThread(threadId, null, { local: true }))
+  await waitFor(() =>
+    expect(second.result.current.chat.messages.at(-1)?.content).toBe(
+      'Recovered answer',
+    ),
+  )
+  expect(client.events.mock.calls[1].slice(0, 2)).toEqual([
+    '/v1/threads/follow',
+    { threadId, runId: 'recoverable' },
+  ])
+})
 
 it('cancels a deleted background chat without stopping the open submission', async () => {
   signIn()

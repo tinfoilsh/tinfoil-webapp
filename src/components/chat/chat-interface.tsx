@@ -182,6 +182,7 @@ export function ChatInterface({
     session,
     profile,
     keyReady,
+    keyLocked,
     profileReady,
     error: sessionError,
     // The harness stores chats only for a signed-in account with cloud
@@ -277,13 +278,20 @@ export function ChatInterface({
   const historyProblem: ChatHistoryProblem | null =
     initialChatId && !isLocalChatUrl && isAuthLoaded && !isSignedIn
       ? 'sign-in'
-      : (initialChatId && !isLocalChatUrl && !keyReady) ||
+      : (initialChatId &&
+            !isLocalChatUrl &&
+            !keyReady &&
+            (keyLocked || !cloudSyncEnabled)) ||
           (thread.loadFailed &&
             thread.errorDetail?.code === ERROR_CODES.keyMismatch)
         ? 'unlock'
         : thread.notFound
           ? 'not-found'
-          : thread.loadFailed
+          : thread.loadFailed ||
+              (initialChatId &&
+                !isLocalChatUrl &&
+                !profileReady &&
+                sessionError)
             ? 'failed'
             : null
   const isTemporaryMode = thread.temporary
@@ -2140,9 +2148,14 @@ export function ChatInterface({
                     <ChatHistoryStatus
                       problem={historyProblem}
                       path={router.asPath}
-                      error={thread.error}
+                      error={
+                        thread.error ||
+                        (!profileReady ? sessionError : undefined)
+                      }
                       onRetry={() => {
-                        void thread.retryOpen()?.catch(thread.report)
+                        if (!profileReady)
+                          void api.refresh().catch(thread.report)
+                        else void thread.retryOpen()?.catch(thread.report)
                       }}
                       onUnlock={handleOpenCloudSyncSetup}
                       onNewChat={() => createNewChat()}

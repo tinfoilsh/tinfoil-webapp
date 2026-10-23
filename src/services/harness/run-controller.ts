@@ -194,6 +194,27 @@ export class RunController {
         const { event } = frame
         if ('threadId' in event && event.threadId) threadId = event.threadId
         runId = runOf(event) ?? runId
+        const base = shown ? this.view.get() : view
+        const next = reduceEvent(base, frame, runId)
+        const replayed =
+          next === base && (!isTerminal(event) || !device || device.saved)
+        // A replayed frame leaves the view as it was.
+        if (!replayed) {
+          if (next !== base) {
+            this.reportQuota(event)
+            if (event.type === 'RUN_ERROR' && shown) this.errorAt = Date.now()
+          }
+          view = next
+          if (shown) this.view.set(next)
+          if (event.type === 'RUN_STARTED') {
+            this.started(event.runId, threadId!, device, shown)
+            if (shown)
+              this.hooks.started?.({
+                threadId: event.threadId,
+                runId: event.runId,
+              })
+          }
+        }
         if (options.submission?.cancelled && runId) {
           await this.api.post(
             ROUTES.cancel,
@@ -206,30 +227,9 @@ export class RunController {
           )
           options.submission.cancelled = false
         }
-        const base = shown ? this.view.get() : view
-        const next = reduceEvent(base, frame, runId)
-        if (next === base && (!isTerminal(event) || !device || device.saved)) {
-          if (event.type === 'RUN_FINISHED')
-            succeeded = event.metadata?.cancelled !== true
-          continue
-        }
-        // A replayed frame leaves the view as it was.
-        if (next !== base) {
-          this.reportQuota(event)
-          if (event.type === 'RUN_ERROR' && shown) this.errorAt = Date.now()
-        }
-        view = next
-        if (shown) this.view.set(next)
         if (event.type === 'RUN_FINISHED')
           succeeded = event.metadata?.cancelled !== true
-        if (event.type === 'RUN_STARTED') {
-          this.started(event.runId, threadId!, device, shown)
-          if (shown)
-            this.hooks.started?.({
-              threadId: event.threadId,
-              runId: event.runId,
-            })
-        }
+        if (replayed) continue
         if (
           device &&
           event.type === 'STATE_DELTA' &&

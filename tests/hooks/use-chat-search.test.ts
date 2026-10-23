@@ -63,7 +63,7 @@ describe('useChatSearch', () => {
     search
       .mockResolvedValueOnce(page(['partial'], { indexing: true }))
       .mockResolvedValueOnce(page(['partial', 'newly-indexed']))
-    const { result, unmount } = renderHook(() => useChatSearch('duck', true))
+    const { result } = renderHook(() => useChatSearch('duck', true))
     await flushDebounce()
     expect(result.current.results.map((thread) => thread.id)).toEqual([
       'partial',
@@ -81,9 +81,19 @@ describe('useChatSearch', () => {
       { key: ACCOUNT_KEY_B64, query: 'duck', limit: 20 },
       { key: ACCOUNT_KEY_B64, query: 'duck', limit: 20 },
     ])
-    unmount()
     await vi.runAllTimersAsync()
     expect(search).toHaveBeenCalledTimes(2)
+  })
+
+  it('cancels a scheduled index refresh when the search unmounts', async () => {
+    search.mockResolvedValue(page(['partial'], { indexing: true }))
+    const { result, unmount } = renderHook(() => useChatSearch('duck', true))
+    await flushDebounce()
+    expect(result.current.isIndexing).toBe(true)
+    expect(search).toHaveBeenCalledTimes(1)
+    unmount()
+    await vi.runAllTimersAsync()
+    expect(search).toHaveBeenCalledTimes(1)
   })
   it('searches the harness with the trimmed term after the debounce', async () => {
     search.mockResolvedValueOnce(page(['duck']))

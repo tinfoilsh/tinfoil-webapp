@@ -95,7 +95,11 @@ export function ProjectProvider({
       initialProjectId &&
       keyReady &&
       hasPremiumAccess &&
-      !(routeChanged && committedProjectId.current === initialProjectId)
+      !(
+        routeChanged &&
+        committedProjectId.current === initialProjectId &&
+        openProjectId.current === initialProjectId
+      )
     )
       void enterProjectMode(initialProjectId)
   }, [

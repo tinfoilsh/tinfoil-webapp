@@ -12,7 +12,7 @@ import {
   within,
 } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { client, signIn } from '../../harness-fixture'
+import { client, signIn, testSession } from '../../harness-fixture'
 import {
   resetChatStoresAroundEachTest,
   storedThread,
@@ -89,6 +89,77 @@ function view(initialChatId?: string) {
     </ProjectProvider>
   )
 }
+
+it('waits for profile loading and offers retry for a connection failure instead of asking for a key', async () => {
+  const api = signIn({ cloud: true })
+  publish({ profileReady: false, keyReady: false })
+  let reject!: (error: Error) => void
+  const pending = new Promise<unknown>((_, fail) => {
+    reject = fail
+  })
+  let profiles = 0
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/session') return testSession
+    if (path === '/v1/profile/get')
+      return ++profiles === 1 ? pending : { hasSeenOnboarding: true }
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/get')
+      return {
+        ...storedThread('saved', {
+          messages: [
+            {
+              id: 'message',
+              role: 'user',
+              content: 'Recovered history',
+              createdAt: '2026-10-22T12:00:00Z',
+            },
+          ],
+        }),
+        hasOlder: false,
+        messageCount: 1,
+      }
+    throw new Error(`Unexpected ${path}`)
+  })
+  const refreshing = api.refresh()
+  render(view('saved'))
+  await screen.findByRole('status', { name: 'Loading chat history' })
+  expect(
+    screen.queryByRole('heading', { name: 'Unlock chat history' }),
+  ).not.toBeInTheDocument()
+  await act(async () => {
+    reject(new TypeError('Profile connection failed'))
+    await refreshing
+  })
+  expect(
+    await screen.findByRole('heading', { name: "Couldn't load chat" }),
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole('heading', { name: 'Unlock chat history' }),
+  ).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByText('Recovered history')).toBeInTheDocument()
+  expect(profiles).toBe(2)
+})
+
+it('offers key recovery after the profile request actually refuses the key', async () => {
+  const api = signIn({ cloud: true })
+  publish({ profileReady: false, keyReady: false })
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/profile/get')
+      throw new HarnessError(
+        { code: 'KEY_MISMATCH', message: 'Another key is required' },
+        409,
+      )
+    throw new Error(`Unexpected ${path}`)
+  })
+  render(view('locked-chat'))
+  await act(() => api.refreshProfile())
+  expect(
+    await screen.findByRole('heading', { name: 'Unlock chat history' }),
+  ).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Unlock' })).toBeEnabled()
+})
 
 it.each(['pointer', 'focus', 'escape'])(
   'dismisses the model picker by %s',

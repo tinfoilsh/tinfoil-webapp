@@ -68,6 +68,24 @@ beforeEach(() => {
 })
 
 describe('ProjectProvider', () => {
+  it('supersedes a pending project load when returning to the committed project route', async () => {
+    const view = (id: string) => (
+      <ProjectProvider initialProjectId={id}>
+        <Projects />
+      </ProjectProvider>
+    )
+    const { rerender } = render(view('alpha'))
+    await screen.findByText('Alpha')
+    const pending = deferred<ReturnType<typeof stored>>()
+    vi.mocked(client().post).mockReturnValueOnce(pending.promise)
+    rerender(view('beta'))
+    await waitFor(() => expect(loads()).toEqual(['alpha', 'beta']))
+    rerender(view('alpha'))
+    await act(async () => pending.resolve(stored('beta')))
+    expect(screen.getByLabelText('Open project')).toHaveTextContent('Alpha')
+    expect(loads()).toEqual(['alpha', 'beta', 'alpha'])
+  })
+
   it('refreshes the visible project after navigation to another project fails', async () => {
     render(
       <ProjectProvider>
