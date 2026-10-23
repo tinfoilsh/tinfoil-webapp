@@ -16,6 +16,9 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: vi.fn() }),
 }))
 
+const IPHONE_USER_AGENT =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+
 function renderChatInput(handleSubmit = vi.fn()) {
   render(
     <ChatInput
@@ -69,5 +72,24 @@ describe('ChatInput Enter key handling', () => {
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
 
     expect(handleSubmit).not.toHaveBeenCalled()
+  })
+
+  it('inserts a new line on plain Enter on phones', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE_USER_AGENT)
+    const { handleSubmit, textarea } = renderChatInput()
+
+    const notCancelled = fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    expect(notCancelled).toBe(true)
+    expect(handleSubmit).not.toHaveBeenCalled()
+  })
+
+  it('submits on Cmd+Enter on phones', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE_USER_AGENT)
+    const { handleSubmit, textarea } = renderChatInput()
+
+    fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true })
+
+    expect(handleSubmit).toHaveBeenCalledOnce()
   })
 })
