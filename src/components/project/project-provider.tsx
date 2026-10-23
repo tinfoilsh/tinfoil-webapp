@@ -1,3 +1,4 @@
+import { UI_EXPAND_PROJECTS_ON_MOUNT } from '@/constants/storage-keys'
 import { PROJECTS_CHANGED } from '@/hooks/use-projects'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import * as projects from '@/services/harness/projects'
@@ -104,7 +105,7 @@ export function ProjectProvider({
     (id, name, options) => loadProject(id, { ...options, name }),
     [loadProject],
   )
-  const exitProjectMode = useCallback(() => {
+  const closeProject = useCallback(() => {
     generation.current++
     openProjectId.current = null
     committedProjectId.current = null
@@ -113,11 +114,17 @@ export function ProjectProvider({
     setLoadingProject(null)
     setUploadingFiles([])
   }, [])
+  // Leaving a project opens the project list in the chat sidebar.
+  const exitProjectMode = useCallback(() => {
+    if (activeProject || loadingProject)
+      sessionStorage.setItem(UI_EXPAND_PROJECTS_ON_MOUNT, 'true')
+    closeProject()
+  }, [activeProject, loadingProject, closeProject])
   useEffect(() => {
     const routeChanged = previousInitialProjectId.current !== initialProjectId
     const exited = previousInitialProjectId.current && !initialProjectId
     previousInitialProjectId.current = initialProjectId
-    if (exited) exitProjectMode()
+    if (exited) closeProject()
     if (
       initialProjectId &&
       keyReady &&
@@ -134,7 +141,7 @@ export function ProjectProvider({
     keyReady,
     hasPremiumAccess,
     enterProjectMode,
-    exitProjectMode,
+    closeProject,
   ])
   useEffect(() => {
     if (
@@ -148,19 +155,19 @@ export function ProjectProvider({
     }
   }, [projectRevision, keyReady, hasPremiumAccess, loadProject])
   useEffect(() => {
-    if (!isSubscriptionLoading && !chat_subscription_active) exitProjectMode()
-  }, [chat_subscription_active, isSubscriptionLoading, exitProjectMode])
+    if (!isSubscriptionLoading && !chat_subscription_active) closeProject()
+  }, [chat_subscription_active, isSubscriptionLoading, closeProject])
   const keyWasReady = useRef(keyReady)
   useEffect(() => {
     // A project closes once the key is lost; the route's project waits for
     // the key to arrive.
-    if (!keyReady && keyWasReady.current) exitProjectMode()
+    if (!keyReady && keyWasReady.current) closeProject()
     keyWasReady.current = keyReady
     const tracker = generation
     return () => {
       tracker.current++
     }
-  }, [keyReady, exitProjectMode])
+  }, [keyReady, closeProject])
   // Reloads a changed project, unless the user has opened another since.
   const reloadProject = async (id: string) => {
     if (openProjectId.current === id) await loadProject(id, { refresh: true })

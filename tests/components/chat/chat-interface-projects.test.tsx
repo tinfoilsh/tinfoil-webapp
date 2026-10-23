@@ -253,3 +253,20 @@ it('returns a document whose removal fails', async () => {
   })
   expect(requested('/v1/projects/get')).toHaveLength(1)
 })
+
+it('opens the project list in the chat sidebar after leaving a project', async () => {
+  render(projectView())
+  await screen.findByRole('heading', { name: project.name })
+
+  fireEvent.click(screen.getByRole('button', { name: 'Exit Project' }))
+
+  expect(
+    await screen.findByRole('button', { name: 'Projects', expanded: true }),
+  ).toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: 'Chats', expanded: false }),
+  ).toBeInTheDocument()
+  expect(
+    await screen.findByRole('link', { name: new RegExp(`^${project.name}`) }),
+  ).toBeInTheDocument()
+})
