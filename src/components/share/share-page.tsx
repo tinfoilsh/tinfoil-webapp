@@ -20,6 +20,17 @@ type LoadingState = 'loading' | 'unsupported' | 'error' | 'success'
 const V2_SHARE_FRAGMENT = /^v2:([0-9a-f]{64})$/
 const UNSUPPORTED_SHARE_LINK_MESSAGE =
   'This share link uses an unsupported format. Ask the sender to create a new link.'
+// What a shared chat renders with until the session names its models.
+const SHARED_CHAT_MODEL: BaseModel = {
+  id: '',
+  label: 'Shared chat',
+  shortLabel: 'Shared chat',
+  description: '',
+  icon: '',
+  badges: [],
+  reasoning: null,
+  deprecated: false,
+}
 
 export default function SharePage({ chatId }: { chatId?: string }) {
   const { session } = useHarness()
@@ -27,7 +38,7 @@ export default function SharePage({ chatId }: { chatId?: string }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [chatData, setChatData] = useState<SharedThread | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
-  const [model, setModel] = useState<BaseModel | null>(null)
+  const model = session?.models[0] ?? SHARED_CHAT_MODEL
 
   useEffect(() => {
     initializeRenderers()
@@ -63,6 +74,8 @@ export default function SharePage({ chatId }: { chatId?: string }) {
   }, [])
 
   useEffect(() => {
+    // A share that finishes loading after the link changed is not shown.
+    let cancelled = false
     const loadData = async () => {
       if (!chatId) {
         setErrorMessage('No chat ID provided')
@@ -83,20 +96,11 @@ export default function SharePage({ chatId }: { chatId?: string }) {
 
       try {
         const parsed = await openShare(chatId, shareKeyHex)
-        const chatModel = session?.models[0] ?? {
-          id: '',
-          label: 'Shared chat',
-          shortLabel: 'Shared chat',
-          description: '',
-          icon: '',
-          badges: [],
-          reasoning: null,
-          deprecated: false,
-        }
+        if (cancelled) return
         setChatData(parsed)
-        setModel(chatModel)
         setLoadingState('success')
       } catch (error) {
+        if (cancelled) return
         setErrorMessage(
           error instanceof HarnessError && error.code === 'THREAD_NOT_FOUND'
             ? 'This shared chat does not exist or has been deleted'
@@ -107,7 +111,10 @@ export default function SharePage({ chatId }: { chatId?: string }) {
     }
 
     loadData()
-  }, [session, chatId])
+    return () => {
+      cancelled = true
+    }
+  }, [chatId])
 
   const formatDate = (timestamp: string) => {
     return new Date(timestamp).toLocaleDateString(undefined, {
@@ -156,12 +163,7 @@ export default function SharePage({ chatId }: { chatId?: string }) {
     )
   }
 
-  if (
-    loadingState === 'error' ||
-    loadingState === 'unsupported' ||
-    !chatData ||
-    !model
-  ) {
+  if (loadingState === 'error' || loadingState === 'unsupported' || !chatData) {
     return (
       <>
         {sharePreviewHead}

@@ -1,9 +1,10 @@
 import SharePage from '@/components/share/share-page'
-import { harnessAPI } from '@/services/harness/runtime'
+import { harnessAPI, publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { SharedThread } from '@/services/harness/types'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { testSession } from '../harness-fixture'
 
 const mocks = vi.hoisted(() => ({
   shareOpen: vi.fn<(input: unknown) => Promise<SharedThread>>(),
@@ -79,6 +80,69 @@ describe('SharePage', () => {
     expect(mocks.sharedChatView).toHaveBeenLastCalledWith(
       expect.objectContaining({ chatData: thread }),
     )
+  })
+
+  it('opens a share once while the session changes, and renders with its latest models', async () => {
+    window.location.hash = `#v2:${VALID_SHARE_KEY}`
+    let open!: (thread: SharedThread) => void
+    mocks.shareOpen.mockReturnValueOnce(
+      new Promise((resolve) => {
+        open = resolve
+      }),
+    )
+    const [, first] = testSession.models
+    const second = { ...first, id: 'other-model', label: 'Other model' }
+
+    render(<SharePage chatId="chat-id" />)
+    act(() => publish({ session: { ...testSession, models: [first] } }))
+    await act(async () => open(thread))
+    expect(await screen.findByText('Rendered shared chat')).toBeInTheDocument()
+    expect(mocks.sharedChatView).toHaveBeenLastCalledWith(
+      expect.objectContaining({ chatData: thread, model: first }),
+    )
+
+    act(() => publish({ session: { ...testSession, models: [second] } }))
+
+    expect(mocks.sharedChatView).toHaveBeenLastCalledWith(
+      expect.objectContaining({ chatData: thread, model: second }),
+    )
+    expect(mocks.shareOpen).toHaveBeenCalledExactlyOnceWith({
+      shareId: 'chat-id',
+      fragment: `v2:${VALID_SHARE_KEY}`,
+    })
+  })
+
+  it('ignores a share that fails after its link changed', async () => {
+    window.location.hash = `#v2:${VALID_SHARE_KEY}`
+    let fail!: (error: Error) => void
+    mocks.shareOpen
+      .mockReturnValueOnce(
+        new Promise((_, reject) => {
+          fail = reject
+        }),
+      )
+      .mockResolvedValueOnce(thread)
+
+    const view = render(<SharePage chatId="first-chat" />)
+    view.rerender(<SharePage chatId="second-chat" />)
+    expect(await screen.findByText('Rendered shared chat')).toBeInTheDocument()
+    await act(async () =>
+      fail(
+        new HarnessError(
+          { code: 'THREAD_NOT_FOUND', message: 'Not found' },
+          404,
+        ),
+      ),
+    )
+
+    expect(screen.getByText('Rendered shared chat')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Invalid Share Link' }),
+    ).toBeNull()
+    expect(mocks.shareOpen.mock.calls).toEqual([
+      [{ shareId: 'first-chat', fragment: `v2:${VALID_SHARE_KEY}` }],
+      [{ shareId: 'second-chat', fragment: `v2:${VALID_SHARE_KEY}` }],
+    ])
   })
 
   it.each([
