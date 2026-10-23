@@ -624,3 +624,66 @@ it('says project mode ended when the page leaves a loading project with a file w
   )
   expect(client.upload).not.toHaveBeenCalled()
 })
+
+// The paths requested after the first request to `path`.
+const requestedAfter = (path: string) => {
+  const paths = client.post.mock.calls.map(([called]) => called as string)
+  const index = paths.indexOf(path)
+  expect(index).toBeGreaterThanOrEqual(0)
+  return paths.slice(index + 1)
+}
+
+it('confirms a chat moved out of its project and lists the project without it', async () => {
+  routes['/v1/threads/update'] = (input) => ({ ...projectChat, ...input })
+  render(projectView())
+  await screen.findByRole('link', { name: projectChat.title })
+  routes['/v1/threads/list'] = (input) =>
+    listPage(
+      input.projectId ? [] : [mainChat, { ...projectChat, projectId: null }],
+    )
+
+  fireEvent.click(screen.getByRole('button', { name: 'More chat options' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Move out of project' }))
+
+  await waitFor(() =>
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Chat removed from project',
+      description: 'The chat is now in your main chat list.',
+    }),
+  )
+  expect(requested('/v1/threads/update')).toEqual([
+    { key: KEY, id: projectChat.id, projectId: null },
+  ])
+  expect(requestedAfter('/v1/threads/update')).toContain('/v1/threads/list')
+  expect(
+    await screen.findByText('No chats in this project yet.'),
+  ).toBeInTheDocument()
+})
+
+it('reports a chat dropped out of its project that stays in it', async () => {
+  routes['/v1/threads/update'] = () => {
+    throw new Error('Sync is unavailable')
+  }
+  const { rerender } = render(projectView())
+  await screen.findByRole('link', { name: projectChat.title })
+  const drag = dragOntoExitProject(projectChat.title)
+  rerender(routeView({}))
+  const chats = await screen.findByRole('button', { name: 'Chats' })
+  fireEvent.dragEnter(chats, { dataTransfer: drag })
+
+  await act(async () => {
+    fireEvent.drop(chats, { dataTransfer: drag })
+  })
+
+  await waitFor(() =>
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Failed to remove chat',
+      description: 'Please try again.',
+      variant: 'destructive',
+    }),
+  )
+  expect(requested('/v1/threads/update')).toEqual([
+    { key: KEY, id: projectChat.id, projectId: null },
+  ])
+  expect(requestedAfter('/v1/threads/update')).toContain('/v1/threads/list')
+})

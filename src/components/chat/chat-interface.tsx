@@ -791,8 +791,30 @@ export function ChatInterface({
       })
     }
   }
-  const handleRemoveChatFromProject = (id: string) =>
-    thread.update(id, { projectId: null }).then(reloadChats)
+  // Settles either way, so a drop that removes the chat can end its drag.
+  const handleRemoveChatFromProject = async (id: string) => {
+    try {
+      await thread.update(id, { projectId: null })
+      await reloadChats()
+      toast({
+        title: 'Chat removed from project',
+        description: 'The chat is now in your main chat list.',
+      })
+    } catch (error) {
+      if (isAbort(error)) return
+      logError('Failed to remove chat from project', error, {
+        component: 'ChatInterface',
+        action: 'handleRemoveChatFromProject',
+        metadata: { chatId: id },
+      })
+      await reloadChats().catch(thread.report)
+      toast({
+        title: 'Failed to remove chat',
+        description: 'Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }
   const handleDeleteProjectChats = async () => {
     if (!activeProject) return
     await thread.removeProjectChats(activeProject.id)
