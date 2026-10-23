@@ -719,3 +719,63 @@ it('lists the 20 most recently pinned favorites, newest first', async () => {
   await act(async () => pin.resolve({ ...unpinned, pinned: true }))
   expect(favorites()).toEqual(expected.map((n) => `/chat/${name(n)}`))
 })
+
+it('renames a chat on this device at once, before the harness answers', async () => {
+  signIn()
+  const kept = storedThread('kept-chat', {
+    title: 'Kept chat',
+    titleState: 'generated',
+    messages: [
+      {
+        id: 'kept-message',
+        role: 'user',
+        createdAt: '2026-10-22T12:00:00Z',
+        content: 'Kept on this device',
+      },
+    ],
+  })
+  await localThreadStore('device').add(kept)
+  const answer = deferred<unknown>()
+  const updates: unknown[] = []
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/threads/update') {
+      updates.push(input)
+      return answer.promise
+    }
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  render(<ChatInterface suppressIntroModals />)
+  const listed = (await row('Kept chat')).closest(
+    '[role="listitem"]',
+  ) as HTMLElement
+  fireEvent.click(within(listed).getByRole('button', { name: 'Rename chat' }))
+  const field = screen.getByRole('textbox', { name: 'Chat title' })
+  fireEvent.change(field, { target: { value: 'Renamed on device' } })
+  fireEvent.submit(field.closest('form')!)
+
+  expect(
+    screen.getByRole('link', { name: /^Renamed on device/ }),
+  ).toHaveAttribute('href', '/chat/local/kept-chat')
+  await waitFor(() =>
+    expect(updates).toEqual([
+      expect.objectContaining({
+        id: kept.id,
+        title: 'Renamed on device',
+        local: true,
+      }),
+    ]),
+  )
+  await act(async () =>
+    answer.resolve({
+      thread: { ...kept, title: 'Renamed on device', titleState: 'manual' },
+    }),
+  )
+  await waitFor(async () =>
+    expect((await localThreadStore('device').get(kept.id))?.title).toBe(
+      'Renamed on device',
+    ),
+  )
+  expect(
+    screen.getByRole('link', { name: /^Renamed on device/ }),
+  ).toHaveAttribute('href', '/chat/local/kept-chat')
+})
