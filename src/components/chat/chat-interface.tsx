@@ -518,7 +518,8 @@ export function ChatInterface({
     // The sidebar switches a blank chat to its tab's storage without moving
     // the page, which may still be opening a chat from its URL.
     if (!fromUserAction) return
-    void router.push(
+    // As selecting a chat does, starting one adds nothing to history.
+    void router.replace(
       activeProject ? `/project/${activeProject.id}` : '/',
       undefined,
       { shallow: true },

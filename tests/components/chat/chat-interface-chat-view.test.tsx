@@ -448,11 +448,12 @@ it.each([
 
     fireEvent.click(status.getByRole('button', { name: 'Start new chat' }))
 
-    expect(chatPage.router.push).toHaveBeenCalledExactlyOnceWith(
+    expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
       '/',
       undefined,
       { shallow: true },
     )
+    expect(chatPage.router.push).not.toHaveBeenCalled()
   },
 )
 
@@ -482,9 +483,12 @@ it('explains a chat that failed to load once and offers a new chat', async () =>
 
   fireEvent.click(status.getByRole('button', { name: 'Start new chat' }))
 
-  expect(chatPage.router.push).toHaveBeenCalledExactlyOnceWith('/', undefined, {
-    shallow: true,
-  })
+  expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
+    '/',
+    undefined,
+    { shallow: true },
+  )
+  expect(chatPage.router.push).not.toHaveBeenCalled()
 })
 
 it('explains a chat service that could not start without its raw error', async () => {

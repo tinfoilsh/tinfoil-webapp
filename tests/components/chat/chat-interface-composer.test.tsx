@@ -752,7 +752,7 @@ it('keeps the draft, its attachment and quote when starting a new chat or openin
 
   fireEvent.click(screen.getByRole('link', { name: 'Second chat' }))
   await waitFor(() =>
-    expect(chatPage.router.push).toHaveBeenCalledWith(
+    expect(chatPage.router.replace).toHaveBeenCalledWith(
       '/chat/local/second-chat',
       undefined,
       { shallow: true },
@@ -764,7 +764,7 @@ it('keeps the draft, its attachment and quote when starting a new chat or openin
 
   fireEvent.click(screen.getAllByRole('link', { name: 'New chat' })[0])
   await waitFor(() =>
-    expect(chatPage.router.push).toHaveBeenLastCalledWith('/', undefined, {
+    expect(chatPage.router.replace).toHaveBeenLastCalledWith('/', undefined, {
       shallow: true,
     }),
   )
