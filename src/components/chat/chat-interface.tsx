@@ -627,12 +627,9 @@ export function ChatInterface({
     // Files still uploading stay in the composer for the next message; files
     // the harness cannot read are cleared with it.
     const uploaded = processedDocuments.filter((d) => d.descriptor)
-    if (
-      isChatHydrating ||
-      (!input.trim() && !quote?.trim() && !uploaded.length)
-    )
-      return
-    const result = handleQuery(input, {
+    const text = input.trim()
+    if (isChatHydrating || (!text && !quote?.trim() && !uploaded.length)) return
+    const result = handleQuery(text, {
       quote: quote ?? undefined,
       attachments: uploaded.flatMap((d) =>
         d.descriptor ? [d.descriptor] : [],

@@ -175,6 +175,33 @@ it.each(['/', '/newchat'])(
   },
 )
 
+it.each(['the send button', 'Enter'])(
+  'sends the message without surrounding spaces from %s',
+  async (method) => {
+    signIn({ cloud: true })
+    const { accepted, reply, finished } = scriptRun()
+    render(
+      <ProjectProvider>
+        <ChatInterface suppressIntroModals />
+      </ProjectProvider>,
+    )
+    const input = await screen.findByRole('textbox', { name: /message/i })
+    fireEvent.change(input, { target: { value: '  Explain this to me \n' } })
+    if (method === 'Enter') fireEvent.keyDown(input, { key: 'Enter' })
+    else fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+    expect((client.events.mock.calls[0][1] as Turn).content).toBe(
+      'Explain this to me',
+    )
+    await act(async () => {
+      accepted.resolve()
+      reply.resolve()
+      finished.resolve()
+    })
+  },
+)
+
 it('titles a new chat Untitled as soon as its first message is sent', async () => {
   signIn({ cloud: true })
   const { accepted, reply, finished } = scriptRun()
