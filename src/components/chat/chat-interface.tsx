@@ -389,12 +389,16 @@ export function ChatInterface({
     ProcessedDocument[]
   >([])
   const [quote, setQuote] = useState<string | null>(null)
-  // Onboarding is shown to signed-in users once their profile has loaded.
+  // Onboarding is shown to signed-in users once their profile has loaded,
+  // unless the account completed it on any device.
   const { showOnboarding, dismissOnboarding } = useOnboarding({
     isAuthLoaded: isAuthLoaded && !!session,
     isSignedIn,
     userId: user?.id,
-    hasCompletedOnboarding: !profileReady || profile.hasSeenOnboarding === true,
+    hasCompletedOnboarding:
+      user?.unsafeMetadata?.has_completed_onboarding === true ||
+      !profileReady ||
+      profile.hasSeenOnboarding === true,
     suppressIntroModals,
   })
   const [logoAnimDone, setLogoAnimDone] = useState(false)
