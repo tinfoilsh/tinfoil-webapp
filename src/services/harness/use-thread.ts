@@ -29,7 +29,7 @@ import { ERROR_CODES, ROUTES } from './protocol'
 import { useHarness } from './provider'
 import { initialChat, type ChatState } from './reducer'
 import { RunController } from './run-controller'
-import { getView } from './runtime'
+import { getView, reportHarnessError } from './runtime'
 import { HarnessError } from './sse'
 import { createStore, useStore } from './store'
 import { cloudThreads, type AskContext, type ThreadStore } from './thread-store'
@@ -48,8 +48,17 @@ export function useThread(
   projectId?: string | null,
   route: ThreadRoute = {},
 ) {
-  const { api, session, profile, profileReady, keyReady, cloud, chatRevision } =
-    useHarness()
+  const {
+    api,
+    session,
+    profile,
+    profileReady,
+    keyReady,
+    keyLocked,
+    error: sessionError,
+    cloud,
+    chatRevision,
+  } = useHarness()
   const [{ open, controller, attachments, moving, temporaryChats }] = useState(
     () => ({
       open: createStore<OpenChat>({
@@ -673,6 +682,7 @@ export function useThread(
         webSearchEnabled: webSearch,
         ...(state.flagged ? { flagged: true } : {}),
       }
+  const profileFailed = cloud && !profileReady && !keyLocked && !!sessionError
   const queue: QueuedMessage[] = state.snapshot.queue.map((item) => ({
     id: item.queueId,
     text: item.content,
@@ -714,9 +724,13 @@ export function useThread(
     errorAt: controller.errorAt,
     hasOlder: state.hasOlder,
     hasMoreChats: !!list.nextCursor,
-    loadingChats: list.loading,
-    chatListError: list.error,
-    retryChatList: list.retry,
+    // The synced chats wait for the content key: a locked one for the user
+    // to unlock it, and a profile that failed to load for another try.
+    loadingChats: list.loading && !keyLocked && !profileFailed,
+    chatListError: profileFailed ? sessionError : list.error,
+    retryChatList: profileFailed
+      ? () => void api.refresh().catch(reportHarnessError)
+      : list.retry,
     report,
     open: openChat,
     ...turns,

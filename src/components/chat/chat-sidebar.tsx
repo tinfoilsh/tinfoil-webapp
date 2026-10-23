@@ -98,6 +98,8 @@ type ChatSidebarProps = {
   isLoadingChats?: boolean
   chatListError?: string | null
   onRetryChats?: () => void
+  // Unlocks the content key, which the synced chats wait for.
+  onUnlockChats?: () => void
   onLoadMore?: () => Promise<void>
   isOpen: boolean
   setIsOpen: (isOpen: boolean) => void
@@ -165,6 +167,7 @@ export function ChatSidebar({
   isLoadingChats = false,
   chatListError,
   onRetryChats,
+  onUnlockChats,
   onLoadMore,
   isOpen,
   setIsOpen,
@@ -2129,6 +2132,23 @@ export function ChatSidebar({
                                 Disable cloud sync in settings to create
                                 local-only chats
                               </p>
+                            </div>
+                          ) : onUnlockChats ? (
+                            <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
+                              <p className="text-sm text-content-muted">
+                                Your chats are locked
+                              </p>
+                              <p className="mt-1 text-xs text-content-muted">
+                                Unlock your encryption key to see your synced
+                                chats
+                              </p>
+                              <button
+                                type="button"
+                                onClick={onUnlockChats}
+                                className="mt-3 rounded-md bg-tinfoil-accent-blue px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-tinfoil-accent-blue-hover"
+                              >
+                                Unlock
+                              </button>
                             </div>
                           ) : undefined
                         }
