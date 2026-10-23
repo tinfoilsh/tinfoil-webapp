@@ -3661,233 +3661,95 @@ ${encryptionKey.replace('key_', '')}
                     </>
                   </div>
 
-                  <div className="space-y-3">
-                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Import
-                    </h3>
-                    {/* ChatGPT Import */}
-                    <div
-                      className={cn(
-                        'rounded-lg border border-border-subtle',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <ImportAccordionHeader
-                        title="Import from ChatGPT"
-                        panelId={`${importSectionId}-chatgpt`}
-                        expanded={openImportSection === 'chatgpt'}
-                        onToggle={() => toggleImportSection('chatgpt')}
-                      />
-                      {openImportSection === 'chatgpt' && (
-                        <div
-                          id={`${importSectionId}-chatgpt`}
-                          className="space-y-3 border-t border-border-subtle p-4"
-                        >
-                          <ImportStep step={1}>
-                            Open{' '}
-                            <a
-                              href="https://chatgpt.com/#settings/DataControls"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={cn(
-                                'hover:underline',
-                                isDarkMode
-                                  ? 'text-brand-accent-light'
-                                  : 'text-[#004444]',
-                              )}
-                            >
-                              ChatGPT Settings &gt; Data Controls
-                            </a>
-                          </ImportStep>
-                          <ImportStep step={2}>
-                            Click on &quot;Export data&quot; and confirm the
-                            export.
-                          </ImportStep>
-                          <ImportStep step={3}>
-                            {importsOnDevice
-                              ? 'Download and unzip the file you receive by email.'
-                              : 'Download the ZIP file you receive by email.'}
-                          </ImportStep>
-                          <ImportStep step={4}>
-                            {importsOnDevice ? (
-                              <>
-                                Select the{' '}
-                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                  conversations*.json
-                                </code>{' '}
-                                files from the unzipped folder. Large exports
-                                are split into several files; select them all.
-                              </>
-                            ) : (
-                              <>
-                                Select the ZIP export to include attachments, or
-                                the{' '}
-                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                  conversations*.json
-                                </code>{' '}
-                                files for chat text only. Large exports are
-                                split into several files; select them all.
-                              </>
-                            )}
-                          </ImportStep>
-                          <input
-                            ref={chatGptFileInputRef}
-                            type="file"
-                            accept={importsOnDevice ? '.json' : '.json,.zip'}
-                            onChange={(e) => stageImportFiles('chatgpt', e)}
-                            className="hidden"
-                            disabled={isImporting}
-                            multiple
-                          />
-                          {renderImportStatus('chatgpt') ??
-                            renderStagedImport('chatgpt') ?? (
-                              <button
-                                onClick={() =>
-                                  chatGptFileInputRef.current?.click()
-                                }
-                                disabled={isImporting}
+                  {/* Imports and exports are for subscribers */}
+                  {isPremium && (
+                    <div className="space-y-3">
+                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                        Import
+                      </h3>
+                      {/* ChatGPT Import */}
+                      <div
+                        className={cn(
+                          'rounded-lg border border-border-subtle',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                        )}
+                      >
+                        <ImportAccordionHeader
+                          title="Import from ChatGPT"
+                          panelId={`${importSectionId}-chatgpt`}
+                          expanded={openImportSection === 'chatgpt'}
+                          onToggle={() => toggleImportSection('chatgpt')}
+                        />
+                        {openImportSection === 'chatgpt' && (
+                          <div
+                            id={`${importSectionId}-chatgpt`}
+                            className="space-y-3 border-t border-border-subtle p-4"
+                          >
+                            <ImportStep step={1}>
+                              Open{' '}
+                              <a
+                                href="https://chatgpt.com/#settings/DataControls"
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className={cn(
-                                  'mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                                  isImporting
-                                    ? 'cursor-not-allowed opacity-50'
-                                    : 'hover:bg-surface-chat',
+                                  'hover:underline',
                                   isDarkMode
-                                    ? 'bg-surface-chat text-content-primary'
-                                    : 'bg-surface-sidebar text-content-primary',
+                                    ? 'text-brand-accent-light'
+                                    : 'text-[#004444]',
                                 )}
                               >
-                                <ArrowUpTrayIcon
-                                  className="h-4 w-4"
-                                  aria-hidden="true"
-                                />
-                                Select File
-                              </button>
-                            )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Claude Import */}
-                    <div
-                      className={cn(
-                        'rounded-lg border border-border-subtle',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <ImportAccordionHeader
-                        title="Import from Claude"
-                        panelId={`${importSectionId}-claude`}
-                        expanded={openImportSection === 'claude'}
-                        onToggle={() => toggleImportSection('claude')}
-                      />
-                      {openImportSection === 'claude' && (
-                        <div
-                          id={`${importSectionId}-claude`}
-                          className="space-y-3 border-t border-border-subtle p-4"
-                        >
-                          <ImportStep step={1}>
-                            Open{' '}
-                            <a
-                              href="https://claude.ai/settings/data-privacy-controls"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={cn(
-                                'hover:underline',
-                                isDarkMode
-                                  ? 'text-brand-accent-light'
-                                  : 'text-[#004444]',
+                                ChatGPT Settings &gt; Data Controls
+                              </a>
+                            </ImportStep>
+                            <ImportStep step={2}>
+                              Click on &quot;Export data&quot; and confirm the
+                              export.
+                            </ImportStep>
+                            <ImportStep step={3}>
+                              {importsOnDevice
+                                ? 'Download and unzip the file you receive by email.'
+                                : 'Download the ZIP file you receive by email.'}
+                            </ImportStep>
+                            <ImportStep step={4}>
+                              {importsOnDevice ? (
+                                <>
+                                  Select the{' '}
+                                  <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                    conversations*.json
+                                  </code>{' '}
+                                  files from the unzipped folder. Large exports
+                                  are split into several files; select them all.
+                                </>
+                              ) : (
+                                <>
+                                  Select the ZIP export to include attachments,
+                                  or the{' '}
+                                  <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                    conversations*.json
+                                  </code>{' '}
+                                  files for chat text only. Large exports are
+                                  split into several files; select them all.
+                                </>
                               )}
-                            >
-                              Claude Settings &gt; Privacy
-                            </a>
-                          </ImportStep>
-                          <ImportStep step={2}>
-                            Click on &quot;Export data&quot; and confirm the
-                            export.
-                          </ImportStep>
-                          <ImportStep step={3}>
-                            {isPremium && !importsOnDevice
-                              ? 'Download the ZIP file you receive by email.'
-                              : 'Download and unzip the file you receive by email.'}
-                          </ImportStep>
-                          <ImportStep step={4}>
-                            {isPremium && !importsOnDevice ? (
-                              <>
-                                Select the ZIP export with the Conversations
-                                button to include attachments. For projects,
-                                select every file in the unzipped{' '}
-                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                  projects
-                                </code>{' '}
-                                folder. Claude exports do not record which
-                                project a chat belonged to, so project chats
-                                import as regular chats.
-                              </>
-                            ) : isPremium ? (
-                              <>
-                                Select the{' '}
-                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                  conversations*.json
-                                </code>{' '}
-                                files from the unzipped folder, or every file in
-                                its{' '}
-                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                  projects
-                                </code>{' '}
-                                folder. Large exports are split into several
-                                files; select them all. Claude exports do not
-                                record which project a chat belonged to, so
-                                project chats import as regular chats.
-                              </>
-                            ) : (
-                              <>
-                                Select the{' '}
-                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                  conversations*.json
-                                </code>{' '}
-                                files from the unzipped folder. Large exports
-                                are split into several files; select them all.
-                              </>
-                            )}
-                          </ImportStep>
-                          <input
-                            ref={claudeConversationsFileInputRef}
-                            type="file"
-                            accept={
-                              isPremium && !importsOnDevice
-                                ? '.json,.zip'
-                                : '.json'
-                            }
-                            onChange={(e) =>
-                              stageImportFiles('claude-conversations', e)
-                            }
-                            className="hidden"
-                            disabled={isImporting}
-                            multiple
-                          />
-                          {isPremium && (
+                            </ImportStep>
                             <input
-                              ref={claudeProjectsFileInputRef}
+                              ref={chatGptFileInputRef}
                               type="file"
-                              accept=".json"
-                              onChange={(e) =>
-                                stageImportFiles('claude-projects', e)
-                              }
+                              accept={importsOnDevice ? '.json' : '.json,.zip'}
+                              onChange={(e) => stageImportFiles('chatgpt', e)}
                               className="hidden"
                               disabled={isImporting}
                               multiple
                             />
-                          )}
-                          {renderImportStatus('claude') ??
-                            renderStagedImport('claude') ?? (
-                              <div className="mt-2 flex gap-2">
+                            {renderImportStatus('chatgpt') ??
+                              renderStagedImport('chatgpt') ?? (
                                 <button
                                   onClick={() =>
-                                    claudeConversationsFileInputRef.current?.click()
+                                    chatGptFileInputRef.current?.click()
                                   }
                                   disabled={isImporting}
                                   className={cn(
-                                    'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                    'mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
                                     isImporting
                                       ? 'cursor-not-allowed opacity-50'
                                       : 'hover:bg-surface-chat',
@@ -3900,9 +3762,133 @@ ${encryptionKey.replace('key_', '')}
                                     className="h-4 w-4"
                                     aria-hidden="true"
                                   />
-                                  Conversations
+                                  Select File
                                 </button>
-                                {isPremium && (
+                              )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Claude Import */}
+                      <div
+                        className={cn(
+                          'rounded-lg border border-border-subtle',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                        )}
+                      >
+                        <ImportAccordionHeader
+                          title="Import from Claude"
+                          panelId={`${importSectionId}-claude`}
+                          expanded={openImportSection === 'claude'}
+                          onToggle={() => toggleImportSection('claude')}
+                        />
+                        {openImportSection === 'claude' && (
+                          <div
+                            id={`${importSectionId}-claude`}
+                            className="space-y-3 border-t border-border-subtle p-4"
+                          >
+                            <ImportStep step={1}>
+                              Open{' '}
+                              <a
+                                href="https://claude.ai/settings/data-privacy-controls"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={cn(
+                                  'hover:underline',
+                                  isDarkMode
+                                    ? 'text-brand-accent-light'
+                                    : 'text-[#004444]',
+                                )}
+                              >
+                                Claude Settings &gt; Privacy
+                              </a>
+                            </ImportStep>
+                            <ImportStep step={2}>
+                              Click on &quot;Export data&quot; and confirm the
+                              export.
+                            </ImportStep>
+                            <ImportStep step={3}>
+                              {!importsOnDevice
+                                ? 'Download the ZIP file you receive by email.'
+                                : 'Download and unzip the file you receive by email.'}
+                            </ImportStep>
+                            <ImportStep step={4}>
+                              {!importsOnDevice ? (
+                                <>
+                                  Select the ZIP export with the Conversations
+                                  button to include attachments. For projects,
+                                  select every file in the unzipped{' '}
+                                  <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                    projects
+                                  </code>{' '}
+                                  folder. Claude exports do not record which
+                                  project a chat belonged to, so project chats
+                                  import as regular chats.
+                                </>
+                              ) : (
+                                <>
+                                  Select the{' '}
+                                  <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                    conversations*.json
+                                  </code>{' '}
+                                  files from the unzipped folder, or every file
+                                  in its{' '}
+                                  <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                    projects
+                                  </code>{' '}
+                                  folder. Large exports are split into several
+                                  files; select them all. Claude exports do not
+                                  record which project a chat belonged to, so
+                                  project chats import as regular chats.
+                                </>
+                              )}
+                            </ImportStep>
+                            <input
+                              ref={claudeConversationsFileInputRef}
+                              type="file"
+                              accept={!importsOnDevice ? '.json,.zip' : '.json'}
+                              onChange={(e) =>
+                                stageImportFiles('claude-conversations', e)
+                              }
+                              className="hidden"
+                              disabled={isImporting}
+                              multiple
+                            />
+                            <input
+                              ref={claudeProjectsFileInputRef}
+                              type="file"
+                              accept=".json"
+                              onChange={(e) =>
+                                stageImportFiles('claude-projects', e)
+                              }
+                              className="hidden"
+                              disabled={isImporting}
+                              multiple
+                            />
+                            {renderImportStatus('claude') ??
+                              renderStagedImport('claude') ?? (
+                                <div className="mt-2 flex gap-2">
+                                  <button
+                                    onClick={() =>
+                                      claudeConversationsFileInputRef.current?.click()
+                                    }
+                                    disabled={isImporting}
+                                    className={cn(
+                                      'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                      isImporting
+                                        ? 'cursor-not-allowed opacity-50'
+                                        : 'hover:bg-surface-chat',
+                                      isDarkMode
+                                        ? 'bg-surface-chat text-content-primary'
+                                        : 'bg-surface-sidebar text-content-primary',
+                                    )}
+                                  >
+                                    <ArrowUpTrayIcon
+                                      className="h-4 w-4"
+                                      aria-hidden="true"
+                                    />
+                                    Conversations
+                                  </button>
                                   <button
                                     onClick={() =>
                                       claudeProjectsFileInputRef.current?.click()
@@ -3924,119 +3910,124 @@ ${encryptionKey.replace('key_', '')}
                                     />
                                     Projects
                                   </button>
-                                )}
-                              </div>
-                            )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Tinfoil Import */}
-                    <div
-                      className={cn(
-                        'rounded-lg border border-border-subtle',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <ImportAccordionHeader
-                        title="Import from Tinfoil"
-                        panelId={`${importSectionId}-tinfoil`}
-                        expanded={openImportSection === 'tinfoil'}
-                        onToggle={() => toggleImportSection('tinfoil')}
-                      />
-                      {openImportSection === 'tinfoil' && (
-                        <div
-                          id={`${importSectionId}-tinfoil`}
-                          className="space-y-3 border-t border-border-subtle p-4"
-                        >
-                          <div className="font-aeonik-fono text-xs text-content-muted">
-                            {importsOnDevice
-                              ? 'Re-import a Tinfoil conversations export. When cloud sync is off, chats and attachments stay in this browser.'
-                              : 'Re-import a Tinfoil conversations export or backup archive into your encrypted account.'}
-                          </div>
-                          <input
-                            ref={tinfoilFileInputRef}
-                            type="file"
-                            accept=".json,.zip"
-                            onChange={(event) =>
-                              void handleImportTinfoil(event)
-                            }
-                            className="hidden"
-                            disabled={isImporting}
-                          />
-                          {renderImportStatus('tinfoil') ?? (
-                            <button
-                              onClick={() =>
-                                tinfoilFileInputRef.current?.click()
-                              }
-                              disabled={isImporting}
-                              className={cn(
-                                'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                                isImporting
-                                  ? 'cursor-not-allowed opacity-50'
-                                  : 'hover:bg-surface-chat',
-                                isDarkMode
-                                  ? 'bg-surface-chat text-content-primary'
-                                  : 'bg-surface-sidebar text-content-primary',
+                                </div>
                               )}
-                            >
-                              <ArrowUpTrayIcon
-                                className="h-4 w-4"
-                                aria-hidden="true"
-                              />
-                              Select Tinfoil Export
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Export Chats */}
-                  <div className="space-y-3">
-                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Export Chats
-                    </h3>
-                    <div
-                      className={cn(
-                        'space-y-3 rounded-lg border border-border-subtle p-4',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <div className="font-aeonik-fono text-xs text-content-muted">
-                        Export all your conversations as a ZIP archive. This
-                        format can be re-imported into Tinfoil Chat.
+                          </div>
+                        )}
                       </div>
-                      <button
-                        onClick={handleExportAllChats}
-                        disabled={isExporting || isPreparingExport}
+
+                      {/* Tinfoil Import */}
+                      <div
                         className={cn(
-                          'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                          isExporting || isPreparingExport
-                            ? 'cursor-not-allowed opacity-50'
-                            : 'hover:bg-surface-chat',
-                          isDarkMode
-                            ? 'bg-surface-chat text-content-primary'
-                            : 'bg-surface-sidebar text-content-primary',
+                          'rounded-lg border border-border-subtle',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                         )}
                       >
-                        {(isExporting || isPreparingExport) &&
-                        exportType === 'chats' ? (
-                          <PiSpinner
-                            className="h-4 w-4 animate-spin"
-                            aria-hidden="true"
-                          />
-                        ) : (
-                          <TfDownload className="h-4 w-4" aria-hidden="true" />
+                        <ImportAccordionHeader
+                          title="Import from Tinfoil"
+                          panelId={`${importSectionId}-tinfoil`}
+                          expanded={openImportSection === 'tinfoil'}
+                          onToggle={() => toggleImportSection('tinfoil')}
+                        />
+                        {openImportSection === 'tinfoil' && (
+                          <div
+                            id={`${importSectionId}-tinfoil`}
+                            className="space-y-3 border-t border-border-subtle p-4"
+                          >
+                            <div className="font-aeonik-fono text-xs text-content-muted">
+                              {importsOnDevice
+                                ? 'Re-import a Tinfoil conversations export. When cloud sync is off, chats and attachments stay in this browser.'
+                                : 'Re-import a Tinfoil conversations export or backup archive into your encrypted account.'}
+                            </div>
+                            <input
+                              ref={tinfoilFileInputRef}
+                              type="file"
+                              accept=".json,.zip"
+                              onChange={(event) =>
+                                void handleImportTinfoil(event)
+                              }
+                              className="hidden"
+                              disabled={isImporting}
+                            />
+                            {renderImportStatus('tinfoil') ?? (
+                              <button
+                                onClick={() =>
+                                  tinfoilFileInputRef.current?.click()
+                                }
+                                disabled={isImporting}
+                                className={cn(
+                                  'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                  isImporting
+                                    ? 'cursor-not-allowed opacity-50'
+                                    : 'hover:bg-surface-chat',
+                                  isDarkMode
+                                    ? 'bg-surface-chat text-content-primary'
+                                    : 'bg-surface-sidebar text-content-primary',
+                                )}
+                              >
+                                <ArrowUpTrayIcon
+                                  className="h-4 w-4"
+                                  aria-hidden="true"
+                                />
+                                Select Tinfoil Export
+                              </button>
+                            )}
+                          </div>
                         )}
-                        {isPreparingExport && exportType === 'chats'
-                          ? 'Please wait while we prepare the export...'
-                          : isExporting && exportType === 'chats'
-                            ? 'Exporting...'
-                            : 'Export Chats'}
-                      </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {/* Export Chats */}
+                  {isPremium && (
+                    <div className="space-y-3">
+                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                        Export Chats
+                      </h3>
+                      <div
+                        className={cn(
+                          'space-y-3 rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                        )}
+                      >
+                        <div className="font-aeonik-fono text-xs text-content-muted">
+                          Export all your conversations as a ZIP archive. This
+                          format can be re-imported into Tinfoil Chat.
+                        </div>
+                        <button
+                          onClick={handleExportAllChats}
+                          disabled={isExporting || isPreparingExport}
+                          className={cn(
+                            'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                            isExporting || isPreparingExport
+                              ? 'cursor-not-allowed opacity-50'
+                              : 'hover:bg-surface-chat',
+                            isDarkMode
+                              ? 'bg-surface-chat text-content-primary'
+                              : 'bg-surface-sidebar text-content-primary',
+                          )}
+                        >
+                          {(isExporting || isPreparingExport) &&
+                          exportType === 'chats' ? (
+                            <PiSpinner
+                              className="h-4 w-4 animate-spin"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <TfDownload
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
+                          )}
+                          {isPreparingExport && exportType === 'chats'
+                            ? 'Please wait while we prepare the export...'
+                            : isExporting && exportType === 'chats'
+                              ? 'Exporting...'
+                              : 'Export Chats'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Export Projects (premium only) */}
                   {cloudSyncEnabled && isPremium && (

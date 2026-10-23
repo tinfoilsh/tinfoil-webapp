@@ -181,7 +181,7 @@ describe('settings opening', () => {
   )
 
   it.each([false, true])(
-    'gates project transfers in settings (premium: %s)',
+    'offers imports, exports and project transfers to subscribers (premium: %s)',
     (isPremium) => {
       authState.isSignedIn = true
       signIn({ cloud: true })
@@ -199,9 +199,14 @@ describe('settings opening', () => {
       expect(
         screen.getByRole('button', { name: 'Delete all projects' }),
       ).toBeInTheDocument()
-      fireEvent.click(
-        screen.getByRole('button', { name: 'Import from Claude' }),
-      )
+      expect(
+        Boolean(screen.queryByRole('button', { name: 'Export Chats' })),
+      ).toBe(isPremium)
+      const claudeImport = screen.queryByRole('button', {
+        name: 'Import from Claude',
+      })
+      expect(Boolean(claudeImport)).toBe(isPremium)
+      if (claudeImport) fireEvent.click(claudeImport)
       expect(Boolean(screen.queryByRole('button', { name: 'Projects' }))).toBe(
         isPremium,
       )
@@ -651,7 +656,12 @@ describe('settings imports', () => {
     })
     const onChatsUpdated = vi.fn()
     render(
-      <Harness initialTab="data" isSignedIn onChatsUpdated={onChatsUpdated} />,
+      <Harness
+        initialTab="data"
+        isSignedIn
+        isPremium
+        onChatsUpdated={onChatsUpdated}
+      />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Import from ChatGPT' }))
     const picker = document.querySelector<HTMLInputElement>(
@@ -713,7 +723,7 @@ describe('settings imports', () => {
         return { projects: [], nextCursor: null }
       throw new Error(`Unexpected request: ${path}`)
     })
-    render(<Harness initialTab="data" isSignedIn />)
+    render(<Harness initialTab="data" isSignedIn isPremium />)
     fireEvent.click(screen.getByRole('button', { name: 'Import from ChatGPT' }))
     fireEvent.change(
       document.querySelector(

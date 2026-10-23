@@ -46,10 +46,9 @@ const EXPORT_FILENAMES: Record<ExportFormat, string> = {
   conversations: 'tinfoil-chats.zip',
 }
 
-// The chats a signed-in account keeps on this device, or a signed-out
-// visitor in this tab.
-const deviceStore = (api: HarnessAPI) =>
-  localThreadStore(api.userId ? 'device' : 'tab')
+// The chats the account keeps on this device. Archives are for subscribers,
+// so a signed-out visitor's tab has none to send or receive.
+const deviceStore = () => localThreadStore('device')
 
 // Reads an archive as it arrives, reporting the bytes received so far.
 async function receive(
@@ -102,7 +101,7 @@ export async function exportArchive(
   const key = cloud ? api.key() : undefined
   const form = new FormData()
   form.append('options', JSON.stringify({ format, ...(key ? { key } : {}) }))
-  const store = deviceStore(api)
+  const store = deviceStore()
   // A fork keeps the attachments of its chat, whose originals go once.
   const sent = new Set<string>()
   let chats = 0
@@ -308,7 +307,7 @@ async function importFile(
     signal,
     keyless: !key,
   })
-  const store = deviceStore(api)
+  const store = deviceStore()
   let stored = 0
   let skipped = 0
   for await (const line of importLines(response)) {
