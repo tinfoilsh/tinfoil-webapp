@@ -1705,13 +1705,16 @@ export function SettingsModal({
       return
     setIsDeletingAllProjects(true)
     try {
-      await deleteAllProjects(api)
+      const { deleted } = await deleteAllProjects(api)
       onAllProjectsDeleted?.()
       await refreshProjects()
       await onChatsUpdated?.()
       setShowDeleteAllProjectsConfirm(false)
       setDeleteAllProjectsConfirmText('')
-      toast({ title: 'All projects deleted' })
+      toast({
+        title: 'All projects deleted',
+        description: `Deleted ${deleted} ${deleted === 1 ? 'project' : 'projects'}.`,
+      })
     } catch (cause) {
       toast({
         title: 'Delete failed',

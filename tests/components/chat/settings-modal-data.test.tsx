@@ -402,6 +402,47 @@ describe('exporting chats from the Data tab', () => {
   })
 })
 
+describe('deleting all projects from the Data tab', () => {
+  it.each([
+    { deleted: 3, description: 'Deleted 3 projects.' },
+    { deleted: 1, description: 'Deleted 1 project.' },
+  ])(
+    'says how many projects the chat service deleted ($deleted)',
+    async ({ deleted, description }) => {
+      connect({ cloud: true })
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/projects/delete-all') return { deleted }
+        if (path === '/v1/projects/list')
+          return { projects: [], nextCursor: null }
+        throw new Error(`Unexpected request: ${path}`)
+      })
+      renderData({ isPremium: true })
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Delete all projects' }),
+      )
+      fireEvent.change(screen.getByPlaceholderText('delete all projects'), {
+        target: { value: 'delete all projects' },
+      })
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Yes, delete all my projects' }),
+      )
+
+      await waitFor(() =>
+        expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+          title: 'All projects deleted',
+          description,
+        }),
+      )
+      expect(
+        client.post.mock.calls
+          .filter(([path]) => path === '/v1/projects/delete-all')
+          .map(([, input]) => input),
+      ).toEqual([{ key: KEY }])
+    },
+  )
+})
+
 // Picks files in a source's import panel, as its file picker would.
 function pickFiles(provider: string, files: File[], input = 0) {
   const toggle = screen.getByRole('button', { name: `Import from ${provider}` })
