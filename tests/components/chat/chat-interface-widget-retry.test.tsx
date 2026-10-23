@@ -4,7 +4,7 @@ import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Thread } from '@/services/harness/types'
 import { resetSafeguards } from '@/services/safeguards'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, signIn } from '../../harness-fixture'
 import { refuseFetch } from './chat-interface-fixture'
@@ -68,6 +68,8 @@ const thread: Thread = {
       role: 'assistant',
       createdAt: '2026-04-01T09:00:01Z',
       content: 'Here it is.',
+      model: 'earlier-model',
+      modelDisplayName: 'Earlier model',
       timeline: [
         {
           id: 'w1',
@@ -196,6 +198,52 @@ describe('retrying a widget on the chat page', () => {
     expect(
       screen.queryByText("Couldn't display message compose"),
     ).not.toBeInTheDocument()
+  })
+
+  it('keeps the model that wrote the reply once its widget is redrawn', async () => {
+    await retryWidget(async function* (): AsyncGenerator<Frame> {
+      const events: Frame['event'][] = [
+        { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-retry' },
+        {
+          type: 'TOOL_CALL_START',
+          parentMessageId: 'a1',
+          toolCallId: 'w1',
+          toolCallName: 'render_message_compose',
+        },
+        {
+          type: 'TOOL_CALL_ARGS',
+          toolCallId: 'w1',
+          delta: JSON.stringify({
+            channel: 'message',
+            title: 'Reply draft',
+            variants: [{ label: 'Concise', body: 'Thanks.' }],
+          }),
+        },
+        { type: 'TOOL_CALL_END', toolCallId: 'w1' },
+        {
+          type: 'RUN_FINISHED',
+          threadId: THREAD_ID,
+          runId: 'run-retry',
+          metadata: {
+            messages: [
+              {
+                id: 'a1',
+                model: 'test-model',
+                modelDisplayName: 'Test model',
+                isError: false,
+                isInterrupted: false,
+              },
+            ],
+          },
+        },
+      ]
+      for (const [id, event] of events.entries()) yield { id, event }
+    })
+
+    expect(await screen.findByText('Reply draft')).toBeInTheDocument()
+    const reply = screen.getByRole('article', { name: 'Al said' })
+    expect(within(reply).getByText('Earlier model')).toBeInTheDocument()
+    expect(within(reply).queryByText('Test model')).not.toBeInTheDocument()
   })
 
   it("shows neither the retry's run nor its error as the chat's", async () => {

@@ -219,13 +219,12 @@ export const runErrorOf = (
 })
 
 // The events of a widget's retry that the chat applies: the call redrawn
-// from its new arguments, and the run's end.
+// from its new arguments. The run reports the reply it redrew as its own,
+// under the model the chat has now.
 const WIDGET_RETRY_EVENTS: ReadonlySet<HarnessEvent['type']> = new Set([
   'TOOL_CALL_START',
   'TOOL_CALL_ARGS',
   'TOOL_CALL_END',
-  'RUN_FINISHED',
-  'RUN_ERROR',
 ])
 
 // Applies one frame of a run. A frame the state applied already, as when a
@@ -463,11 +462,6 @@ export function reduceEvent(
       const committed = new Map(
         event.metadata?.messages?.map((message) => [message.id, message]),
       )
-      const messages = next.messages.map((message) => {
-        const metadata = committed.get(message.id)
-        return metadata ? { ...message, ...metadata } : message
-      })
-      if (widgetRetry) return { ...next, messages }
       return {
         ...next,
         snapshot: withoutQueued(next.snapshot, runId),
@@ -481,7 +475,10 @@ export function reduceEvent(
                 : {}),
             }
           : {}),
-        messages,
+        messages: next.messages.map((message) => {
+          const metadata = committed.get(message.id)
+          return metadata ? { ...message, ...metadata } : message
+        }),
       }
     }
   }
