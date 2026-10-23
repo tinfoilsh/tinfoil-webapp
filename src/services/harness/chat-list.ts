@@ -83,7 +83,6 @@ export function useChatList({
   keyReady,
   projectId,
   device,
-  report,
   revision,
 }: {
   api: HarnessAPI
@@ -91,7 +90,6 @@ export function useChatList({
   keyReady: boolean
   projectId?: string | null
   device: LocalThreadStore
-  report(cause: unknown): void
   revision?: string
 }) {
   const [lists] = useState(() => {
@@ -327,10 +325,22 @@ export function useChatList({
     },
     [api, cloud, keyReady, projectId, lists],
   )
+  // Reads the list again. A failure shows in the list, which offers a retry.
+  const reload = useCallback(
+    (next?: string) => {
+      void refresh(next).catch((cause) =>
+        logError('Failed to list chats', cause, {
+          component: 'useChatList',
+          action: 'refresh',
+        }),
+      )
+    },
+    [refresh],
+  )
   const editVersion = useStore(lists.edits)
   useEffect(() => {
-    void refresh().catch(report)
-  }, [refresh, report, revision, editVersion])
+    reload()
+  }, [reload, revision, editVersion])
   useEffect(() => {
     let sequence = 0
     const load = () => {
@@ -361,7 +371,8 @@ export function useChatList({
     loading: cloud && (!currentScope || !loadState.loaded),
     error: cloud && currentScope ? loadState.error : null,
     refresh,
-    retry: () => refresh(lists.loadState.get().retryCursor),
+    reload: () => reload(),
+    retry: () => reload(lists.loadState.get().retryCursor),
   }
 }
 

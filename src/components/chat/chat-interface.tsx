@@ -540,11 +540,24 @@ export function ChatInterface({
           selectionNavigation.current = null
       })
   }
+  // A chat list action that fails is undone in the list and logged, rather
+  // than shown as a failure of the open chat.
+  const logListAction =
+    (message: string, chatId: string) => (cause: unknown) => {
+      if (cause instanceof DOMException && cause.name === 'AbortError') return
+      logError(message, cause, {
+        component: 'ChatInterface',
+        action: 'chatListAction',
+        metadata: { chatId },
+      })
+    }
   const deleteChat = (id: string) => {
-    void thread.remove(id).catch(thread.report)
+    void thread.remove(id).catch(logListAction('Failed to delete chat', id))
   }
   const updateChatTitle = (id: string, title: string) => {
-    void thread.update(id, { title }).catch(thread.report)
+    void thread
+      .update(id, { title })
+      .catch(logListAction('Failed to rename chat', id))
   }
   const handleModelSelect = (model: string) => {
     thread.setModel(model)
@@ -676,7 +689,9 @@ export function ChatInterface({
   const favoriteChats = chats.filter((c) => c.pinned)
   const pinnedChatIds = favoriteChats.map((c) => c.id)
   const unpinChat = (id: string) => {
-    void thread.update(id, { pinned: false }).catch(thread.report)
+    void thread
+      .update(id, { pinned: false })
+      .catch(logListAction('Failed to unpin chat', id))
   }
   // Chats move between the cloud and this device with cloud sync.
   const canMoveChats = cloudSyncEnabled
@@ -745,7 +760,9 @@ export function ChatInterface({
       if (!canMoveChats) return
       if (!(await handleConvertChatToCloud(favorite.id))) return
     }
-    await thread.update(favorite.id, { pinned: true }).catch(thread.report)
+    await thread
+      .update(favorite.id, { pinned: true })
+      .catch(logListAction('Failed to pin chat', favorite.id))
   }
   const handleOpenFavorite = (chat: { id: string }) => handleChatSelect(chat.id)
   // A chat kept on this device moves to the cloud before it joins a project;
@@ -1866,9 +1883,7 @@ export function ChatInterface({
                   onLoadMore={thread.loadMoreChats}
                   isLoadingChats={thread.loadingChats}
                   chatListError={thread.chatListError}
-                  onRetryChats={() => {
-                    void thread.retryChatList().catch(thread.report)
-                  }}
+                  onRetryChats={thread.retryChatList}
                   isOpen={isSidebarOpen}
                   setIsOpen={setIsSidebarOpen}
                   project={activeProject}
@@ -1946,9 +1961,7 @@ export function ChatInterface({
               <ChatSidebar
                 isLoadingChats={thread.loadingChats}
                 chatListError={thread.chatListError}
-                onRetryChats={() => {
-                  void thread.retryChatList().catch(thread.report)
-                }}
+                onRetryChats={thread.retryChatList}
                 isOpen={isSidebarOpen}
                 setIsOpen={setIsSidebarOpen}
                 chats={chats}

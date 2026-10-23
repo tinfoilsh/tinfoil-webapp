@@ -25,7 +25,7 @@ import {
   storedThread,
 } from '../../services/harness/thread-fixture'
 import { refuseFetch } from './chat-interface-fixture'
-import { chatPage } from './chat-page-mocks'
+import { chatPage, errorHandling } from './chat-page-mocks'
 
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
 vi.mock('next/router', async () => (await import('./chat-page-mocks')).router)
@@ -113,6 +113,7 @@ beforeEach(() => {
   chatPage.router.query = {}
   chatPage.router.push.mockReset().mockResolvedValue(true)
   chatPage.router.replace.mockReset().mockResolvedValue(true)
+  errorHandling.logError.mockReset()
   refuseFetch()
 })
 
@@ -517,3 +518,88 @@ it.each(['saved', 'refused'] as const)(
     ).toHaveAttribute('aria-pressed', String(outcome === 'saved'))
   },
 )
+
+it.each(['rename', 'delete', 'pin'] as const)(
+  'logs a refused %s instead of reporting a problem with the open chat',
+  async (action) => {
+    signIn({ cloud: true })
+    const alpha = cloudChat('alpha-chat', 'Alpha chat', '2026-10-22T12:00:00Z')
+    const beta = cloudChat('beta-chat', 'Beta chat', '2026-10-20T12:00:00Z')
+    const refusal = new Error('The chat service refused the change')
+    client.post.mockImplementation(async (path) => {
+      if (path === '/v1/threads/list')
+        return {
+          threads: [summaryOf(alpha), summaryOf(beta)],
+          nextCursor: null,
+        }
+      if (path === '/v1/threads/get') return structuredClone(alpha)
+      if (path === '/v1/threads/update' || path === '/v1/threads/delete')
+        throw refusal
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    render(<ChatInterface initialChatId={alpha.id} suppressIntroModals />)
+    await screen.findByText('Alpha chat conversation')
+    const listed = (await row('Beta chat')).closest(
+      '[role="listitem"]',
+    ) as HTMLElement
+    if (action === 'rename') {
+      fireEvent.click(
+        within(listed).getByRole('button', { name: 'Rename chat' }),
+      )
+      const field = screen.getByRole('textbox', { name: 'Chat title' })
+      fireEvent.change(field, { target: { value: 'Renamed chat' } })
+      fireEvent.submit(field.closest('form')!)
+    } else if (action === 'delete') {
+      fireEvent.click(
+        within(listed).getByRole('button', { name: 'Delete chat' }),
+      )
+      fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    } else {
+      fireEvent.click(
+        within(listed).getByRole('button', { name: 'Pin to Favorites' }),
+      )
+    }
+    const message = {
+      rename: 'Failed to rename chat',
+      delete: 'Failed to delete chat',
+      pin: 'Failed to pin chat',
+    }[action]
+    await waitFor(() =>
+      expect(errorHandling.logError).toHaveBeenCalledWith(message, refusal, {
+        component: 'ChatInterface',
+        action: 'chatListAction',
+        metadata: { chatId: beta.id },
+      }),
+    )
+    expect(screen.queryByText('Connection problem')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  },
+)
+
+it('shows a failed chat list refresh in the list, not as a problem with the open chat', async () => {
+  signIn({ cloud: true })
+  const alpha = cloudChat('alpha-chat', 'Alpha chat', '2026-10-22T12:00:00Z')
+  let listings = 0
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list') {
+      if (++listings === 2) throw new Error('Chats unavailable')
+      return { threads: [summaryOf(alpha)], nextCursor: null }
+    }
+    if (path === '/v1/threads/get') return structuredClone(alpha)
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  render(<ChatInterface initialChatId={alpha.id} suppressIntroModals />)
+  await screen.findByText('Alpha chat conversation')
+  await row('Alpha chat')
+  await act(async () => publish({ chatRevision: 'changed' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Could not load chats.Chats unavailable',
+  )
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+  expect(screen.queryByText('Connection problem')).not.toBeInTheDocument()
+  expect(errorHandling.logError).toHaveBeenCalledWith(
+    'Failed to list chats',
+    expect.objectContaining({ message: 'Chats unavailable' }),
+    { component: 'useChatList', action: 'refresh' },
+  )
+})

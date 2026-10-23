@@ -134,7 +134,6 @@ export function useThread(
     keyReady,
     projectId,
     device,
-    report,
     revision: chatRevision,
   })
   const { clearCloud } = list
@@ -280,9 +279,7 @@ export function useThread(
           })
       }
     },
-    ended: () => {
-      void list.refresh().catch(report)
-    },
+    ended: list.reload,
     gone: (threadId) => showStored(threadId).catch(report),
   }
   async function openChat(
