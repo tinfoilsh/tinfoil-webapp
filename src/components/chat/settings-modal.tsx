@@ -784,6 +784,7 @@ export function SettingsModal({
   >('unverified')
   const passkeyRefreshSeqRef = useRef(0)
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Structured personalization fields, as the profile holds them. Edits
@@ -1763,6 +1764,7 @@ export function SettingsModal({
   useEffect(() => {
     if (!isOpen) {
       setIsQRCodeExpanded(false)
+      setShowSignOutConfirm(false)
       setShowDeleteAllChatsConfirm(false)
       setDeleteAllChatsConfirmText('')
       setShowDeleteAllProjectsConfirm(false)
@@ -4030,7 +4032,15 @@ ${encryptionKey.replace('key_', '')}
                             </div>
                           </div>
                           <button
-                            onClick={() => void handleSignOut()}
+                            onClick={() => {
+                              if (
+                                !cloudSyncEnabled ||
+                                localChatsEnabled ||
+                                chats?.some((chat) => chat.isLocalOnly)
+                              )
+                                setShowSignOutConfirm(true)
+                              else void handleSignOut()
+                            }}
                             disabled={isSigningOut}
                             className={cn(
                               'flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
@@ -4258,6 +4268,47 @@ ${encryptionKey.replace('key_', '')}
           </div>
         </div>
       </Dialog.Panel>
+      {showSignOutConfirm && (
+        <Dialog
+          open={showSignOutConfirm}
+          onClose={() => setShowSignOutConfirm(false)}
+          autoFocus
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+        >
+          <Dialog.Panel className="mx-4 w-full max-w-sm rounded-site-lg border border-border-subtle bg-surface-card p-6 shadow-xl">
+            <Dialog.Title
+              as="h3"
+              className="text-lg font-medium text-content-primary"
+            >
+              Sign out
+            </Dialog.Title>
+            <p className="mt-3 text-sm text-content-secondary">
+              All local data will be cleared. Your local chats will be deleted
+              forever.
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowSignOutConfirm(false)}
+                className="flex-1 rounded-lg border border-border-subtle px-4 py-2.5 text-sm text-content-primary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSignOutConfirm(false)
+                  void handleSignOut()
+                }}
+                disabled={isSigningOut}
+                className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm text-white hover:bg-red-700"
+              >
+                Sign out
+              </button>
+            </div>
+          </Dialog.Panel>
+        </Dialog>
+      )}
     </Dialog>
   )
 }

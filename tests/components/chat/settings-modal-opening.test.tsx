@@ -6,22 +6,31 @@ import {
   USER_PREFS_LOCAL_PROFILE,
 } from '@/constants/storage-keys'
 import { getView, harnessAPI, publish } from '@/services/harness/runtime'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { signIn, testSession } from '../../harness-fixture'
 
 const authState = vi.hoisted(() => ({ isSignedIn: false }))
 const toasts = vi.hoisted(() => vi.fn())
+const signOut = vi.hoisted(() => vi.fn(async () => {}))
 
 vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: toasts }),
 }))
 
 vi.mock('@clerk/react', () => ({
+  useReverification: (callback: unknown) => callback,
   useAuth: () => ({
     getToken: async () => null,
-    signOut: vi.fn(),
+    signOut,
     isSignedIn: authState.isSignedIn,
   }),
   useUser: () => ({
@@ -66,6 +75,7 @@ describe('settings opening', () => {
   beforeEach(() => {
     authState.isSignedIn = false
     toasts.mockReset()
+    signOut.mockReset().mockResolvedValue(undefined)
   })
 
   it("offers a signed-out visitor this browser's chats but no account data", () => {
@@ -102,6 +112,38 @@ describe('settings opening', () => {
       'Export Projects for Claude',
     ])
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+  })
+
+  it('requires confirmation before signing out with device chats', async () => {
+    authState.isSignedIn = true
+    signIn({ cloud: false })
+    render(
+      <Harness
+        initialTab="account"
+        isSignedIn
+        chats={[{ id: 'local-chat', isLocalOnly: true }]}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+    expect(
+      await screen.findByRole('dialog', { name: 'Sign out' }),
+    ).toBeInTheDocument()
+    expect(signOut).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Sign out' }),
+      ).not.toBeInTheDocument(),
+    )
+    expect(signOut).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+    fireEvent.click(
+      within(await screen.findByRole('dialog', { name: 'Sign out' })).getByRole(
+        'button',
+        { name: 'Sign out' },
+      ),
+    )
+    await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1))
   })
 
   it.each([false, true])(
