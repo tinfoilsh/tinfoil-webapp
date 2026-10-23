@@ -47,7 +47,9 @@ export function ChatHeader({
   const storageStatus = resolveStorageStatus(chat)
 
   const createdAt = toDate(chat.createdAt)
-  const updatedAt = toDate(chat.updatedAt) ?? createdAt
+  // "Updated" is the last conversation activity, the same time the chat
+  // list is ordered by; a rename or a settings change does not move it.
+  const updatedAt = toDate(chat.activityAt ?? chat.updatedAt) ?? createdAt
   const referenceTime = Date.now()
   const createdRelativeTime = createdAt
     ? formatRelativeTime(createdAt, referenceTime)

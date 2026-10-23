@@ -58,6 +58,16 @@ describe('ChatHeader', () => {
     expect(screen.getByRole('button', { name: 'Share' })).toBeInTheDocument()
   })
 
+  it('dates the update by the latest message, not a later rename', () => {
+    renderHeader({
+      activityAt: '2026-08-11T13:00:00.000Z',
+      updatedAt: '2026-08-11T13:25:00.000Z',
+    })
+
+    expect(screen.getByText('Updated 30m ago')).toBeInTheDocument()
+    expect(screen.queryByText('Updated 5m ago')).not.toBeInTheDocument()
+  })
+
   it('hides the updated time for the initial turn and while streaming', () => {
     const { rerender } = renderHeader({ messageCount: 2 })
     expect(screen.queryByText(/Updated/)).not.toBeInTheDocument()
