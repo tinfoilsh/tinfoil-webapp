@@ -7,7 +7,7 @@
  * continues into another stage like thinking.
  */
 import { logError } from '@/utils/error-handling'
-import { TfRefresh1, TfStars } from '@tinfoilsh/tinfoil-icons'
+import { TfRefreshTwoArrows, TfStars } from '@tinfoilsh/tinfoil-icons'
 import React, { memo, useEffect, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import { getGenUIWidget, renderGenUIInline } from './render'
@@ -366,7 +366,7 @@ function ParseFailureCard({
                 aria-hidden="true"
               />
             ) : (
-              <TfRefresh1 className="h-3.5 w-3.5" aria-hidden="true" />
+              <TfRefreshTwoArrows className="h-3.5 w-3.5" aria-hidden="true" />
             )}
             {isRetrying ? 'Fixing widget...' : 'Retry widget'}
           </button>

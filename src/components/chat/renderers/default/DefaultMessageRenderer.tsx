@@ -11,7 +11,7 @@ import {
   TfCopy,
   TfFork,
   TfLockLocked,
-  TfRefresh1,
+  TfRefreshTwoArrows,
   TfTrash,
   TfWriting,
 } from '@tinfoilsh/tinfoil-icons'
@@ -778,7 +778,10 @@ const DefaultMessageComponent = ({
                           aria-label="Regenerate response"
                           className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                         >
-                          <TfRefresh1 className="h-4 w-4" aria-hidden="true" />
+                          <TfRefreshTwoArrows
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          />
                         </button>
                         <span
                           aria-hidden="true"
@@ -923,7 +926,10 @@ const DefaultMessageComponent = ({
                       aria-label="Regenerate response"
                       className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
                     >
-                      <TfRefresh1 className="h-3.5 w-3.5" aria-hidden="true" />
+                      <TfRefreshTwoArrows
+                        className="h-3.5 w-3.5"
+                        aria-hidden="true"
+                      />
                     </button>
                     <span
                       aria-hidden="true"

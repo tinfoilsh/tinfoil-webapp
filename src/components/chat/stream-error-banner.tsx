@@ -3,7 +3,11 @@
 import { cn } from '@/components/ui/utils'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { ERROR_CODES } from '@/services/harness/protocol'
-import { TfBoxX, TfChevronDown, TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfBoxX,
+  TfChevronDown,
+  TfRefreshTwoArrows,
+} from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 
 export type StreamErrorInfo = {
@@ -302,7 +306,7 @@ export function StreamErrorBanner({
                   'cursor-default opacity-50 hover:bg-transparent',
               )}
             >
-              <TfRefresh1 className="h-3.5 w-3.5" aria-hidden="true" />
+              <TfRefreshTwoArrows className="h-3.5 w-3.5" aria-hidden="true" />
               {retryLabel}
             </button>
           )}
