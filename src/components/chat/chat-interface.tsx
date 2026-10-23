@@ -414,6 +414,7 @@ export function ChatInterface({
   const [hasMountedReportBugModal, setHasMountedReportBugModal] =
     useState(false)
   const [showCloudSyncSetupModal, setShowCloudSyncSetupModal] = useState(false)
+  const [isCloudSyncRoutePending, setIsCloudSyncRoutePending] = useState(false)
   const [isFirstTimePasskeySetupBusy, setIsFirstTimePasskeySetupBusy] =
     useState(false)
   const [isSubscribePromptOpen, setIsSubscribePromptOpen] = useState(false)
@@ -956,7 +957,20 @@ export function ChatInterface({
     setHasMountedReportBugModal(true)
     setIsReportBugModalOpen(true)
   }
-  const handleOpenCloudSyncSetup = () => setShowCloudSyncSetupModal(true)
+  // Without a key on this device, the setup opens at once while the account
+  // is checked for a passkey to recover with, and then for a first passkey
+  // setup; the modal follows what the checks find.
+  const handleOpenCloudSyncSetup = async () => {
+    setShowCloudSyncSetupModal(true)
+    if (encryptionService.getKey()) return
+    setIsCloudSyncRoutePending(true)
+    try {
+      if (await showPasskeyRecoveryPrompt()) return
+      await showFirstTimePasskeyPrompt()
+    } finally {
+      setIsCloudSyncRoutePending(false)
+    }
+  }
   const handleCloseSubscribePrompt = () => setIsSubscribePromptOpen(false)
   const handleKeyChanged = async (key: string, options?: { mode?: string }) => {
     const previous = encryptionService.getKey()
@@ -980,7 +994,6 @@ export function ChatInterface({
   const backupStartFreshKeyWithPasskey = async () => {
     await setupPasskey()
   }
-  const isCloudSyncRoutePending = false
   const sidebarChat = useSidebarChat({ context: thread.askContext, options })
   // A flag stops the chat: its reply in progress, its queued turns, and an
   // ask about it.
@@ -1134,6 +1147,8 @@ export function ChatInterface({
     passkeyFirstTimePromptAvailable,
     setupPasskey,
     setupFirstTimePasskey,
+    showFirstTimePasskeyPrompt,
+    showPasskeyRecoveryPrompt,
     dismissFirstTimePasskeyPrompt,
     recoverWithPasskey,
     setupNewKeySplit,
