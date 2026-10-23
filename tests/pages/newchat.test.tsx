@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   chatInterface: vi.fn(),
   router: {
+    pathname: '/newchat',
     isReady: true,
     query: {} as Record<string, string | string[] | undefined>,
   },

@@ -65,6 +65,10 @@ import { ChatAnnouncer } from './chat-announcer'
 import { ChatHeader } from './chat-header'
 import { ChatInput } from './chat-input'
 import { ChatMessages } from './chat-messages'
+import {
+  getChatContentBottomScrollTop,
+  getChatSpacerHeight,
+} from './chat-scroll'
 import { ChatSidebar } from './chat-sidebar'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
@@ -253,7 +257,12 @@ export function ChatInterface({
   const models = useMemo(() => session?.models ?? [], [session])
   const isLoadingConfig = !session
   const hasValidatedModel = !!session
-  const loadingState = isStreaming ? 'streaming' : 'idle'
+  const loadingState =
+    thread.status === 'submitting'
+      ? 'loading'
+      : isStreaming
+        ? 'streaming'
+        : 'idle'
   const isWaitingForResponse =
     isStreaming && currentChat.messages.at(-1)?.role !== 'assistant'
   const isTemporaryMode = thread.temporary
@@ -1169,17 +1178,38 @@ export function ChatInterface({
     inputAreaObserver.current.observe(node)
   }, [])
   useEffect(() => () => inputAreaObserver.current?.disconnect(), [])
-  const handleScroll = () => {
+  const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current
     if (el)
       setShowScrollButton(
-        el.scrollHeight - el.scrollTop - el.clientHeight > 200,
+        getChatContentBottomScrollTop(
+          el.scrollHeight,
+          el.clientHeight,
+          getChatSpacerHeight(el),
+        ) -
+          el.scrollTop >
+          CONSTANTS.CHAT_SCROLL_BUTTON_THRESHOLD_PX,
       )
-  }
+  }, [])
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    const observer = new ResizeObserver(handleScroll)
+    observer.observe(el)
+    if (el.firstElementChild) observer.observe(el.firstElementChild)
+    return () => observer.disconnect()
+  }, [handleScroll, logoAnimDone])
   const scrollToLastMessage = () => {
     const el = scrollContainerRef.current
     if (!el) return
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    el.scrollTo({
+      top: getChatContentBottomScrollTop(
+        el.scrollHeight,
+        el.clientHeight,
+        getChatSpacerHeight(el),
+      ),
+      behavior: 'smooth',
+    })
     // Move keyboard/screen-reader focus to the latest message so it is read
     // out and becomes the navigation anchor. preventScroll avoids fighting the
     // smooth scroll above.
@@ -1187,12 +1217,6 @@ export function ChatInterface({
     const lastMessage = messageEls[messageEls.length - 1] as HTMLElement | null
     lastMessage?.focus({ preventScroll: true })
   }
-  useEffect(() => {
-    if (!showScrollButton) {
-      const el = scrollContainerRef.current
-      el?.scrollTo({ top: el.scrollHeight })
-    }
-  }, [currentChat.messages.length, isStreaming, showScrollButton])
   const showEmptyChatGrid =
     currentChat.messages.length === 0 &&
     !isWaitingForResponse &&

@@ -13,7 +13,7 @@ export const chatPage = {
   premium: false,
   router: {
     isReady: true,
-    query: {} as Record<string, string>,
+    query: {} as Record<string, string | string[]>,
     asPath: '/',
     pathname: '/',
     push: vi.fn(async () => true),

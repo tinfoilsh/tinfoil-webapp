@@ -352,7 +352,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     act(() => {
       sending = result.current.send({ content: 'third' })
     })
-    await waitFor(() => expect(result.current.running).toBe(true))
+    await waitFor(() => expect(result.current.status).toBe('streaming'))
 
     applies({ title: 'Mine', titleState: 'manual' })
     await act(() => result.current.update(SEEDED_ID, { title: 'Mine' }))
@@ -1179,7 +1179,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     act(() => {
       sending = result.current.send({ content: 'Long task' })
     })
-    await waitFor(() => expect(result.current.running).toBe(true))
+    await waitFor(() => expect(result.current.status).toBe('streaming'))
     const threadId = turn().threadId!
 
     await act(() => result.current.cancel())

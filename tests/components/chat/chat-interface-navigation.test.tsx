@@ -206,7 +206,7 @@ it('shows a sidebar selection before the chat request finishes', async () => {
   await screen.findByRole('status', { name: 'Loading chat history' })
   expect(link).toHaveAttribute('aria-current', 'page')
   expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-    first.title,
+    'Loading chat',
   )
   expect(screen.getByRole('textbox', { name: /message/i })).toBeDisabled()
   await act(async () => pending.resolve(first))

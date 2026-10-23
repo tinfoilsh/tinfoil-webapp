@@ -19,7 +19,7 @@ export interface ChatState {
   messages: Message[]
   hasOlder: boolean
   runId?: string
-  status: 'idle' | 'queued' | 'streaming' | 'error'
+  status: 'idle' | 'submitting' | 'queued' | 'streaming' | 'error'
   error?: HarnessErrorBody
   // The run that ended with RUN_ERROR. It is run again rather than rejoined.
   failedRun?: string

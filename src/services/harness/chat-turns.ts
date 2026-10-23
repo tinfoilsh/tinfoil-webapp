@@ -140,6 +140,7 @@ export function chatTurns({
   }
   function send(fields: Partial<Turn> = {}): Promise<boolean> | undefined {
     const threads = openStore()
+    if (controller.view.get().status === 'submitting') return
     if (threads.local && controller.startingThread() !== undefined) return
     const current = open.get()
     if (current.loadingId || (current.id && moving.has(current.id))) return
@@ -162,36 +163,77 @@ export function chatTurns({
     const choice = presetChoice()
     const threadId = startChat(choice)
     const defaults = turnDefaults()
-    return (async () => {
-      const turn = await threads.prepareTurn(
-        threadId,
-        {
-          defaults: {
-            ...defaults,
-            options: leaveToPreset(defaults.options, choice),
-          },
-          fields: {
-            ...fields,
-            ...(fields.options
-              ? { options: leaveToPreset(fields.options, choice) }
-              : {}),
-          },
-          key,
-        },
-        settings,
-      )
-      if (!turn) return false
-      controller.pending = { input: turn.resend, run: turn.run }
-      const message = sentMessage(turn.input)
-      if (message) {
-        showSent(message)
-        await turn.keep?.(message)
+    const shown = controller.track()
+    const message = sentMessage({ ...defaults, ...fields })
+    if (message) showSent(message)
+    const status = controller.view.get().status
+    const submit = (): Promise<boolean> => {
+      controller.retryPreparation = null
+      const submission =
+        status === 'streaming' || status === 'queued'
+          ? undefined
+          : { cancelled: false }
+      if (submission) {
+        controller.submission = submission
+        controller.view.update((state) => ({
+          ...state,
+          status: 'submitting',
+          runId: undefined,
+          error: undefined,
+        }))
       }
-      return controller.run(ROUTES.turn, turn.input, { device: turn.run })
-    })().catch((cause) => {
-      report(cause)
-      return false
-    })
+      return (async () => {
+        const turn = await threads.prepareTurn(
+          threadId,
+          {
+            defaults: {
+              ...defaults,
+              options: leaveToPreset(defaults.options, choice),
+            },
+            fields: {
+              ...fields,
+              ...(fields.options
+                ? { options: leaveToPreset(fields.options, choice) }
+                : {}),
+            },
+            key,
+          },
+          settings,
+        )
+        if (!turn || !shown()) return false
+        controller.pending = { input: turn.resend, run: turn.run }
+        if (message) {
+          await turn.keep?.(message)
+        }
+        if (!shown() || submission?.cancelled) {
+          if (turn.run) controller.settle(turn.run)
+          if (shown()) controller.pending = null
+          return false
+        }
+        return controller.run(ROUTES.turn, turn.input, {
+          device: turn.run,
+          submission,
+        })
+      })()
+        .catch((cause) => {
+          if (shown()) {
+            if (submission) controller.retryPreparation = submit
+            report(cause)
+          }
+          return false
+        })
+        .finally(() => {
+          if (submission && controller.submission === submission) {
+            controller.submission = null
+            controller.view.update((state) =>
+              state.status === 'submitting'
+                ? { ...state, status: 'idle' }
+                : state,
+            )
+          }
+        })
+    }
+    return submit()
   }
   // A refused content key rejects these actions instead of throwing, as
   // their callers report a rejection.
@@ -238,6 +280,7 @@ export function chatTurns({
   }
   async function reconnect() {
     patch({ failure: null })
+    if (controller.retryPreparation) return controller.retryPreparation()
     const threads = openStore()
     const threadId = open.get().id
     // A turn whose acceptance never arrived is sent again with its nonce,

@@ -608,7 +608,7 @@ describe('moving a chat from this device to the cloud', () => {
       act(() => {
         replied = result.current.send({ content: 'More?' })
       })
-      await waitFor(() => expect(result.current.running).toBe(true))
+      await waitFor(() => expect(result.current.status).toBe('streaming'))
       let queuedTurn: Promise<unknown> | undefined
       act(() => {
         queuedTurn = result.current.send({ content: 'And then?' })

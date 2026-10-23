@@ -281,9 +281,9 @@ export function deviceThreads({
           store
             .update(
               threadId,
-              () => ({
-                ...base,
-                messages: [...base.messages, message],
+              (current) => ({
+                ...(current ?? base),
+                messages: [...(current ?? base).messages, message],
                 updatedAt: message.createdAt,
               }),
               run.originals,

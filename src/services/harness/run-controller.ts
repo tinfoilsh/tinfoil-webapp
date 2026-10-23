@@ -48,6 +48,7 @@ export interface DeviceRun {
 }
 
 export interface RunOptions {
+  submission?: { cancelled: boolean }
   // A device chat's run keeps reading when the view moves to another chat,
   // or the page to another route, so its reply is still saved. An account
   // change ends it with the API's lifetime.
@@ -90,6 +91,8 @@ export class RunController {
   // The turn sent whose run has not started. It is sent again, with its
   // nonce, to reconnect.
   pending: { input: Turn; run?: DeviceRun } | null = null
+  submission: { cancelled: boolean } | null = null
+  retryPreparation: (() => Promise<boolean>) | null = null
   // Changes each time the view moves to another chat. A run started for
   // the previous one no longer updates the view.
   private generation = 0
@@ -118,6 +121,8 @@ export class RunController {
     this.followers.clear()
     this.starting = null
     this.pending = null
+    this.submission = null
+    this.retryPreparation = null
     this.view.set(next)
   }
 
@@ -207,6 +212,18 @@ export class RunController {
               threadId: event.threadId,
               runId: event.runId,
             })
+        }
+        if (options.submission?.cancelled && runId) {
+          options.submission.cancelled = false
+          await this.api.post(
+            ROUTES.cancel,
+            {
+              ...(input.key ? { key: this.api.key() } : {}),
+              threadId,
+              runId,
+            },
+            { keyless: true },
+          )
         }
         if (
           device &&
@@ -328,6 +345,10 @@ export class RunController {
   }
 
   cancel(input: { key?: string; threadId: string | null; runId?: string }) {
+    if (this.view.get().status === 'submitting' && this.submission) {
+      this.submission.cancelled = true
+      return Promise.resolve()
+    }
     return this.api.post(ROUTES.cancel, input, { keyless: true })
   }
 

@@ -107,16 +107,25 @@ export function ChatHeader({
             className="truncate font-aeonik text-sm font-medium text-content-primary"
             title={isLoading ? undefined : chat.title}
           >
-            {chat.title}
+            {isLoading ? (
+              <>
+                <span className="sr-only">Loading chat</span>
+                <span
+                  aria-hidden="true"
+                  className="my-1 block h-3 w-40 max-w-full animate-pulse rounded bg-surface-chat"
+                />
+              </>
+            ) : (
+              chat.title
+            )}
           </h1>
           {isLoading ? (
-            <div
-              aria-hidden="true"
-              className="mt-0.5 h-3 w-20 animate-pulse rounded bg-surface-chat"
-            />
+            <div aria-hidden="true" className="mt-0.5 flex h-4 items-center">
+              <span className="h-2 w-20 animate-pulse rounded bg-surface-chat" />
+            </div>
           ) : (
             metaItems.length > 0 && (
-              <p className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap font-aeonik-fono text-xs leading-none text-content-muted">
+              <p className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap font-aeonik-fono text-xs leading-4 text-content-muted">
                 {metaItems.map((item, index) => (
                   <span
                     key={index}

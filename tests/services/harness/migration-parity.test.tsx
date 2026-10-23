@@ -391,7 +391,7 @@ it('accepts more than one queued message in a device chat', async () => {
     act(() => {
       pending.push(result.current.send({ content: 'First' }))
     })
-    await waitFor(() => expect(result.current.running).toBe(true))
+    await waitFor(() => expect(result.current.status).toBe('streaming'))
     act(() => {
       pending.push(result.current.send({ content: 'Second' }))
     })

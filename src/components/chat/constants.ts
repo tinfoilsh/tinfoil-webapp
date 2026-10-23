@@ -12,6 +12,8 @@ export const CONSTANTS = {
   // viewport so it never covers the entire screen above the keyboard
   INPUT_VIEWPORT_TOP_GAP_PX: 24,
   CHAT_INPUT_BOTTOM_GAP_PX: 32,
+  CHAT_MESSAGE_TOP_GAP_PX: 16,
+  CHAT_SCROLL_BUTTON_THRESHOLD_PX: 200,
   CHAT_INPUT_FADE_HEIGHT_PX: 80,
   CHAT_INPUT_FADE_SOLID_AT_PX: 72,
   SINGLE_SIDEBAR_BREAKPOINT: 1024, // Below this width, only one sidebar can be open at a time

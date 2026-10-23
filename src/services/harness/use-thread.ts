@@ -420,7 +420,17 @@ export function useThread(
       patch({ local: true })
     }
   }, [cloud, reset, route.newChatLocal, clearCloud, open, patch])
+  const previousRoute = useRef(initialId)
+  const previousNewChatLocal = useRef(!!route.newChatLocal)
+  const leavingChat = !!previousRoute.current && !initialId
   useEffect(() => {
+    previousRoute.current = initialId
+    const changedStorage = previousNewChatLocal.current !== !!route.newChatLocal
+    previousNewChatLocal.current = !!route.newChatLocal
+    if (leavingChat || (!initialId && changedStorage)) {
+      newChat({ local: !!route.newChatLocal })
+      return
+    }
     if (
       !initialId ||
       opened.current === initialId ||
@@ -432,7 +442,7 @@ export function useThread(
     void openChat(initialId, { local: !!route.local }).catch(report)
     // Opening a route must not run again when its stream updates the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialId, keyReady, route.local])
+  }, [initialId, keyReady, route.local, route.newChatLocal])
   useEffect(() => {
     let currentKey = encryptionService.getKey()
     const clear = () => {
@@ -497,7 +507,10 @@ export function useThread(
   const model = choice.model ?? openState.model
   const webSearch = openState.webSearch ?? choice.webSearchEnabled
   const presetId = presetIdOf(openState, profile)
-  const running = state.status === 'streaming' || state.status === 'queued'
+  const running =
+    state.status === 'submitting' ||
+    state.status === 'streaming' ||
+    state.status === 'queued'
   const isLocalChat = local && !temporary
   const messages = state.messages.map((m, index) => {
     const view = messageView(
@@ -535,7 +548,11 @@ export function useThread(
           : [...list.cloudListed, ...list.pinnedListed]
         ).find((thread) => thread.id === openState.loadingId)
       : undefined)
-  const selectedId = openState.loadingId ?? id
+  const loading =
+    leavingChat ||
+    openState.loadingId !== null ||
+    (!!initialId && opened.current !== initialId && id !== initialId)
+  const selectedId = openState.loadingId ?? id ?? (loading ? initialId : null)
   const chat: Chat = summary
     ? {
         ...threadView(summary, messages),
@@ -548,7 +565,7 @@ export function useThread(
       }
     : {
         id: selectedId ?? '',
-        title: openState.loadingId ? 'Loading chat…' : 'New Chat',
+        title: loading ? 'Loading chat…' : 'New Chat',
         messages,
         createdAt: new Date(),
         isBlankChat: !selectedId,
@@ -596,15 +613,14 @@ export function useThread(
     setTemporary: (next: boolean) => patch({ temporary: next }),
     local: isLocalChat,
     cloud,
-    loading: openState.loadingId !== null,
+    loading,
     notFound: openState.notFound,
     status: state.status,
     running,
     // The open chat takes turns once its settings load and, for a chat the
     // harness stores, once the content key is unlocked.
-    canSend:
-      !openState.loadingId && profileReady && (onDevice(openState) || keyReady),
-    canChangeMessages: !openState.loadingId && !!chat.id,
+    canSend: !loading && profileReady && (onDevice(openState) || keyReady),
+    canChangeMessages: !loading && !!chat.id,
     queue,
     contextUsage: summary?.contextUsage ?? undefined,
     error: failure?.message || state.error?.message || '',

@@ -14,7 +14,10 @@ import React, {
   useRef,
   useState,
 } from 'react'
-import { canRemoveChatSpacerWithoutJump } from './chat-scroll'
+import {
+  canRemoveChatSpacerWithoutJump,
+  getChatContentBottomScrollTop,
+} from './chat-scroll'
 import { UnsavedImagesProvider } from './components/unsaved-images-notice'
 import { CONSTANTS } from './constants'
 import {
@@ -231,7 +234,7 @@ const LoadingMessage = memo(function LoadingMessage({
   return (
     <div className="no-scroll-anchoring group mx-auto mb-6 flex w-full max-w-3xl flex-col items-start px-4 pt-6">
       <div className="flex w-full flex-col gap-2">
-        <StreamingTracerDot tone="secondary" />
+        <StreamingTracerDot tone="secondary" label="Waiting for response" />
         {isRetrying && (
           <span className="text-sm text-content-secondary">
             {getRetryMessage()}
@@ -306,8 +309,14 @@ export function ChatMessages({
       }
   const [showSpacer, setShowSpacer] = useState(false)
   const prevMessageCountRef = React.useRef(messages.length)
+  const previousLastMessageRef = useRef(
+    messages.at(-1)?.id ?? messages.at(-1)?.turnId,
+  )
+  const previousChatIdRef = useRef(chatId)
+  const anchorPendingRef = useRef(false)
   const messageCountWhenSpacerSetRef = React.useRef<number | null>(null)
   const spacerRef = React.useRef<HTMLDivElement>(null)
+  const conversationRef = useRef<HTMLDivElement>(null)
   const printRef = useRef<HTMLDivElement>(null)
   const printReadyResolverRef = useRef<(() => void) | null>(null)
   const [printRequested, setPrintRequested] = useState(false)
@@ -347,24 +356,63 @@ export function ChatMessages({
   })
 
   // Show spacer when user sends a new message
-  React.useEffect(() => {
+  useLayoutEffect(() => {
+    const changedChat =
+      previousChatIdRef.current !== chatId && !!previousChatIdRef.current
+    previousChatIdRef.current = chatId
     const lastMessage = messages[messages.length - 1]
-    if (
+    const lastMessageId = lastMessage?.id ?? lastMessage?.turnId
+    if (changedChat) {
+      setShowSpacer(false)
+      anchorPendingRef.current = false
+      messageCountWhenSpacerSetRef.current = null
+    } else if (
       messages.length > prevMessageCountRef.current &&
+      lastMessageId !== previousLastMessageRef.current &&
       lastMessage?.role === 'user'
     ) {
+      anchorPendingRef.current = true
       setShowSpacer(true)
       messageCountWhenSpacerSetRef.current = messages.length
     }
     prevMessageCountRef.current = messages.length
-  }, [messages])
+    previousLastMessageRef.current = lastMessageId
+  }, [chatId, messages])
 
-  // Reset spacer when chat changes
-  React.useEffect(() => {
-    setShowSpacer(false)
-    prevMessageCountRef.current = messages.length
-    messageCountWhenSpacerSetRef.current = null
-  }, [chatId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    if (!anchorPendingRef.current || !spacerRef.current) return
+    const container = spacerRef.current.closest<HTMLElement>(
+      '[data-scroll-container="main"]',
+    )
+    const users = container?.querySelectorAll<HTMLElement>(
+      '[data-message-role="user"]',
+    )
+    const lastUser = users?.[users.length - 1]
+    if (!container || !lastUser) return
+    anchorPendingRef.current = false
+    container.scrollTo({
+      top:
+        container.scrollTop +
+        lastUser.getBoundingClientRect().top -
+        container.getBoundingClientRect().top -
+        CONSTANTS.CHAT_MESSAGE_TOP_GAP_PX,
+      behavior: 'smooth',
+    })
+  }, [showSpacer, messages, mounted])
+
+  useLayoutEffect(() => {
+    const container = conversationRef.current?.closest<HTMLElement>(
+      '[data-scroll-container="main"]',
+    )
+    if (container && !anchorPendingRef.current && !spacerRef.current)
+      container.scrollTo({
+        top: getChatContentBottomScrollTop(
+          container.scrollHeight,
+          container.clientHeight,
+          0,
+        ),
+      })
+  }, [chatId, mounted])
 
   // Reset spacer after an active response has grown beyond the viewport
   React.useEffect(() => {
@@ -473,6 +521,7 @@ export function ChatMessages({
           role="log" implies aria-live="polite", which would read the
           response (and every message of a newly opened chat) a second time. */}
           <div
+            ref={conversationRef}
             role="log"
             aria-label="Conversation"
             aria-live="off"
@@ -507,17 +556,17 @@ export function ChatMessages({
                 retryInfo={retryInfo}
               />
             )}
-            {/* Spacer allows scrollIntoView to bring user message to top of viewport.
+            {/* Spacer allows scrolling the user message to the top of the viewport.
           Subtracts the composer height (set on the scroll container as
           --input-area-height) so the total over-scroll is just enough for the
-          fade above the input area, not a full 70dvh of empty space. */}
+          fade above the input area, not a full viewport of empty space. */}
             {showSpacer && (
               <div
                 ref={spacerRef}
                 data-spacer
                 className="flex-shrink-0"
                 style={{
-                  height: `max(0px, calc(70dvh - var(--input-area-height, 0px) - ${CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px))`,
+                  height: `max(0px, calc(100dvh - var(--input-area-height, 0px) - ${CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px))`,
                 }}
                 aria-hidden="true"
               />

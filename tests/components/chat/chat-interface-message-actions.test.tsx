@@ -185,7 +185,7 @@ describe('message actions on the chat page', () => {
       await screen.findByRole('status', { name: 'Loading chat history' })
       expect(
         screen
-          .getByRole('heading', { level: 1, name: 'Loading chat…' })
+          .getByRole('heading', { level: 1, name: 'Loading chat' })
           .closest('header'),
       ).toBe(header)
       const loadingInput = screen.getByRole('textbox', { name: /message/i })

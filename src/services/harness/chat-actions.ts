@@ -53,7 +53,10 @@ export function chatActions({
     if (
       controller.deviceRuns.get().has(threadId) ||
       controller.startingThread() === threadId ||
-      (isOpen(threadId) && (status === 'streaming' || status === 'queued'))
+      (isOpen(threadId) &&
+        (status === 'submitting' ||
+          status === 'streaming' ||
+          status === 'queued'))
     ) {
       throw transferInFlight()
     }
