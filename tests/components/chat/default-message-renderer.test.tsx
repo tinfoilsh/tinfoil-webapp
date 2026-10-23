@@ -940,6 +940,68 @@ describe('DefaultMessageRenderer work traces', () => {
     )
   })
 
+  it("lists the last search's results and the citations as the reply's sources", () => {
+    const page = (name: string) => ({
+      url: `https://${name}.example/`,
+      title: `Page ${name}`,
+    })
+    const call = (
+      id: string,
+      name: string,
+      display: ToolDisplay,
+    ): WireBlock => ({
+      id,
+      type: 'tool_call',
+      toolCallId: id,
+      name,
+      arguments: '{}',
+      complete: true,
+      display,
+    })
+    const reply = (timeline: WireBlock[]): WireMessage => ({
+      id: 'a1',
+      role: 'assistant',
+      createdAt: '2026-08-07T00:00:01.000Z',
+      content: 'Answer.',
+      timeline: [...timeline, { id: 'c', type: 'content', content: 'Answer.' }],
+      annotations: [{ type: 'url_citation', url_citation: page('first') }],
+    })
+    const read = call('f', 'web_fetch', {
+      url: page('read').url,
+      status: 'completed',
+      sources: [page('read')],
+    })
+    const { unmount } = renderReply(
+      reply([
+        call('s1', 'web_search', {
+          query: 'one',
+          status: 'completed',
+          sources: [page('first')],
+        }),
+        call('s2', 'web_search', {
+          query: 'two',
+          status: 'completed',
+          sources: [page('second')],
+        }),
+        read,
+      ]),
+      false,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 sources' }))
+    expect(
+      within(screen.getByRole('dialog'))
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('href')),
+    ).toEqual(['https://second.example/', 'https://first.example/'])
+    unmount()
+
+    renderReply(reply([read]), false)
+    expect(
+      screen.queryByRole('button', { name: /^Show \d+ sources?$/ }),
+    ).not.toBeInTheDocument()
+  })
+
   it('shows nothing of the code an older chat ran, unlike a retired widget', () => {
     renderReply(
       {

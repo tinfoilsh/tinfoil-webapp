@@ -119,21 +119,20 @@ const DefaultMessageComponent = ({
     () => segmentTimeline(displayTimeline),
     [displayTimeline],
   )
-  const sources = React.useMemo(
-    () => [
-      ...displayTimeline.flatMap((block) =>
-        block.type === 'web_search'
-          ? (block.state.sources ?? [])
-          : block.type === 'url_fetches'
-            ? block.fetches.flatMap((fetch) => fetch.sources ?? [])
-            : [],
-      ),
+  // A reply that searched lists its last search's results and what it
+  // cites; earlier searches and read pages list theirs in their own rows.
+  const sources = React.useMemo(() => {
+    const lastSearch = displayTimeline.findLast(
+      (block) => block.type === 'web_search',
+    )
+    if (lastSearch?.type !== 'web_search') return []
+    return [
+      ...(lastSearch.state.sources ?? []),
       ...(message.annotations ?? []).map(
         (annotation) => annotation.url_citation,
       ),
-    ],
-    [displayTimeline, message.annotations],
-  )
+    ]
+  }, [displayTimeline, message.annotations])
   const [showActions, setShowActions] = React.useState(false)
   const lastContentRef = React.useRef(message.content)
   const showActionsTimeoutRef = React.useRef<ReturnType<
