@@ -19,7 +19,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 import { client, KEY, signIn, testSession } from '../../harness-fixture'
 import {
   resetChatStoresAroundEachTest,
@@ -667,6 +667,71 @@ it('starts a new chat on the model the user picked last, not the open chat’s',
   expect(
     screen.queryByRole('button', { name: 'Current model Test model' }),
   ).not.toBeInTheDocument()
+})
+
+// A synced account's session arrives before its profile, so a new chat
+// shows the session's default pick until the profile loads.
+function loadSyncedProfileLater(profile: Record<string, unknown>) {
+  const api = signIn({
+    cloud: true,
+    session: {
+      ...sessionWithOtherModel,
+      profileDefaults: { selectedModel: 'auto' },
+    },
+  })
+  publish({ profile: {}, profileReady: false, keyReady: false })
+  const loaded = gate()
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/profile/get') {
+      await loaded.promise
+      return profile
+    }
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    throw new Error(`Unexpected ${path}`)
+  })
+  const refreshing = api.refreshProfile()
+  return () =>
+    act(async () => {
+      loaded.resolve()
+      await refreshing
+    })
+}
+
+it('starts a new chat on the model picked last once the synced profile loads', async () => {
+  const finishLoading = loadSyncedProfileLater({ selectedModel: otherModel.id })
+  answerTurns()
+  render(view())
+  expect(
+    await screen.findByRole('button', { name: 'Current model Auto · High' }),
+  ).toBeInTheDocument()
+
+  await finishLoading()
+
+  expect(
+    screen.getByRole('button', { name: 'Current model Other model' }),
+  ).toBeInTheDocument()
+  await send('Which model is this?')
+  await waitFor(() => expect(sentTurns()).toHaveLength(1))
+  expect(sentTurns()[0].options?.model).toBe(otherModel.id)
+})
+
+it('sends a message from the address on the model picked last', async () => {
+  window.history.replaceState(null, '', '/?q=Which+model+is+this%3F')
+  onTestFinished(() => window.history.replaceState(null, '', '/'))
+  const finishLoading = loadSyncedProfileLater({ selectedModel: otherModel.id })
+  answerTurns()
+  render(view())
+  await screen.findByRole('button', { name: 'Current model Auto · High' })
+  expect(client.events).not.toHaveBeenCalled()
+
+  await finishLoading()
+
+  await waitFor(() => expect(sentTurns()).toHaveLength(1))
+  expect(sentTurns()[0]).toMatchObject({
+    content: 'Which model is this?',
+    options: { model: otherModel.id },
+  })
 })
 
 it('continues a chat whose model was retired on the model the user picked', async () => {

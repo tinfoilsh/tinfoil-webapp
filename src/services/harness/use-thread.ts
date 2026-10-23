@@ -34,7 +34,11 @@ import { getView, reportHarnessError } from './runtime'
 import { HarnessError } from './sse'
 import { createStore, useStore } from './store'
 import { cloudThreads, type AskContext, type ThreadStore } from './thread-store'
-import type { AttachmentDescriptor, Message as WireMessage } from './types'
+import type {
+  AttachmentDescriptor,
+  Turn,
+  Message as WireMessage,
+} from './types'
 import { attachmentView, messageView, threadView } from './view-model'
 
 export interface ThreadRoute {
@@ -445,11 +449,14 @@ export function useThread(
     reset,
     state.status,
   ])
-  // A new chat starts on the model the user picked last.
+  // A new chat follows the model the user picked last, as the profile
+  // loads, until the user chooses one in it or sends its first message. A
+  // chat stored without a model continues on that pick.
   const pickedModel = profile.selectedModel || session?.defaultModel || ''
   useEffect(() => {
-    if (pickedModel && !openState.model) patch({ model: pickedModel })
-  }, [pickedModel, openState.model, patch])
+    if (pickedModel && openState.id && !openState.model)
+      patch({ model: pickedModel })
+  }, [pickedModel, openState.id, openState.model, patch])
   const previousCloud = useRef(cloud)
   useEffect(() => {
     if (previousCloud.current === cloud) return
@@ -746,6 +753,11 @@ export function useThread(
     report,
     open: openChat,
     ...turns,
+    send(fields?: Partial<Turn>) {
+      const current = open.get()
+      if (!current.id && !current.model) patch({ model: pickedModel })
+      return turns.send(fields)
+    },
     ...actions,
     upload,
     loadImage: (attachment: UIAttachment, signal?: AbortSignal) =>
