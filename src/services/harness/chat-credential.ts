@@ -20,6 +20,7 @@ const MS_PER_SECOND = 1000
 interface Credential {
   key: string
   expiresAt: number
+  kind: 'hourly' | 'free_daily'
 }
 
 type Value = Record<string, unknown>
@@ -203,6 +204,7 @@ export class ChatCredentialCache {
     // Only a missing subscription falls back to the free key: a capped or
     // suspended subscriber must not be downgraded around its limit.
     if (response.status === SUBSCRIPTION_REQUIRED_STATUS) {
+      if (this.cached?.kind === 'hourly') this.cached = undefined
       await response.body?.cancel()
       response = await this.request('/api/keys/chat', session)
       kind = 'free_daily'
@@ -224,7 +226,7 @@ export class ChatCredentialCache {
       value.rate_limit ? rateLimitOf(value.rate_limit, kind) : { kind: null },
     )
     this.refused = undefined
-    this.cached = { key: str(value.key), expiresAt }
+    this.cached = { key: str(value.key), expiresAt, kind }
     return this.cached
   }
 

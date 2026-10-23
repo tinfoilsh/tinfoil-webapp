@@ -1113,4 +1113,45 @@ describe('chat access a signed-in client mints', () => {
     expect(access(secure).at(-1)).toBe('renewed-token')
     expect(reported).toEqual([{ kind: null }])
   })
+
+  it.each([true, false])(
+    'drops only denied subscriber access when the free-key fallback fails (subscriber: %s)',
+    async (subscriber) => {
+      let lostSubscription = false
+      const controlplane = vi.fn<typeof fetch>(async (url) => {
+        if (String(url).endsWith('/api/chat/token'))
+          return subscriber && !lostSubscription
+            ? Response.json({
+                key: 'subscriber-token',
+                expires_at: expiresAt(),
+              })
+            : new Response('{}', { status: 402 })
+        return lostSubscription
+          ? new Response('{}', { status: 503 })
+          : Response.json({ key: 'free_key', expires_at: expiresAt() })
+      })
+      vi.stubGlobal('fetch', controlplane)
+      const secure = transport()
+      secure.fetch.mockImplementation(
+        async (_url: string, init: RequestInit) =>
+          new Headers(init.headers).has(INFERENCE_KEY_HEADER)
+            ? Response.json({ ok: true })
+            : needsAccess(),
+      )
+      const { client } = connect(secure)
+      await client.post('/v1/threads/turn', {})
+      lostSubscription = true
+      await expect(client.renewCredential()).rejects.toMatchObject({
+        status: 503,
+      })
+      const next = client.post('/v1/threads/turn', {})
+      if (subscriber) {
+        await expect(next).rejects.toMatchObject({ status: 503 })
+        expect(access(secure)).toEqual(['subscriber-token', null, null])
+      } else {
+        await expect(next).resolves.toEqual({ ok: true })
+        expect(access(secure)).toEqual(['free_key', 'free_key'])
+      }
+    },
+  )
 })
