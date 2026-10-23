@@ -811,7 +811,12 @@ it('shows the projects loading rather than missing until the key lets them be li
 
 it('shows a project chat still replying as generating its response', async () => {
   routes['/v1/threads/list'] = () =>
-    listPage([{ ...projectChat, activeRun: { runId: 'run-1' } }])
+    listPage([
+      {
+        ...projectChat,
+        activeRun: { runId: 'run-1', expiresAt: '2026-10-22T12:10:00Z' },
+      },
+    ])
   render(projectView())
   const row = await screen.findByRole('link', { name: /^Project discussion/ })
   expect(within(row).getByText('Generating response')).toBeInTheDocument()
