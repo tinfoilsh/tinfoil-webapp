@@ -453,9 +453,13 @@ export function ChatInterface({
   const activePreset = getPresetById(activePresetId)
   const pixelateSidebarChatTitles =
     profile.pixelateSidebarChatTitlesEnabled ?? false
-  const webSearchAvailable = session?.features.webSearch ?? false
+  // Settings can turn web search off for every chat; otherwise each chat
+  // searches unless it was turned off for that chat.
+  const webSearchAvailable =
+    (session?.features.webSearch ?? false) &&
+    (profile.webSearchAvailable ?? true)
   const effectiveWebSearchEnabled =
-    currentChat.webSearchEnabled ?? profile.webSearchEnabled ?? true
+    webSearchAvailable && (currentChat.webSearchEnabled ?? true)
   const contextUsage = thread.contextUsage
   const modKey =
     typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
@@ -940,9 +944,6 @@ export function ChatInterface({
           webSearchEnabled: !effectiveWebSearchEnabled,
         })
         .catch(thread.report)
-    void api
-      .updateProfile({ webSearchEnabled: !effectiveWebSearchEnabled })
-      .catch(thread.report)
   }
   const handleOpenVerifierSidebar = () => {
     handleSetVerifierSidebarOpen(!isVerifierSidebarOpen)

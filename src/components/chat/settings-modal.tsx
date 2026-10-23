@@ -863,7 +863,7 @@ export function SettingsModal({
   )
 
   const [webSearchAvailable, setWebSearchAvailable] = useProfileSetting(
-    'webSearchEnabled',
+    'webSearchAvailable',
     true,
   )
 
@@ -2387,6 +2387,7 @@ ${encryptionKey.replace('key_', '')}
                           <label className="relative inline-flex cursor-pointer items-center">
                             <input
                               type="checkbox"
+                              aria-label="Web Search"
                               checked={webSearchAvailable}
                               onChange={(e) => {
                                 const newValue = e.target.checked

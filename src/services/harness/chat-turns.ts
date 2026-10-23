@@ -113,7 +113,8 @@ export function chatTurns({
     return threadId
   }
   // A new chat's first turn leaves the settings its prompt chooses to the
-  // harness, which applies the prompt.
+  // harness, which applies the prompt. Web search turned off in Settings
+  // stays off whatever the prompt chooses.
   const leaveToPreset = (
     options: Turn['options'],
     choice: PresetChoice,
@@ -121,7 +122,8 @@ export function chatTurns({
     if (!options) return options
     const left = { ...options }
     if (choice.model) delete left.model
-    if (choice.webSearchEnabled !== undefined) delete left.webSearch
+    if (choice.webSearchEnabled !== undefined && left.webSearch !== false)
+      delete left.webSearch
     return left
   }
   // The message a turn adds, under the id the harness stores it with. A
