@@ -1990,7 +1990,8 @@ ${encryptionKey.replace('key_', '')}
                   <button
                     type="button"
                     onClick={handleSavePersonalization}
-                    className="rounded-lg bg-brand-accent-dark px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+                    disabled={profileLocked}
+                    className="rounded-lg bg-brand-accent-dark px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -2096,7 +2097,8 @@ ${encryptionKey.replace('key_', '')}
                 hasUnsavedPersonalization && (
                   <button
                     onClick={handleSavePersonalization}
-                    className="rounded-lg bg-brand-accent-dark px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+                    disabled={profileLocked}
+                    className="rounded-lg bg-brand-accent-dark px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>

@@ -518,6 +518,33 @@ describe('settings while the key is refused', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Recover Key' }))
     expect(onCloudSyncSetupClick).toHaveBeenCalledOnce()
   })
+
+  it('keeps unsaved personalization from saving once the key is refused', () => {
+    signIn({
+      cloud: true,
+      profile: { nickname: 'Sam', isUsingPersonalization: true },
+    })
+    render(
+      <Harness
+        initialTab="personalization"
+        isSignedIn
+        isClient
+        encryptionKey={`key_${'ab'.repeat(32)}`}
+      />,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Nickname'), {
+      target: { value: 'Samantha' },
+    })
+    const saves = screen.getAllByRole('button', { name: 'Save' })
+    expect(saves).not.toHaveLength(0)
+    for (const save of saves) expect(save).toBeEnabled()
+
+    act(() => publish({ keyReady: false, keyLocked: true }))
+
+    for (const save of screen.getAllByRole('button', { name: 'Save' }))
+      expect(save).toBeDisabled()
+    expect(screen.getByText(EXPLANATION)).toBeVisible()
+  })
 })
 
 describe('settings prompts', () => {
