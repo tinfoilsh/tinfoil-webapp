@@ -6,7 +6,13 @@ import type {
   StoredThread,
   Turn,
 } from '@/services/harness/types'
-import { fireEvent, render, screen } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { client, signIn } from '../../harness-fixture'
 import {
@@ -144,4 +150,32 @@ it('offers a signed-out visitor a temporary chat that is kept out of the tab', a
   expect(returned).toHaveLength(1)
   expect(sessionStorage.getItem('tinfoil-sync-session-chats')).toBeNull()
   expect(await rawRows('chats')).toEqual([])
+})
+
+it('starts a normal chat after a temporary one', async () => {
+  signIn()
+  scriptDeviceRuns()
+  render(view())
+  fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
+  await send('Off the record')
+  await screen.findByText('Noted')
+
+  fireEvent.click(
+    within(screen.getByRole('banner')).getByRole('link', { name: 'New chat' }),
+  )
+
+  expect(
+    await screen.findByRole('button', { name: 'Temporary chat' }),
+  ).toHaveAttribute('aria-pressed', 'false')
+  await send('Keep this')
+  await screen.findByText('Noted')
+  const kept = client.events.mock.calls[1][1] as Turn
+  expect(kept.threadId).not.toBe(
+    (client.events.mock.calls[0][1] as Turn).threadId,
+  )
+  await waitFor(async () =>
+    expect((await rawRows('chats')).map((row) => row.id)).toEqual([
+      kept.threadId,
+    ]),
+  )
 })

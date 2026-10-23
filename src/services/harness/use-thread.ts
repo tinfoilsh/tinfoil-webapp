@@ -510,7 +510,7 @@ export function useThread(
   function newChat(options: { local?: boolean } = {}) {
     opened.current = null
     reset()
-    patch({ local: !api.cloud || !!options.local })
+    patch({ local: !api.cloud || !!options.local, temporary: false })
     temporaryChats.store = memoryThreadStore()
     controller.clearReceipt()
   }
