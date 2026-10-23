@@ -198,6 +198,62 @@ describe('retrying a widget on the chat page', () => {
     ).not.toBeInTheDocument()
   })
 
+  it("shows neither the retry's run nor its error as the chat's", async () => {
+    let started!: () => void
+    const running = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let fail!: () => void
+    const failing = new Promise<void>((resolve) => {
+      fail = resolve
+    })
+    await retryWidget(async function* (): AsyncGenerator<Frame> {
+      yield {
+        id: 0,
+        event: { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-retry' },
+      }
+      yield {
+        id: 1,
+        event: {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: thread.messages,
+          hasOlder: false,
+        },
+      }
+      // The run's frames so far were applied once the next one is asked for.
+      started()
+      await failing
+      yield {
+        id: 2,
+        event: {
+          type: 'RUN_ERROR',
+          threadId: THREAD_ID,
+          runId: 'run-retry',
+          code: 'UPSTREAM_REFUSED',
+          message: 'The replacement widget arguments do not match the schema',
+        },
+      }
+    })
+
+    await act(() => running)
+    expect(
+      screen.queryByRole('button', { name: 'Stop generation' }),
+    ).not.toBeInTheDocument()
+    await act(async () => fail())
+
+    expect(
+      await screen.findByText(
+        'Could not request a replacement. Try the widget again.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('The service is having trouble right now'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Try again' }),
+    ).not.toBeInTheDocument()
+  })
+
   it.each([
     {
       failure: 'a widget call the harness no longer has',

@@ -16,6 +16,7 @@ import {
 import { ERROR_CODES, ROUTES } from './protocol'
 import type { RunController } from './run-controller'
 import { getView, type HarnessAPI, type Profile } from './runtime'
+import { HarnessError } from './sse'
 import type { Store } from './store'
 import type { ThreadStore, TurnSettings } from './thread-store'
 import type { HarnessErrorBody, Session, ThreadMessage, Turn } from './types'
@@ -88,6 +89,13 @@ export function chatTurns({
       model: open.get().model,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
+  })
+  const turnSettings = (current: OpenChat): TurnSettings => ({
+    first: !current.id || current.unsaved === current.id,
+    presetId: presetIdOf(current, profile),
+    presetChosen: current.presetChosen,
+    projectId,
+    profile: getView().profile,
   })
   // A new chat takes its id with its first turn, and keeps showing the
   // prompt it started with and the settings the prompt chose.
@@ -175,13 +183,7 @@ export function chatTurns({
       report(cause)
       return
     }
-    const settings: TurnSettings = {
-      first: !current.id || current.unsaved === current.id,
-      presetId: presetIdOf(current, profile),
-      presetChosen: current.presetChosen,
-      projectId,
-      profile: getView().profile,
-    }
+    const settings = turnSettings(current)
     const choice = presetChoice()
     const threadId = startChat(choice)
     const defaults = turnDefaults()
@@ -333,22 +335,52 @@ export function chatTurns({
     if (!failedRun || status !== 'error') return reconnect()
     return send({ ...fields, kind: 'retry' })
   }
-  // Asks the harness for new arguments for a widget call. A retry that does
-  // not repair the widget rejects with why.
+  // Asks the harness for new arguments for a widget call, while the chat
+  // shows no run or error of its own. A retry that does not repair the
+  // widget rejects with why.
   async function retryToolCall(fields: Partial<Turn>) {
-    const repaired = await send({
-      ...fields,
-      kind: 'retryToolCall',
-      content: '',
-    })
-    if (repaired) return true
-    throw new ArtifactRetryError(
-      widgetRetryFailure(
-        repaired === undefined
-          ? undefined
-          : (open.get().failure?.detail ?? controller.view.get().error),
-      ),
+    const threads = openStore()
+    const current = open.get()
+    const { status } = controller.view.get()
+    if (
+      !current.id ||
+      current.loadingId ||
+      moving.has(current.id) ||
+      status === 'submitting' ||
+      status === 'streaming' ||
+      status === 'queued' ||
+      (threads.local && controller.startingThread() !== undefined)
     )
+      throw new ArtifactRetryError('unavailable_target')
+    const shown = controller.track()
+    const widgetRetry: { failure?: HarnessErrorBody } = {}
+    let repaired: boolean
+    try {
+      const turn = await threads.prepareTurn(
+        current.id,
+        {
+          defaults: turnDefaults(),
+          fields: { ...fields, kind: 'retryToolCall', content: '' },
+          key: threads.runKey(),
+        },
+        turnSettings(current),
+      )
+      if (!turn || !shown()) throw new ArtifactRetryError('unavailable_target')
+      repaired = await controller.run(ROUTES.turn, turn.input, {
+        device: turn.run,
+        widgetRetry,
+      })
+    } catch (cause) {
+      if (cause instanceof ArtifactRetryError) throw cause
+      throw new ArtifactRetryError(
+        widgetRetryFailure(
+          cause instanceof HarnessError ? cause.detail : undefined,
+        ),
+        { cause },
+      )
+    }
+    if (repaired) return true
+    throw new ArtifactRetryError(widgetRetryFailure(widgetRetry.failure))
   }
   const queueInput = (queueId: string) => ({
     ...openStore().runKey(),

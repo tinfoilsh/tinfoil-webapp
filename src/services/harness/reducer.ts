@@ -207,12 +207,36 @@ const withoutQueued = (snapshot: Snapshot, runId?: string): Snapshot => ({
   queue: snapshot.queue.filter((item) => item.queueId !== runId),
 })
 
+// Why a run ended with RUN_ERROR.
+export const runErrorOf = (
+  event: Extract<HarnessEvent, { type: 'RUN_ERROR' }>,
+): HarnessErrorBody => ({
+  code: event.code ?? ERROR_CODES.upstreamRefused,
+  message: event.message ?? DEFAULT_RUN_ERROR,
+  ...(event.kind ? { kind: event.kind } : {}),
+  ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
+  ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
+})
+
+// The events of a widget's retry that the chat applies: the call redrawn
+// from its new arguments, and the run's end.
+const WIDGET_RETRY_EVENTS: ReadonlySet<HarnessEvent['type']> = new Set([
+  'TOOL_CALL_START',
+  'TOOL_CALL_ARGS',
+  'TOOL_CALL_END',
+  'RUN_FINISHED',
+  'RUN_ERROR',
+])
+
 // Applies one frame of a run. A frame the state applied already, as when a
-// run is replayed from its first frame, returns the state itself.
+// run is replayed from its first frame, returns the state itself. A widget's
+// retry redraws the widget and leaves the chat's run, status and error as
+// they were.
 export function reduceEvent(
   state: ChatState,
   frame: Frame,
   runHint?: string,
+  widgetRetry = false,
 ): ChatState {
   const { event } = frame
   const runId = runOf(event) ?? runHint ?? state.runId
@@ -228,9 +252,11 @@ export function reduceEvent(
       ? { ...state.cursors, [runId]: frame.id }
       : state.cursors
   const next: ChatState = { ...state, cursors }
+  if (widgetRetry && !WIDGET_RETRY_EVENTS.has(event.type)) return next
   // A queued run has its own stream. Its cancellation cannot stop the active
   // run, and late frames from the previous run cannot modify a newer snapshot.
   if (
+    !widgetRetry &&
     runId &&
     state.runId &&
     runId !== state.runId &&
@@ -437,29 +463,25 @@ export function reduceEvent(
       const committed = new Map(
         event.metadata?.messages?.map((message) => [message.id, message]),
       )
+      const messages = next.messages.map((message) => {
+        const metadata = committed.get(message.id)
+        return metadata ? { ...message, ...metadata } : message
+      })
+      if (widgetRetry) return { ...next, messages }
       return {
         ...next,
         snapshot: withoutQueued(next.snapshot, runId),
         status: failed ? 'error' : 'idle',
         ...(failed
           ? {
-              error: {
-                code: event.code ?? ERROR_CODES.upstreamRefused,
-                message: event.message ?? DEFAULT_RUN_ERROR,
-                ...(event.kind ? { kind: event.kind } : {}),
-                ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
-                ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
-              },
+              error: runErrorOf(event),
               ...(runId ? { failedRun: runId } : {}),
               ...(event.code === ERROR_CODES.chatFlagged
                 ? { flagged: true }
                 : {}),
             }
           : {}),
-        messages: next.messages.map((message) => {
-          const metadata = committed.get(message.id)
-          return metadata ? { ...message, ...metadata } : message
-        }),
+        messages,
       }
     }
   }
