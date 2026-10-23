@@ -380,7 +380,7 @@ it('keeps the base tab title for a temporary chat the harness named', async () =
 it.each([
   ['missing', 'Chat not found'],
   ['unreachable', "Couldn't load chat"],
-  ['encrypted with another key', 'Unlock chat history'],
+  ['encrypted with another key', 'Unable to decrypt chat'],
 ])(
   'shows no title or times above a chat that is %s',
   async (failure, heading) => {
@@ -411,3 +411,75 @@ it.each([
     expect(header.queryByText(/ ago$/)).not.toBeInTheDocument()
   },
 )
+
+it.each([
+  [
+    'this browser',
+    { isLocalChatUrl: true },
+    'This local chat may have been deleted from your browser.',
+  ],
+  [
+    'the cloud',
+    {},
+    'This chat may have been deleted or is no longer available.',
+  ],
+])(
+  'explains a chat missing from %s and starts a new one',
+  async (_where, route, explanation) => {
+    signIn({ cloud: true })
+    client.post.mockImplementation(async (path) => {
+      if (path === '/v1/projects/list')
+        return { projects: [], nextCursor: null }
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      if (path === '/v1/threads/get')
+        throw new HarnessError(
+          { code: 'THREAD_NOT_FOUND', message: 'No such chat' },
+          404,
+        )
+      throw new Error(`Unexpected ${path}`)
+    })
+    render(view({ initialChatId: 'gone-chat', ...route }))
+    await screen.findByRole('heading', { name: 'Chat not found' })
+    const status = within(
+      screen.getByRole('region', { name: 'Chat history unavailable' }),
+    )
+    expect(status.getByRole('alert')).toHaveTextContent(explanation)
+
+    fireEvent.click(status.getByRole('button', { name: 'Start new chat' }))
+
+    expect(chatPage.router.push).toHaveBeenCalledExactlyOnceWith(
+      '/',
+      undefined,
+      { shallow: true },
+    )
+  },
+)
+
+it('offers a new chat beside retrying a chat that failed to load', async () => {
+  signIn({ cloud: true })
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/get')
+      throw new HarnessError(
+        { code: 'UPSTREAM_REFUSED', message: 'sync: 502 bad gateway' },
+        502,
+      )
+    throw new Error(`Unexpected ${path}`)
+  })
+  render(view({ initialChatId: 'broken-chat' }))
+  await screen.findByRole('heading', { name: "Couldn't load chat" })
+  const status = within(
+    screen.getByRole('region', { name: 'Chat history unavailable' }),
+  )
+  expect(status.getByRole('alert')).toHaveTextContent(
+    'A network error occurred while loading this chat. Please try again.',
+  )
+  expect(status.getByRole('button', { name: 'Try again' })).toBeEnabled()
+
+  fireEvent.click(status.getByRole('button', { name: 'Start new chat' }))
+
+  expect(chatPage.router.push).toHaveBeenCalledExactlyOnceWith('/', undefined, {
+    shallow: true,
+  })
+})

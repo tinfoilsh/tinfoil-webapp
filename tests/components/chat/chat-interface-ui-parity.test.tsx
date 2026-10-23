@@ -268,7 +268,7 @@ it.each(['missing', 'connection', 'key'])(
     render(view(saved.id))
     const title =
       failure === 'key'
-        ? 'Unlock chat history'
+        ? 'Unable to decrypt chat'
         : failure === 'missing'
           ? 'Chat not found'
           : "Couldn't load chat"
@@ -289,7 +289,7 @@ it.each(['missing', 'connection', 'key'])(
     } else
       expect(
         screen.getByRole('button', {
-          name: failure === 'key' ? 'Unlock' : 'Start a new chat',
+          name: failure === 'key' ? 'Unlock' : 'Start new chat',
         }),
       ).toBeEnabled()
   },

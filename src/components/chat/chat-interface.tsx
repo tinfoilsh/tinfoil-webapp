@@ -279,22 +279,23 @@ export function ChatInterface({
   const historyProblem: ChatHistoryProblem | null =
     initialChatId && !isLocalChatUrl && isAuthLoaded && !isSignedIn
       ? 'sign-in'
-      : (initialChatId &&
-            !isLocalChatUrl &&
-            !keyReady &&
-            (keyLocked || !cloudSyncEnabled)) ||
-          (thread.loadFailed &&
-            thread.errorDetail?.code === ERROR_CODES.keyMismatch)
+      : initialChatId &&
+          !isLocalChatUrl &&
+          !keyReady &&
+          (keyLocked || !cloudSyncEnabled)
         ? 'unlock'
-        : thread.notFound
-          ? 'not-found'
-          : thread.loadFailed ||
-              (initialChatId &&
-                !isLocalChatUrl &&
-                !profileReady &&
-                sessionError)
-            ? 'failed'
-            : null
+        : thread.loadFailed &&
+            thread.errorDetail?.code === ERROR_CODES.keyMismatch
+          ? 'wrong-key'
+          : thread.notFound
+            ? 'not-found'
+            : thread.loadFailed ||
+                (initialChatId &&
+                  !isLocalChatUrl &&
+                  !profileReady &&
+                  sessionError)
+              ? 'failed'
+              : null
   const isTemporaryMode = thread.temporary
   useSafeguardsReset()
   // A chat the safeguards flagged is read-only, as the harness reports it.
@@ -2176,10 +2177,7 @@ export function ChatInterface({
                     <ChatHistoryStatus
                       problem={historyProblem}
                       path={router.asPath}
-                      error={
-                        thread.error ||
-                        (!profileReady ? sessionError : undefined)
-                      }
+                      local={thread.local}
                       onRetry={() => {
                         if (!profileReady)
                           void api.refresh().catch(thread.report)
