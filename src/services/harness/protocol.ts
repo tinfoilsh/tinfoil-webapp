@@ -103,4 +103,6 @@ export const ERROR_CODES = {
   importInvalid: 'IMPORT_INVALID',
   importTooLarge: 'IMPORT_TOO_LARGE',
   payloadTooLarge: 'PAYLOAD_TOO_LARGE',
+  // Set by this client, not the harness: a reply this device could not store.
+  localSaveFailed: 'LOCAL_SAVE_FAILED',
 } as const

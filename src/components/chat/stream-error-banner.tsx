@@ -49,6 +49,7 @@ type ErrorKind =
   | 'model'
   | 'document'
   | 'server'
+  | 'storage'
 
 type ErrorClassification = {
   kind: ErrorKind
@@ -131,6 +132,12 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
     title: 'This conversation is too long for the model',
     suggestion:
       'Remove an attachment, shorten your message, or switch to a model with a larger context window.',
+  },
+  storage: {
+    kind: 'storage',
+    title: 'This chat could not be saved on this device',
+    suggestion:
+      'The reply arrived, but this browser could not store it. Free up storage space for this site, then continue the chat.',
   },
   server: {
     kind: 'server',
@@ -215,6 +222,8 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
       return CLASSIFICATIONS['too-large']
     case ERROR_CODES.modelUnavailable:
       return CLASSIFICATIONS.model
+    case ERROR_CODES.localSaveFailed:
+      return CLASSIFICATIONS.storage
     case undefined:
     case ERROR_CODES.streamInterrupted:
     case ERROR_CODES.connection:
@@ -270,7 +279,11 @@ export function StreamErrorBanner({
   // key fails identically until that changes, so a retry button is just an
   // invitation to frustration.
   const showRetry =
-    !!onRetry && kind !== 'rate-limit' && kind !== 'too-large' && kind !== 'key'
+    !!onRetry &&
+    kind !== 'rate-limit' &&
+    kind !== 'too-large' &&
+    kind !== 'key' &&
+    kind !== 'storage'
   const isOffline = isResend && !isOnline
   const retryDisabled = isOffline || waitSeconds > 0
   const retryLabel = isOffline

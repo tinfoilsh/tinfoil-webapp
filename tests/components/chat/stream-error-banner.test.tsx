@@ -245,6 +245,29 @@ describe('StreamErrorBanner', () => {
     },
   )
 
+  it('explains a reply this device could not store without offering to resend it', () => {
+    render(
+      <StreamErrorBanner
+        error={{
+          code: 'LOCAL_SAVE_FAILED',
+          message: 'This chat could not be saved on this device.',
+        }}
+        isDarkMode={false}
+        onDismiss={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This chat could not be saved on this device',
+    )
+    expect(screen.getByRole('alert')).not.toHaveTextContent(
+      'Connection problem',
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Resend message' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('counts down a requested wait before allowing a resend', async () => {
     vi.useFakeTimers()
     try {
