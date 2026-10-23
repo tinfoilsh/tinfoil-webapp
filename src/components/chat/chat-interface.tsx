@@ -697,8 +697,6 @@ export function ChatInterface({
     try {
       const forkId = await thread.fork(index)
       if (!forkId) return
-      setProcessedDocuments([])
-      setQuote(null)
       // The overlay stays long enough to read as a step, not a flicker.
       const elapsed = Date.now() - startedAt
       if (elapsed < CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS)
