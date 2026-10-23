@@ -516,3 +516,111 @@ it('expands the documents of an open sidebar for files added from the composer',
   ).toBeInTheDocument()
   expect(screen.getByText('Uploading...')).toBeInTheDocument()
 })
+
+it('offers a file dropped while its project loads once the project opens', async () => {
+  const opening = deferred<unknown>()
+  routes['/v1/projects/get'] = () => opening.promise
+  render(projectView())
+  await screen.findByRole('heading', { name: 'Loading...' })
+
+  dropFiles([new File(['# Notes'], notes.filename, { type: 'text/markdown' })])
+  await act(async () => {})
+  expect(
+    screen.queryByRole('heading', { name: 'Add to project context?' }),
+  ).not.toBeInTheDocument()
+
+  await act(async () => opening.resolve(structuredClone(project)))
+  expect(
+    await screen.findByRole('heading', { name: 'Add to project context?' }),
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      (_, element) =>
+        element?.tagName === 'P' &&
+        element.textContent ===
+          `Would you like to add ${notes.filename} to the project context for ${project.name}?`,
+    ),
+  ).toBeInTheDocument()
+  expect(client.upload).not.toHaveBeenCalled()
+  expect(page.toast).not.toHaveBeenCalled()
+})
+
+it.each([
+  {
+    outcome: 'fails to load',
+    finish: (opening: ReturnType<typeof deferred<unknown>>) =>
+      act(async () => opening.reject(new Error('Project not found'))),
+    toast: {
+      title: 'Project unavailable',
+      description:
+        'The file was not attached because the project failed to load.',
+    },
+  },
+  {
+    outcome: 'is left for another project',
+    finish: async (
+      _: ReturnType<typeof deferred<unknown>>,
+      rerender: (ui: React.ReactElement) => void,
+    ) => {
+      routes['/v1/projects/get'] = () => structuredClone(planning)
+      rerender(projectView(planning.id))
+      await screen.findByTitle('Rename project')
+    },
+    toast: {
+      title: 'Upload canceled',
+      description: 'The file was not attached because the project changed.',
+    },
+  },
+])(
+  'drops a file waiting for a project that $outcome',
+  async ({ finish, toast }) => {
+    const opening = deferred<unknown>()
+    routes['/v1/projects/get'] = () => opening.promise
+    const { rerender } = render(projectView())
+    await screen.findByRole('heading', { name: 'Loading...' })
+
+    dropFiles([
+      new File(['# Notes'], notes.filename, { type: 'text/markdown' }),
+    ])
+    await finish(opening, rerender)
+
+    await waitFor(() =>
+      expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+        ...toast,
+        variant: 'destructive',
+        position: 'top-right',
+      }),
+    )
+    expect(
+      screen.queryByRole('heading', { name: 'Add to project context?' }),
+    ).not.toBeInTheDocument()
+    expect(client.upload).not.toHaveBeenCalled()
+  },
+)
+
+it('says project mode ended when the page leaves a loading project with a file waiting, after another project failed to load', async () => {
+  const opening = deferred<unknown>()
+  routes['/v1/projects/get'] = (input) => {
+    if (input.id === project.id) throw new Error('Project not found')
+    return opening.promise
+  }
+  const { rerender } = render(projectView())
+  await waitFor(() => expect(requested('/v1/projects/get')).toHaveLength(1))
+  rerender(projectView(planning.id))
+  await waitFor(() => expect(requested('/v1/projects/get')).toHaveLength(2))
+  expect(screen.getByRole('heading', { name: 'Loading...' })).toBeVisible()
+  dropFiles([new File(['# Notes'], notes.filename, { type: 'text/markdown' })])
+  await act(async () => {})
+
+  rerender(routeView({}))
+
+  await waitFor(() =>
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Upload canceled',
+      description: 'The file was not attached because project mode ended.',
+      variant: 'destructive',
+      position: 'top-right',
+    }),
+  )
+  expect(client.upload).not.toHaveBeenCalled()
+})

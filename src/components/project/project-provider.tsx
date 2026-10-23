@@ -68,8 +68,10 @@ export function ProjectProvider({
       if (!hasPremiumAccessRef.current) return false
       openProjectId.current = id
       const version = ++generation.current
-      if (!refresh)
+      if (!refresh) {
         setLoadingProject({ id, name: name ?? LOADING_PROJECT_NAME })
+        setError(null)
+      }
       try {
         const project = await projects.getProject(api, id)
         if (
@@ -113,6 +115,7 @@ export function ProjectProvider({
     setProjectDocuments([])
     setLoadingProject(null)
     setUploadingFiles([])
+    setError(null)
   }, [])
   // Leaving a project opens the project list in the chat sidebar.
   const exitProjectMode = useCallback(() => {

@@ -212,6 +212,7 @@ export function ChatInterface({
     exitProjectMode,
     createProject,
     uploadDocument,
+    error: projectError,
     addUploadingFile,
     removeUploadingFile,
   } = useProject()
@@ -994,15 +995,54 @@ export function ChatInterface({
       })
     }
   }
+  // A file added in a project, or one still loading, is offered to it.
   const handleFileUpload = async (file: File) => {
-    if (activeProject) {
+    const target = loadingProject ?? activeProject
+    if (target) {
       setPendingProjectUpload((previous) => ({
-        projectId: activeProject.id,
-        files: [...(previous?.files ?? []), file],
+        projectId: target.id,
+        files:
+          previous?.projectId === target.id
+            ? [...previous.files, file]
+            : [file],
       }))
-      setShowAddToProjectModal(true)
     } else await processFileForChat(file)
   }
+  // The offer waits for its project to open, and is dropped if another
+  // project opens or the project fails to.
+  useEffect(() => {
+    if (!pendingProjectUpload) return
+    const cancel = (title: string, description: string) => {
+      setPendingProjectUpload(null)
+      setShowAddToProjectModal(false)
+      toast({
+        title,
+        description,
+        variant: 'destructive',
+        position: 'top-right',
+      })
+    }
+    if (loadingProject) {
+      if (loadingProject.id !== pendingProjectUpload.projectId)
+        cancel(
+          'Upload canceled',
+          'The file was not attached because the project changed.',
+        )
+    } else if (activeProject?.id === pendingProjectUpload.projectId)
+      setShowAddToProjectModal(true)
+    else if (projectError)
+      cancel(
+        'Project unavailable',
+        'The file was not attached because the project failed to load.',
+      )
+    else
+      cancel(
+        'Upload canceled',
+        activeProject
+          ? 'The file was not attached because the project changed.'
+          : 'The file was not attached because project mode ended.',
+      )
+  }, [activeProject, loadingProject, pendingProjectUpload, projectError])
   // A document being added shows uploading among the project's documents.
   const addFileToProject = async (file: File) => {
     const uploadId = crypto.randomUUID()
