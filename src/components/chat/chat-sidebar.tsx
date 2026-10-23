@@ -269,7 +269,7 @@ export function ChatSidebar({
   } = useUpgradeToPro()
   // Without cloud sync every chat stays on this device. With it, "Enable
   // local chats" adds a Local tab whose new chats stay on this device.
-  const { keyReady, cloud: cloudSyncEnabled } = useHarness()
+  const { keyReady, keyLocked, cloud: cloudSyncEnabled } = useHarness()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const localOnlyModeEnabled = useLocalChatsSetting()
   const showStorageTabs = cloudSyncEnabled && localOnlyModeEnabled
@@ -821,6 +821,13 @@ export function ChatSidebar({
                 aria-label="Settings"
               >
                 <TfSetting className="h-5 w-5" aria-hidden="true" />
+                {keyLocked && (
+                  <span
+                    className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 Settings
@@ -2238,6 +2245,7 @@ export function ChatSidebar({
             isSignedIn={Boolean(isSignedIn)}
             isPremium={Boolean(isPremium)}
             isDarkMode={isDarkMode}
+            syncNeedsAttention={keyLocked}
             onOpenSettings={(tab) => onSettingsClick?.(tab)}
             onReportBug={() => onReportBugClick?.()}
           />

@@ -37,7 +37,7 @@ const UNLOCK_COPY = 'Unlock your encryption key to access your saved chats.'
 const UNLOCKED_COPY =
   'End-to-end encrypted. Only you can access your chats and data.'
 
-function renderCloudSync() {
+function renderCloudSync(encryptionKey: string | null = null) {
   render(
     <SettingsModal
       isOpen
@@ -49,7 +49,7 @@ function renderCloudSync() {
       onOpenPromptLibrary={vi.fn()}
       onCloudSyncSetupClick={vi.fn()}
       onDeleteAllChats={vi.fn()}
-      encryptionKey={null}
+      encryptionKey={encryptionKey}
       initialTab="cloud-sync"
       isSignedIn
     />,
@@ -64,7 +64,7 @@ function scriptProfiles(...outcomes: (() => Promise<unknown>)[]) {
   })
 }
 
-it('asks to unlock only after the chat service refuses the key', async () => {
+it('asks to recover the key only after the chat service refuses it', async () => {
   let fail!: (cause: Error) => void
   const api = signIn({ cloud: true })
   scriptProfiles(
@@ -86,26 +86,39 @@ it('asks to unlock only after the chat service refuses the key', async () => {
   const loading = act(() => api.refreshProfile())
   expect(screen.queryByText(UNLOCK_COPY)).not.toBeInTheDocument()
   expect(
-    screen.queryByRole('button', { name: 'Unlock' }),
+    screen.queryByRole('button', { name: 'Recover Key' }),
   ).not.toBeInTheDocument()
 
   fail(new TypeError('Network unavailable'))
   await loading
   expect(screen.queryByText(UNLOCK_COPY)).not.toBeInTheDocument()
   expect(
-    screen.queryByRole('button', { name: 'Unlock' }),
+    screen.queryByRole('button', { name: 'Recover Key' }),
   ).not.toBeInTheDocument()
 
   await act(() => api.refreshProfile())
   expect(screen.getByText(UNLOCK_COPY)).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Unlock' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'Recover Key' })).toBeEnabled()
 
   await act(() => api.refreshProfile())
   expect(screen.getByText(UNLOCKED_COPY)).toBeInTheDocument()
   expect(
-    screen.queryByRole('button', { name: 'Unlock' }),
+    screen.queryByRole('button', { name: 'Recover Key' }),
   ).not.toBeInTheDocument()
   expect(
     screen.queryByRole('button', { name: 'Manage key' }),
   ).not.toBeInTheDocument()
+})
+
+it.each([
+  [null, 'Sync is paused because your encryption key needs to be recovered.'],
+  [
+    `key_${'ar'.repeat(32)}`,
+    "This device's encryption key is out of date and needs to be recovered.",
+  ],
+])('explains why a key is needed (key on this device: %s)', (key, reason) => {
+  signIn({ cloud: true, locked: true })
+  renderCloudSync(key)
+  expect(screen.getByText('Action needed')).toBeInTheDocument()
+  expect(screen.getByText(reason)).toBeInTheDocument()
 })

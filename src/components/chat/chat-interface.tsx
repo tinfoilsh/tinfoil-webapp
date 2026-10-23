@@ -926,7 +926,8 @@ export function ChatInterface({
       setIsSettingsModalOpen(false)
       return
     }
-    setSettingsInitialTab(tab)
+    // A refused key is explained on the Cloud Sync tab.
+    setSettingsInitialTab(tab ?? (keyLocked ? 'cloud-sync' : undefined))
     setHasMountedSettingsModal(true)
     setIsSettingsModalOpen(true)
     setIsVerifierSidebarOpen(false)

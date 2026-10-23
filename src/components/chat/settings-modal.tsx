@@ -102,6 +102,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { BsQrCode } from 'react-icons/bs'
 import { PiSpinner } from 'react-icons/pi'
 import QRCode from 'react-qr-code'
+import { CloudSyncHealthCard } from './cloud-sync-health-card'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
@@ -1931,6 +1932,11 @@ ${encryptionKey.replace('key_', '')}
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
+                aria-label={
+                  item.id === 'cloud-sync' && keyLocked
+                    ? `${item.label} (needs attention)`
+                    : undefined
+                }
                 className={cn(
                   'flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
                   activeTab === item.id
@@ -1944,6 +1950,13 @@ ${encryptionKey.replace('key_', '')}
                   <item.icon className="h-4 w-4" aria-hidden="true" />
                 )}
                 {item.label}
+                {item.id === 'cloud-sync' && keyLocked && (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
             ))}
           </nav>
@@ -1960,6 +1973,11 @@ ${encryptionKey.replace('key_', '')}
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
+                aria-label={
+                  item.id === 'cloud-sync' && keyLocked
+                    ? `${item.label} (needs attention)`
+                    : undefined
+                }
                 className={cn(
                   'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                   activeTab === item.id
@@ -1973,6 +1991,13 @@ ${encryptionKey.replace('key_', '')}
                   <item.icon className="h-5 w-5" aria-hidden="true" />
                 )}
                 {item.label}
+                {item.id === 'cloud-sync' && keyLocked && (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
             ))}
           </nav>
@@ -2808,19 +2833,21 @@ ${encryptionKey.replace('key_', '')}
                           <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
                         </label>
                       </div>
-                      {keyLocked && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsOpen(false)
-                            onCloudSyncSetupClick?.()
-                          }}
-                          className="mt-3 rounded-site-control border border-border-subtle px-3 py-1.5 text-sm text-content-primary transition-colors hover:bg-surface-chat"
-                        >
-                          Unlock
-                        </button>
-                      )}
                     </div>
+                    {keyLocked && (
+                      <CloudSyncHealthCard
+                        isDarkMode={isDarkMode}
+                        reason={encryptionKey ? 'key-mismatch' : 'key-recovery'}
+                        onRecoverClick={
+                          onCloudSyncSetupClick
+                            ? () => {
+                                setIsOpen(false)
+                                onCloudSyncSetupClick()
+                              }
+                            : undefined
+                        }
+                      />
+                    )}
                     <NativeBackupExport
                       available={Boolean(
                         isSignedIn &&

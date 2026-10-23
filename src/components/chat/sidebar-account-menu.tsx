@@ -64,6 +64,7 @@ interface SidebarAccountMenuProps {
   isSignedIn: boolean
   isPremium: boolean
   isDarkMode: boolean
+  syncNeedsAttention: boolean
   onOpenSettings: (tab?: SettingsTab) => void
   onReportBug: () => void
 }
@@ -73,6 +74,7 @@ export function SidebarAccountMenu({
   isSignedIn,
   isPremium,
   isDarkMode,
+  syncNeedsAttention,
   onOpenSettings,
   onReportBug,
 }: SidebarAccountMenuProps) {
@@ -400,6 +402,13 @@ export function SidebarAccountMenu({
           ) : (
             <TfPerson className="h-7 w-7" aria-hidden="true" />
           )}
+          {syncNeedsAttention && (
+            <span
+              className="absolute right-0 top-0 h-2 w-2 rounded-full bg-orange-500 ring-2 ring-surface-sidebar"
+              title="Cloud sync needs attention"
+              aria-hidden="true"
+            />
+          )}
         </span>
         <span className="min-w-0 flex-1 truncate font-aeonik font-medium">
           {displayName}
@@ -468,10 +477,21 @@ export function SidebarAccountMenu({
               role="menuitem"
               tabIndex={-1}
               className={MENU_ITEM_CLASS_NAME}
-              onClick={() => runAndClose(() => onOpenSettings('general'))}
+              onClick={() =>
+                runAndClose(() =>
+                  onOpenSettings(syncNeedsAttention ? 'cloud-sync' : 'general'),
+                )
+              }
             >
               <TfSetting className="h-4 w-4" aria-hidden="true" />
               <span className="flex-1">Settings</span>
+              {syncNeedsAttention && (
+                <span
+                  className="h-2 w-2 rounded-full bg-orange-500"
+                  title="Cloud sync needs attention"
+                  aria-hidden="true"
+                />
+              )}
             </button>
             <div className="my-1.5 border-t border-border-subtle" />
 

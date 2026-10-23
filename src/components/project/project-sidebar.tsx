@@ -242,7 +242,7 @@ export function ProjectSidebar({
   onLoadMore,
 }: ProjectSidebarProps) {
   const { isSignedIn } = useAuth()
-  const { cloud: cloudSyncEnabled, session } = useHarness()
+  const { cloud: cloudSyncEnabled, keyLocked, session } = useHarness()
   const {
     draggingChatId,
     draggingChatSource,
@@ -1525,6 +1525,7 @@ export function ProjectSidebar({
             isSignedIn={Boolean(isSignedIn)}
             isPremium={Boolean(isPremium)}
             isDarkMode={isDarkMode}
+            syncNeedsAttention={keyLocked}
             onOpenSettings={(tab) => onSettingsClick?.(tab)}
             onReportBug={() => onReportBugClick?.()}
           />

@@ -2,7 +2,14 @@ import { CONSTANTS } from '@/components/chat/constants'
 import { SidebarAccountMenu } from '@/components/chat/sidebar-account-menu'
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
 import { publish } from '@/services/harness/runtime'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const DEFAULT_AS_PATH = '/c/chat-1?view=compact#bottom'
@@ -42,6 +49,7 @@ function renderMenu(
       isSignedIn
       isPremium={false}
       isDarkMode={false}
+      syncNeedsAttention={false}
       onOpenSettings={onOpenSettings}
       onReportBug={onReportBug}
       {...overrides}
@@ -87,6 +95,22 @@ describe('SidebarAccountMenu', () => {
     expect(onOpenSettings).toHaveBeenLastCalledWith('account')
   })
 
+  it('opens settings on Cloud Sync while the cloud key needs attention', () => {
+    const { onOpenSettings } = renderMenu({ syncNeedsAttention: true })
+
+    const trigger = screen.getByRole('button', { name: /Ada/ })
+    expect(
+      within(trigger).getByTitle('Cloud sync needs attention'),
+    ).toBeInTheDocument()
+    fireEvent.click(trigger)
+    const settings = screen.getByRole('menuitem', { name: 'Settings' })
+    expect(
+      within(settings).getByTitle('Cloud sync needs attention'),
+    ).toBeInTheDocument()
+    fireEvent.click(settings)
+    expect(onOpenSettings).toHaveBeenCalledWith('cloud-sync')
+  })
+
   it('reveals help links and the bug report action in a submenu', () => {
     const { onReportBug } = renderMenu()
 
@@ -113,6 +137,7 @@ describe('SidebarAccountMenu', () => {
       isSignedIn: true,
       isPremium: false,
       isDarkMode: false,
+      syncNeedsAttention: false,
       onOpenSettings: vi.fn(),
       onReportBug: vi.fn(),
     }

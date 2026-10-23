@@ -7,9 +7,17 @@ import {
 } from '@/constants/storage-keys'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { base64ToBytes } from '@/services/harness/keys'
+import { HarnessError } from '@/services/harness/sse'
 import { deriveTinfoilKeyIdHex } from '@/services/keys/tinfoil-key-id'
 import { PasskeyTimeoutError, PrfNotSupportedError } from '@/services/passkey'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { client, signIn, testSession } from '../../harness-fixture'
 import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
@@ -319,3 +327,62 @@ it.each([
     )
   },
 )
+
+const ATTENTION = 'Cloud sync needs attention'
+
+it('points the settings entries to Cloud Sync only while the key is refused', async () => {
+  sessionStorage.removeItem(UI_SIDEBAR_OPEN)
+  const api = signIn({ cloud: true })
+  const profiles: (() => unknown)[] = [
+    () => {
+      throw new TypeError('Network unavailable')
+    },
+    () => {
+      throw new HarnessError(
+        { code: 'KEY_MISMATCH', message: 'Another key is required' },
+        409,
+      )
+    },
+  ]
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/session') return structuredClone(testSession)
+    if (path === '/v1/profile/get') return profiles.shift()!()
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    throw new Error(`Unexpected harness request: ${path}`)
+  })
+  passkey.showPasskeyRecoveryPrompt.mockResolvedValue(false)
+  passkey.showFirstTimePasskeyPrompt.mockResolvedValue(false)
+  render(view())
+  const rail = await screen.findByRole('button', { name: 'Settings' })
+
+  await act(() => api.refreshProfile())
+  expect(within(rail).queryByTitle(ATTENTION)).not.toBeInTheDocument()
+
+  await act(() => api.refreshProfile())
+  expect(within(rail).getByTitle(ATTENTION)).toBeInTheDocument()
+  fireEvent.click(rail)
+  const dialog = await screen.findByRole('dialog', { name: 'Settings' })
+  expect(
+    within(dialog).getAllByRole('button', {
+      name: 'Cloud Sync (needs attention)',
+    }),
+  ).not.toHaveLength(0)
+  expect(within(dialog).getByText('Action needed')).toBeInTheDocument()
+  expect(
+    within(dialog).getByText(
+      'Sync is paused because your encryption key needs to be recovered.',
+    ),
+  ).toBeInTheDocument()
+
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Recover Key' }))
+  expect(
+    await screen.findByRole('heading', { name: 'Encrypted Backups & Sync' }),
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole('dialog', { name: 'Settings' }),
+  ).not.toBeInTheDocument()
+  await waitFor(() =>
+    expect(passkey.showFirstTimePasskeyPrompt).toHaveBeenCalledTimes(1),
+  )
+})
