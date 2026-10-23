@@ -66,7 +66,10 @@ type ChatMessagesProps = {
   onEditMessage?: (messageIndex: number, newContent: string) => void
   onRegenerateMessage?: (messageIndex: number) => void
   onDeleteMessage?: (messageIndex: number) => void
-  onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
+  onEditAssistantMessage?: (
+    messageIndex: number,
+    newContent: string,
+  ) => void | Promise<void>
   onContinueAssistantMessage?: (messageIndex: number) => void
   onForkMessage?: (messageIndex: number) => void
   onRetryToolCall?: (
@@ -150,7 +153,10 @@ const ChatMessage = memo(
     onEditMessage?: (messageIndex: number, newContent: string) => void
     onRegenerateMessage?: (messageIndex: number) => void
     onDeleteMessage?: (messageIndex: number) => void
-    onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
+    onEditAssistantMessage?: (
+      messageIndex: number,
+      newContent: string,
+    ) => void | Promise<void>
     onContinueAssistantMessage?: (messageIndex: number) => void
     onForkMessage?: (messageIndex: number) => void
     onRetryToolCall?: (

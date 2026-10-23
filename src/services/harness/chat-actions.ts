@@ -109,9 +109,9 @@ export function chatActions({
       if (moving.get(threadId) === moved) moving.delete(threadId)
     }
   }
-  // Message actions change one message of the open chat, and show the
-  // chat as its store answers, after the earlier messages the view loaded
-  // with the same change.
+  // Message actions change one message of the open chat. The change shows
+  // at once and goes back when the chat's store refuses it; the chat then
+  // shows as its store answers, after the earlier messages the view loaded.
   async function changeMessage(
     index: number,
     change: (
@@ -122,10 +122,24 @@ export function chatActions({
     changeLoaded: (messages: Message[], messageId: string) => Message[],
   ) {
     const threadId = open.get().id
-    const messageId = controller.view.get().messages[index]?.id
+    const before = controller.view.get().messages
+    const messageId = before[index]?.id
     if (!threadId || !messageId || moving.has(threadId)) return
     const shown = controller.track()
-    const thread = await change(storeOf(threadId), threadId, messageId)
+    const changed = changeLoaded(before, messageId)
+    controller.view.update((state) => ({ ...state, messages: changed }))
+    const undo = () => {
+      if (shown() && controller.view.get().messages === changed)
+        controller.view.update((state) => ({ ...state, messages: before }))
+    }
+    let thread: Thread | null
+    try {
+      thread = await change(storeOf(threadId), threadId, messageId)
+    } catch (cause) {
+      undo()
+      throw cause
+    }
+    if (!thread) undo()
     if (!thread || !shown()) return
     const {
       messages,

@@ -675,7 +675,9 @@ export function ChatInterface({
   }
   const editAssistantMessage = (index: number, content: string) => {
     if (isStreaming || currentChatIsFlagged) return
-    void thread.editReply(index, content).catch(thread.report)
+    const editing = thread.editReply(index, content)
+    editing.catch(thread.report)
+    return editing
   }
   const continueAssistantMessage = (index: number) => {
     if (isStreaming || generationBlocked || promptedForQuota()) return
