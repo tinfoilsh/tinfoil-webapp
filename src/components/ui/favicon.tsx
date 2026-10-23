@@ -82,10 +82,10 @@ function faviconCacheKey(url: string): string {
 }
 
 /**
- * Favicon <img> that loads the icon through the attested metadata
- * enclave. The bytes come back inlined in the `/favicon` response and
- * are rendered as a `data:` URL so the browser never reaches an
- * external icon host directly. Using a `data:` URL keeps the lifecycle
+ * Favicon <img> that looks the icon up through the attested chat harness.
+ * The bytes come back inlined in the harness's favicon response and are
+ * rendered as a `data:` URL so the browser never reaches an external icon
+ * host directly. Using a `data:` URL keeps the lifecycle
  * trivial: there's no Blob to allocate and no `URL.createObjectURL`
  * handle to revoke, so two concurrent components rendering the same
  * favicon can never invalidate each other's source.
