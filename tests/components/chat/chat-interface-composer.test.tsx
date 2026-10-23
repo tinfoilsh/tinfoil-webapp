@@ -1,5 +1,6 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProjectProvider } from '@/components/project/project-provider'
+import { Toaster } from '@/components/ui/toaster'
 import {
   UI_SIDEBAR_OPEN,
   USER_PREFS_LOCAL_PROFILE,
@@ -783,4 +784,34 @@ it('keeps the draft, its attachment and quote when starting a new chat or openin
     quote: 'door',
   })
   expect(sentTurns()[0].attachments).toEqual([notes])
+})
+
+it('explains a file over its size limit before uploading it', async () => {
+  const limit = 2 * 1024 * 1024
+  signIn({
+    session: {
+      ...testSession,
+      composer: {
+        ...testSession.composer,
+        attachments: [{ accept: ['.pdf'], maxBytes: limit }],
+      },
+    },
+  })
+  render(
+    <>
+      {view()}
+      <Toaster />
+    </>,
+  )
+  await screen.findByRole('textbox', { name: 'Message' })
+
+  fireEvent.change(document.querySelector('input[type="file"]')!, {
+    target: { files: [new File([new Uint8Array(limit + 1)], 'report.pdf')] },
+  })
+
+  expect(await screen.findByText('Processing failed')).toBeInTheDocument()
+  expect(
+    screen.getByText('File size exceeds the limit of 2MB.'),
+  ).toBeInTheDocument()
+  expect(client.upload).not.toHaveBeenCalled()
 })

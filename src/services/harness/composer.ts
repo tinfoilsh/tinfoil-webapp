@@ -1,4 +1,4 @@
-import { formatFileSize } from '@/utils/format-file-size'
+import { BYTES_PER_MB } from '@/utils/format-file-size'
 import { ERROR_CODES } from './protocol'
 import { HarnessError } from './sse'
 import type { FileGroup } from './types'
@@ -31,7 +31,7 @@ export function checkUpload(file: File, groups: readonly FileGroup[]) {
   throw new HarnessError(
     {
       code: ERROR_CODES.attachmentTooLarge,
-      message: `${file.name} is larger than the ${formatFileSize(group.maxBytes)} limit.`,
+      message: `File size exceeds the limit of ${Math.floor(group.maxBytes / BYTES_PER_MB)}MB.`,
     },
     413,
   )
