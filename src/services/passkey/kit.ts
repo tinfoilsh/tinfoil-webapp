@@ -1,5 +1,6 @@
 import {
   LOCAL_PASSKEY_CREDENTIAL_ID,
+  ROAMING_PASSKEY_CREDENTIAL_IDS,
   SECRET_PASSKEY_PRF_OUTPUT,
 } from '@/constants/storage-keys'
 import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
@@ -8,6 +9,7 @@ import {
   PasskeyKeyError,
   type CachedPRFResult,
   type EvaluatedCredential,
+  type PasskeyAttachment,
   type PasskeyCapability,
   type PasskeyKeyProfile,
   type PasskeyKeyStorage,
@@ -85,6 +87,7 @@ export const tinfoilPasskeyStorage: PasskeyKeyStorage = {
       if (typeof localStorage === 'undefined') return
       localStorage.removeItem(SECRET_PASSKEY_PRF_OUTPUT)
       localStorage.removeItem(LOCAL_PASSKEY_CREDENTIAL_ID)
+      localStorage.removeItem(ROAMING_PASSKEY_CREDENTIAL_IDS)
     } catch {
       // best-effort
     }
@@ -95,6 +98,7 @@ export const passkeyKeyManager = createPasskeyKeyManager({
   profile: TINFOIL_PASSKEY_PROFILE,
   relyingPartyName: 'Tinfoil Chat',
   storage: tinfoilPasskeyStorage,
+  enrollmentAttachment: 'any',
 })
 
 let capabilityPromise: Promise<PasskeyCapability> | null = null
@@ -131,6 +135,37 @@ export function setLocalCredentialId(credentialId: string): void {
   tinfoilPasskeyStorage.saveLocalCredentialId(credentialId)
 }
 
+export function getRoamingCredentialIds(): string[] {
+  try {
+    if (typeof localStorage === 'undefined') return []
+    const raw = localStorage.getItem(ROAMING_PASSKEY_CREDENTIAL_IDS)
+    if (!raw) return []
+    const stored: unknown = JSON.parse(raw)
+    return Array.isArray(stored)
+      ? stored.filter((id): id is string => typeof id === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
+function rememberRoamingCredential(result: {
+  credentialId: string
+  authenticatorAttachment: PasskeyAttachment | null
+}): void {
+  if (result.authenticatorAttachment === 'platform') return
+  const credentialIds = getRoamingCredentialIds()
+  if (credentialIds.includes(result.credentialId)) return
+  try {
+    localStorage.setItem(
+      ROAMING_PASSKEY_CREDENTIAL_IDS,
+      JSON.stringify([...credentialIds, result.credentialId]),
+    )
+  } catch {
+    // best-effort
+  }
+}
+
 export function tinfoilWrappedKeyFromEnclaveBundle(input: {
   credentialId: string
   kekIvHex: string
@@ -161,7 +196,8 @@ export class PrfNotSupportedError extends Error {
   constructor() {
     super(
       "Your passkey provider doesn't support the security features required by Tinfoil. " +
-        "Try using iCloud Keychain, Chrome's built-in passkey manager, or the Passwords app in your device settings.",
+        "Try using iCloud Keychain, Chrome's built-in passkey manager, the Passwords app in your device settings, " +
+        'or a recent security key such as a YubiKey 5.',
     )
     this.name = 'PrfNotSupportedError'
   }
@@ -186,7 +222,9 @@ export async function createAndWrapTinfoilKey(input: {
   key: Uint8Array
 }): Promise<{ credentialId: string; wrappedKey: WrappedKey } | null> {
   try {
-    return await passkeyKeyManager.createAndWrapKey(input)
+    const created = await passkeyKeyManager.createAndWrapKey(input)
+    rememberRoamingCredential(created)
+    return created
   } catch (error) {
     if (classifyTinfoilPasskeyError(error) === 'cancelled') return null
     throwMappedPasskeyError(error)
@@ -197,7 +235,11 @@ export async function evaluateTinfoilCredential(
   credentialIds: string[],
 ): Promise<EvaluatedCredential | null> {
   try {
-    return await passkeyKeyManager.evaluateCredential({ credentialIds })
+    const evaluated = await passkeyKeyManager.evaluateCredential({
+      credentialIds,
+    })
+    rememberRoamingCredential(evaluated)
+    return evaluated
   } catch (error) {
     if (classifyTinfoilPasskeyError(error) === 'cancelled') return null
     throwMappedPasskeyError(error)

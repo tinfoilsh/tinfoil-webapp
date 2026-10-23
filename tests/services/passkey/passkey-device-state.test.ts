@@ -36,6 +36,7 @@ vi.mock('@/services/harness/keys', async () => {
 
 const KEY_ID = 'feedface'.repeat(8).slice(0, 64)
 const LOCAL_CRED = 'this-device-cred'
+const SECURITY_KEY_CRED = 'security-key-cred'
 const OTHER_CRED = 'mac-cred'
 
 function bundle(credentialId: string) {
@@ -63,7 +64,21 @@ describe('getPasskeyDeviceState', () => {
       },
     })
 
-    const state = await getPasskeyDeviceState(LOCAL_CRED)
+    const state = await getPasskeyDeviceState([LOCAL_CRED])
+    expect(state).toBe('this-device')
+  })
+
+  it('returns "this-device" when a security key used here is among the bundles', async () => {
+    mockKeyCurrent.mockResolvedValue({
+      key_id: KEY_ID,
+      etag: '1',
+      bundles: {
+        [SECURITY_KEY_CRED]: bundle(SECURITY_KEY_CRED),
+        [OTHER_CRED]: bundle(OTHER_CRED),
+      },
+    })
+
+    const state = await getPasskeyDeviceState([LOCAL_CRED, SECURITY_KEY_CRED])
     expect(state).toBe('this-device')
   })
 
@@ -74,7 +89,7 @@ describe('getPasskeyDeviceState', () => {
       bundles: { [OTHER_CRED]: bundle(OTHER_CRED) },
     })
 
-    const state = await getPasskeyDeviceState(LOCAL_CRED)
+    const state = await getPasskeyDeviceState([LOCAL_CRED])
     expect(state).toBe('other-device-only')
   })
 
@@ -85,13 +100,13 @@ describe('getPasskeyDeviceState', () => {
       bundles: {},
     })
 
-    const state = await getPasskeyDeviceState(LOCAL_CRED)
+    const state = await getPasskeyDeviceState([LOCAL_CRED])
     expect(state).toBe('empty')
   })
 
   it('returns "unknown" when the enclave probe throws', async () => {
     mockKeyCurrent.mockRejectedValue(new Error('boom'))
-    const state = await getPasskeyDeviceState(LOCAL_CRED)
+    const state = await getPasskeyDeviceState([LOCAL_CRED])
     expect(state).toBe('unknown')
   })
 })
