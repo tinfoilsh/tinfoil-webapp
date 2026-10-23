@@ -1,12 +1,6 @@
 # Plausible Analytics
 
-Locally-hosted copy of Plausible Analytics script for improved CSP compliance and supply chain security.
-
-## Why Local Hosting?
-
-- Reduces external script sources in CSP
-- Enables SRI (Subresource Integrity) verification
-- Scripts execute from trusted origin
+Locally hosted copy of the Plausible Analytics script, served from our own origin with an SRI hash to keep third-party script sources out of the CSP.
 
 ## Local edits
 

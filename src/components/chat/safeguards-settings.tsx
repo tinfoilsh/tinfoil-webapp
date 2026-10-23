@@ -7,7 +7,11 @@ import {
   type FlaggedChat,
 } from '@/services/safeguards'
 import { getChatPath } from '@/utils/navigation'
-import { TfExternalLink, TfFlag, TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfExternalLink,
+  TfFlag,
+  TfRefreshTwoArrows,
+} from '@tinfoilsh/tinfoil-icons'
 import Link from 'next/link'
 import { useEffect } from 'react'
 import { PiSpinner } from 'react-icons/pi'
@@ -143,7 +147,7 @@ export function SafeguardsSettings({
             {status === 'loading' ? (
               <PiSpinner className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
-              <TfRefresh1 className="h-4 w-4" aria-hidden="true" />
+              <TfRefreshTwoArrows className="h-4 w-4" aria-hidden="true" />
             )}
           </button>
         </div>

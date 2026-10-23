@@ -2189,7 +2189,6 @@ export function ChatInterface({
                   )}
                   style={{
                     minHeight: '80px',
-                    maxHeight: '50dvh',
                     paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)',
                   }}
                 >
