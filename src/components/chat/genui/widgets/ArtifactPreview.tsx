@@ -190,6 +190,15 @@ function downloadArtifact(
 type ViewMode = 'preview' | 'source'
 type ArtifactPreviewPanelLayout = 'card' | 'sidebar'
 
+// Whether focus is in a field the user types in, such as the composer.
+function isTypingIn(element: Element | null): boolean {
+  return (
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLInputElement ||
+    (element instanceof HTMLElement && element.isContentEditable)
+  )
+}
+
 function FocusableIframe({
   title,
   src,
@@ -207,7 +216,10 @@ function FocusableIframe({
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const sandbox = useSandboxRunner(iframeRef, run)
 
+  // A preview that opens on its own as a reply streams, or that the pointer
+  // passes over, leaves focus in the field the user types in.
   const focusIframe = useCallback(() => {
+    if (isTypingIn(document.activeElement)) return
     iframeRef.current?.contentWindow?.focus()
   }, [])
 

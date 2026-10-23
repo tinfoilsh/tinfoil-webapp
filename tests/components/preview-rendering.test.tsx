@@ -510,6 +510,55 @@ it('frames URL artifacts directly with the same sandbox permissions', () => {
   expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer')
 })
 
+it.each([
+  { type: 'html', html: '<p>Press a key</p>' },
+  { type: 'url', url: 'https://example.com/game' },
+] as const)(
+  'leaves focus in the composer when a $type preview opens',
+  (source) => {
+    const contentWindowGetter = Object.getOwnPropertyDescriptor(
+      HTMLIFrameElement.prototype,
+      'contentWindow',
+    )!.get!
+    const focus = vi.fn()
+    vi.spyOn(
+      HTMLIFrameElement.prototype,
+      'contentWindow',
+      'get',
+    ).mockImplementation(function (this: HTMLIFrameElement) {
+      const frameWindow: Window | null = contentWindowGetter.call(this)
+      if (frameWindow && !vi.isMockFunction(frameWindow.focus)) {
+        vi.spyOn(frameWindow, 'focus').mockImplementation(focus)
+      }
+      return frameWindow
+    })
+    const composer = document.createElement('textarea')
+    document.body.append(composer)
+    composer.focus()
+    try {
+      const { getByTitle } = render(
+        <ArtifactPreviewPanel
+          source={source}
+          title="Artifact"
+          layout="sidebar"
+        />,
+      )
+      const frame = getByTitle('Artifact')
+      fireEvent.load(frame)
+      fireEvent.mouseEnter(frame)
+      expect(focus).not.toHaveBeenCalled()
+      expect(composer).toHaveFocus()
+
+      // Once the user leaves the composer, the preview takes focus again.
+      composer.blur()
+      fireEvent.mouseEnter(frame)
+      expect(focus).toHaveBeenCalledOnce()
+    } finally {
+      composer.remove()
+    }
+  },
+)
+
 describe('mermaid preview', () => {
   it('renders in the in-origin Mermaid page and relays height and errors', () => {
     const { getByTitle, queryByText } = render(
