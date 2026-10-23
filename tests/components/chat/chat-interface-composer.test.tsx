@@ -600,3 +600,70 @@ it('shows the attachments and quote of each queued message', async () => {
   ).toHaveLength(3)
   held.resolve()
 })
+
+const otherModel = {
+  ...testSession.models[1],
+  id: 'other-model',
+  label: 'Other model',
+  shortLabel: 'Other',
+}
+const sessionWithOtherModel = {
+  ...testSession,
+  models: [...testSession.models, otherModel],
+}
+const savedChat = (model: string) =>
+  storedThread('saved-chat', {
+    model,
+    messages: [
+      {
+        id: 'question',
+        role: 'user',
+        content: 'A saved question',
+        createdAt: '2026-10-22T12:00:00Z',
+      },
+    ],
+  })
+
+it('starts a new chat on the model the user picked last, not the open chat’s', async () => {
+  signIn({
+    session: sessionWithOtherModel,
+    profile: { selectedModel: otherModel.id },
+  })
+  await localThreadStore('device').add(savedChat('test-model'))
+  render(view('saved-chat'))
+  await screen.findByText('A saved question')
+  expect(
+    screen.getAllByRole('button', { name: 'Current model Test model' })[0],
+  ).toBeInTheDocument()
+
+  fireEvent.click(screen.getAllByRole('link', { name: 'New chat' })[0])
+
+  await waitFor(() =>
+    expect(screen.queryByText('A saved question')).not.toBeInTheDocument(),
+  )
+  expect(
+    screen.getAllByRole('button', { name: 'Current model Other model' })[0],
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Current model Test model' }),
+  ).not.toBeInTheDocument()
+})
+
+it('continues a chat whose model was retired on the model the user picked', async () => {
+  signIn({
+    session: sessionWithOtherModel,
+    profile: { selectedModel: otherModel.id },
+  })
+  answerTurns()
+  await localThreadStore('device').add(savedChat('retired-model'))
+  render(view('saved-chat'))
+  await screen.findByText('A saved question')
+  expect(
+    screen.getAllByRole('button', { name: 'Current model Other model' })[0],
+  ).toBeInTheDocument()
+
+  await send('And now?')
+
+  await waitFor(() => expect(sentTurns()).toHaveLength(1))
+  expect(sentTurns()[0].options?.model).toBe(otherModel.id)
+})

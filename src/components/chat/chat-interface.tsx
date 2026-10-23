@@ -270,9 +270,14 @@ export function ChatInterface({
     thread.report,
   ])
   const models = useMemo(() => session?.models ?? [], [session])
+  // A chat whose model was retired continues on the user's pick, or else
+  // the session's default.
+  const pickedModel: string = profile.selectedModel ?? ''
   const selectedModel = findSelectableModel(chatModel, models)
     ? chatModel
-    : (session?.defaultModel ?? chatModel)
+    : findSelectableModel(pickedModel, models)
+      ? pickedModel
+      : (session?.defaultModel ?? chatModel)
   const isLoadingConfig = !session
   const hasValidatedModel = !!session
   const loadingState = isStreaming ? 'loading' : 'idle'

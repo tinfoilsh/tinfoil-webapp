@@ -193,6 +193,7 @@ export function useThread(
       failure: null,
       notFound: false,
       unsaved: null,
+      model: '',
       presetChosen: false,
       chosenPresetId: null,
       modelChosen: false,
@@ -440,10 +441,11 @@ export function useThread(
     reset,
     state.status,
   ])
+  // A new chat starts on the model the user picked last.
+  const pickedModel = profile.selectedModel || session?.defaultModel || ''
   useEffect(() => {
-    if (session && !openState.model)
-      patch({ model: profile.selectedModel || session.defaultModel })
-  }, [session, profile.selectedModel, openState.model, patch])
+    if (pickedModel && !openState.model) patch({ model: pickedModel })
+  }, [pickedModel, openState.model, patch])
   const previousCloud = useRef(cloud)
   useEffect(() => {
     if (previousCloud.current === cloud) return
@@ -548,7 +550,7 @@ export function useThread(
   // The open chat's view.
   const { id, temporary, local, unsaved, failure } = openState
   const choice = presetChoice()
-  const model = choice.model ?? openState.model
+  const model = choice.model ?? (openState.model || pickedModel)
   const webSearch = openState.webSearch ?? choice.webSearchEnabled
   const presetId = presetIdOf(openState, profile)
   const running =
