@@ -19,7 +19,13 @@ import { getView, type HarnessAPI, type Profile } from './runtime'
 import { HarnessError } from './sse'
 import type { Store } from './store'
 import type { ThreadStore, TurnSettings } from './thread-store'
-import type { HarnessErrorBody, Session, ThreadMessage, Turn } from './types'
+import type {
+  HarnessErrorBody,
+  Message,
+  Session,
+  ThreadMessage,
+  Turn,
+} from './types'
 
 // What a widget's card says of a retry the harness refused or could not
 // finish.
@@ -150,23 +156,57 @@ export function chatTurns({
       ...(sent.length ? { attachments: sent } : {}),
     }
   }
+  // A message as the view shows it, without its uploads' contents.
+  const shownMessage = ({
+    attachments: sent,
+    ...message
+  }: ThreadMessage): Message =>
+    sent
+      ? {
+          ...message,
+          attachments: sent.map(
+            ({ base64: _base64, pages: _pages, ...shown }) => shown,
+          ),
+        }
+      : message
   // A message the user sends shows at once, until the run's first window
   // replaces the messages.
-  function showSent({ attachments: sent, ...message }: ThreadMessage) {
+  function showSent(message: ThreadMessage) {
     controller.view.update((state) => ({
       ...state,
-      messages: [
-        ...state.messages,
-        sent
-          ? {
-              ...message,
-              attachments: sent.map(
-                ({ base64: _base64, pages: _pages, ...shown }) => shown,
-              ),
-            }
-          : message,
-      ],
+      messages: [...state.messages, shownMessage(message)],
     }))
+  }
+  // The messages a turn that regenerates, edits or continues leaves, as the
+  // harness applies it: the messages after the one it names go, and an
+  // edited message is sent again under the turn's id. A turn queued behind
+  // a running reply changes nothing yet.
+  function appliedTurn(input: Turn): Message[] | null {
+    const { messages, status } = controller.view.get()
+    if (status === 'streaming' || status === 'queued') return null
+    const index = messages.findIndex(({ id }) => id === input.messageId)
+    const target = messages[index]
+    if (!target) return null
+    if (input.kind === 'regenerate' || input.kind === 'continue')
+      return target.role === 'assistant'
+        ? messages.slice(0, input.kind === 'continue' ? index + 1 : index)
+        : null
+    if (input.kind !== 'edit' || target.role !== 'user') return null
+    const quote = input.quote ?? target.quote
+    const sent = input.attachments
+      ? uploaded(input.attachments)
+      : (target.attachments ?? [])
+    return [
+      ...messages.slice(0, index),
+      shownMessage({
+        id: input.clientRequestId,
+        role: 'user',
+        createdAt: now(),
+        content: input.content ?? target.content ?? '',
+        ...(quote ? { quote } : {}),
+        ...(sent.length ? { attachments: sent } : {}),
+      }),
+    ]
   }
   function send(fields: Partial<Turn> = {}): Promise<boolean> | undefined {
     const threads = openStore()
@@ -188,8 +228,17 @@ export function chatTurns({
     const threadId = startChat(choice)
     const defaults = turnDefaults()
     const shown = controller.track()
+    const before = controller.view.get().messages
     const message = sentMessage({ ...defaults, ...fields })
     if (message) showSent(message)
+    const applied = appliedTurn({ ...defaults, ...fields })
+    if (applied)
+      controller.view.update((state) => ({ ...state, messages: applied }))
+    // A turn that did not start leaves the chat as the harness stores it.
+    const unapply = () => {
+      if (applied && shown() && controller.view.get().messages === applied)
+        controller.view.update((state) => ({ ...state, messages: before }))
+    }
     const status = controller.view.get().status
     const submit = (): Promise<boolean> => {
       controller.retryPreparation = null
@@ -224,26 +273,34 @@ export function chatTurns({
           },
           settings,
         )
-        if (!turn || !shown()) return false
-        controller.pending = { input: turn.resend, run: turn.run }
+        if (!turn || !shown()) {
+          unapply()
+          return false
+        }
+        const pending = { input: turn.resend, run: turn.run }
+        controller.pending = pending
         if (message) {
           await turn.keep?.(message)
         }
         if (!shown() || submission?.cancelled) {
           if (turn.run) controller.settle(turn.run)
           if (shown()) controller.pending = null
+          unapply()
           return false
         }
-        return controller.run(ROUTES.turn, turn.input, {
+        const ran = await controller.run(ROUTES.turn, turn.input, {
           device: turn.run,
           submission,
         })
+        if (controller.pending === pending) unapply()
+        return ran
       })()
         .catch((cause) => {
           if (shown()) {
             if (submission) controller.retryPreparation = submit
             report(cause)
           }
+          unapply()
           return false
         })
         .finally(() => {

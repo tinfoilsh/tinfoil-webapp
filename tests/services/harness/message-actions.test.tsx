@@ -311,6 +311,112 @@ describe('regenerating a reply', () => {
   })
 })
 
+describe('the chat a regenerated or edited turn leaves', () => {
+  function openCloud() {
+    signIn({ cloud: true, session })
+    client.post.mockImplementation(async (path: string) =>
+      path === '/v1/threads/get'
+        ? cloudThread()
+        : path === '/v1/threads/list'
+          ? { threads: [], nextCursor: null }
+          : {},
+    )
+    return renderHook(() => useThread(THREAD_ID, null))
+  }
+  // A run whose frames wait until it is released.
+  function heldRun(run: () => AsyncGenerator<Frame>) {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    client.events.mockImplementationOnce(async function* () {
+      await held
+      yield* run()
+    })
+    return () => act(async () => release())
+  }
+
+  it('shows at once without the regenerated reply', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    const release = heldRun(regenerated(transcript.slice(0, 3).map(wire)))
+
+    let regenerating!: Promise<boolean | undefined>
+    act(() => {
+      regenerating = result.current.regenerate(3)
+    })
+
+    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+    expect(result.current.running).toBe(true)
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+    ])
+    await release()
+    await act(() => regenerating)
+    expect(result.current.chat.messages.map((m) => [m.id, m.content])).toEqual([
+      ['u1', 'one'],
+      ['a1', 'first answer'],
+      ['u2', 'two'],
+      ['msg_regen', 'new answer'],
+    ])
+  })
+
+  it('shows the edited message at once in place of the one it replaces', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    const release = heldRun(regenerated(transcript.slice(0, 2).map(wire)))
+
+    let editing!: Promise<boolean> | undefined
+    act(() => {
+      editing = result.current.send({
+        kind: 'edit',
+        messageId: 'u2',
+        content: 'two, edited',
+      })
+    })
+
+    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+    expect(turn()).toMatchObject({
+      kind: 'edit',
+      messageId: 'u2',
+      content: 'two, edited',
+    })
+    expect(result.current.chat.messages.map((m) => [m.id, m.content])).toEqual([
+      ['u1', 'one'],
+      ['a1', 'first answer'],
+      [turn().clientRequestId, 'two, edited'],
+    ])
+    expect(result.current.chat.messages[2].role).toBe('user')
+    await release()
+    await act(async () => {
+      await editing
+    })
+  })
+
+  it('shows the chat as it was when the harness refuses the turn', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    client.events.mockImplementationOnce(async function* () {
+      throw new HarnessError(
+        { code: 'RATE_LIMITED', message: 'Chat access is busy; retry shortly' },
+        429,
+      )
+    })
+
+    await act(() => result.current.regenerate(3))
+
+    expect(result.current.errorDetail).toMatchObject({ code: 'RATE_LIMITED' })
+    expect(result.current.chat.messages.map((m) => [m.id, m.content])).toEqual([
+      ['u1', 'one'],
+      ['a1', 'first answer'],
+      ['u2', 'two'],
+      ['a2', 'second answer'],
+    ])
+  })
+})
+
 describe('retrying after an error', () => {
   function openCloud() {
     signIn({ cloud: true, session })
