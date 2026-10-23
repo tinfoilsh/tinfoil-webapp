@@ -132,6 +132,16 @@ export class ChatCredentialCache {
     }
   }
 
+  // When the chat token is minted again: as it enters its renewal window, or
+  // once a refusal lifts. A free key, or no access, has no such time.
+  renewsAt(): number | undefined {
+    if (this.cached?.kind !== 'hourly') return undefined
+    return Math.max(
+      this.cached.expiresAt - RENEW_BEFORE_EXPIRY_MS,
+      this.refused?.until ?? 0,
+    )
+  }
+
   private usableAfterFailure(cause: unknown): string | undefined {
     const transient =
       cause instanceof TypeError ||
