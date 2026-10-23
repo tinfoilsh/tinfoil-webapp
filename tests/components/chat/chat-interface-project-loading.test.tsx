@@ -174,7 +174,15 @@ it.each(['success', 'failure'])(
       ).toBeEnabled(),
     )
     rerender(projectView(otherProject.id))
-    await screen.findByRole('heading', { name: otherProject.name })
+    // The new project's chats are listed once it opens; its name types in
+    // over the previous one meanwhile.
+    await waitFor(() =>
+      expect(client.post).toHaveBeenCalledWith(
+        '/v1/threads/list',
+        expect.objectContaining({ projectId: otherProject.id }),
+        expect.any(AbortSignal),
+      ),
+    )
     await act(async () => {
       if (outcome === 'success') first.resolve(page([chat]))
       else first.reject(new Error('Previous project failed'))
