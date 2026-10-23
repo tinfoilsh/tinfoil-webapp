@@ -262,9 +262,11 @@ describe('StreamErrorBanner', () => {
           onRetry={onRetry}
         />,
       )
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        'Too many requests right now',
-      )
+      const alert = screen.getByRole('alert')
+      expect(alert).toHaveTextContent('Too many requests right now')
+      // The countdown changes every second, so it stays out of what is
+      // announced.
+      expect(alert).not.toHaveTextContent('Resend in')
       const retry = screen.getByRole('button', { name: 'Resend in 3s' })
       expect(retry).toBeDisabled()
       fireEvent.click(retry)

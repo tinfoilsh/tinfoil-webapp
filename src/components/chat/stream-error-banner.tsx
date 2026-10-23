@@ -290,7 +290,6 @@ export function StreamErrorBanner({
 
   return (
     <div
-      role="alert"
       className={cn(
         'mb-2 overflow-hidden rounded-2xl border shadow-sm transition-colors',
         isDarkMode
@@ -300,7 +299,8 @@ export function StreamErrorBanner({
     >
       <div className="flex gap-2 px-3 py-2.5">
         <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1">
+          {/* Only the explanation is announced, not the retry countdown. */}
+          <div role="alert" className="min-w-0 flex-1">
             <p className="text-sm font-semibold">{title}</p>
             <p
               className={cn(
