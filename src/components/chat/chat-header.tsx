@@ -11,6 +11,8 @@ interface ChatHeaderProps {
   chat: Chat
   isStreaming: boolean
   isLoading?: boolean
+  /** The chat could not be opened, so it has no title or times to show. */
+  isUnavailable?: boolean
   /** Action buttons rendered at the trailing edge of the header. */
   actions: React.ReactNode
   leadingAction?: React.ReactNode
@@ -36,6 +38,7 @@ export function ChatHeader({
   chat,
   isStreaming,
   isLoading = false,
+  isUnavailable = false,
   actions,
   leadingAction,
   notice,
@@ -102,43 +105,45 @@ export function ChatHeader({
         {leadingAction && (
           <div className="flex flex-none items-center">{leadingAction}</div>
         )}
-        <div className="min-w-0 flex-1">
-          <h1
-            className="truncate font-aeonik text-sm font-medium text-content-primary"
-            title={isLoading ? undefined : chat.title}
-          >
-            {isLoading ? (
-              <>
-                <span className="sr-only">Loading chat</span>
-                <span
-                  aria-hidden="true"
-                  className="my-1 block h-3 w-40 max-w-full animate-pulse rounded bg-surface-chat"
-                />
-              </>
-            ) : (
-              chat.title
-            )}
-          </h1>
-          {isLoading ? (
-            <div aria-hidden="true" className="mt-0.5 flex h-4 items-center">
-              <span className="h-2 w-20 animate-pulse rounded bg-surface-chat" />
-            </div>
-          ) : (
-            metaItems.length > 0 && (
-              <p className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap font-aeonik-fono text-xs leading-4 text-content-muted">
-                {metaItems.map((item, index) => (
+        {!isUnavailable && (
+          <div className="min-w-0 flex-1">
+            <h1
+              className="truncate font-aeonik text-sm font-medium text-content-primary"
+              title={isLoading ? undefined : chat.title}
+            >
+              {isLoading ? (
+                <>
+                  <span className="sr-only">Loading chat</span>
                   <span
-                    key={index}
-                    className="flex flex-none items-center gap-1.5"
-                  >
-                    {index > 0 && <span aria-hidden="true">·</span>}
-                    {item}
-                  </span>
-                ))}
-              </p>
-            )
-          )}
-        </div>
+                    aria-hidden="true"
+                    className="my-1 block h-3 w-40 max-w-full animate-pulse rounded bg-surface-chat"
+                  />
+                </>
+              ) : (
+                chat.title
+              )}
+            </h1>
+            {isLoading ? (
+              <div aria-hidden="true" className="mt-0.5 flex h-4 items-center">
+                <span className="h-2 w-20 animate-pulse rounded bg-surface-chat" />
+              </div>
+            ) : (
+              metaItems.length > 0 && (
+                <p className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap font-aeonik-fono text-xs leading-4 text-content-muted">
+                  {metaItems.map((item, index) => (
+                    <span
+                      key={index}
+                      className="flex flex-none items-center gap-1.5"
+                    >
+                      {index > 0 && <span aria-hidden="true">·</span>}
+                      {item}
+                    </span>
+                  ))}
+                </p>
+              )
+            )}
+          </div>
+        )}
       </div>
       {notice && (
         <div

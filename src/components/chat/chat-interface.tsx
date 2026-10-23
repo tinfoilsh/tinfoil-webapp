@@ -2095,6 +2095,7 @@ export function ChatInterface({
                 chat={currentChat}
                 isStreaming={isStreaming}
                 isLoading={isChatHydrating}
+                isUnavailable={!!historyProblem && !isChatHydrating}
                 actions={topControls}
                 leadingAction={sidebarToggle}
                 notice={

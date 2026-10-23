@@ -1,6 +1,7 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProjectProvider } from '@/components/project/project-provider'
 import { localThreadStore } from '@/services/harness/local-threads'
+import { HarnessError } from '@/services/harness/sse'
 import type {
   Frame,
   Message,
@@ -375,3 +376,38 @@ it('keeps the base tab title for a temporary chat the harness named', async () =
 
   expect(document.title).toBe('Tinfoil Chat')
 })
+
+it.each([
+  ['missing', 'Chat not found'],
+  ['unreachable', "Couldn't load chat"],
+  ['encrypted with another key', 'Unlock chat history'],
+])(
+  'shows no title or times above a chat that is %s',
+  async (failure, heading) => {
+    signIn({ cloud: true })
+    client.post.mockImplementation(async (path) => {
+      if (path === '/v1/projects/list')
+        return { projects: [], nextCursor: null }
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      if (path === '/v1/threads/get') {
+        if (failure === 'unreachable') throw new TypeError('Network down')
+        throw new HarnessError(
+          failure === 'missing'
+            ? { code: 'THREAD_NOT_FOUND', message: 'No such chat' }
+            : { code: 'KEY_MISMATCH', message: 'Another key' },
+          failure === 'missing' ? 404 : 409,
+        )
+      }
+      throw new Error(`Unexpected ${path}`)
+    })
+    render(view({ initialChatId: 'gone-chat' }))
+    await screen.findByRole('heading', { name: heading })
+
+    const header = within(screen.getByRole('banner'))
+    expect(
+      header.getByRole('button', { name: 'Open verification panel' }),
+    ).toBeInTheDocument()
+    expect(header.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
+    expect(header.queryByText(/ ago$/)).not.toBeInTheDocument()
+  },
+)
