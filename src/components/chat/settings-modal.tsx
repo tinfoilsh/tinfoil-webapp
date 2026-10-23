@@ -161,8 +161,12 @@ export function describeImportKickoff(
   return {
     jobId: status.jobId,
     success: !failed,
-    chatsImported: status.imported,
-    projectsImported: 0,
+    // The job counts each kind it stores; without the counts every item
+    // is a chat.
+    chatsImported: status.counts
+      ? (status.counts.chat?.imported ?? 0)
+      : status.imported,
+    projectsImported: status.counts?.project?.imported ?? 0,
     errors: status.errors ?? [],
     warnings: status.warnings,
     pending,
@@ -212,7 +216,7 @@ export function describeImportOutcome(
     failed: true,
     pending: false,
     chatsImported,
-    projectsImported: 0,
+    projectsImported: kickoff.projectsImported,
     errors: fileFailureErrors(fileNames, outcome.fileIndex, explanation),
     warnings,
   }
@@ -388,6 +392,17 @@ export function importProgressReporter(
       })
     },
   }
+}
+
+// The chats and projects an import stored, as its toast names them.
+function describeImportedItems({
+  chatsImported,
+  projectsImported,
+}: ImportResult): string {
+  const chats = `${chatsImported} chat${chatsImported !== 1 ? 's' : ''}`
+  const projects = `${projectsImported} project${projectsImported !== 1 ? 's' : ''}`
+  if (projectsImported === 0) return chats
+  return chatsImported === 0 ? projects : `${chats} and ${projects}`
 }
 
 export function importResultTitle(result: ImportResult): string {
@@ -1281,10 +1296,14 @@ export function SettingsModal({
       } else {
         toast({
           title: 'Import complete',
-          description: `Imported ${result.chatsImported} chat${result.chatsImported !== 1 ? 's' : ''} from ${sourceLabel}`,
+          description: `Imported ${describeImportedItems(result)} from ${sourceLabel}`,
         })
       }
-      if (!result.pending || result.chatsImported > 0) {
+      if (
+        !result.pending ||
+        result.chatsImported > 0 ||
+        result.projectsImported > 0
+      ) {
         await onChatsUpdated?.()
         if (target === 'cloud') await refreshProjects()
       }

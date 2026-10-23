@@ -775,6 +775,55 @@ describe('importing chats from the Data tab', () => {
     expect(screen.getByRole('status')).toHaveTextContent('1 chat imported')
   })
 
+  it.each([
+    [
+      { project: 2, document: 3 },
+      'Imported 2 projects from Claude',
+      '2 projects imported',
+    ],
+    [
+      { chat: 4, project: 1 },
+      'Imported 4 chats and 1 project from Claude',
+      '4 chats imported, 1 project imported',
+    ],
+  ])(
+    'reports the projects a Claude import stored (%o)',
+    async (imported, toast, summary) => {
+      connect({ cloud: true })
+      answerImport([], { jobId: 'job-1', warnings: [] })
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/projects/list')
+          return { projects: [], nextCursor: null }
+        if (path !== '/v1/import/status') throw new Error(`Unexpected ${path}`)
+        const total = Object.values(imported).reduce((sum, n) => sum + n, 0)
+        return {
+          status: 'completed',
+          imported: total,
+          failed: 0,
+          total,
+          counts: Object.fromEntries(
+            Object.entries(imported).map(([kind, count]) => [
+              kind,
+              { imported: count, skipped: 0, failed: 0, blocked: 0 },
+            ]),
+          ),
+        }
+      })
+      renderData({ isPremium: true })
+
+      pickFiles('Claude', [new File(['{}'], 'claude-export.zip')])
+      await importStaged()
+
+      expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+        title: 'Import complete',
+        description: toast,
+      })
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent(summary),
+      )
+    },
+  )
+
   it("sends Claude's project files to the cloud without cloud sync", async () => {
     connect()
     answerImport([], { jobId: 'job-1', warnings: [] })
