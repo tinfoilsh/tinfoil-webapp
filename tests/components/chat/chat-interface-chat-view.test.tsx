@@ -1,4 +1,5 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
+import { CONSTANTS } from '@/components/chat/constants'
 import { ProjectProvider } from '@/components/project/project-provider'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
@@ -358,6 +359,38 @@ it('names the tab after a titled chat once it loads', async () => {
   await screen.findByText('Where should we go?')
 
   expect(document.title).toBe('Trip ideas · Tinfoil Chat')
+})
+
+it('leaves no room for the composer on the desktop welcome screen after a chat', async () => {
+  const COMPOSER_HEIGHT_PX = 70
+  signIn()
+  await localThreadStore('device').add(TRIP)
+  const measure = Element.prototype.getBoundingClientRect
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: Element) {
+      return this.hasAttribute('data-chat-input-area')
+        ? new DOMRect(0, 0, 0, COMPOSER_HEIGHT_PX)
+        : measure.call(this)
+    },
+  )
+  const { rerender } = render(
+    view({ initialChatId: TRIP.id, isLocalChatUrl: true }),
+  )
+  await screen.findByText('Where should we go?')
+  const conversation = screen.getByRole('main', { name: 'Conversation' })
+  expect(conversation.style.paddingBottom).toBe(
+    `${COMPOSER_HEIGHT_PX + CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px`,
+  )
+
+  rerender(view())
+  await waitFor(() =>
+    expect(screen.queryByText('Where should we go?')).not.toBeInTheDocument(),
+  )
+
+  expect(document.querySelector('[data-chat-input-area]')).toBeNull()
+  const welcome = screen.getByRole('main', { name: 'Conversation' })
+  expect(welcome.style.paddingBottom).toBe('0px')
+  expect(welcome.style.getPropertyValue('--input-area-height')).toBe('0px')
 })
 
 it('keeps the base tab title when chat titles are turned off', async () => {

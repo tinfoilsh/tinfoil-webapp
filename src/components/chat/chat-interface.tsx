@@ -1536,7 +1536,10 @@ export function ChatInterface({
   const inputAreaObserver = useRef<ResizeObserver | null>(null)
   const inputAreaRef = useCallback((node: HTMLFieldSetElement | null) => {
     inputAreaObserver.current?.disconnect()
-    if (!node) return
+    if (!node) {
+      setInputAreaHeight(0)
+      return
+    }
     const measure = () =>
       setInputAreaHeight(node.getBoundingClientRect().height)
     measure()
