@@ -1,6 +1,7 @@
 import { isPresetModelAvailable } from '@/components/chat/prompts/preset-settings'
 import type {
   Chat,
+  Message,
   QueuedMessage,
   Attachment as UIAttachment,
 } from '@/components/chat/types'
@@ -26,13 +27,13 @@ import {
 } from './open-chat'
 import { ERROR_CODES, ROUTES } from './protocol'
 import { useHarness } from './provider'
-import { initialChat } from './reducer'
+import { initialChat, type ChatState } from './reducer'
 import { RunController } from './run-controller'
 import { getView } from './runtime'
 import { HarnessError } from './sse'
 import { createStore, useStore } from './store'
 import { cloudThreads, type AskContext, type ThreadStore } from './thread-store'
-import type { AttachmentDescriptor } from './types'
+import type { AttachmentDescriptor, Message as WireMessage } from './types'
 import { messageView, threadView } from './view-model'
 
 export interface ThreadRoute {
@@ -75,6 +76,20 @@ export function useThread(
       // A temporary chat, kept in page memory; each new chat starts another.
       temporaryChats: { store: memoryThreadStore() },
     }),
+  )
+  // The view of each message, kept until the message, whether it streams or
+  // the reasoning summaries change, so a message that did not change keeps
+  // its view.
+  const [views] = useState(
+    () =>
+      new WeakMap<
+        WireMessage,
+        {
+          streaming: boolean
+          summaries: ChatState['summaries']
+          view: Message
+        }
+      >(),
   )
   const patch = useCallback(
     (fields: Partial<OpenChat>) => open.update((o) => ({ ...o, ...fields })),
@@ -526,12 +541,16 @@ export function useThread(
     state.status === 'streaming' ||
     state.status === 'queued'
   const isLocalChat = local && !temporary
+  const viewOf = (message: WireMessage, streaming: boolean) => {
+    const kept = views.get(message)
+    if (kept?.streaming === streaming && kept.summaries === state.summaries)
+      return kept.view
+    const view = messageView(message, streaming, state.summaries)
+    views.set(message, { streaming, summaries: state.summaries, view })
+    return view
+  }
   const messages = state.messages.map((m, index) => {
-    const view = messageView(
-      m,
-      running && index === state.messages.length - 1,
-      state.summaries,
-    )
+    const view = viewOf(m, running && index === state.messages.length - 1)
     if (!onDevice(openState) || !view.attachments?.length) return view
     // An image the previous client stored without a thumbnail shows its
     // bytes; others load them when opened in the gallery.

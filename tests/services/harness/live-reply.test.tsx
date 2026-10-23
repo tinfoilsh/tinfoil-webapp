@@ -3,7 +3,13 @@ import { initializeRenderers } from '@/components/chat/renderers/client'
 import type { BaseModel } from '@/config/models'
 import type { Frame } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
-import { act, render, screen } from '@testing-library/react'
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { client } from '../../harness-fixture'
 
@@ -283,5 +289,75 @@ describe('a streamed reply', () => {
       finish()
       await sending
     })
+  })
+})
+
+describe('the views of a streaming chat', () => {
+  it('rebuilds only the views of the messages that changed', async () => {
+    let answer!: () => void
+    let finish!: () => void
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve
+    })
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    client.events.mockImplementation(async function* (_path, input) {
+      const threadId = input.threadId as string
+      yield { id: 0, event: { type: 'RUN_STARTED', threadId, runId: 'run-1' } }
+      yield {
+        id: 1,
+        event: {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [
+            { id: 'u1', role: 'user', createdAt: 't0', content: 'Why?' },
+          ],
+          hasOlder: false,
+        },
+      }
+      yield {
+        id: 2,
+        event: {
+          type: 'REASONING_MESSAGE_CHUNK',
+          messageId: 'm1-reasoning',
+          delta: 'Hmm',
+        },
+      }
+      await answered
+      yield {
+        id: 3,
+        event: {
+          type: 'REASONING_MESSAGE_CHUNK',
+          messageId: 'm1-reasoning',
+          delta: '.',
+        },
+      }
+      await finished
+      yield {
+        id: 4,
+        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+      }
+    })
+    const { result } = renderHook(() => useThread())
+    let sending!: Promise<unknown>
+    act(() => {
+      sending = Promise.resolve(result.current.send({ content: 'Why?' }))
+    })
+    const thought = () => result.current.chat.messages[1]?.timeline?.[0]
+    await waitFor(() => expect(thought()).toMatchObject({ content: 'Hmm' }))
+    const [question, reply] = result.current.chat.messages
+
+    await act(async () => answer())
+    await waitFor(() => expect(thought()).toMatchObject({ content: 'Hmm.' }))
+    expect(result.current.chat.messages[0]).toBe(question)
+    expect(result.current.chat.messages[1]).not.toBe(reply)
+    expect(thought()).toMatchObject({ isThinking: true })
+
+    await act(async () => {
+      finish()
+      await sending
+    })
+    expect(result.current.chat.messages[0]).toBe(question)
+    expect(thought()).toMatchObject({ content: 'Hmm.', isThinking: false })
   })
 })
