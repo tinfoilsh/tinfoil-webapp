@@ -20,6 +20,44 @@ function getDomain(url: string): string {
   }
 }
 
+/**
+ * Round favicon badge with a neutral dot while the icon loads and for sites
+ * that expose none.
+ */
+function FaviconBadge({
+  url,
+  size,
+  className,
+}: {
+  url: string
+  size: number
+  className?: string
+}) {
+  const fallback = (
+    <span
+      className={`bg-surface-secondary inline-flex items-center justify-center rounded-full text-content-muted ${className ?? ''}`}
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <span
+        className="block rounded-full bg-current"
+        style={{ width: size * 0.35, height: size * 0.35 }}
+      />
+    </span>
+  )
+  return (
+    <Favicon
+      url={url}
+      width={size}
+      height={size}
+      className={`shrink-0 rounded-full bg-white object-contain p-[1px] ${className ?? ''}`}
+      style={{ width: size, height: size }}
+      placeholder={fallback}
+      fallback={fallback}
+    />
+  )
+}
+
 export const SourcesButton = memo(function SourcesButton({
   sources,
 }: {
@@ -57,12 +95,11 @@ export const SourcesButton = memo(function SourcesButton({
         <span>Sources</span>
         <span className="inline-flex items-center">
           {previews.map((source, index) => (
-            <Favicon
+            <FaviconBadge
               key={source.url}
               url={source.url}
-              width={16}
-              height={16}
-              className={`h-4 w-4 rounded-full border border-surface-chat bg-white ${index ? '-ml-1.5' : ''}`}
+              size={16}
+              className={`border border-surface-chat ${index ? '-ml-1.5' : ''}`}
             />
           ))}
         </span>
@@ -84,12 +121,7 @@ export const SourcesButton = memo(function SourcesButton({
                   rel="noopener noreferrer"
                   className="group flex items-start gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-surface-chat-background"
                 >
-                  <Favicon
-                    url={source.url}
-                    width={20}
-                    height={20}
-                    className="mt-0.5 h-5 w-5 shrink-0 rounded-full bg-white"
-                  />
+                  <FaviconBadge url={source.url} size={20} className="mt-0.5" />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="truncate text-sm font-medium text-content-primary">
                       {source.title || source.url}
