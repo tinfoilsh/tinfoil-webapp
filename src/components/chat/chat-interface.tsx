@@ -1052,7 +1052,6 @@ export function ChatInterface({
       // A passkey backup is encrypted again with a new key, so the passkey
       // goes on recovering the key in use.
       if (key !== previous && hasPasskeyBackup()) void updatePasskeyBackup()
-      await api.refresh()
     } catch (cause) {
       if (!api.lifetime.signal.aborted) {
         if (previous)
@@ -1061,6 +1060,9 @@ export function ChatInterface({
       }
       throw cause
     }
+    // The account keeps the key it accepted even if the session then fails
+    // to reload.
+    await api.refresh().catch(thread.report)
   }
   // A key started fresh lives only on this device until a passkey backs it
   // up. An active passkey's backup is encrypted again as the key changes.
