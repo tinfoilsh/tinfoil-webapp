@@ -940,6 +940,42 @@ describe('DefaultMessageRenderer work traces', () => {
     )
   })
 
+  it('shows nothing of the code an older chat ran, unlike a retired widget', () => {
+    renderReply(
+      {
+        id: 'a1',
+        role: 'assistant',
+        createdAt: '2026-08-07T00:00:01.000Z',
+        content: 'It is Monday.',
+        timeline: [
+          {
+            id: 'x1',
+            type: 'tool_call',
+            toolCallId: 'x1',
+            name: 'bash',
+            arguments: '{"command":"date"}',
+            result: { output: 'Mon Aug 7' },
+            complete: true,
+          },
+          {
+            id: 'w1',
+            type: 'tool_call',
+            toolCallId: 'w1',
+            name: 'render_retired',
+            arguments: '{}',
+            complete: true,
+          },
+          { id: 'c', type: 'content', content: 'It is Monday.' },
+        ],
+      },
+      false,
+    )
+
+    expect(screen.getAllByText('Component unavailable')).toHaveLength(1)
+    expect(screen.queryByText(/Mon Aug 7|command/)).not.toBeInTheDocument()
+    expect(screen.getByText('It is Monday.')).toBeInTheDocument()
+  })
+
   it('leaves a lone trace block rendered as itself', () => {
     renderMessage({
       role: 'assistant',

@@ -54,6 +54,9 @@ export const ROUTES = {
 
 export type HarnessRoute = (typeof ROUTES)[keyof typeof ROUTES]
 
+// Every widget the harness declares is named with this prefix.
+export const WIDGET_PREFIX = 'render_'
+
 // A run's stream: a turn starts one, and following one replays it.
 export type RunRoute = typeof ROUTES.turn | typeof ROUTES.follow
 

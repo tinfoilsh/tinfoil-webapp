@@ -4,6 +4,7 @@ import type {
   Message,
   TimelineBlock,
 } from '@/components/chat/types'
+import { WIDGET_PREFIX } from './protocol'
 import type {
   ThreadSummary,
   AttachmentDescriptor as WireAttachment,
@@ -21,6 +22,11 @@ const FETCH_STATUS = {
   completed: 'completed',
   failed: 'failed',
 } as const
+
+const isShownTool = (name = '') =>
+  name === 'web_search' ||
+  name === 'web_fetch' ||
+  name.startsWith(WIDGET_PREFIX)
 
 // A web search or page fetch shows what the harness reports of it. A call
 // it reports nothing of yet runs while its reply streams; one still running
@@ -98,7 +104,7 @@ export function messageView(
   summaries: Readonly<Record<string, string>> = {},
 ): Message {
   const blocks = message.timeline ?? []
-  const timeline: TimelineBlock[] = blocks.map((block, index) => {
+  const timeline: TimelineBlock[] = blocks.flatMap((block, index) => {
     // A reply thinks only in its last block: reasoning ends once the reply
     // goes on to text or a tool call.
     if (block.type === 'thinking')
@@ -111,6 +117,9 @@ export function messageView(
       }
     if (block.type === 'content')
       return { ...block, type: 'content', content: block.content ?? '' }
+    // A tool that is neither a search nor a widget, as the code an older
+    // chat ran, has no view.
+    if (!isShownTool(block.name)) return []
     return toolBlock(block, streaming)
   })
   return {
