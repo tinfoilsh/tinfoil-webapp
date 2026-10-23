@@ -79,6 +79,7 @@ import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { DragProvider } from './drag-context'
 import { ForkOverlay } from './fork-overlay'
+import { ArtifactRetryError } from './genui/retry'
 import {
   artifactPreviewTargetsEqual,
   OPEN_ARTIFACT_PREVIEW_EVENT,
@@ -473,7 +474,25 @@ export function ChatInterface({
     shownChatTitle !== NEW_CHAT_TITLE
       ? `${shownChatTitle} · ${CONSTANTS.BASE_DOCUMENT_TITLE}`
       : CONSTANTS.BASE_DOCUMENT_TITLE
-  const handleInputFocusWithRateLimitCheck = handleInputFocus
+  // A free account out of daily requests is asked to subscribe instead of
+  // sending; focusing the composer asks once each time the quota runs out.
+  const dailyQuotaExhausted =
+    rateLimit?.kind === 'free_daily' &&
+    typeof rateLimit.remaining === 'number' &&
+    rateLimit.remaining <= 0
+  const quotaPromptDismissed = useRef(false)
+  useEffect(() => {
+    if (!dailyQuotaExhausted) quotaPromptDismissed.current = false
+  }, [dailyQuotaExhausted])
+  const handleInputFocusWithRateLimitCheck = () => {
+    if (dailyQuotaExhausted && !quotaPromptDismissed.current)
+      setIsSubscribePromptOpen(true)
+    handleInputFocus()
+  }
+  const promptedForQuota = () => {
+    if (dailyQuotaExhausted) setIsSubscribePromptOpen(true)
+    return dailyQuotaExhausted
+  }
   const canChangeMessages = thread.canChangeMessages
   const canFork =
     !!currentChat.id && !currentChat.isTemporary && !currentChat.isBlankChat
@@ -592,7 +611,7 @@ export function ChatInterface({
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }
   const handleQuery = (content: string, fields: Partial<Turn> = {}) => {
-    if (generationBlocked) return
+    if (generationBlocked || promptedForQuota()) return
     return thread.send({ content, options, ...fields })
   }
   const handleSubmit = (event: React.FormEvent) => {
@@ -629,15 +648,17 @@ export function ChatInterface({
     })
   }
   const regenerateMessage = (index: number) => {
-    if (generationBlocked) return
+    if (generationBlocked || promptedForQuota()) return
     void thread.regenerate(index, { options }).catch(thread.report)
   }
-  const retryToolCall = (index: number, toolCallId: string) =>
-    thread.retryToolCall({
+  const retryToolCall = async (index: number, toolCallId: string) => {
+    if (promptedForQuota()) throw new ArtifactRetryError('request_failed')
+    return thread.retryToolCall({
       options,
       messageId: currentChat.messages[index]?.id,
       toolCallId,
     })
+  }
   const retryLastMessage = () => {
     if (generationBlocked) return
     void thread.retry({ options }).catch(thread.report)
@@ -652,7 +673,7 @@ export function ChatInterface({
     void thread.editReply(index, content).catch(thread.report)
   }
   const continueAssistantMessage = (index: number) => {
-    if (isStreaming || generationBlocked) return
+    if (isStreaming || generationBlocked || promptedForQuota()) return
     try {
       void thread.continueReply(index, { options })
     } catch (cause) {
@@ -1010,7 +1031,10 @@ export function ChatInterface({
       setIsCloudSyncRoutePending(false)
     }
   }
-  const handleCloseSubscribePrompt = () => setIsSubscribePromptOpen(false)
+  const handleCloseSubscribePrompt = () => {
+    setIsSubscribePromptOpen(false)
+    if (dailyQuotaExhausted) quotaPromptDismissed.current = true
+  }
   const handleKeyChanged = async (key: string, options?: { mode?: string }) => {
     const previous = encryptionService.getKey()
     await encryptionService.setKey(key, { persist: false })

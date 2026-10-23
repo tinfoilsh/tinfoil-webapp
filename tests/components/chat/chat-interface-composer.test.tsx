@@ -1,6 +1,8 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProjectProvider } from '@/components/project/project-provider'
 import { USER_PREFS_LOCAL_PROFILE } from '@/constants/storage-keys'
+import { localThreadStore } from '@/services/harness/local-threads'
+import { publish } from '@/services/harness/runtime'
 import type { Frame, Turn } from '@/services/harness/types'
 import {
   act,
@@ -12,7 +14,10 @@ import {
 } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { client, KEY, signIn, testSession } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
+import {
+  resetChatStoresAroundEachTest,
+  storedThread,
+} from '../../services/harness/thread-fixture'
 import { refuseFetch } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
@@ -79,10 +84,14 @@ beforeEach(() => {
   refuseFetch()
 })
 
-function view() {
+function view(localChatId?: string) {
   return (
     <ProjectProvider>
-      <ChatInterface suppressIntroModals />
+      <ChatInterface
+        initialChatId={localChatId}
+        isLocalChatUrl={!!localChatId}
+        suppressIntroModals
+      />
     </ProjectProvider>
   )
 }
@@ -207,6 +216,14 @@ it('hides the web search control and sends turns without search once Settings tu
     ...profile,
     webSearchAvailable: false,
   })
+  fireEvent.click(
+    within(settings).getAllByRole('button', { name: 'Close settings' })[0],
+  )
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: 'Settings' }),
+    ).not.toBeInTheDocument(),
+  )
   expect(
     within(openInputOptions()).queryByRole('menuitemcheckbox', {
       name: 'Web search',
@@ -371,4 +388,112 @@ it('sends the finished attachments and keeps one still uploading for the next me
       screen.getByRole('button', { name: 'Remove report.pdf' }).parentElement!,
     ).getByText('Document'),
   ).toBeInTheDocument()
+})
+
+it('asks a free account out of daily requests to subscribe once per exhaustion, keeping what it typed', async () => {
+  signIn()
+  answerTurns()
+  publish({ rateLimit: { kind: 'free_daily', maxRequests: 10, remaining: 0 } })
+  render(view())
+  const composer = await screen.findByRole('textbox', { name: 'Message' })
+  const prompt = () =>
+    screen.queryByRole('dialog', { name: 'No more free requests' })
+  const dismiss = async () => {
+    fireEvent.click(within(prompt()!).getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(prompt()).not.toBeInTheDocument())
+  }
+
+  fireEvent.blur(composer)
+  fireEvent.focus(composer)
+  expect(
+    await screen.findByRole('dialog', { name: 'No more free requests' }),
+  ).toBeVisible()
+  await dismiss()
+  fireEvent.blur(composer)
+  fireEvent.focus(composer)
+  expect(prompt()).not.toBeInTheDocument()
+  await send('Keep this question')
+  expect(
+    await screen.findByRole('dialog', { name: 'No more free requests' }),
+  ).toBeVisible()
+  await dismiss()
+  expect(composer).toHaveValue('Keep this question')
+  expect(client.events).not.toHaveBeenCalled()
+
+  act(() =>
+    publish({
+      rateLimit: { kind: 'free_daily', maxRequests: 10, remaining: 3 },
+    }),
+  )
+  act(() =>
+    publish({
+      rateLimit: { kind: 'free_daily', maxRequests: 10, remaining: 0 },
+    }),
+  )
+  fireEvent.blur(composer)
+  fireEvent.focus(composer)
+  expect(
+    await screen.findByRole('dialog', { name: 'No more free requests' }),
+  ).toBeVisible()
+  await dismiss()
+
+  act(() =>
+    publish({
+      rateLimit: { kind: 'free_daily', maxRequests: 10, remaining: 3 },
+    }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+  await waitFor(() => expect(sentTurns()).toHaveLength(1))
+  expect(sentTurns()[0].content).toBe('Keep this question')
+  expect(prompt()).not.toBeInTheDocument()
+})
+
+it('does not ask a subscriber at the hourly cap to subscribe', async () => {
+  signIn()
+  answerTurns()
+  publish({ rateLimit: { kind: 'hourly', maxRequests: 10, remaining: 0 } })
+  render(view())
+  const composer = await screen.findByRole('textbox', { name: 'Message' })
+  fireEvent.blur(composer)
+  fireEvent.focus(composer)
+  await send('Hourly question')
+  await waitFor(() => expect(sentTurns()).toHaveLength(1))
+  expect(
+    screen.queryByRole('dialog', { name: 'No more free requests' }),
+  ).not.toBeInTheDocument()
+})
+
+it('asks a free account out of daily requests to subscribe instead of regenerating a reply', async () => {
+  signIn()
+  answerTurns()
+  await localThreadStore('device').add(
+    storedThread('saved-chat', {
+      messages: [
+        {
+          id: 'question',
+          role: 'user',
+          content: 'A saved question',
+          createdAt: '2026-10-22T12:00:00Z',
+        },
+        {
+          id: 'reply',
+          role: 'assistant',
+          content: 'A saved reply',
+          createdAt: '2026-10-22T12:00:01Z',
+        },
+      ],
+    }),
+  )
+  publish({ rateLimit: { kind: 'free_daily', maxRequests: 10, remaining: 0 } })
+  render(view('saved-chat'))
+  await screen.findByText('A saved reply')
+
+  fireEvent.click(
+    screen.getAllByRole('button', { name: 'Regenerate response' })[0],
+  )
+
+  expect(
+    await screen.findByRole('dialog', { name: 'No more free requests' }),
+  ).toBeVisible()
+  expect(client.events).not.toHaveBeenCalled()
 })
