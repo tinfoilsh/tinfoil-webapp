@@ -552,6 +552,27 @@ describe('importing chats from the Data tab', () => {
     expect(status).toHaveTextContent('1 attachment could not be read.')
   })
 
+  it('reports the chats a repeated import found already on this device', async () => {
+    connect()
+    const renamed = { ...imported, title: 'Plants I renamed' }
+    await localThreadStore('device').update(imported.id, () => renamed)
+    answerImport([importedLine], { jobId: null, warnings: [] })
+    renderData()
+
+    pickFiles('ChatGPT', [chatGptExport])
+    await importStaged()
+
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Import complete',
+      description:
+        'Imported 0 chats from ChatGPT. 1 chat already on this device was skipped.',
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '1 chat already on this device was skipped.',
+    )
+    expect(await localThreadStore('device').get(imported.id)).toEqual(renamed)
+  })
+
   it('counts the chats stored on this device while the import runs', async () => {
     connect()
     const line = (value: object) =>

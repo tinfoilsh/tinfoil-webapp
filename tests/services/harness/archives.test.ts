@@ -128,6 +128,7 @@ describe('runImports', () => {
       status: { ...job('running'), jobId: 'job-3' },
       fileIndex: 2,
       imported: 7,
+      skipped: 0,
       interrupted: false,
       warnings: [
         'conversations-000.json had a note',
@@ -192,6 +193,7 @@ describe('runImports', () => {
       status: { ...failed, jobId: 'job-1' },
       fileIndex: 0,
       imported: 0,
+      skipped: 0,
       interrupted: false,
       warnings: ['user.json had a note'],
     })
@@ -224,6 +226,7 @@ describe('runImports', () => {
       status: { ...running, jobId: 'job-1' },
       fileIndex: 0,
       imported: 0,
+      skipped: 0,
       interrupted: true,
       warnings: ['conversations.json had a note', 'a chat had no messages'],
     })
@@ -359,6 +362,7 @@ describe('runImports', () => {
       status: null,
       fileIndex: 1,
       imported: 2,
+      skipped: 0,
       interrupted: false,
       warnings: [],
     })

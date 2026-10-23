@@ -404,6 +404,8 @@ export interface ImportSequenceResult {
    * earlier files, and every chat stored on this device.
    */
   imported: number
+  /** Chats for this device it held already, which were kept as they were. */
+  skipped: number
   /** The job at `fileIndex` was lost while it was processing. */
   interrupted: boolean
   /**
@@ -431,6 +433,7 @@ export async function runImports(
   const api = harnessAPI()
   const wait = options.wait ?? ((ms: number) => pause(ms, options.signal))
   let imported = 0
+  let skipped = 0
   const warnings: string[] = []
   for (let fileIndex = 0; ; fileIndex++) {
     const isLast = fileIndex === files.length - 1
@@ -449,6 +452,7 @@ export async function runImports(
         },
       )
       warnings.push(...file.warnings)
+      skipped += file.skipped
       if (file.jobId) {
         status = await jobStatus(api, file.jobId, options.signal)
         if (!isLast && !isImportJobFinished(status))
@@ -466,6 +470,7 @@ export async function runImports(
                 status,
                 fileIndex,
                 imported,
+                skipped,
                 interrupted: true,
                 warnings: [...warnings, ...(status.warnings ?? [])],
               }
@@ -481,7 +486,14 @@ export async function runImports(
         warnings.push(...(status.warnings ?? []))
       }
       if (isLast || status?.status === 'failed')
-        return { status, fileIndex, imported, interrupted: false, warnings }
+        return {
+          status,
+          fileIndex,
+          imported,
+          skipped,
+          interrupted: false,
+          warnings,
+        }
     } catch (cause) {
       throw new ImportSequenceError(cause, fileIndex, imported, [
         ...warnings,

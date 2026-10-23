@@ -137,6 +137,8 @@ interface ImportResult {
   success: boolean
   chatsImported: number
   projectsImported: number
+  // Chats this device held already, which were kept as they were.
+  skipped?: number
   errors: string[]
   // What the chat service could not import as it was.
   warnings?: string[]
@@ -194,19 +196,20 @@ export function describeImportOutcome(
   fileNames: readonly string[],
   sourceLabel: string,
 ): ImportResult {
-  const { warnings } = outcome
+  const { warnings, skipped } = outcome
   if (!outcome.status)
     return {
       success: true,
       chatsImported: outcome.imported,
       projectsImported: 0,
+      skipped,
       errors: [],
       warnings,
     }
   const kickoff = describeImportKickoff(outcome.status, sourceLabel)
   const chatsImported = outcome.imported + kickoff.chatsImported
   if (!outcome.interrupted && !kickoff.failed) {
-    return { ...kickoff, chatsImported, warnings }
+    return { ...kickoff, chatsImported, skipped, warnings }
   }
   const explanation = outcome.interrupted
     ? 'The import stopped before it finished. Chats already imported were kept; select this file again to continue.'
@@ -217,6 +220,7 @@ export function describeImportOutcome(
     pending: false,
     chatsImported,
     projectsImported: kickoff.projectsImported,
+    skipped,
     errors: fileFailureErrors(fileNames, outcome.fileIndex, explanation),
     warnings,
   }
@@ -403,6 +407,11 @@ function describeImportedItems({
   const projects = `${projectsImported} project${projectsImported !== 1 ? 's' : ''}`
   if (projectsImported === 0) return chats
   return chatsImported === 0 ? projects : `${chats} and ${projects}`
+}
+
+// The chats an import left as this device held them.
+function describeSkippedChats(skipped: number): string {
+  return `${skipped} chat${skipped !== 1 ? 's' : ''} already on this device ${skipped !== 1 ? 'were' : 'was'} skipped.`
 }
 
 export function importResultTitle(result: ImportResult): string {
@@ -1302,7 +1311,7 @@ export function SettingsModal({
       } else {
         toast({
           title: 'Import complete',
-          description: `Imported ${describeImportedItems(result)} from ${sourceLabel}`,
+          description: `Imported ${describeImportedItems(result)} from ${sourceLabel}${result.skipped ? `. ${describeSkippedChats(result.skipped)}` : ''}`,
         })
       }
       if (
@@ -1589,6 +1598,11 @@ export function SettingsModal({
                 {importResult.projectsImported > 0 &&
                   `${importResult.projectsImported} project${importResult.projectsImported !== 1 ? 's' : ''} imported`}
               </div>
+              {!!importResult.skipped && (
+                <div className="font-aeonik-fono text-xs text-content-muted">
+                  {describeSkippedChats(importResult.skipped)}
+                </div>
+              )}
               {importResult.pending && importResult.jobId && (
                 <button
                   type="button"
