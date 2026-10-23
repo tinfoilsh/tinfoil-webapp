@@ -375,57 +375,55 @@ describe('harness reducer', () => {
 
     expect(state.snapshot).toEqual(before)
   })
+  // Timed reply events, from STEPS_START: a reply's reasoning and text, each
+  // at the second given.
+  const STEPS_START = Date.UTC(2026, 9, 1)
+  const stepAt = (seconds: number) =>
+    new Date(STEPS_START + seconds * 1000).toISOString()
+  const reasoning = (delta: string, seconds: number): Frame['event'] => ({
+    type: 'REASONING_MESSAGE_CHUNK',
+    messageId: 'r-reasoning',
+    delta,
+    timestamp: stepAt(seconds),
+  })
+  const text = (delta: string, seconds: number): Frame['event'] => ({
+    type: 'TEXT_MESSAGE_CHUNK',
+    messageId: 'r',
+    delta,
+    timestamp: stepAt(seconds),
+  })
+  // Reasoning for 2.5 seconds, then the reply's text.
+  const thoughtThenAnswer = [
+    reasoning('Plan', 0),
+    reasoning('ning', 2.5),
+    text('Answer', 3),
+  ]
+  const reduceAll = (events: Frame['event'][]) =>
+    events.reduce(
+      (state, event) => reduceEvent(state, { event }),
+      initialChat(),
+    )
+
   it('records when each reasoning and tool step ran, as the harness does', () => {
-    const start = Date.UTC(2026, 9, 1)
-    const at = (seconds: number) =>
-      new Date(start + seconds * 1000).toISOString()
-    const events: Frame['event'][] = [
-      {
-        type: 'REASONING_MESSAGE_CHUNK',
-        messageId: 'r-reasoning',
-        delta: 'Plan',
-        timestamp: at(0),
-      },
-      {
-        type: 'REASONING_MESSAGE_CHUNK',
-        messageId: 'r-reasoning',
-        delta: 'ning',
-        timestamp: at(2.5),
-      },
-      {
-        type: 'TEXT_MESSAGE_CHUNK',
-        messageId: 'r',
-        delta: 'Answer',
-        timestamp: at(3),
-      },
+    const start = STEPS_START
+    const state = reduceAll([
+      ...thoughtThenAnswer,
       {
         type: 'TOOL_CALL_START',
         parentMessageId: 'r',
         toolCallId: 's',
         toolCallName: 'web_search',
-        timestamp: at(4),
+        timestamp: stepAt(4),
       },
       {
         type: 'TOOL_CALL_RESULT',
         toolCallId: 's',
         content: { results: [] },
-        timestamp: at(6),
+        timestamp: stepAt(6),
       },
-      {
-        type: 'REASONING_MESSAGE_CHUNK',
-        messageId: 'r-reasoning',
-        delta: 'Next',
-        timestamp: at(7),
-      },
-      {
-        type: 'REASONING_MESSAGE_CHUNK',
-        messageId: 'r-reasoning',
-        delta: ' step',
-        timestamp: at(8.25),
-      },
-    ]
-    let state = initialChat()
-    for (const event of events) state = reduceEvent(state, { event })
+      reasoning('Next', 7),
+      reasoning(' step', 8.25),
+    ])
     expect(state.messages[0].timeline).toEqual([
       {
         id: 'r_thinking_0',
@@ -499,50 +497,18 @@ describe('harness reducer', () => {
     ])
   })
   it('keeps late reasoning with the thought the reply text closed', () => {
-    const start = Date.UTC(2026, 9, 1)
-    const at = (seconds: number) =>
-      new Date(start + seconds * 1000).toISOString()
-    const events: Frame['event'][] = [
-      {
-        type: 'REASONING_MESSAGE_CHUNK',
-        messageId: 'r-reasoning',
-        delta: 'Plan',
-        timestamp: at(0),
-      },
-      {
-        type: 'REASONING_MESSAGE_CHUNK',
-        messageId: 'r-reasoning',
-        delta: 'ning',
-        timestamp: at(2.5),
-      },
-      {
-        type: 'TEXT_MESSAGE_CHUNK',
-        messageId: 'r',
-        delta: 'Answer',
-        timestamp: at(3),
-      },
-      {
-        type: 'REASONING_MESSAGE_CHUNK',
-        messageId: 'r-reasoning',
-        delta: ' late',
-        timestamp: at(3.2),
-      },
-      {
-        type: 'TEXT_MESSAGE_CHUNK',
-        messageId: 'r',
-        delta: ' done',
-        timestamp: at(3.4),
-      },
-    ]
-    let state = initialChat()
-    for (const event of events) state = reduceEvent(state, { event })
+    const state = reduceAll([
+      ...thoughtThenAnswer,
+      reasoning(' late', 3.2),
+      text(' done', 3.4),
+    ])
     expect(state.messages[0].timeline).toEqual([
       {
         id: 'r_thinking_0',
         type: 'thinking',
         content: 'Planning late',
-        startedAt: start,
-        endedAt: start + 2_500,
+        startedAt: STEPS_START,
+        endedAt: STEPS_START + 2_500,
         duration: 2.5,
       },
       { id: 'r_content_1', type: 'content', content: 'Answer done' },

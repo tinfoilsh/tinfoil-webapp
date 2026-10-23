@@ -142,6 +142,9 @@ const projectDocument = (id: string, filename: string) => ({
 })
 const notes = projectDocument('doc-notes', 'notes.md')
 const plan = projectDocument('doc-plan', 'plan.md')
+// A Markdown file the user drops, named as `document` is.
+const droppedFile = (document: { filename: string }, text: string) =>
+  new File([text], document.filename, { type: 'text/markdown' })
 const listPage = (threads: ThreadSummary[]) => ({
   threads,
   pinned: [],
@@ -486,10 +489,7 @@ it('adds files from the composer to the project, showing them all uploading in i
   render(projectView())
   await screen.findByTitle('Rename project')
 
-  dropFiles([
-    new File(['# Notes'], notes.filename, { type: 'text/markdown' }),
-    new File(['# Plan'], plan.filename, { type: 'text/markdown' }),
-  ])
+  dropFiles([droppedFile(notes, '# Notes'), droppedFile(plan, '# Plan')])
   fireEvent.click(
     await screen.findByRole('button', { name: 'Yes, add to project' }),
   )
@@ -538,7 +538,7 @@ it('expands the documents of an open sidebar for files added from the composer',
     screen.getByRole('button', { name: /^Documents/, expanded: false }),
   ).toBeInTheDocument()
 
-  dropFiles([new File(['# Notes'], notes.filename, { type: 'text/markdown' })])
+  dropFiles([droppedFile(notes, '# Notes')])
   fireEvent.click(
     await screen.findByRole('button', { name: 'Yes, add to project' }),
   )
@@ -555,7 +555,7 @@ it('offers a file dropped while its project loads once the project opens', async
   render(projectView())
   await screen.findByRole('heading', { name: 'Loading...' })
 
-  dropFiles([new File(['# Notes'], notes.filename, { type: 'text/markdown' })])
+  dropFiles([droppedFile(notes, '# Notes')])
   await act(async () => {})
   expect(
     screen.queryByRole('heading', { name: 'Add to project context?' }),
@@ -611,9 +611,7 @@ it.each([
     const { rerender } = render(projectView())
     await screen.findByRole('heading', { name: 'Loading...' })
 
-    dropFiles([
-      new File(['# Notes'], notes.filename, { type: 'text/markdown' }),
-    ])
+    dropFiles([droppedFile(notes, '# Notes')])
     await finish(opening, rerender)
 
     await waitFor(() =>
@@ -641,7 +639,7 @@ it('says project mode ended when the page leaves a loading project with a file w
   rerender(projectView(planning.id))
   await waitFor(() => expect(requested('/v1/projects/get')).toHaveLength(2))
   expect(screen.getByRole('heading', { name: 'Loading...' })).toBeVisible()
-  dropFiles([new File(['# Notes'], notes.filename, { type: 'text/markdown' })])
+  dropFiles([droppedFile(notes, '# Notes')])
   await act(async () => {})
 
   rerender(routeView({}))

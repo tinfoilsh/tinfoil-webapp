@@ -72,6 +72,18 @@ beforeEach(() => {
   refuseFetch()
 })
 
+// The harness's answers for a chat page with no projects or listed chats,
+// and `routes` for the requests a test is about.
+function answerChatPage(routes: Record<string, (input: unknown) => unknown>) {
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    const route = routes[path]
+    if (!route) throw new Error(`Unexpected ${path}`)
+    return route(input)
+  })
+}
+
 function view(props: Partial<Parameters<typeof ChatInterface>[0]> = {}) {
   return (
     <ProjectProvider>
@@ -215,21 +227,17 @@ it('saves a temporary chat to the cloud with cloud sync', async () => {
   signIn({ cloud: true })
   const returned = scriptDeviceRuns('Trip ideas')
   const imported: unknown[] = []
-  client.post.mockImplementation(async (path, input) => {
-    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
-    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
-    if (path === '/v1/threads/import') {
+  answerChatPage({
+    '/v1/threads/import': (input) => {
       imported.push(input)
       const { messages, ...summary } = returned[0]
       return { ...summary, messageCount: messages.length }
-    }
-    if (path === '/v1/threads/get')
-      return {
-        ...returned[0],
-        messageCount: returned[0].messages.length,
-        hasOlder: false,
-      }
-    throw new Error(`Unexpected ${path}`)
+    },
+    '/v1/threads/get': () => ({
+      ...returned[0],
+      messageCount: returned[0].messages.length,
+      hasOlder: false,
+    }),
   })
   render(view())
   fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
@@ -386,11 +394,8 @@ it.each([
   'shows no title or times above a chat that is %s',
   async (failure, heading) => {
     signIn({ cloud: true })
-    client.post.mockImplementation(async (path) => {
-      if (path === '/v1/projects/list')
-        return { projects: [], nextCursor: null }
-      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
-      if (path === '/v1/threads/get') {
+    answerChatPage({
+      '/v1/threads/get': () => {
         if (failure === 'unreachable') throw new TypeError('Network down')
         throw new HarnessError(
           failure === 'missing'
@@ -398,8 +403,7 @@ it.each([
             : { code: 'KEY_MISMATCH', message: 'Another key' },
           failure === 'missing' ? 404 : 409,
         )
-      }
-      throw new Error(`Unexpected ${path}`)
+      },
     })
     render(view({ initialChatId: 'gone-chat' }))
     await screen.findByRole('heading', { name: heading })
@@ -428,16 +432,13 @@ it.each([
   'explains a chat missing from %s and starts a new one',
   async (_where, route, explanation) => {
     signIn({ cloud: true })
-    client.post.mockImplementation(async (path) => {
-      if (path === '/v1/projects/list')
-        return { projects: [], nextCursor: null }
-      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
-      if (path === '/v1/threads/get')
+    answerChatPage({
+      '/v1/threads/get': () => {
         throw new HarnessError(
           { code: 'THREAD_NOT_FOUND', message: 'No such chat' },
           404,
         )
-      throw new Error(`Unexpected ${path}`)
+      },
     })
     render(view({ initialChatId: 'gone-chat', ...route }))
     await screen.findByRole('heading', { name: 'Chat not found' })
@@ -459,15 +460,13 @@ it.each([
 
 it('explains a chat that failed to load once and offers a new chat', async () => {
   signIn({ cloud: true })
-  client.post.mockImplementation(async (path) => {
-    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
-    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
-    if (path === '/v1/threads/get')
+  answerChatPage({
+    '/v1/threads/get': () => {
       throw new HarnessError(
         { code: 'UPSTREAM_REFUSED', message: 'sync: 502 bad gateway' },
         502,
       )
-    throw new Error(`Unexpected ${path}`)
+    },
   })
   render(view({ initialChatId: 'broken-chat' }))
   await screen.findByRole('heading', { name: "Couldn't load chat" })
@@ -533,18 +532,15 @@ function scriptLongChat() {
     hasOlder,
   })
   const pages: unknown[] = []
-  client.post.mockImplementation(async (path, input) => {
-    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
-    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
-    if (path === '/v1/threads/get') {
+  answerChatPage({
+    '/v1/threads/get': (input) => {
       const { before } = input as { before?: string }
       if (!before) return page(TURNS.slice(4), true)
       pages.push(input)
       return before === 'u3'
         ? page(TURNS.slice(2, 4), true)
         : page(TURNS.slice(0, 2), false)
-    }
-    throw new Error(`Unexpected ${path}`)
+    },
   })
   render(view({ initialChatId: 'long-chat' }))
   return pages
