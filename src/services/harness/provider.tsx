@@ -128,13 +128,20 @@ export function useHarness() {
   )
   return { ...view, profile, api: api ?? harnessAPI() }
 }
-// Whether the harness's session offers a feature. Features are off until the
-// session loads, and while the harness cannot reach the service behind them.
-export function useSessionFeature(feature: string): boolean {
+// Whether the harness's session offers a feature. Features are off while
+// the harness cannot reach the service behind them, and until the session
+// loads unless `whileLoading` says otherwise.
+export function useSessionFeature(
+  feature: string,
+  whileLoading = false,
+): boolean {
   return useSyncExternalStore(
     subscribe,
-    () => getView().session?.features[feature] === true,
-    () => false,
+    () => {
+      const session = getView().session
+      return session ? session.features[feature] === true : whileLoading
+    },
+    () => whileLoading,
   )
 }
 export function useProfileSetting<T>(
