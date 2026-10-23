@@ -11,10 +11,11 @@ const CONTEXT_UNREADABLE = 'The chat could not be read.'
 type AskedRun = { key?: string; threadId?: string; runId?: string }
 const inFlight = (status: string) =>
   status === 'submitting' || status === 'streaming' || status === 'queued'
-// The harness runs an ask to its end unless asked to stop it.
+// The harness runs an ask to its end unless asked to stop it, also one
+// whose stream failed while the run may go on.
 function stopAsk(controller: RunController, asked: AskedRun) {
   const { key, threadId, runId } = asked
-  if (threadId && runId && inFlight(controller.view.get().status))
+  if (threadId && runId && controller.view.get().status !== 'idle')
     void controller.cancel({ key, threadId, runId }).catch(() => {})
 }
 export interface SidebarChatState {

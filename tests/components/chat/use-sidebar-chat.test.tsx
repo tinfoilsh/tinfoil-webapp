@@ -304,6 +304,43 @@ it.each(['closed', 'unmounted'] as const)(
   },
 )
 
+it('stops the harness running an ask whose stream failed twice', async () => {
+  const events = vi.mocked(harnessAPI().client.events)
+  events.mockImplementationOnce(async function* () {
+    yield {
+      id: 0,
+      event: { type: 'RUN_STARTED', threadId: 'thread-1', runId: 'run-1' },
+    }
+    throw new TypeError('connection closed')
+  })
+  events.mockImplementationOnce(async function* () {
+    yield* []
+    throw new TypeError('connection closed')
+  })
+  vi.mocked(harnessAPI().client.post).mockImplementation(async (path) => {
+    if (path !== '/v1/threads/cancel')
+      throw new Error(`Unexpected request: ${path}`)
+    return {}
+  })
+  const { result } = renderHook(() =>
+    useSidebarChat({
+      context: async () => ({ threadId: 'thread-1', key: 'content-key' }),
+      options: {},
+    }),
+  )
+  act(() => result.current.askQuote('What does this mean?'))
+  await waitFor(() => expect(events).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(result.current.isStreaming).toBe(false))
+
+  act(() => result.current.reset())
+
+  expect(vi.mocked(harnessAPI().client.post)).toHaveBeenCalledExactlyOnceWith(
+    '/v1/threads/cancel',
+    { key: 'content-key', threadId: 'thread-1', runId: 'run-1' },
+    expect.any(AbortSignal),
+  )
+})
+
 it('asks the harness to stop nothing when a finished ask is closed', async () => {
   const { result } = askInProgress(true)
   act(() => result.current.askQuote('What does this mean?'))
