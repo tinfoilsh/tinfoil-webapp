@@ -3,7 +3,7 @@ import { ProjectProvider } from '@/components/project/project-provider'
 import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
 import { publish } from '@/services/harness/runtime'
 import type { ThreadSummary } from '@/services/harness/types'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
 import {
@@ -69,6 +69,18 @@ const mainChat: ThreadSummary = {
   ...storedThread('main-chat', { title: 'Weekend plans' }),
   messageCount: 2,
 }
+const projectDocument = (id: string, filename: string) => ({
+  id,
+  projectId: project.id,
+  filename,
+  contentType: 'text/markdown',
+  sizeBytes: 12,
+  createdAt: '2026-10-22T12:00:00Z',
+  updatedAt: '2026-10-22T12:00:00Z',
+  content: `The text of ${filename}`,
+})
+const notes = projectDocument('doc-notes', 'notes.md')
+const plan = projectDocument('doc-plan', 'plan.md')
 const listPage = (threads: ThreadSummary[]) => ({
   threads,
   pinned: [],
@@ -81,6 +93,23 @@ const requested = (path: string) =>
   client.post.mock.calls
     .filter(([called]) => called === path)
     .map(([, input]) => input as Record<string, unknown>)
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (cause: Error) => void
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
+
+// The open project's Documents section, once the project has loaded.
+async function openDocuments() {
+  fireEvent.click(
+    await screen.findByRole('button', { name: /^Documents \(\d+\)/ }),
+  )
+}
 
 function projectView(id = project.id) {
   return (
@@ -132,4 +161,33 @@ it("shows a project route's project loading until the content key opens it", asy
     await screen.findByRole('heading', { name: project.name }),
   ).toBeInTheDocument()
   expect(requested('/v1/projects/get')).toEqual([{ key: KEY, id: project.id }])
+})
+
+it('keeps the document controls usable while the open project refreshes', async () => {
+  routes['/v1/projects/get'] = () => ({
+    ...structuredClone(project),
+    documents: [notes],
+  })
+  render(projectView())
+  await openDocuments()
+  const upload = screen.getByRole('button', { name: 'Upload documents' })
+  const remove = screen.getByRole('button', { name: 'Remove notes.md' })
+  expect(upload).toBeEnabled()
+  expect(remove).toBeEnabled()
+
+  const refreshed = deferred<unknown>()
+  routes['/v1/projects/get'] = () => refreshed.promise
+  act(() => publish({ projectRevision: 'remote-change' }))
+  await waitFor(() => expect(requested('/v1/projects/get')).toHaveLength(2))
+
+  expect(upload).toBeEnabled()
+  expect(remove).toBeEnabled()
+  await act(async () =>
+    refreshed.resolve({
+      ...structuredClone(project),
+      documents: [notes, plan],
+    }),
+  )
+  expect(screen.getByRole('button', { name: 'Remove plan.md' })).toBeEnabled()
+  expect(upload).toBeEnabled()
 })

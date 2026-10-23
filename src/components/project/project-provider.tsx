@@ -6,6 +6,7 @@ import type { Project, ProjectDocument } from '@/types/project'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ProjectContext,
+  type EnterProjectModeOptions,
   type LoadingProject,
   type ProjectContextValue,
   type UploadingFile,
@@ -49,18 +50,28 @@ export function ProjectProvider({
       throw new Error('Premium project access is required')
     }
   }, [])
-  const enterProjectMode = useCallback<ProjectContextValue['enterProjectMode']>(
-    async (id, name, options) => {
+  // Opens a project, or with `refresh` reloads the open one without showing
+  // it loading, so its controls stay usable.
+  const loadProject = useCallback(
+    async (
+      id: string,
+      {
+        name,
+        isCurrent,
+        refresh = false,
+      }: EnterProjectModeOptions & { name?: string; refresh?: boolean } = {},
+    ) => {
       if (!hasPremiumAccessRef.current) return false
       openProjectId.current = id
       const version = ++generation.current
-      setLoadingProject({ id, name: name ?? LOADING_PROJECT_NAME })
+      if (!refresh)
+        setLoadingProject({ id, name: name ?? LOADING_PROJECT_NAME })
       try {
         const project = await projects.getProject(api, id)
         if (
           version !== generation.current ||
           !hasPremiumAccessRef.current ||
-          options?.isCurrent?.() === false
+          isCurrent?.() === false
         )
           return false
         committedProjectId.current = project.id
@@ -81,6 +92,10 @@ export function ProjectProvider({
       }
     },
     [api],
+  )
+  const enterProjectMode = useCallback<ProjectContextValue['enterProjectMode']>(
+    (id, name, options) => loadProject(id, { ...options, name }),
+    [loadProject],
   )
   const exitProjectMode = useCallback(() => {
     generation.current++
@@ -122,9 +137,9 @@ export function ProjectProvider({
       committedProjectId.current &&
       openProjectId.current === committedProjectId.current
     ) {
-      void enterProjectMode(committedProjectId.current)
+      void loadProject(committedProjectId.current, { refresh: true })
     }
-  }, [projectRevision, keyReady, hasPremiumAccess, enterProjectMode])
+  }, [projectRevision, keyReady, hasPremiumAccess, loadProject])
   useEffect(() => {
     if (!isSubscriptionLoading && !chat_subscription_active) exitProjectMode()
   }, [chat_subscription_active, isSubscriptionLoading, exitProjectMode])
@@ -141,12 +156,13 @@ export function ProjectProvider({
   }, [keyReady, exitProjectMode])
   // Reloads a changed project, unless the user has opened another since.
   const reloadProject = async (id: string) => {
-    if (openProjectId.current === id) await enterProjectMode(id)
+    if (openProjectId.current === id) await loadProject(id, { refresh: true })
   }
   const refreshDocuments = useCallback(async () => {
     requirePremiumAccess()
-    if (openProjectId.current) await enterProjectMode(openProjectId.current)
-  }, [enterProjectMode, requirePremiumAccess])
+    if (openProjectId.current)
+      await loadProject(openProjectId.current, { refresh: true })
+  }, [loadProject, requirePremiumAccess])
   const value: ProjectContextValue = {
     activeProject: hasPremiumAccess ? activeProject : null,
     isProjectMode: hasPremiumAccess && !!activeProject,
