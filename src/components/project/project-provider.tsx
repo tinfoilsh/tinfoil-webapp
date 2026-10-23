@@ -21,7 +21,7 @@ export function ProjectProvider({
   children: ReactNode
   initialProjectId?: string | null
 }) {
-  const { api, keyReady, projectRevision } = useHarness()
+  const { api, keyReady, keyLocked, projectRevision } = useHarness()
   const { isLoading: isSubscriptionLoading, chat_subscription_active } =
     useSubscriptionStatus()
   const hasPremiumAccess = !isSubscriptionLoading && chat_subscription_active
@@ -164,6 +164,10 @@ export function ProjectProvider({
   useEffect(() => {
     if (!isSubscriptionLoading && !chat_subscription_active) closeProject()
   }, [chat_subscription_active, isSubscriptionLoading, closeProject])
+  // A refused key cannot open a project, so none shows loading for it.
+  useEffect(() => {
+    if (keyLocked) closeProject()
+  }, [keyLocked, closeProject])
   const keyWasReady = useRef(keyReady)
   useEffect(() => {
     // A project closes once the key is lost; the route's project waits for

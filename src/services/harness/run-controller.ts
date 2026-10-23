@@ -5,6 +5,7 @@ import {
   initialChat,
   isTerminal,
   reduceEvent,
+  runErrorOf,
   runOf,
   type ChatState,
 } from './reducer'
@@ -63,6 +64,9 @@ export interface RunOptions {
   // Rejoining a run left behind: losing it shows no error.
   quiet?: boolean
   rejoined?: boolean
+  // A widget's retry leaves the chat's status and error as they were, and
+  // keeps why it failed here instead.
+  widgetRetry?: { failure?: HarnessErrorBody }
 }
 
 // What the chat around a run does as the run goes.
@@ -179,7 +183,7 @@ export class RunController {
     input: Turn | FollowInput,
     options: RunOptions = {},
   ): Promise<boolean> {
-    const { device, quiet = false } = options
+    const { device, quiet = false, widgetRetry } = options
     const controller = new AbortController()
     if (!device) this.followers.add(controller)
     const version = this.generation
@@ -201,19 +205,22 @@ export class RunController {
         if ('threadId' in event && event.threadId) threadId = event.threadId
         runId = runOf(event) ?? runId
         const base = shown ? this.view.get() : view
-        const next = reduceEvent(base, frame, runId)
+        const next = reduceEvent(base, frame, runId, !!widgetRetry)
         const replayed =
           next === base && (!isTerminal(event) || !device || device.saved)
         // A replayed frame leaves the view as it was.
         if (!replayed) {
           if (next !== base) {
             this.reportQuota(event)
-            if (event.type === 'RUN_ERROR' && shown) this.errorAt = Date.now()
+            if (event.type === 'RUN_ERROR' && widgetRetry)
+              widgetRetry.failure = runErrorOf(event)
+            else if (event.type === 'RUN_ERROR' && shown)
+              this.errorAt = Date.now()
           }
           view = next
           if (shown) this.view.set(next)
           if (event.type === 'RUN_STARTED') {
-            this.started(event.runId, threadId!, device, shown)
+            this.started(event.runId, threadId!, device, shown && !widgetRetry)
             if (shown)
               this.hooks.started?.({
                 threadId: event.threadId,
@@ -294,10 +301,14 @@ export class RunController {
           this.pending = null
           this.forgetReceipt(runId)
           await this.hooks.gone?.(input.threadId!)
+        } else if (widgetRetry) {
+          widgetRetry.failure =
+            cause instanceof HarnessError ? cause.detail : CONNECTION_LOST
+          this.api.reportRateLimit(widgetRetry.failure.rateLimit)
         }
         // A run the harness refused to follow is gone. One that could not
         // be reached keeps its receipt, so it can still be rejoined.
-        else if (!quiet) this.fail(cause)
+        else if (!quiet) this.fail(cause, !!runId)
         else if (cause instanceof HarnessError && cause.status !== undefined)
           this.forgetReceipt(runId)
       }
@@ -339,15 +350,20 @@ export class RunController {
     else this.hooks.accepted?.(threadId)
   }
 
-  // The open chat's run ended with its stream, refused or cut off.
-  fail(cause: unknown) {
+  // The open chat's run ended with its stream, refused or cut off. A turn
+  // refused before it started, as one queued behind a reply, leaves the
+  // reply streaming.
+  fail(cause: unknown, started = true) {
     const detail =
       cause instanceof HarnessError ? cause.detail : CONNECTION_LOST
     this.errorAt = Date.now()
     this.view.update((state) => ({
       ...state,
       error: detail,
-      status: 'error',
+      ...(!started &&
+      (state.status === 'streaming' || state.status === 'queued')
+        ? {}
+        : { status: 'error' }),
       ...(detail.code === ERROR_CODES.chatFlagged ? { flagged: true } : {}),
     }))
     this.api.reportRateLimit(detail.rateLimit)

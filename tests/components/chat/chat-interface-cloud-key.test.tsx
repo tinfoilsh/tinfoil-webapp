@@ -260,6 +260,35 @@ it.each([true, false])(
   },
 )
 
+it('keeps a restored key when the session fails to reload after it', async () => {
+  localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
+  passkey.state = { passkeySetupFailed: true }
+  lockedCloudAccount({
+    key_id: await deriveTinfoilKeyIdHex(base64ToBytes(RESTORED_KEY_B64)),
+    etag: 'etag-1',
+    bundles: {},
+  })
+  const answer = client.post.getMockImplementation()!
+  let refusedRefreshes = 0
+  client.post.mockImplementation(async (path: string, ...rest: unknown[]) => {
+    if (path === '/v1/session' && localStorage.getItem(USER_ENCRYPTION_KEY)) {
+      refusedRefreshes++
+      throw new TypeError('Network unavailable')
+    }
+    return answer(path, ...rest)
+  })
+  passkey.updatePasskeyBackup.mockResolvedValue(undefined)
+  render(view())
+
+  await restoreKey(RESTORED_KEY)
+
+  expect(refusedRefreshes).toBe(1)
+  expect(encryptionService.getKey()).toBe(RESTORED_KEY)
+  expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBe(RESTORED_KEY)
+  expect(passkey.updatePasskeyBackup).toHaveBeenCalledOnce()
+  expect(screen.queryByText('Invalid key')).not.toBeInTheDocument()
+})
+
 // Starts fresh with a generated key over cloud data this device cannot
 // open, through the manual recovery screen.
 async function startFresh() {

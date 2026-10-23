@@ -137,6 +137,12 @@ it('waits for profile loading and offers retry for a connection failure instead 
   expect(
     screen.queryByRole('heading', { name: 'Unlock chat history' }),
   ).not.toBeInTheDocument()
+  expect(
+    within(screen.getByRole('banner')).queryByRole('heading', { level: 1 }),
+  ).not.toBeInTheDocument()
+  expect(document.querySelector('[data-chat-input-area]')).not.toHaveAttribute(
+    'aria-busy',
+  )
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
   expect(await screen.findByText('Recovered history')).toBeInTheDocument()
   expect(profiles).toBe(2)

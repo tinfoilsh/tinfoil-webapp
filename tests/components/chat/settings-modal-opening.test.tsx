@@ -6,6 +6,7 @@ import {
   USER_PREFS_LOCAL_PROFILE,
 } from '@/constants/storage-keys'
 import { getView, harnessAPI, publish } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import {
   act,
   fireEvent,
@@ -24,6 +25,7 @@ const signOut = vi.hoisted(() => vi.fn(async () => {}))
 
 vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: toasts }),
+  toast: toasts,
 }))
 
 vi.mock('@clerk/react', () => ({
@@ -301,7 +303,7 @@ describe('settings opening', () => {
       signIn({ cloud: false })
     })
 
-    it('keeps project data controls with cloud sync', () => {
+    it('offers the data controls, project ones included, as on main', () => {
       render(
         <Harness
           initialTab="data"
@@ -323,10 +325,10 @@ describe('settings opening', () => {
         'Import from Claude',
         'Import from Tinfoil',
         'Export Chats',
+        'Delete all projects',
+        'Export Projects for Claude',
       ])
         expect(screen.getByRole('button', { name })).toBeEnabled()
-      for (const name of ['Delete all projects', 'Export Projects for Claude'])
-        expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
       expect(
         screen.queryByText(/requires end-to-end encrypted cloud sync/),
       ).not.toBeInTheDocument()
@@ -469,6 +471,60 @@ describe('settings opening', () => {
   })
 })
 
+describe('settings while the key is refused', () => {
+  const EXPLANATION =
+    'Unlock your encryption key in Cloud Sync to change these settings.'
+
+  beforeEach(() => {
+    authState.isSignedIn = true
+    toasts.mockReset()
+  })
+
+  it('shows the settings it kept as unavailable and keeps Cloud Sync usable', () => {
+    signIn({
+      cloud: true,
+      locked: true,
+      profile: { pixelateSidebarChatTitlesEnabled: true, nickname: 'Sam' },
+    })
+    const onCloudSyncSetupClick = vi.fn()
+    render(
+      <Harness
+        initialTab="general"
+        isSignedIn
+        isClient
+        encryptionKey={`key_${'ab'.repeat(32)}`}
+        onCloudSyncSetupClick={onCloudSyncSetupClick}
+      />,
+    )
+    const redact = screen.getByRole('checkbox', {
+      name: 'Redact sidebar chat titles',
+    })
+    expect(redact).toBeChecked()
+    expect(redact).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Dark' })).toBeDisabled()
+    expect(screen.getByText(EXPLANATION)).toBeVisible()
+
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Personalization' })[0],
+    )
+    expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Sam')
+    expect(screen.getByPlaceholderText('Nickname')).toBeDisabled()
+    expect(screen.getByText(EXPLANATION)).toBeVisible()
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Cloud Sync (needs attention)',
+      })[0],
+    )
+    expect(screen.queryByText(EXPLANATION)).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('checkbox', { name: 'Encrypted Cloud Sync' }),
+    ).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Recover Key' }))
+    expect(onCloudSyncSetupClick).toHaveBeenCalledOnce()
+  })
+})
+
 describe('settings prompts', () => {
   beforeEach(() => {
     authState.isSignedIn = false
@@ -574,6 +630,50 @@ describe('settings personalization', () => {
     expect(screen.getByPlaceholderText('Nickname')).toHaveValue('Samantha')
     expect(screen.getAllByRole('button', { name: 'Save' })).not.toHaveLength(0)
     expect(getView().profile.nickname).toBe('Sam')
+  })
+
+  it.each([
+    {
+      action: 'saved details',
+      act: () => {
+        fireEvent.change(screen.getByPlaceholderText('Nickname'), {
+          target: { value: 'Samantha' },
+        })
+        fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+      },
+    },
+    {
+      action: 'turning personalization off',
+      act: () =>
+        fireEvent.click(
+          screen.getByRole('checkbox', { name: 'Personalize responses' }),
+        ),
+    },
+  ])('says when the chat service refuses $action', async ({ act }) => {
+    const saved = { nickname: 'Sam', isUsingPersonalization: true }
+    signIn({ cloud: true, profile: saved })
+    toasts.mockReset()
+    client.post.mockImplementation(async (path: string) => {
+      if (path !== '/v1/profile/update')
+        throw new Error(`Unexpected harness request: ${path}`)
+      throw new HarnessError(
+        { code: 'UPSTREAM_ERROR', message: 'Storage unavailable' },
+        502,
+      )
+    })
+    render(<Harness initialTab="personalization" isClient />)
+
+    act()
+
+    await waitFor(() =>
+      expect(toasts).toHaveBeenCalledExactlyOnceWith({
+        title: 'Failed to save settings',
+        description: 'Please try again.',
+        variant: 'destructive',
+      }),
+    )
+    expect(getView().profile).toEqual(saved)
+    expect(getView().error).toBeUndefined()
   })
 
   it('keeps an edit made while a save is in flight', async () => {

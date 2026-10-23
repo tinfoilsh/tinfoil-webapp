@@ -27,7 +27,11 @@ import {
   describeImportFailure,
 } from '@/services/harness/import-failure-copy'
 import { deleteAllProjects } from '@/services/harness/projects'
-import { useHarness, useProfileSetting } from '@/services/harness/provider'
+import {
+  reportProfileError,
+  useHarness,
+  useProfileSetting,
+} from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
 import { useLocalChatsSetting } from '@/services/harness/storage-mode'
 import { validateCurrentPrimaryKey } from '@/services/keys/cloud-key-preflight'
@@ -131,6 +135,14 @@ const MAX_LISTED_IMPORT_WARNINGS = 3
 // The part of a file's share of the progress bar that its cloud job fills
 // while it is processed before the next file is uploaded.
 const IMPORT_PROCESSING_SHARE = 0.5
+// The tabs of settings the profile holds, which the chat service cannot
+// save while the account's key is refused.
+const PROFILE_SETTINGS_TABS: readonly SettingsTab[] = [
+  'general',
+  'chat',
+  'personalization',
+  'prompts',
+]
 
 interface ImportResult {
   jobId?: string
@@ -891,6 +903,7 @@ export function SettingsModal({
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     initialTab ?? 'account',
   )
+  const profileLocked = keyLocked && PROFILE_SETTINGS_TABS.includes(activeTab)
 
   // Update active tab when initialTab prop changes (e.g., opening to a specific tab)
   useEffect(() => {
@@ -1063,7 +1076,7 @@ export function SettingsModal({
           ),
         ),
       )
-      .catch(reportHarnessError)
+      .catch(reportProfileError)
   }
 
   // Handle individual field changes. Edits are buffered locally and only
@@ -1112,7 +1125,7 @@ export function SettingsModal({
     if (!isClient) return
     void api
       .updateProfile({ isUsingPersonalization: enabled })
-      .catch(reportHarnessError)
+      .catch(reportProfileError)
   }
 
   const handleClearPersonalization = () => {
@@ -1274,6 +1287,19 @@ export function SettingsModal({
   const importsOnDevice = !cloudSyncEnabled
   const importTarget: ImportTarget = importsOnDevice ? 'device' : 'cloud'
 
+  // An action that finished stays reported as done when the chat list
+  // cannot reload after it; the list shows its own failure.
+  const refreshChatsAfter = async (action: string) => {
+    try {
+      await onChatsUpdated?.()
+    } catch (cause) {
+      logError('Failed to refresh chats', cause, {
+        component: 'SettingsModal',
+        action,
+      })
+    }
+  }
+
   // Imports upload the original export to the chat service, which converts
   // it. Chats for this device come back and are stored here; cloud data is
   // stored off device, and the user is emailed when a long job finishes. An
@@ -1319,7 +1345,7 @@ export function SettingsModal({
         result.chatsImported > 0 ||
         result.projectsImported > 0
       ) {
-        await onChatsUpdated?.()
+        await refreshChatsAfter('importFiles')
         if (target === 'cloud') await refreshProjects()
       }
     } catch (cause) {
@@ -1332,7 +1358,7 @@ export function SettingsModal({
         description: `Could not start the ${sourceLabel} import`,
         variant: 'destructive',
       })
-      if (result.chatsImported > 0) await onChatsUpdated?.()
+      if (result.chatsImported > 0) await refreshChatsAfter('importFiles')
     } finally {
       if (importAbortControllerRef.current === controller) {
         importAbortControllerRef.current = null
@@ -1720,7 +1746,7 @@ export function SettingsModal({
     try {
       const { cloudDeletionCompleted } = await onDeleteAllChats()
       onAllChatsDeleted?.()
-      await onChatsUpdated?.()
+      await refreshChatsAfter('handleDeleteAllChats')
       setShowDeleteAllChatsConfirm(false)
       setDeleteAllChatsConfirmText('')
       toast(
@@ -1763,7 +1789,7 @@ export function SettingsModal({
       const { deleted } = await deleteAllProjects(api)
       onAllProjectsDeleted?.()
       await refreshProjects()
-      await onChatsUpdated?.()
+      await refreshChatsAfter('handleDeleteAllProjects')
       setShowDeleteAllProjectsConfirm(false)
       setDeleteAllProjectsConfirmText('')
       toast({
@@ -2089,7 +2115,16 @@ ${encryptionKey.replace('key_', '')}
           {/* Content */}
           <div className="relative flex-1 overflow-y-auto p-6">
             <TextureGrid />
-            <div className="relative z-10 space-y-6">
+            {profileLocked && (
+              <p className="relative z-10 mb-6 rounded-lg border border-orange-500/30 bg-orange-500/10 p-4 font-aeonik-fono text-xs text-content-secondary">
+                Unlock your encryption key in Cloud Sync to change these
+                settings.
+              </p>
+            )}
+            <fieldset
+              disabled={profileLocked}
+              className="relative z-10 min-w-0 space-y-6 disabled:opacity-60"
+            >
               {/* General Tab */}
               {activeTab === 'general' && (
                 <>
@@ -3534,130 +3569,129 @@ ${encryptionKey.replace('key_', '')}
                       </div>
 
                       {/* Delete all projects remains available for account data control. */}
-                      {cloudSyncEnabled &&
-                        canDeleteAllProjects(Boolean(isSignedIn)) && (
-                          <div
-                            className={cn(
-                              'rounded-lg border border-border-subtle p-4',
-                              isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                            )}
-                          >
-                            <div className="space-y-3">
-                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                                <div>
-                                  <div className="font-aeonik text-sm font-medium text-content-primary">
-                                    Delete all projects
-                                  </div>
-                                  <div className="font-aeonik-fono text-xs text-content-muted">
-                                    Permanently delete every project and its
-                                    documents. Chats inside projects will be
-                                    detached but kept. This cannot be undone.
-                                  </div>
+                      {canDeleteAllProjects(Boolean(isSignedIn)) && (
+                        <div
+                          className={cn(
+                            'rounded-lg border border-border-subtle p-4',
+                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                          )}
+                        >
+                          <div className="space-y-3">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                              <div>
+                                <div className="font-aeonik text-sm font-medium text-content-primary">
+                                  Delete all projects
                                 </div>
-                                {!showDeleteAllProjectsConfirm && (
-                                  <button
-                                    onClick={() =>
-                                      setShowDeleteAllProjectsConfirm(true)
-                                    }
-                                    className={cn(
-                                      'flex w-full shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-52',
-                                      isDarkMode
-                                        ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                        : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                                    )}
-                                  >
-                                    <TfTrash
-                                      className="h-4 w-4 shrink-0"
-                                      aria-hidden="true"
-                                    />
-                                    Delete all projects
-                                  </button>
-                                )}
+                                <div className="font-aeonik-fono text-xs text-content-muted">
+                                  Permanently delete every project and its
+                                  documents. Chats inside projects will be
+                                  detached but kept. This cannot be undone.
+                                </div>
                               </div>
-                              {showDeleteAllProjectsConfirm && (
-                                <div className="space-y-2">
-                                  <label className="block">
-                                    <span className="font-aeonik-fono text-xs text-content-muted">
-                                      Type{' '}
-                                      <code className="font-mono text-content-primary">
-                                        {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
-                                      </code>{' '}
-                                      to confirm.
-                                    </span>
-                                    <input
-                                      type="text"
-                                      autoComplete="off"
-                                      autoCorrect="off"
-                                      autoCapitalize="off"
-                                      spellCheck={false}
-                                      value={deleteAllProjectsConfirmText}
-                                      onChange={(e) =>
-                                        setDeleteAllProjectsConfirmText(
-                                          e.target.value,
-                                        )
-                                      }
-                                      disabled={isDeletingAllProjects}
-                                      placeholder={
-                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                      }
-                                      className={cn(
-                                        'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
-                                        isDarkMode
-                                          ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                          : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
-                                      )}
-                                    />
-                                  </label>
-                                  <div className="flex flex-col gap-2 sm:flex-row">
-                                    <button
-                                      onClick={handleDeleteAllProjects}
-                                      disabled={
-                                        isDeletingAllProjects ||
-                                        deleteAllProjectsConfirmText
-                                          .trim()
-                                          .toLowerCase() !==
-                                          DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                      }
-                                      className={cn(
-                                        'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                                        isDarkMode
-                                          ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
-                                          : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
-                                      )}
-                                    >
-                                      {isDeletingAllProjects && (
-                                        <PiSpinner
-                                          className="h-4 w-4 animate-spin"
-                                          aria-hidden="true"
-                                        />
-                                      )}
-                                      <span>
-                                        {isDeletingAllProjects
-                                          ? 'Requesting…'
-                                          : 'Yes, delete all my projects'}
-                                      </span>
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        setShowDeleteAllProjectsConfirm(false)
-                                        setDeleteAllProjectsConfirmText('')
-                                      }}
-                                      disabled={isDeletingAllProjects}
-                                      className={cn(
-                                        'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                        isDarkMode
-                                          ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
-                                          : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
-                                      )}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
+                              {!showDeleteAllProjectsConfirm && (
+                                <button
+                                  onClick={() =>
+                                    setShowDeleteAllProjectsConfirm(true)
+                                  }
+                                  className={cn(
+                                    'flex w-full shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-52',
+                                    isDarkMode
+                                      ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                      : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                                  )}
+                                >
+                                  <TfTrash
+                                    className="h-4 w-4 shrink-0"
+                                    aria-hidden="true"
+                                  />
+                                  Delete all projects
+                                </button>
                               )}
                             </div>
+                            {showDeleteAllProjectsConfirm && (
+                              <div className="space-y-2">
+                                <label className="block">
+                                  <span className="font-aeonik-fono text-xs text-content-muted">
+                                    Type{' '}
+                                    <code className="font-mono text-content-primary">
+                                      {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
+                                    </code>{' '}
+                                    to confirm.
+                                  </span>
+                                  <input
+                                    type="text"
+                                    autoComplete="off"
+                                    autoCorrect="off"
+                                    autoCapitalize="off"
+                                    spellCheck={false}
+                                    value={deleteAllProjectsConfirmText}
+                                    onChange={(e) =>
+                                      setDeleteAllProjectsConfirmText(
+                                        e.target.value,
+                                      )
+                                    }
+                                    disabled={isDeletingAllProjects}
+                                    placeholder={
+                                      DELETE_ALL_PROJECTS_CONFIRM_PHRASE
+                                    }
+                                    className={cn(
+                                      'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
+                                      isDarkMode
+                                        ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                        : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
+                                    )}
+                                  />
+                                </label>
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                  <button
+                                    onClick={handleDeleteAllProjects}
+                                    disabled={
+                                      isDeletingAllProjects ||
+                                      deleteAllProjectsConfirmText
+                                        .trim()
+                                        .toLowerCase() !==
+                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
+                                    }
+                                    className={cn(
+                                      'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                      isDarkMode
+                                        ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
+                                        : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
+                                    )}
+                                  >
+                                    {isDeletingAllProjects && (
+                                      <PiSpinner
+                                        className="h-4 w-4 animate-spin"
+                                        aria-hidden="true"
+                                      />
+                                    )}
+                                    <span>
+                                      {isDeletingAllProjects
+                                        ? 'Requesting…'
+                                        : 'Yes, delete all my projects'}
+                                    </span>
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setShowDeleteAllProjectsConfirm(false)
+                                      setDeleteAllProjectsConfirmText('')
+                                    }}
+                                    disabled={isDeletingAllProjects}
+                                    className={cn(
+                                      'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                      isDarkMode
+                                        ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
+                                        : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
+                                    )}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </div>
+                      )}
                     </>
                   </div>
 
@@ -4030,7 +4064,7 @@ ${encryptionKey.replace('key_', '')}
                   )}
 
                   {/* Export Projects (premium only) */}
-                  {cloudSyncEnabled && isPremium && (
+                  {isSignedIn && isPremium && (
                     <div className="space-y-3">
                       <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                         Export Projects for Claude
@@ -4358,7 +4392,7 @@ ${encryptionKey.replace('key_', '')}
                   </div>
                 </>
               )}
-            </div>
+            </fieldset>
           </div>
         </div>
       </Dialog.Panel>

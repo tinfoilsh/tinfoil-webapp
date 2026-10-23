@@ -52,7 +52,7 @@ function connect({ cloud = false }: { cloud?: boolean } = {}) {
   signIn({ userId: page.isSignedIn ? 'alice' : null, cloud })
 }
 
-function renderData(props: { isPremium?: boolean } = {}) {
+function renderData(props: Partial<Parameters<typeof SettingsModal>[0]> = {}) {
   render(
     <SettingsModal
       isOpen
@@ -66,6 +66,7 @@ function renderData(props: { isPremium?: boolean } = {}) {
       encryptionKey={null}
       initialTab="data"
       isSignedIn={page.isSignedIn}
+      {...props}
       isPremium={props.isPremium ?? true}
     />,
   )
@@ -352,8 +353,8 @@ describe('exporting chats from the Data tab', () => {
     })),
   })
 
-  async function exportProjects(projects: unknown) {
-    connect({ cloud: true })
+  async function exportProjects(projects: unknown, cloud = true) {
+    connect({ cloud })
     client.multipart.mockResolvedValue(
       new Response(JSON.stringify(projects), {
         headers: { 'Content-Type': 'application/json' },
@@ -366,23 +367,32 @@ describe('exporting chats from the Data tab', () => {
     await waitFor(() => expect(page.toast).toHaveBeenCalled())
   }
 
-  it('saves the projects for Claude and says how many were exported', async () => {
-    const projects = [
-      claudeProject('garden', ['beds.md', 'seeds.md']),
-      claudeProject('kitchen', ['pantry.md']),
-    ]
-    await exportProjects(projects)
+  it.each([true, false])(
+    'saves the projects for Claude and says how many were exported (cloud sync: %s)',
+    async (cloud) => {
+      const projects = [
+        claudeProject('garden', ['beds.md', 'seeds.md']),
+        claudeProject('kitchen', ['pantry.md']),
+      ]
+      await exportProjects(projects, cloud)
 
-    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
-      title: 'Export complete',
-      description: 'Exported 2 projects for Claude.',
-    })
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Exported 2 projects and 3 documents.',
-    )
-    expect(downloads.map(({ name }) => name)).toEqual(['projects.json'])
-    expect(JSON.parse(await downloads[0].blob.text())).toEqual(projects)
-  })
+      const [path, form] = client.multipart.mock.calls[0] as [string, FormData]
+      expect([path, JSON.parse(form.get('options') as string)]).toEqual([
+        '/v1/export',
+        { format: 'claude-projects', key: KEY },
+      ])
+
+      expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+        title: 'Export complete',
+        description: 'Exported 2 projects for Claude.',
+      })
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Exported 2 projects and 3 documents.',
+      )
+      expect(downloads.map(({ name }) => name)).toEqual(['projects.json'])
+      expect(JSON.parse(await downloads[0].blob.text())).toEqual(projects)
+    },
+  )
 
   it('saves nothing and reports an export for Claude that is not a project list', async () => {
     await exportProjects({ projects: [] })
@@ -415,12 +425,12 @@ describe('exporting chats from the Data tab', () => {
 
 describe('deleting all projects from the Data tab', () => {
   it.each([
-    { deleted: 3, description: 'Deleted 3 projects.' },
-    { deleted: 1, description: 'Deleted 1 project.' },
+    { deleted: 3, cloud: true, description: 'Deleted 3 projects.' },
+    { deleted: 1, cloud: false, description: 'Deleted 1 project.' },
   ])(
-    'says how many projects the chat service deleted ($deleted)',
-    async ({ deleted, description }) => {
-      connect({ cloud: true })
+    'says how many projects the chat service deleted ($deleted, cloud sync: $cloud)',
+    async ({ deleted, cloud, description }) => {
+      connect({ cloud })
       client.post.mockImplementation(async (path: string) => {
         if (path === '/v1/projects/delete-all') return { deleted }
         if (path === '/v1/projects/list')
@@ -913,5 +923,89 @@ describe('importing chats from the Data tab', () => {
     expect(within(screen.getByRole('status')).getByText(copy)).toBeVisible()
     expect(screen.queryByText(`harness says ${code}`)).toBeNull()
     expect(await localThreadStore('device').list()).toEqual([])
+  })
+})
+
+describe('a chat list that fails to reload after an action', () => {
+  const failedRefresh = () =>
+    vi.fn(async () => {
+      throw new TypeError('Network unavailable')
+    })
+
+  it('reports an import that stored its chats as complete', async () => {
+    connect()
+    answerImport([importedLine], { jobId: null, warnings: [] })
+    const onChatsUpdated = failedRefresh()
+    renderData({ onChatsUpdated })
+
+    pickFiles('ChatGPT', [chatGptExport])
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Import conversations' }),
+    )
+
+    await waitFor(() => expect(onChatsUpdated).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument(),
+    )
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Import complete',
+      description: 'Imported 1 chat from ChatGPT',
+    })
+    expect(screen.getByRole('status')).toHaveTextContent('1 chat imported')
+    expect(await localThreadStore('device').get(imported.id)).toEqual(imported)
+  })
+
+  it('reports deleted chats as deleted', async () => {
+    connect()
+    const onDeleteAllChats = vi.fn(async () => ({
+      cloudDeletionCompleted: false,
+    }))
+    const onChatsUpdated = failedRefresh()
+    renderData({ isClient: true, onDeleteAllChats, onChatsUpdated })
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Delete all saved chats' }),
+    )
+    fireEvent.change(screen.getByPlaceholderText('delete all chats'), {
+      target: { value: 'delete all chats' },
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Yes, delete all my chats' }),
+    )
+
+    await waitFor(() => expect(page.toast).toHaveBeenCalled())
+    expect(onDeleteAllChats).toHaveBeenCalledOnce()
+    expect(onChatsUpdated).toHaveBeenCalledOnce()
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'All chats deleted',
+      description: 'Removed all chats from this device.',
+    })
+  })
+
+  it('reports deleted projects as deleted', async () => {
+    connect({ cloud: true })
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/projects/delete-all') return { deleted: 2 }
+      if (path === '/v1/projects/list')
+        return { projects: [], nextCursor: null }
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    const onChatsUpdated = failedRefresh()
+    renderData({ isPremium: true, onChatsUpdated })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete all projects' }))
+    fireEvent.change(screen.getByPlaceholderText('delete all projects'), {
+      target: { value: 'delete all projects' },
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Yes, delete all my projects' }),
+    )
+
+    await waitFor(() => expect(page.toast).toHaveBeenCalled())
+    expect(onChatsUpdated).toHaveBeenCalledOnce()
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'All projects deleted',
+      description: 'Deleted 2 projects.',
+    })
   })
 })

@@ -202,17 +202,59 @@ function sealOf(messages: Message[], id: string): Record<string, number> {
   }
 }
 
+// A window of the chat's latest messages, after the earlier messages the
+// view loaded before the window's first.
+export function afterLoaded(
+  view: Pick<ChatState, 'messages' | 'hasOlder'>,
+  messages: Message[],
+  hasOlder: boolean,
+): Pick<ChatState, 'messages' | 'hasOlder'> {
+  const start = view.messages.findIndex(
+    (message) => message.id === messages[0]?.id,
+  )
+  if (start <= 0) return { messages, hasOlder }
+  return {
+    messages: [...view.messages.slice(0, start), ...messages],
+    hasOlder: view.hasOlder,
+  }
+}
+
 const withoutQueued = (snapshot: Snapshot, runId?: string): Snapshot => ({
   ...snapshot,
   queue: snapshot.queue.filter((item) => item.queueId !== runId),
 })
 
+// Why a run ended with RUN_ERROR.
+export const runErrorOf = (
+  event: Extract<HarnessEvent, { type: 'RUN_ERROR' }>,
+): HarnessErrorBody => ({
+  code: event.code ?? ERROR_CODES.upstreamRefused,
+  message: event.message ?? DEFAULT_RUN_ERROR,
+  ...(event.kind ? { kind: event.kind } : {}),
+  ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
+  ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
+})
+
+// The events of a widget's retry that the chat applies: the call redrawn
+// from its new arguments, and what the call read for them, as a link
+// preview's page. The run reports the reply it redrew as its own, under the
+// model the chat has now.
+const WIDGET_RETRY_EVENTS: ReadonlySet<HarnessEvent['type']> = new Set([
+  'TOOL_CALL_START',
+  'TOOL_CALL_ARGS',
+  'TOOL_CALL_END',
+  'TOOL_CALL_RESULT',
+])
+
 // Applies one frame of a run. A frame the state applied already, as when a
-// run is replayed from its first frame, returns the state itself.
+// run is replayed from its first frame, returns the state itself. A widget's
+// retry redraws the widget and leaves the chat's run, status and error as
+// they were.
 export function reduceEvent(
   state: ChatState,
   frame: Frame,
   runHint?: string,
+  widgetRetry = false,
 ): ChatState {
   const { event } = frame
   const runId = runOf(event) ?? runHint ?? state.runId
@@ -228,9 +270,11 @@ export function reduceEvent(
       ? { ...state.cursors, [runId]: frame.id }
       : state.cursors
   const next: ChatState = { ...state, cursors }
+  if (widgetRetry && !WIDGET_RETRY_EVENTS.has(event.type)) return next
   // A queued run has its own stream. Its cancellation cannot stop the active
   // run, and late frames from the previous run cannot modify a newer snapshot.
   if (
+    !widgetRetry &&
     runId &&
     state.runId &&
     runId !== state.runId &&
@@ -271,13 +315,14 @@ export function reduceEvent(
         : { ...next, snapshot }
     }
     case 'MESSAGES_SNAPSHOT': {
-      const messages = event.messages
+      const shown = afterLoaded(next, event.messages, event.hasOlder ?? false)
       return {
         ...next,
-        messages,
-        hasOlder: event.hasOlder ?? false,
+        ...shown,
         // The window holds the continued reply as the harness stored it.
-        ...(next.continued ? { sealed: sealOf(messages, next.continued) } : {}),
+        ...(next.continued
+          ? { sealed: sealOf(shown.messages, next.continued) }
+          : {}),
       }
     }
     case 'TEXT_MESSAGE_CHUNK':
@@ -443,13 +488,7 @@ export function reduceEvent(
         status: failed ? 'error' : 'idle',
         ...(failed
           ? {
-              error: {
-                code: event.code ?? ERROR_CODES.upstreamRefused,
-                message: event.message ?? DEFAULT_RUN_ERROR,
-                ...(event.kind ? { kind: event.kind } : {}),
-                ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
-                ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
-              },
+              error: runErrorOf(event),
               ...(runId ? { failedRun: runId } : {}),
               ...(event.code === ERROR_CODES.chatFlagged
                 ? { flagged: true }

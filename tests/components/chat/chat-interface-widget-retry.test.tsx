@@ -4,7 +4,7 @@ import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Thread } from '@/services/harness/types'
 import { resetSafeguards } from '@/services/safeguards'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, signIn } from '../../harness-fixture'
 import { refuseFetch } from './chat-interface-fixture'
@@ -68,6 +68,8 @@ const thread: Thread = {
       role: 'assistant',
       createdAt: '2026-04-01T09:00:01Z',
       content: 'Here it is.',
+      model: 'earlier-model',
+      modelDisplayName: 'Earlier model',
       timeline: [
         {
           id: 'w1',
@@ -95,16 +97,20 @@ afterEach(() => {
 })
 
 // Opens the chat, whose widget's retry run the harness answers with `run`.
-async function openChat(run?: () => AsyncGenerator<Frame>) {
+async function openChat(
+  run?: () => AsyncGenerator<Frame>,
+  opened: Thread = thread,
+  failure = "Couldn't display message compose",
+) {
   signIn({ cloud: true })
   client.post.mockImplementation(async (path: string) => {
-    if (path === '/v1/threads/get') return structuredClone(thread)
+    if (path === '/v1/threads/get') return structuredClone(opened)
     if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
     throw new Error(`Unexpected ${path}`)
   })
   if (run) client.events.mockImplementation(run)
   render(<ChatInterface initialChatId={THREAD_ID} />)
-  await screen.findByText("Couldn't display message compose")
+  await screen.findByText(failure)
 }
 
 const clickRetry = () =>
@@ -114,8 +120,12 @@ const clickRetry = () =>
 
 // Opens the chat, and retries its widget with a harness that answers the
 // retry's run with `run`.
-async function retryWidget(run: () => AsyncGenerator<Frame>) {
-  await openChat(run)
+async function retryWidget(
+  run: () => AsyncGenerator<Frame>,
+  opened?: Thread,
+  failure?: string,
+) {
+  await openChat(run, opened, failure)
   await clickRetry()
   expect(client.events).toHaveBeenCalledExactlyOnceWith(
     '/v1/threads/turn',
@@ -195,6 +205,175 @@ describe('retrying a widget on the chat page', () => {
     expect(await screen.findByText('Reply draft')).toBeInTheDocument()
     expect(
       screen.queryByText("Couldn't display message compose"),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows the page a retried link preview read', async () => {
+    const [question, reply] = thread.messages
+    const linkThread: Thread = {
+      ...thread,
+      messages: [
+        question,
+        {
+          ...reply,
+          timeline: [
+            {
+              id: 'w1',
+              type: 'tool_call',
+              toolCallId: 'w1',
+              name: 'render_link_preview',
+              arguments: '{}',
+              complete: true,
+              result: { status: 'error' },
+              invalidArguments: true,
+            },
+            { id: 'c1', type: 'content', content: 'Here it is.' },
+          ],
+        },
+      ],
+    }
+    await retryWidget(
+      async function* (): AsyncGenerator<Frame> {
+        const events: Frame['event'][] = [
+          { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-retry' },
+          {
+            type: 'TOOL_CALL_START',
+            parentMessageId: 'a1',
+            toolCallId: 'w1',
+            toolCallName: 'render_link_preview',
+          },
+          {
+            type: 'TOOL_CALL_ARGS',
+            toolCallId: 'w1',
+            delta: JSON.stringify({ url: 'https://example.com/post' }),
+          },
+          { type: 'TOOL_CALL_END', toolCallId: 'w1' },
+          {
+            type: 'TOOL_CALL_RESULT',
+            toolCallId: 'w1',
+            messageId: 'msg_result',
+            role: 'tool',
+            content: {
+              url: 'https://example.com/post',
+              title: 'Example post',
+              description: 'What the page says about itself',
+              siteName: 'Example',
+              image: null,
+            },
+          },
+          { type: 'RUN_FINISHED', threadId: THREAD_ID, runId: 'run-retry' },
+        ]
+        for (const [id, event] of events.entries()) yield { id, event }
+      },
+      linkThread,
+      "Couldn't display link preview",
+    )
+
+    expect(
+      await screen.findByText('What the page says about itself'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Example post')).toBeInTheDocument()
+  })
+
+  it('keeps the model that wrote the reply once its widget is redrawn', async () => {
+    await retryWidget(async function* (): AsyncGenerator<Frame> {
+      const events: Frame['event'][] = [
+        { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-retry' },
+        {
+          type: 'TOOL_CALL_START',
+          parentMessageId: 'a1',
+          toolCallId: 'w1',
+          toolCallName: 'render_message_compose',
+        },
+        {
+          type: 'TOOL_CALL_ARGS',
+          toolCallId: 'w1',
+          delta: JSON.stringify({
+            channel: 'message',
+            title: 'Reply draft',
+            variants: [{ label: 'Concise', body: 'Thanks.' }],
+          }),
+        },
+        { type: 'TOOL_CALL_END', toolCallId: 'w1' },
+        {
+          type: 'RUN_FINISHED',
+          threadId: THREAD_ID,
+          runId: 'run-retry',
+          metadata: {
+            messages: [
+              {
+                id: 'a1',
+                model: 'test-model',
+                modelDisplayName: 'Test model',
+                isError: false,
+                isInterrupted: false,
+              },
+            ],
+          },
+        },
+      ]
+      for (const [id, event] of events.entries()) yield { id, event }
+    })
+
+    expect(await screen.findByText('Reply draft')).toBeInTheDocument()
+    const reply = screen.getByRole('article', { name: 'Al said' })
+    expect(within(reply).getByText('Earlier model')).toBeInTheDocument()
+    expect(within(reply).queryByText('Test model')).not.toBeInTheDocument()
+  })
+
+  it("shows neither the retry's run nor its error as the chat's", async () => {
+    let started!: () => void
+    const running = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let fail!: () => void
+    const failing = new Promise<void>((resolve) => {
+      fail = resolve
+    })
+    await retryWidget(async function* (): AsyncGenerator<Frame> {
+      yield {
+        id: 0,
+        event: { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-retry' },
+      }
+      yield {
+        id: 1,
+        event: {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: thread.messages,
+          hasOlder: false,
+        },
+      }
+      // The run's frames so far were applied once the next one is asked for.
+      started()
+      await failing
+      yield {
+        id: 2,
+        event: {
+          type: 'RUN_ERROR',
+          threadId: THREAD_ID,
+          runId: 'run-retry',
+          code: 'UPSTREAM_REFUSED',
+          message: 'The replacement widget arguments do not match the schema',
+        },
+      }
+    })
+
+    await act(() => running)
+    expect(
+      screen.queryByRole('button', { name: 'Stop generation' }),
+    ).not.toBeInTheDocument()
+    await act(async () => fail())
+
+    expect(
+      await screen.findByText(
+        'Could not request a replacement. Try the widget again.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('The service is having trouble right now'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Try again' }),
     ).not.toBeInTheDocument()
   })
 

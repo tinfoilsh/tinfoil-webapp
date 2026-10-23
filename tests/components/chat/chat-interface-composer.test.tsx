@@ -9,7 +9,7 @@ import { useToast } from '@/hooks/use-toast'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
-import type { Frame, Turn } from '@/services/harness/types'
+import type { Frame, StoredThread, Turn } from '@/services/harness/types'
 import {
   act,
   fireEvent,
@@ -19,7 +19,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 import {
   CACHE_SECRET,
   client,
@@ -32,7 +32,7 @@ import {
   storedThread,
 } from '../../services/harness/thread-fixture'
 import { refuseFetch } from './chat-interface-fixture'
-import { chatPage } from './chat-page-mocks'
+import { chatPage, errorHandling } from './chat-page-mocks'
 
 vi.mock('@clerk/react', async () => ({
   ...(await import('./chat-page-mocks')).clerk,
@@ -94,6 +94,7 @@ beforeEach(() => {
   chatPage.router.query = {}
   chatPage.router.replace.mockReset().mockResolvedValue(true)
   chatPage.router.push.mockReset().mockResolvedValue(true)
+  errorHandling.logError.mockClear()
   refuseFetch()
 })
 
@@ -676,6 +677,71 @@ it('starts a new chat on the model the user picked last, not the open chat’s',
   ).not.toBeInTheDocument()
 })
 
+// A synced account's session arrives before its profile, so a new chat
+// shows the session's default pick until the profile loads.
+function loadSyncedProfileLater(profile: Record<string, unknown>) {
+  const api = signIn({
+    cloud: true,
+    session: {
+      ...sessionWithOtherModel,
+      profileDefaults: { selectedModel: 'auto' },
+    },
+  })
+  publish({ profile: {}, profileReady: false, keyReady: false })
+  const loaded = gate()
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/profile/get') {
+      await loaded.promise
+      return profile
+    }
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    throw new Error(`Unexpected ${path}`)
+  })
+  const refreshing = api.refreshProfile()
+  return () =>
+    act(async () => {
+      loaded.resolve()
+      await refreshing
+    })
+}
+
+it('starts a new chat on the model picked last once the synced profile loads', async () => {
+  const finishLoading = loadSyncedProfileLater({ selectedModel: otherModel.id })
+  answerTurns()
+  render(view())
+  expect(
+    await screen.findByRole('button', { name: 'Current model Auto · High' }),
+  ).toBeInTheDocument()
+
+  await finishLoading()
+
+  expect(
+    screen.getByRole('button', { name: 'Current model Other model' }),
+  ).toBeInTheDocument()
+  await send('Which model is this?')
+  await waitFor(() => expect(sentTurns()).toHaveLength(1))
+  expect(sentTurns()[0].options?.model).toBe(otherModel.id)
+})
+
+it('sends a message from the address on the model picked last', async () => {
+  window.history.replaceState(null, '', '/?q=Which+model+is+this%3F')
+  onTestFinished(() => window.history.replaceState(null, '', '/'))
+  const finishLoading = loadSyncedProfileLater({ selectedModel: otherModel.id })
+  answerTurns()
+  render(view())
+  await screen.findByRole('button', { name: 'Current model Auto · High' })
+  expect(client.events).not.toHaveBeenCalled()
+
+  await finishLoading()
+
+  await waitFor(() => expect(sentTurns()).toHaveLength(1))
+  expect(sentTurns()[0]).toMatchObject({
+    content: 'Which model is this?',
+    options: { model: otherModel.id },
+  })
+})
+
 it('continues a chat whose model was retired on the model the user picked', async () => {
   signIn({
     session: sessionWithOtherModel,
@@ -693,6 +759,96 @@ it('continues a chat whose model was retired on the model the user picked', asyn
 
   await waitFor(() => expect(sentTurns()).toHaveLength(1))
   expect(sentTurns()[0].options?.model).toBe(otherModel.id)
+})
+
+// A chat the harness stores, whose settings fail to save.
+function openChatWhoseSettingsFail(fields: Partial<StoredThread> = {}) {
+  signIn({
+    cloud: true,
+    session: {
+      ...sessionWithOtherModel,
+      presets: [{ id: 'research', name: 'Research', builtIn: true }],
+    },
+  })
+  const saved = { ...savedChat('test-model'), ...fields }
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    if (path === '/v1/threads/get')
+      return { ...saved, hasOlder: false, messageCount: 1 }
+    if (path === '/v1/threads/update' || path === '/v1/profile/update')
+      throw new TypeError('Network unavailable')
+    throw new Error(`Unexpected ${path}`)
+  })
+  render(
+    <>
+      <ProjectProvider>
+        <ChatInterface initialChatId={saved.id} suppressIntroModals />
+      </ProjectProvider>
+      <Toaster />
+    </>,
+  )
+}
+
+const logged = () =>
+  errorHandling.logError.mock.calls.map(([message]) => message)
+
+const settingSaves = () =>
+  client.post.mock.calls.filter(
+    ([path]) => path === '/v1/threads/update' || path === '/v1/profile/update',
+  )
+
+it('tells a model pick that failed to save as a settings failure, not a reply failure', async () => {
+  openChatWhoseSettingsFail()
+  await screen.findByText('A saved question')
+
+  fireEvent.click(
+    screen.getAllByRole('button', { name: 'Current model Test model' })[0],
+  )
+  fireEvent.click(
+    within(
+      screen.getAllByRole('menu', { name: 'Select a model' })[0],
+    ).getByRole('menuitemradio', { name: /Other model/ }),
+  )
+
+  expect(await screen.findByText('Failed to save settings')).toBeInTheDocument()
+  await waitFor(() =>
+    expect(logged()).toContain('Failed to save the chat model'),
+  )
+  expect(settingSaves()).toHaveLength(2)
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+it('keeps a web search setting that failed to save out of the reply error banner', async () => {
+  openChatWhoseSettingsFail()
+  await screen.findByText('A saved question')
+
+  fireEvent.click(
+    within(openInputOptions()).getByRole('menuitemcheckbox', {
+      name: 'Web search',
+    }),
+  )
+
+  await waitFor(() =>
+    expect(logged()).toContain('Failed to save the chat web search setting'),
+  )
+  expect(settingSaves()).toHaveLength(1)
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+it('keeps a prompt change that failed to save out of the reply error banner', async () => {
+  openChatWhoseSettingsFail({ presetId: 'research' })
+  await screen.findByText('A saved question')
+
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Stop using this prompt' }),
+  )
+
+  await waitFor(() =>
+    expect(logged()).toContain('Failed to save the chat prompt'),
+  )
+  expect(settingSaves()).toHaveLength(1)
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 
 it('keeps the draft, its attachment and quote when starting a new chat or opening another', async () => {
@@ -862,32 +1018,42 @@ it('uploads a file of an unlisted type and marks one the harness cannot read', a
   expect(screen.queryByText('Unsupported format')).not.toBeInTheDocument()
 })
 
-it('explains a file over its size limit before uploading it', async () => {
-  const limit = 2 * 1024 * 1024
-  signIn({
-    session: {
-      ...testSession,
-      composer: {
-        ...testSession.composer,
-        attachments: [{ accept: ['.pdf'], maxBytes: limit }],
+const MB = 1024 * 1024
+it.each([
+  ['report.pdf', 33 * MB, 'File size exceeds the limit of 32MB.'],
+  ['notes.md', 50 * MB, 'Text file exceeds the limit of 50MB.'],
+])(
+  'explains %s over its size limit before uploading it',
+  async (name, limit, explanation) => {
+    signIn({
+      session: {
+        ...testSession,
+        composer: {
+          ...testSession.composer,
+          // The harness's limits for text and for documents.
+          attachments: [
+            { accept: ['.txt', '.md'], maxBytes: 50 * MB },
+            { accept: ['.pdf'], maxBytes: 33 * MB },
+          ],
+        },
       },
-    },
-  })
-  render(
-    <>
-      {view()}
-      <Toaster />
-    </>,
-  )
-  await screen.findByRole('textbox', { name: 'Message' })
+    })
+    render(
+      <>
+        {view()}
+        <Toaster />
+      </>,
+    )
+    await screen.findByRole('textbox', { name: 'Message' })
+    const file = new File(['too large'], name)
+    Object.defineProperty(file, 'size', { value: limit + 1 })
 
-  fireEvent.change(document.querySelector('input[type="file"]')!, {
-    target: { files: [new File([new Uint8Array(limit + 1)], 'report.pdf')] },
-  })
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: { files: [file] },
+    })
 
-  expect(await screen.findByText('Processing failed')).toBeInTheDocument()
-  expect(
-    screen.getByText('File size exceeds the limit of 2MB.'),
-  ).toBeInTheDocument()
-  expect(client.upload).not.toHaveBeenCalled()
-})
+    expect(await screen.findByText('Processing failed')).toBeInTheDocument()
+    expect(screen.getByText(explanation)).toBeInTheDocument()
+    expect(client.upload).not.toHaveBeenCalled()
+  },
+)

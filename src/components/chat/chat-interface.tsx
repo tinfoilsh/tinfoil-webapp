@@ -153,7 +153,7 @@ const OnboardingView = dynamic(
 
 import { verifyChatService } from '@/services/harness/attestation'
 import { ERROR_CODES } from '@/services/harness/protocol'
-import { useHarness } from '@/services/harness/provider'
+import { reportProfileError, useHarness } from '@/services/harness/provider'
 import { HarnessError } from '@/services/harness/sse'
 import { isAttachmentsUnavailable } from '@/services/harness/transfer'
 import type { Turn } from '@/services/harness/types'
@@ -335,15 +335,15 @@ export function ChatInterface({
     const changed = previousSubscription.current !== chat_subscription_active
     previousSubscription.current = chat_subscription_active
     if (changed && isSignedIn) {
-      void api.refresh({ credentials: true }).catch(thread.report)
+      void api.refresh({ credentials: true }).catch((cause) => {
+        if (cause instanceof DOMException && cause.name === 'AbortError') return
+        logError('Failed to refresh after a subscription change', cause, {
+          component: 'ChatInterface',
+          action: 'refreshSubscription',
+        })
+      })
     }
-  }, [
-    api,
-    isSignedIn,
-    isSubscriptionLoading,
-    chat_subscription_active,
-    thread.report,
-  ])
+  }, [api, isSignedIn, isSubscriptionLoading, chat_subscription_active])
   // The composer only uses premium status to decide which controls to show,
   // and the server enforces access on every request. Using the cached value
   // while auth loads keeps the toolbar from reflowing once Clerk resolves.
@@ -586,6 +586,15 @@ export function ChatInterface({
       )
       .catch(logListAction('Failed to leave a deleted chat', id))
   }
+  // A chat setting that fails to save is logged, rather than shown as a
+  // failure of the open chat's reply.
+  const logSettingError = (message: string) => (cause: unknown) => {
+    if (cause instanceof DOMException && cause.name === 'AbortError') return
+    logError(message, cause, {
+      component: 'ChatInterface',
+      action: 'chatSetting',
+    })
+  }
   const updateChatTitle = (id: string, title: string) => {
     void thread
       .update(id, { title })
@@ -595,12 +604,16 @@ export function ChatInterface({
     thread.setModel(model)
     if (!findSelectableModel(model, models)?.auto) setExpandedLabel(null)
     if (currentChat.id)
-      void thread.update(currentChat.id, { model }).catch(thread.report)
-    void api.updateProfile({ selectedModel: model }).catch(thread.report)
+      void thread
+        .update(currentChat.id, { model })
+        .catch(logSettingError('Failed to save the chat model'))
+    void api.updateProfile({ selectedModel: model }).catch(reportProfileError)
   }
   // Choosing a prompt also applies its model and web search setting.
   const handleSetActivePreset = (presetId: string | null) => {
-    void thread.selectPreset(presetId).catch(thread.report)
+    void thread
+      .selectPreset(presetId)
+      .catch(logSettingError('Failed to save the chat prompt'))
   }
   const options = {
     model: selectedModel,
@@ -627,12 +640,9 @@ export function ChatInterface({
     // Files still uploading stay in the composer for the next message; files
     // the harness cannot read are cleared with it.
     const uploaded = processedDocuments.filter((d) => d.descriptor)
-    if (
-      isChatHydrating ||
-      (!input.trim() && !quote?.trim() && !uploaded.length)
-    )
-      return
-    const result = handleQuery(input, {
+    const text = input.trim()
+    if (isChatHydrating || (!text && !quote?.trim() && !uploaded.length)) return
+    const result = handleQuery(text, {
       quote: quote ?? undefined,
       attachments: uploaded.flatMap((d) =>
         d.descriptor ? [d.descriptor] : [],
@@ -675,7 +685,9 @@ export function ChatInterface({
   }
   const editAssistantMessage = (index: number, content: string) => {
     if (isStreaming || currentChatIsFlagged) return
-    void thread.editReply(index, content).catch(thread.report)
+    const editing = thread.editReply(index, content)
+    editing.catch(thread.report)
+    return editing
   }
   const continueAssistantMessage = (index: number) => {
     if (isStreaming || generationBlocked || promptedForQuota()) return
@@ -695,8 +707,6 @@ export function ChatInterface({
     try {
       const forkId = await thread.fork(index)
       if (!forkId) return
-      setProcessedDocuments([])
-      setQuote(null)
       // The overlay stays long enough to read as a step, not a flicker.
       const elapsed = Date.now() - startedAt
       if (elapsed < CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS)
@@ -910,7 +920,7 @@ export function ChatInterface({
   const handleEnterProjectMode = async (id: string, name?: string) => {
     const entered = await enterProjectMode(id, name)
     if (entered)
-      await router.push(getNewChatPath({ projectId: id }), undefined, {
+      await router.replace(getNewChatPath({ projectId: id }), undefined, {
         shallow: true,
       })
     return entered
@@ -918,7 +928,7 @@ export function ChatInterface({
   const handleExitProject = () => {
     exitProjectMode()
     thread.newChat()
-    void router.push('/')
+    void router.replace('/')
   }
   // Leaving a project while one of its chats is dragged keeps the open chat,
   // so the drag can end on the Cloud or Local tab. The page leaves the
@@ -927,7 +937,7 @@ export function ChatInterface({
     setPendingProjectUpload(null)
     setShowAddToProjectModal(false)
     exitProjectMode()
-    void router.push(
+    void router.replace(
       currentChat.id && !currentChat.isTemporary
         ? getChatPath(currentChat.id, { isLocalOnly: currentChat.isLocalOnly })
         : '/',
@@ -935,9 +945,10 @@ export function ChatInterface({
       { shallow: true },
     )
   }
-  // A temporary chat is kept once its reply has finished.
+  // A temporary chat saved while its reply streams is kept once the reply
+  // is stored.
   const canToggleTemporaryChat = (chat: Chat) =>
-    (!!chat.isBlankChat || !!chat.isTemporary) && !isStreaming
+    !!chat.isBlankChat || !!chat.isTemporary
   const handleSaveTemporaryChat = async () => {
     try {
       await thread.saveTemporary()
@@ -967,7 +978,7 @@ export function ChatInterface({
         .update(currentChat.id, {
           webSearchEnabled: !effectiveWebSearchEnabled,
         })
-        .catch(thread.report)
+        .catch(logSettingError('Failed to save the chat web search setting'))
   }
   const handleOpenVerifierSidebar = () => {
     handleSetVerifierSidebarOpen(!isVerifierSidebarOpen)
@@ -1052,7 +1063,6 @@ export function ChatInterface({
       // A passkey backup is encrypted again with a new key, so the passkey
       // goes on recovering the key in use.
       if (key !== previous && hasPasskeyBackup()) void updatePasskeyBackup()
-      await api.refresh()
     } catch (cause) {
       if (!api.lifetime.signal.aborted) {
         if (previous)
@@ -1061,6 +1071,9 @@ export function ChatInterface({
       }
       throw cause
     }
+    // The account keeps the key it accepted even if the session then fails
+    // to reload.
+    await api.refresh().catch(thread.report)
   }
   // A key started fresh lives only on this device until a passkey backs it
   // up. An active passkey's backup is encrypted again as the key changes.
@@ -1299,10 +1312,30 @@ export function ChatInterface({
     setInput('')
     setQuote(null)
     setProcessedDocuments([])
-    void router.push('/', undefined, { shallow: true })
+    void router.replace('/', undefined, { shallow: true })
     // Only a change of the storage mode moves the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloudSyncEnabled])
+  // A project the address names that cannot open, because it failed to
+  // load or the key is refused, leaves the address, whose chat list would
+  // hide every chat outside it.
+  const projectUnavailable =
+    !!initialProjectId &&
+    !activeProject &&
+    !loadingProject &&
+    (!!projectError || keyLocked)
+  useEffect(() => {
+    if (!projectUnavailable) return
+    void router.replace(
+      currentChat.id
+        ? getChatPath(currentChat.id, { isLocalOnly: currentChat.isLocalOnly })
+        : '/',
+      undefined,
+      { shallow: true },
+    )
+    // The address moves once the project turns out unavailable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectUnavailable])
   useEffect(() => {
     if (!router.isReady || router.query.upgrade !== 'projects') return
     setIsSubscribePromptOpen(true)
@@ -1512,7 +1545,10 @@ export function ChatInterface({
   const inputAreaObserver = useRef<ResizeObserver | null>(null)
   const inputAreaRef = useCallback((node: HTMLFieldSetElement | null) => {
     inputAreaObserver.current?.disconnect()
-    if (!node) return
+    if (!node) {
+      setInputAreaHeight(0)
+      return
+    }
     const measure = () =>
       setInputAreaHeight(node.getBoundingClientRect().height)
     measure()
@@ -1601,6 +1637,7 @@ export function ChatInterface({
 
   const showChatHeader =
     currentChat.messages.length > 0 || isChatHydrating || !!historyProblem
+  const showChatLoading = isChatHydrating && !historyProblem
   // A chat whose history could not open explains why in its place.
   const streamErrorBanner = streamError && !historyProblem && (
     <StreamErrorBanner
@@ -2246,9 +2283,12 @@ export function ChatInterface({
           onDeleteAllChats={thread.removeAll}
           onAllChatsDeleted={() => createNewChat()}
           onAllProjectsDeleted={() => {
+            // Only a chat in a project closes with the projects.
+            if (!activeProject && !loadingProject && !currentChat.projectId)
+              return
             exitProjectMode()
             thread.newChat()
-            void router.push('/')
+            void router.replace('/')
           }}
           isSignedIn={isSignedIn}
           isPremium={isPremium}
@@ -2340,8 +2380,8 @@ export function ChatInterface({
               <ChatHeader
                 chat={currentChat}
                 isStreaming={isStreaming}
-                isLoading={isChatHydrating}
-                isUnavailable={!!historyProblem && !isChatHydrating}
+                isLoading={showChatLoading}
+                isUnavailable={!!historyProblem}
                 actions={topControls}
                 leadingAction={sidebarToggle}
                 notice={
@@ -2521,7 +2561,7 @@ export function ChatInterface({
                   ref={inputAreaRef}
                   data-chat-input-area
                   disabled={isChatHydrating || !!historyProblem}
-                  aria-busy={isForking || isChatHydrating || undefined}
+                  aria-busy={isForking || showChatLoading || undefined}
                   className={cn(
                     'pointer-events-none absolute inset-x-0 bottom-0 isolate z-20 min-w-0 px-4 pb-4',
                     // The fork overlay only covers the transcript; the
@@ -2783,9 +2823,16 @@ export function ChatInterface({
             key={user?.id}
             onComplete={() => {
               dismissOnboarding()
+              // The account records completion too, so the profile failing
+              // to save it, as while the key is refused, is only logged.
               void api
                 .updateProfile({ hasSeenOnboarding: true })
-                .catch(thread.report)
+                .catch((cause) =>
+                  logError('Failed to save onboarding completion', cause, {
+                    component: 'ChatInterface',
+                    action: 'completeOnboarding',
+                  }),
+                )
             }}
           />
         )}

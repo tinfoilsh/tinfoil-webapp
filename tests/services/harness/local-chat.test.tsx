@@ -1150,7 +1150,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(turn().thread).toEqual(upgraded)
   })
 
-  it("shows the messages before a run's window from the copy on this device", async () => {
+  it("keeps showing the messages before a run's window", async () => {
     signIn('alice')
     await localThreadStore('device').update(SEEDED_ID, () => seeded())
     const [, , u2, a2] = SEEDED_MESSAGES
@@ -1179,9 +1179,6 @@ describe('local chats of a signed-in account without cloud sync', () => {
     )
     await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
     await act(() => result.current.send({ content: 'third' }))
-    expect(result.current.hasOlder).toBe(true)
-
-    await act(() => result.current.older())
 
     expect(result.current.chat.messages.map((m) => m.id)).toEqual([
       'u1',

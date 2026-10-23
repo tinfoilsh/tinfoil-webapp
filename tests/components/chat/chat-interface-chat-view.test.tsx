@@ -1,4 +1,5 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
+import { CONSTANTS } from '@/components/chat/constants'
 import { ProjectProvider } from '@/components/project/project-provider'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
@@ -93,8 +94,8 @@ function view(props: Partial<Parameters<typeof ChatInterface>[0]> = {}) {
 }
 
 // A device run that returns the thread its turn made, with the reply and
-// the title the harness gave it.
-function scriptDeviceRuns(title = 'Trip ideas') {
+// the title the harness gave it. It finishes once `finishing` settles.
+function scriptDeviceRuns(title = 'Trip ideas', finishing?: Promise<void>) {
   const returned: StoredThread[] = []
   client.events.mockImplementation(async function* (
     _path: string,
@@ -144,6 +145,7 @@ function scriptDeviceRuns(title = 'Trip ideas') {
         },
       },
     }
+    await finishing
     yield {
       id: 3,
       event: {
@@ -221,6 +223,40 @@ it('saves a temporary chat on this device with its title', async () => {
     local: true,
     thread: returned[0],
   })
+})
+
+it('saves a temporary chat once the reply streaming when Save was clicked is stored', async () => {
+  signIn()
+  let finish!: () => void
+  const finishing = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  const returned = scriptDeviceRuns('Trip ideas', finishing)
+  render(view())
+  fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
+  await send('Plan a trip')
+  await screen.findByText('Noted')
+  expect(
+    screen.getByRole('button', { name: 'Stop generation' }),
+  ).toBeInTheDocument()
+  const threadId = (client.events.mock.calls[0][1] as Turn).threadId!
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save chat' }))
+
+  expect(await rawRows('chats')).toEqual([])
+  expect(chatPage.router.replace).not.toHaveBeenCalled()
+  finish()
+  await waitFor(() =>
+    expect(chatPage.router.replace).toHaveBeenCalledWith(
+      `/chat/local/${threadId}`,
+      undefined,
+      { shallow: true },
+    ),
+  )
+  expect(await localThreadStore('device').get(threadId)).toEqual(returned[0])
+  expect(
+    within(screen.getByRole('banner')).getByText('Only saved locally'),
+  ).toBeInTheDocument()
 })
 
 it('saves a temporary chat to the cloud with cloud sync', async () => {
@@ -360,6 +396,38 @@ it('names the tab after a titled chat once it loads', async () => {
   expect(document.title).toBe('Trip ideas · Tinfoil Chat')
 })
 
+it('leaves no room for the composer on the desktop welcome screen after a chat', async () => {
+  const COMPOSER_HEIGHT_PX = 70
+  signIn()
+  await localThreadStore('device').add(TRIP)
+  const measure = Element.prototype.getBoundingClientRect
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: Element) {
+      return this.hasAttribute('data-chat-input-area')
+        ? new DOMRect(0, 0, 0, COMPOSER_HEIGHT_PX)
+        : measure.call(this)
+    },
+  )
+  const { rerender } = render(
+    view({ initialChatId: TRIP.id, isLocalChatUrl: true }),
+  )
+  await screen.findByText('Where should we go?')
+  const conversation = screen.getByRole('main', { name: 'Conversation' })
+  expect(conversation.style.paddingBottom).toBe(
+    `${COMPOSER_HEIGHT_PX + CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px`,
+  )
+
+  rerender(view())
+  await waitFor(() =>
+    expect(screen.queryByText('Where should we go?')).not.toBeInTheDocument(),
+  )
+
+  expect(document.querySelector('[data-chat-input-area]')).toBeNull()
+  const welcome = screen.getByRole('main', { name: 'Conversation' })
+  expect(welcome.style.paddingBottom).toBe('0px')
+  expect(welcome.style.getPropertyValue('--input-area-height')).toBe('0px')
+})
+
 it('keeps the base tab title when chat titles are turned off', async () => {
   signIn({ profile: { browserTabChatTitleEnabled: false } })
   await localThreadStore('device').add(TRIP)
@@ -372,16 +440,34 @@ it('keeps the base tab title when chat titles are turned off', async () => {
   expect(document.title).toBe('Tinfoil Chat')
 })
 
-it('keeps the base tab title for a temporary chat the harness named', async () => {
+it('keeps the base tab title while a new chat is untitled', async () => {
+  signIn()
+  scriptDeviceRuns('Trip ideas')
+  render(view())
+  await send('Plan a trip')
+  expect(
+    within(screen.getByRole('banner')).getByRole('heading', { level: 1 }),
+  ).toHaveTextContent('Untitled')
+  expect(document.title).toBe('Tinfoil Chat')
+
+  await screen.findByText('Noted')
+  expect(document.title).toBe('Trip ideas · Tinfoil Chat')
+})
+
+it('titles a temporary chat as one, though the harness named it, and keeps the base tab title', async () => {
   signIn()
   scriptDeviceRuns('Trip ideas')
   render(view())
   fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
   await send('Plan a trip')
+  const header = within(screen.getByRole('banner'))
+  expect(header.getByRole('heading', { level: 1 })).toHaveTextContent(
+    'Temporary Chat',
+  )
   await screen.findByText('Noted')
-  expect(
-    within(screen.getByRole('banner')).getByRole('heading', { level: 1 }),
-  ).toHaveTextContent('Trip ideas')
+  expect(header.getByRole('heading', { level: 1 })).toHaveTextContent(
+    'Temporary Chat',
+  )
 
   expect(document.title).toBe('Tinfoil Chat')
 })

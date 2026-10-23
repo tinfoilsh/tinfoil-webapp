@@ -11,7 +11,14 @@ import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
 import type { Frame, Turn } from '@/services/harness/types'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
 import {
@@ -168,6 +175,54 @@ it.each(['/', '/newchat'])(
   },
 )
 
+it.each(['the send button', 'Enter'])(
+  'sends the message without surrounding spaces from %s',
+  async (method) => {
+    signIn({ cloud: true })
+    const { accepted, reply, finished } = scriptRun()
+    render(
+      <ProjectProvider>
+        <ChatInterface suppressIntroModals />
+      </ProjectProvider>,
+    )
+    const input = await screen.findByRole('textbox', { name: /message/i })
+    fireEvent.change(input, { target: { value: '  Explain this to me \n' } })
+    if (method === 'Enter') fireEvent.keyDown(input, { key: 'Enter' })
+    else fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+    expect((client.events.mock.calls[0][1] as Turn).content).toBe(
+      'Explain this to me',
+    )
+    await act(async () => {
+      accepted.resolve()
+      reply.resolve()
+      finished.resolve()
+    })
+  },
+)
+
+it('titles a new chat Untitled as soon as its first message is sent', async () => {
+  signIn({ cloud: true })
+  const { accepted, reply, finished } = scriptRun()
+  render(
+    <ProjectProvider>
+      <ChatInterface suppressIntroModals />
+    </ProjectProvider>,
+  )
+  await send()
+
+  const header = within(screen.getByRole('banner'))
+  expect(header.getByRole('heading', { level: 1 })).toHaveTextContent(
+    'Untitled',
+  )
+  await act(async () => {
+    accepted.resolve()
+    reply.resolve()
+    finished.resolve()
+  })
+})
+
 it('shows the message and loading dot before device storage is ready, and can stop before sending', async () => {
   signIn()
   scriptRun()
@@ -226,7 +281,7 @@ it('applies device-only mode when a blank page navigates to a local new chat', a
   })
 })
 
-it('keeps the shell and loaded project when its URL changes, and exits it on Back', async () => {
+it('keeps the shell and loaded project when its URL changes, and exits it when the URL leaves', async () => {
   signIn({ cloud: true })
   chatPage.premium = true
   sessionStorage.setItem(UI_SIDEBAR_OPEN, 'true')
@@ -251,7 +306,7 @@ it('keeps the shell and loaded project when its URL changes, and exits it on Bac
   const main = await screen.findByRole('main', { name: 'Conversation' })
   fireEvent.click(await screen.findByRole('link', { name: /^Research\b/ }))
   await waitFor(() =>
-    expect(chatPage.router.push).toHaveBeenLastCalledWith(
+    expect(chatPage.router.replace).toHaveBeenLastCalledWith(
       '/project/research',
       undefined,
       { shallow: true },
@@ -402,7 +457,7 @@ it('clears a failed preparation and retries it without duplicating the message',
   )
 })
 
-it('shows the chat loading shell while the key is locked and until history arrives', async () => {
+it('shows a chat the locked key keeps closed as unavailable, then loads it once unlocked', async () => {
   const api = signIn({ cloud: true, locked: true })
   const history = gate()
   const thread = {
@@ -434,15 +489,21 @@ it('shows the chat loading shell while the key is locked and until history arriv
   expect(
     await screen.findByRole('heading', { name: 'Unlock chat history' }),
   ).toBeVisible()
-  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-    'Loading chat',
-  )
+  const header = within(screen.getByRole('banner'))
+  expect(header.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
+  expect(header.queryByText('Loading chat')).not.toBeInTheDocument()
+  const composer = document.querySelector('[data-chat-input-area]')!
+  expect(composer).not.toHaveAttribute('aria-busy')
   expect(screen.getByRole('textbox', { name: /message/i })).toBeDisabled()
   vi.spyOn(api, 'key').mockReturnValue(KEY)
   await act(async () => publish({ keyReady: true }))
   expect(
     screen.getByRole('status', { name: 'Loading chat history' }),
   ).toBeVisible()
+  expect(header.getByRole('heading', { level: 1 })).toHaveTextContent(
+    'Loading chat',
+  )
+  expect(composer).toHaveAttribute('aria-busy', 'true')
   await act(async () => history.resolve())
   expect(screen.getByRole('article', { name: 'You said' })).toHaveTextContent(
     'Saved question',

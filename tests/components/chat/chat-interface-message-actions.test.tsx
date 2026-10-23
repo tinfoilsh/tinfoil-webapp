@@ -330,6 +330,64 @@ describe('message actions on the chat page', () => {
       expect.any(AbortSignal),
     )
   })
+
+  it('keeps the draft, its attachment and quote in the fork', async () => {
+    open()
+    const message = await screen.findByText('Hello there')
+    fireEvent.change(screen.getByRole('textbox', { name: /message/i }), {
+      target: { value: 'My unfinished draft' },
+    })
+    client.upload.mockResolvedValueOnce({
+      attachment: {
+        id: 'att_notes',
+        kind: 'document',
+        fileName: 'notes.txt',
+        mimeType: 'text/plain',
+        size: 4,
+      },
+    })
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: { files: [new File(['note'], 'notes.txt')] },
+    })
+    await screen.findByRole('button', { name: 'Remove notes.txt' })
+    const range = document.createRange()
+    range.setStart(message.firstChild!, 0)
+    range.setEnd(message.firstChild!, 'Hello'.length)
+    vi.spyOn(range, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(100, 100, 120, 20),
+    )
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Quote' }))
+    window.getSelection()!.removeAllRanges()
+    expect(screen.getByText('Hello')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    fireEvent.click(
+      screen.getByRole('menuitem', { name: 'Fork conversation from here' }),
+    )
+    await waitFor(() =>
+      expect(chatPage.router.replace).toHaveBeenCalledWith(
+        '/chat/fork-1',
+        undefined,
+        { shallow: true },
+      ),
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('status', { name: 'Forking conversation' }),
+      ).not.toBeInTheDocument(),
+    )
+
+    expect(screen.getByRole('textbox', { name: /message/i })).toHaveValue(
+      'My unfinished draft',
+    )
+    expect(
+      screen.getByRole('button', { name: 'Remove notes.txt' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Hello')).toBeInTheDocument()
+  })
 })
 
 describe('attachments on the chat page', () => {

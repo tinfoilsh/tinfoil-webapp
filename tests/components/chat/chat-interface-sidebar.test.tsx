@@ -1,6 +1,7 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
+import { readChatListCache } from '@/services/harness/chat-list-cache'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
 import type {
@@ -484,6 +485,86 @@ it('shows the saved title again when two overlapping renames are both refused', 
   expect(
     screen.queryByRole('link', { name: /^First rename/ }),
   ).not.toBeInTheDocument()
+})
+
+// Renames a listed chat through its row's rename form.
+async function renameRow(from: string, to: string) {
+  const listed = await row(from)
+  fireEvent.click(
+    within(listed.closest('li, [role="listitem"]')!).getByRole('button', {
+      name: 'Rename chat',
+    }),
+  )
+  const field = screen.getByRole('textbox', { name: 'Chat title' })
+  fireEvent.change(field, { target: { value: to } })
+  fireEvent.submit(field.closest('form')!)
+}
+
+it('keeps the latest of two overlapping renames when their answers arrive out of order', async () => {
+  const { alpha, changes } = listTwoChats()
+  await renameRow('Alpha chat', 'First rename')
+  await renameRow('First rename', 'Second rename')
+
+  await act(async () =>
+    changes[1].answer.resolve({
+      ...summaryOf(alpha),
+      title: 'Second rename',
+      titleState: 'manual',
+    }),
+  )
+  await act(async () =>
+    changes[0].answer.resolve({
+      ...summaryOf(alpha),
+      title: 'First rename',
+      titleState: 'manual',
+    }),
+  )
+
+  expect(screen.getByRole('link', { name: /^Second rename/ })).toHaveAttribute(
+    'href',
+    '/chat/alpha-chat',
+  )
+  expect(
+    screen.queryByRole('link', { name: /^First rename/ }),
+  ).not.toBeInTheDocument()
+  expect(
+    readChatListCache('alice', null)?.threads.map(({ id, title }) => ({
+      id,
+      title,
+    })),
+  ).toEqual([
+    { id: alpha.id, title: 'Second rename' },
+    { id: 'beta-chat', title: 'Beta chat' },
+  ])
+})
+
+it('keeps a refused rename out of the saved list when another chat saves meanwhile', async () => {
+  const { alpha, beta, changes } = listTwoChats()
+  await renameRow('Alpha chat', 'Refused rename')
+  await renameRow('Beta chat', 'Saved rename')
+  await act(async () =>
+    changes[1].answer.resolve({
+      ...summaryOf(beta),
+      title: 'Saved rename',
+      titleState: 'manual',
+    }),
+  )
+
+  await act(async () => changes[0].answer.reject(new Error('Refused')))
+
+  expect(
+    readChatListCache('alice', null)?.threads.map(({ id, title }) => ({
+      id,
+      title,
+    })),
+  ).toEqual([
+    { id: alpha.id, title: 'Alpha chat' },
+    { id: beta.id, title: 'Saved rename' },
+  ])
+  // The list types the restored title back in.
+  expect(
+    await screen.findByRole('link', { name: /^Alpha chat/ }, { timeout: 3000 }),
+  ).toHaveAttribute('href', '/chat/alpha-chat')
 })
 
 it.each(['deleted', 'refused'] as const)(

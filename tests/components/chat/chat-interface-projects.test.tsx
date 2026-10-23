@@ -5,8 +5,16 @@ import {
   UI_SIDEBAR_PROJECTS_EXPANDED,
 } from '@/constants/storage-keys'
 import { publish } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import type { Thread, ThreadSummary } from '@/services/harness/types'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { MotionGlobalConfig } from 'framer-motion'
 import {
   afterAll,
@@ -27,7 +35,10 @@ import { chatPage } from './chat-page-mocks'
 
 const page = vi.hoisted(() => ({ toast: vi.fn() }))
 
-vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
+vi.mock('@clerk/react', async () => ({
+  ...(await import('./chat-page-mocks')).clerk,
+  useReverification: (callback: unknown) => callback,
+}))
 vi.mock('next/router', async () => (await import('./chat-page-mocks')).router)
 vi.mock('next/head', async () => (await import('./chat-page-mocks')).head)
 // Lazy UI renders once loaded, so the Add to project prompt can be answered;
@@ -400,11 +411,11 @@ it("leaves a project mid-drag for the open chat's own address, which lists every
   await screen.findByText('What did the survey find?')
   await screen.findByTitle('Rename project')
   await screen.findByRole('link', { name: projectChat.title })
-  chatPage.router.push.mockClear()
+  chatPage.router.replace.mockClear()
 
   dragOntoExitProject(projectChat.title)
 
-  expect(chatPage.router.push).toHaveBeenCalledExactlyOnceWith(
+  expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
     `/chat/${projectChat.id}`,
     undefined,
     { shallow: true },
@@ -417,8 +428,8 @@ it("leaves a project mid-drag for the open chat's own address, which lists every
     await screen.findByRole('link', { name: mainChat.title }),
   ).toBeInTheDocument()
   expect(screen.getByText('What did the survey find?')).toBeInTheDocument()
-  expect(chatPage.router.push).toHaveBeenCalledOnce()
-  expect(chatPage.router.replace).not.toHaveBeenCalled()
+  expect(chatPage.router.replace).toHaveBeenCalledOnce()
+  expect(chatPage.router.push).not.toHaveBeenCalled()
 })
 
 it('opens a project chosen after leaving another mid-drag, before the address has changed', async () => {
@@ -435,7 +446,7 @@ it('opens a project chosen after leaving another mid-drag, before the address ha
   await screen.findByRole('link', { name: projectChat.title })
 
   dragOntoExitProject(projectChat.title)
-  expect(chatPage.router.push).toHaveBeenLastCalledWith('/', undefined, {
+  expect(chatPage.router.replace).toHaveBeenLastCalledWith('/', undefined, {
     shallow: true,
   })
   fireEvent.click(await screen.findByRole('link', { name: /^Planning/ }))
@@ -451,7 +462,7 @@ it('opens a project chosen after leaving another mid-drag, before the address ha
   expect(await screen.findByTitle('Rename project')).toHaveTextContent(
     planning.name,
   )
-  expect(chatPage.router.push).toHaveBeenLastCalledWith(
+  expect(chatPage.router.replace).toHaveBeenLastCalledWith(
     `/project/${planning.id}`,
     undefined,
     { shallow: true },
@@ -738,7 +749,7 @@ it('names a new project after the projects listed and opens it', async () => {
   expect(requested('/v1/projects/create')).toEqual([
     { key: KEY, name: 'My Project #2', description: '' },
   ])
-  expect(chatPage.router.push).toHaveBeenLastCalledWith(
+  expect(chatPage.router.replace).toHaveBeenLastCalledWith(
     `/project/${created.id}`,
     undefined,
     { shallow: true },
@@ -796,4 +807,95 @@ it('shows the projects loading rather than missing until the key lets them be li
 
   await act(async () => listing.resolve({ projects: [], nextCursor: null }))
   expect(screen.getByText('No projects yet')).toBeInTheDocument()
+})
+
+it('shows a project chat still replying as generating its response', async () => {
+  routes['/v1/threads/list'] = () =>
+    listPage([
+      {
+        ...projectChat,
+        activeRun: { runId: 'run-1', expiresAt: '2026-10-22T12:10:00Z' },
+      },
+    ])
+  render(projectView())
+  const row = await screen.findByRole('link', { name: /^Project discussion/ })
+  expect(within(row).getByText('Generating response')).toBeInTheDocument()
+})
+
+it('leaves the address of a linked project that fails to open, listing every chat again', async () => {
+  routes['/v1/projects/get'] = () => {
+    throw new HarnessError(
+      { code: 'THREAD_NOT_FOUND', message: 'Project not found' },
+      404,
+    )
+  }
+  const { rerender } = render(projectView())
+  await waitFor(() =>
+    expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
+      '/',
+      undefined,
+      { shallow: true },
+    ),
+  )
+  rerender(routeView({}))
+  expect(
+    await screen.findByRole('link', { name: /^Weekend plans/ }),
+  ).toBeInTheDocument()
+})
+
+it('leaves the address of a linked project while the key is refused, instead of loading it forever', async () => {
+  publish({ keyReady: false, keyLocked: true, profileReady: false })
+  render(projectView())
+  await waitFor(() =>
+    expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
+      '/',
+      undefined,
+      { shallow: true },
+    ),
+  )
+  expect(
+    screen.queryByRole('heading', { name: 'Loading...' }),
+  ).not.toBeInTheDocument()
+  expect(requested('/v1/projects/get')).toEqual([])
+})
+
+it('keeps a chat outside every project open when all projects are deleted', async () => {
+  routes['/v1/threads/get'] = () =>
+    structuredClone({
+      ...openProjectChat,
+      id: mainChat.id,
+      title: mainChat.title,
+      projectId: null,
+    })
+  routes['/v1/projects/delete-all'] = () => ({ deleted: 1 })
+  render(routeView({ chatId: mainChat.id }))
+  await screen.findByText('What did the survey find?')
+  chatPage.router.replace.mockClear()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Close sidebar' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+  const settings = await screen.findByRole('dialog', { name: 'Settings' })
+  fireEvent.click(within(settings).getAllByRole('button', { name: 'Data' })[0])
+  fireEvent.click(
+    within(settings).getByRole('button', { name: 'Delete all projects' }),
+  )
+  fireEvent.change(
+    within(settings).getByPlaceholderText('delete all projects'),
+    { target: { value: 'delete all projects' } },
+  )
+  fireEvent.click(
+    within(settings).getByRole('button', {
+      name: 'Yes, delete all my projects',
+    }),
+  )
+
+  await waitFor(() =>
+    expect(page.toast).toHaveBeenCalledWith({
+      title: 'All projects deleted',
+      description: 'Deleted 1 project.',
+    }),
+  )
+  expect(screen.getByText('What did the survey find?')).toBeInTheDocument()
+  expect(chatPage.router.replace).not.toHaveBeenCalled()
+  expect(chatPage.router.push).not.toHaveBeenCalled()
 })

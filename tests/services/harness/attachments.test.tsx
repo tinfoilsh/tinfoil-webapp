@@ -176,14 +176,29 @@ describe('picking a file to attach', () => {
   // reads if it is.
   it.each([
     { name: 'photo.png', size: 1000, refused: null },
-    { name: 'PHOTO.PNG', size: 1001, refused: 413, limit: '1000 B' },
+    {
+      name: 'PHOTO.PNG',
+      size: 1001,
+      refused: 413,
+      message: 'File size exceeds the limit of 1000 B.',
+    },
     { name: 'notes.v2.txt', size: 2000, refused: null },
-    { name: 'report.pdf', size: 2001, refused: 413, limit: '2.0 KB' },
+    {
+      name: 'report.pdf',
+      size: 2001,
+      refused: 413,
+      message: 'Text file exceeds the limit of 2.0 KB.',
+    },
     { name: 'Dockerfile', size: 2000, refused: null },
-    { name: 'archive.zip', size: 2001, refused: 413, limit: '2.0 KB' },
+    {
+      name: 'archive.zip',
+      size: 2001,
+      refused: 413,
+      message: 'Text file exceeds the limit of 2.0 KB.',
+    },
   ])(
     'uploads $name of $size bytes unless its group refuses it ($refused)',
-    async ({ name, size, refused, limit }) => {
+    async ({ name, size, refused, message }) => {
       signIn({ cloud: true })
       const descriptor = {
         id: 'att_1',
@@ -211,7 +226,7 @@ describe('picking a file to attach', () => {
           status: refused,
           code:
             refused === 413 ? 'ATTACHMENT_TOO_LARGE' : 'ATTACHMENT_UNSUPPORTED',
-          message: `File size exceeds the limit of ${limit}.`,
+          message,
         })
         expect(client.upload).not.toHaveBeenCalled()
       }

@@ -255,10 +255,16 @@ const DefaultMessageComponent = ({
   }, [editContent, messageIndex, onEditMessage])
 
   const handleSubmitAssistantEdit = React.useCallback(() => {
-    if (editContent.trim() && onEditAssistantMessage) {
-      onEditAssistantMessage(messageIndex, editContent.trim())
-      setIsEditing(false)
-    }
+    const content = editContent.trim()
+    if (!content || !onEditAssistantMessage) return
+    setIsEditing(false)
+    // A rewrite the chat could not keep opens again with the text typed.
+    void Promise.resolve(onEditAssistantMessage(messageIndex, content)).catch(
+      () => {
+        setEditContent(content)
+        setIsEditing(true)
+      },
+    )
   }, [editContent, messageIndex, onEditAssistantMessage])
 
   const handleContinue = React.useCallback(() => {
