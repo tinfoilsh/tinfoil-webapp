@@ -3,6 +3,7 @@ import { ProjectProvider } from '@/components/project/project-provider'
 import { USER_PREFS_LOCAL_PROFILE } from '@/constants/storage-keys'
 import type { Frame, Turn } from '@/services/harness/types'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -10,7 +11,7 @@ import {
   within,
 } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { client, signIn, testSession } from '../../harness-fixture'
+import { client, KEY, signIn, testSession } from '../../harness-fixture'
 import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
 import { refuseFetch } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
@@ -112,6 +113,24 @@ function answerTurns() {
         threadId: input.threadId!,
       },
     }
+  })
+}
+
+function gate() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+// The harness's answers for a chat stored with cloud sync.
+function answerCloudRequests() {
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    if (path === '/v1/threads/cancel') return { cancelled: true }
+    throw new Error(`Unexpected ${path}`)
   })
 }
 
@@ -243,4 +262,59 @@ it('turns web search off for the open chat only, so a new chat searches again', 
   await waitFor(() => expect(sentTurns()).toHaveLength(2))
   expect(sentTurns()[1].options).toEqual(turnOptions(true))
   expect(sentTurns()[1].threadId).not.toBe(sentTurns()[0].threadId)
+})
+
+it('stops a streaming reply when Escape is pressed in the composer', async () => {
+  signIn({ cloud: true })
+  answerCloudRequests()
+  const finished = gate()
+  client.events.mockImplementation(async function* (
+    _path: string,
+    input: Turn,
+  ): AsyncGenerator<Frame> {
+    yield {
+      id: 0,
+      event: { type: 'RUN_STARTED', runId: 'reply', threadId: input.threadId! },
+    }
+    yield {
+      id: 1,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'answer',
+        delta: 'Once upon a time',
+      },
+    }
+    await finished.promise
+    yield {
+      id: 2,
+      event: {
+        type: 'RUN_FINISHED',
+        runId: 'reply',
+        threadId: input.threadId!,
+      },
+    }
+  })
+  render(view())
+  await send('Write a long story')
+  expect(
+    await screen.findByRole('article', { name: 'Al said' }),
+  ).toHaveTextContent('Once upon a time')
+  expect(client.post).not.toHaveBeenCalledWith(
+    '/v1/threads/cancel',
+    expect.anything(),
+    expect.anything(),
+  )
+
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'Message' }), {
+    key: 'Escape',
+  })
+
+  await waitFor(() =>
+    expect(client.post).toHaveBeenCalledWith(
+      '/v1/threads/cancel',
+      { key: KEY, threadId: sentTurns()[0].threadId, runId: 'reply' },
+      expect.any(AbortSignal),
+    ),
+  )
+  await act(async () => finished.resolve())
 })
