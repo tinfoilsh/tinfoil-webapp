@@ -5,7 +5,11 @@ import type { ThreadSummary } from '@/services/harness/types'
 import { logError } from '@/utils/error-handling'
 import { useEffect, useState } from 'react'
 const SEARCH_DEBOUNCE_MS = 250
-const INDEX_POLL_INTERVAL_MS = 1000
+// While the harness builds its index, the search runs again after a wait
+// that doubles up to a limit, a bounded number of times.
+const INDEX_POLL_FIRST_WAIT_MS = 1000
+const INDEX_POLL_MAX_WAIT_MS = 16_000
+const INDEX_POLL_MAX_ATTEMPTS = 6
 export function useChatSearch(
   term: string,
   enabled: boolean,
@@ -32,7 +36,7 @@ export function useChatSearch(
       return
     }
     let timer: ReturnType<typeof setTimeout>
-    const run = () => {
+    const run = (attempt: number) => {
       void searchChats(api, query, controller.signal)
         .then((page) => {
           if (controller.signal.aborted) return
@@ -45,17 +49,34 @@ export function useChatSearch(
             ),
             failed: false,
           })
-          if (page.indexing) timer = setTimeout(run, INDEX_POLL_INTERVAL_MS)
+          if (page.indexing && attempt < INDEX_POLL_MAX_ATTEMPTS)
+            timer = setTimeout(
+              () => run(attempt + 1),
+              Math.min(
+                INDEX_POLL_FIRST_WAIT_MS * 2 ** attempt,
+                INDEX_POLL_MAX_WAIT_MS,
+              ),
+            )
         })
-        .catch(() => {
+        .catch((cause) => {
           if (controller.signal.aborted) return
+          logError('Failed to search chats', cause, {
+            component: 'useChatSearch',
+            action: 'search',
+          })
           // A failed search cannot report a finished rebuild, so clear the
-          // indexing flag rather than leaving "building index" up.
+          // indexing flag rather than leaving "building index" up. A search
+          // run again while the index builds keeps the results it had.
           setIsIndexing(false)
-          setOutcome({ query, includeProjectChats, results: [], failed: true })
+          setOutcome((previous) => ({
+            query,
+            includeProjectChats,
+            results: attempt > 0 && previous ? previous.results : [],
+            failed: true,
+          }))
         })
     }
-    timer = setTimeout(run, SEARCH_DEBOUNCE_MS)
+    timer = setTimeout(() => run(0), SEARCH_DEBOUNCE_MS)
     return () => {
       clearTimeout(timer)
       controller.abort()
