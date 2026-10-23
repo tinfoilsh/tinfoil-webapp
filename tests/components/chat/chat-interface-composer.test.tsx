@@ -318,3 +318,57 @@ it('stops a streaming reply when Escape is pressed in the composer', async () =>
   )
   await act(async () => finished.resolve())
 })
+
+it('sends the finished attachments and keeps one still uploading for the next message', async () => {
+  signIn()
+  answerTurns()
+  const descriptor = (fileName: string, mimeType: string) => ({
+    id: `att-${fileName}`,
+    kind: 'document',
+    fileName,
+    mimeType,
+    size: 4,
+  })
+  const notes = descriptor('notes.txt', 'text/plain')
+  const report = descriptor('report.pdf', 'application/pdf')
+  const reportUploaded = gate()
+  client.upload.mockImplementation(async (_path: string, file: File) => {
+    if (file.name === report.fileName) await reportUploaded.promise
+    return { attachment: file.name === notes.fileName ? notes : report }
+  })
+  render(view())
+  await screen.findByRole('textbox', { name: 'Message' })
+  fireEvent.change(document.querySelector('input[type="file"]')!, {
+    target: {
+      files: [
+        new File(['note'], notes.fileName),
+        new File(['%PDF'], report.fileName),
+      ],
+    },
+  })
+  await screen.findByText('Document')
+  expect(
+    screen.getByRole('button', { name: 'Remove report.pdf' }),
+  ).toBeInTheDocument()
+  expect(screen.getAllByText('Document')).toHaveLength(1)
+
+  await send('Summarize these')
+
+  await waitFor(() => expect(sentTurns()).toHaveLength(1))
+  expect(sentTurns()[0].content).toBe('Summarize these')
+  expect(sentTurns()[0].attachments).toEqual([notes])
+  expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue('')
+  expect(
+    screen.queryByRole('button', { name: 'Remove notes.txt' }),
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: 'Remove report.pdf' }),
+  ).toBeInTheDocument()
+
+  await act(async () => reportUploaded.resolve())
+  expect(
+    within(
+      screen.getByRole('button', { name: 'Remove report.pdf' }).parentElement!,
+    ).getByText('Document'),
+  ).toBeInTheDocument()
+})

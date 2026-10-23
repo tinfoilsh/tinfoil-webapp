@@ -601,22 +601,25 @@ export function ChatInterface({
     submitComposer()
   }
   const submitComposer = () => {
+    // Files still uploading stay in the composer for the next message.
+    const uploaded = processedDocuments.filter((d) => d.descriptor)
     if (
       isChatHydrating ||
-      processedDocuments.some((d) => d.isUploading) ||
-      (!input.trim() && !quote?.trim() && !processedDocuments.length)
+      (!input.trim() && !quote?.trim() && !uploaded.length)
     )
       return
     const result = handleQuery(input, {
       quote: quote ?? undefined,
-      attachments: processedDocuments.flatMap((d) =>
+      attachments: uploaded.flatMap((d) =>
         d.descriptor ? [d.descriptor] : [],
       ),
     })
     if (result) {
       setInput('')
       setQuote(null)
-      setProcessedDocuments([])
+      setProcessedDocuments((previous) =>
+        previous.filter((d) => !uploaded.includes(d)),
+      )
     }
   }
   const editMessage = (index: number, content: string) => {
