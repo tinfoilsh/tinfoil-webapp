@@ -2242,7 +2242,7 @@ ${encryptionKey.replace('key_', '')}
                           <div className="font-aeonik-fono text-xs text-content-muted">
                             Enter inserts a new line instead of sending your
                             message. Send with Cmd/Ctrl+Enter or the send
-                            button.
+                            button. On phones, Enter always inserts a new line.
                           </div>
                         </div>
                         <label className="relative inline-flex cursor-pointer items-center">
