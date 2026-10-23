@@ -82,7 +82,7 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
     kind: 'connection',
     title: 'Connection problem',
     suggestion:
-      'Check your internet connection, then reconnect to the conversation.',
+      'Check your internet connection, then resend your message. Your message was not lost.',
   },
   'rate-limit': {
     kind: 'rate-limit',

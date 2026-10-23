@@ -168,6 +168,27 @@ describe('StreamErrorBanner', () => {
     },
   )
 
+  it.each([undefined, 'CONNECTION', 'STREAM_INTERRUPTED', 'RATE_LIMITED'])(
+    'explains the resend its action offers for code %s',
+    (code) => {
+      render(
+        <StreamErrorBanner
+          error={{ code, message: 'Failed to fetch' }}
+          isDarkMode={false}
+          onRetry={vi.fn()}
+          onDismiss={vi.fn()}
+        />,
+      )
+      expect(
+        screen.getByRole('button', { name: 'Resend message' }),
+      ).toBeEnabled()
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        /resend your message\. Your message was not lost\./,
+      )
+      expect(screen.getByRole('alert')).not.toHaveTextContent(/reconnect/i)
+    },
+  )
+
   it.each([
     { code: 'QUOTA_EXHAUSTED', withRetry: true },
     { code: 'THREAD_TOO_LARGE', withRetry: true },
