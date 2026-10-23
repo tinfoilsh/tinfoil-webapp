@@ -5,6 +5,7 @@ import type {
   QueuedMessage,
   Attachment as UIAttachment,
 } from '@/components/chat/types'
+import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import {
   ENCRYPTION_KEY_CHANGED_EVENT,
   encryptionService,
@@ -671,7 +672,7 @@ export function useThread(
       }
     : {
         id: selectedId ?? '',
-        title: loading ? 'Loading chat…' : 'New Chat',
+        title: loading ? 'Loading chat…' : PLACEHOLDER_CHAT_TITLE,
         messages,
         createdAt: new Date(),
         isBlankChat: !selectedId,

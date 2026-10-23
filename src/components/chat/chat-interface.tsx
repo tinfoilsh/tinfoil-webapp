@@ -1,5 +1,5 @@
 import { findSelectableModel, getSelectedModelLabel } from '@/config/models'
-import { NEW_CHAT_TITLE } from '@/constants/chat'
+import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { UI_EXPAND_PROJECT_DOCUMENTS } from '@/constants/storage-keys'
 import { useOnboarding } from '@/hooks/use-onboarding'
@@ -477,7 +477,7 @@ export function ChatInterface({
     !currentChat.isTemporary &&
     currentChat.titleState !== 'placeholder' &&
     !!shownChatTitle &&
-    shownChatTitle !== NEW_CHAT_TITLE
+    shownChatTitle !== PLACEHOLDER_CHAT_TITLE
       ? `${shownChatTitle} · ${CONSTANTS.BASE_DOCUMENT_TITLE}`
       : CONSTANTS.BASE_DOCUMENT_TITLE
   // A free account out of daily requests is asked to subscribe instead of
