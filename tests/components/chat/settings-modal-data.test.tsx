@@ -66,8 +66,8 @@ function renderData(props: Partial<Parameters<typeof SettingsModal>[0]> = {}) {
       encryptionKey={null}
       initialTab="data"
       isSignedIn={page.isSignedIn}
+      isPremium={false}
       {...props}
-      isPremium={props.isPremium ?? true}
     />,
   )
 }
@@ -719,6 +719,26 @@ describe('importing chats from the Data tab', () => {
     ).toBeVisible()
     expect(screen.getByRole('status')).toHaveTextContent('1 chat imported')
     expect(await localThreadStore('device').get(imported.id)).toEqual(imported)
+  })
+
+  it('keeps Claude archives, which can hold projects, for subscribers', async () => {
+    connect({ cloud: true })
+    renderData()
+
+    pickFiles('Claude', [
+      new File(['zip'], 'claude-export.zip', { type: 'application/zip' }),
+    ])
+
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Premium required',
+      description: 'Claude archives containing projects require Premium',
+      variant: 'destructive',
+    })
+    expect(
+      screen.queryByRole('button', { name: 'Import conversations' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Conversations' })).toBeEnabled()
+    expect(client.multipart).not.toHaveBeenCalled()
   })
 
   it('imports to the cloud with cloud sync and follows the job it started', async () => {

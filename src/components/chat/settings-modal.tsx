@@ -1685,9 +1685,9 @@ export function SettingsModal({
     return null
   }
 
-  // The chat service exports the chats kept on this device (in this tab when
-  // signed out) and, with cloud sync, the stored chats. An account change
-  // ends the export without a download.
+  // The chat service exports the chats kept on this device and, with cloud
+  // sync, the stored chats. An account change ends the export without a
+  // download.
   const handleExportAllChats = async () => {
     setIsPreparingExport(true)
     setExportType('chats')
@@ -3697,8 +3697,8 @@ ${encryptionKey.replace('key_', '')}
                     </>
                   </div>
 
-                  {/* Imports and exports are for subscribers */}
-                  {isPremium && (
+                  {/* Imports and exports are for signed-in accounts */}
+                  {isSignedIn && (
                     <div className="space-y-3">
                       <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                         Import
@@ -3844,12 +3844,12 @@ ${encryptionKey.replace('key_', '')}
                               export.
                             </ImportStep>
                             <ImportStep step={3}>
-                              {!importsOnDevice
+                              {isPremium && !importsOnDevice
                                 ? 'Download the ZIP file you receive by email.'
                                 : 'Download and unzip the file you receive by email.'}
                             </ImportStep>
                             <ImportStep step={4}>
-                              {!importsOnDevice ? (
+                              {isPremium && !importsOnDevice ? (
                                 <>
                                   Select the ZIP export with the Conversations
                                   button to include attachments. For projects,
@@ -3861,7 +3861,7 @@ ${encryptionKey.replace('key_', '')}
                                   project a chat belonged to, so project chats
                                   import as regular chats.
                                 </>
-                              ) : (
+                              ) : isPremium ? (
                                 <>
                                   Select the{' '}
                                   <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
@@ -3877,12 +3877,25 @@ ${encryptionKey.replace('key_', '')}
                                   record which project a chat belonged to, so
                                   project chats import as regular chats.
                                 </>
+                              ) : (
+                                <>
+                                  Select the{' '}
+                                  <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                    conversations*.json
+                                  </code>{' '}
+                                  files from the unzipped folder. Large exports
+                                  are split into several files; select them all.
+                                </>
                               )}
                             </ImportStep>
                             <input
                               ref={claudeConversationsFileInputRef}
                               type="file"
-                              accept={!importsOnDevice ? '.json,.zip' : '.json'}
+                              accept={
+                                isPremium && !importsOnDevice
+                                  ? '.json,.zip'
+                                  : '.json'
+                              }
                               onChange={(e) =>
                                 stageImportFiles('claude-conversations', e)
                               }
@@ -3890,17 +3903,19 @@ ${encryptionKey.replace('key_', '')}
                               disabled={isImporting}
                               multiple
                             />
-                            <input
-                              ref={claudeProjectsFileInputRef}
-                              type="file"
-                              accept=".json"
-                              onChange={(e) =>
-                                stageImportFiles('claude-projects', e)
-                              }
-                              className="hidden"
-                              disabled={isImporting}
-                              multiple
-                            />
+                            {isPremium && (
+                              <input
+                                ref={claudeProjectsFileInputRef}
+                                type="file"
+                                accept=".json"
+                                onChange={(e) =>
+                                  stageImportFiles('claude-projects', e)
+                                }
+                                className="hidden"
+                                disabled={isImporting}
+                                multiple
+                              />
+                            )}
                             {renderImportStatus('claude') ??
                               renderStagedImport('claude') ?? (
                                 <div className="mt-2 flex gap-2">
@@ -3925,27 +3940,29 @@ ${encryptionKey.replace('key_', '')}
                                     />
                                     Conversations
                                   </button>
-                                  <button
-                                    onClick={() =>
-                                      claudeProjectsFileInputRef.current?.click()
-                                    }
-                                    disabled={isImporting}
-                                    className={cn(
-                                      'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                                      isImporting
-                                        ? 'cursor-not-allowed opacity-50'
-                                        : 'hover:bg-surface-chat',
-                                      isDarkMode
-                                        ? 'bg-surface-chat text-content-primary'
-                                        : 'bg-surface-sidebar text-content-primary',
-                                    )}
-                                  >
-                                    <ArrowUpTrayIcon
-                                      className="h-4 w-4"
-                                      aria-hidden="true"
-                                    />
-                                    Projects
-                                  </button>
+                                  {isPremium && (
+                                    <button
+                                      onClick={() =>
+                                        claudeProjectsFileInputRef.current?.click()
+                                      }
+                                      disabled={isImporting}
+                                      className={cn(
+                                        'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                        isImporting
+                                          ? 'cursor-not-allowed opacity-50'
+                                          : 'hover:bg-surface-chat',
+                                        isDarkMode
+                                          ? 'bg-surface-chat text-content-primary'
+                                          : 'bg-surface-sidebar text-content-primary',
+                                      )}
+                                    >
+                                      <ArrowUpTrayIcon
+                                        className="h-4 w-4"
+                                        aria-hidden="true"
+                                      />
+                                      Projects
+                                    </button>
+                                  )}
                                 </div>
                               )}
                           </div>
@@ -4015,7 +4032,7 @@ ${encryptionKey.replace('key_', '')}
                   )}
 
                   {/* Export Chats */}
-                  {isPremium && (
+                  {isSignedIn && (
                     <div className="space-y-3">
                       <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                         Export Chats
