@@ -1303,6 +1303,26 @@ export function ChatInterface({
     // Only a change of the storage mode moves the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloudSyncEnabled])
+  // A project the address names that cannot open, because it failed to
+  // load or the key is refused, leaves the address, whose chat list would
+  // hide every chat outside it.
+  const projectUnavailable =
+    !!initialProjectId &&
+    !activeProject &&
+    !loadingProject &&
+    (!!projectError || keyLocked)
+  useEffect(() => {
+    if (!projectUnavailable) return
+    void router.replace(
+      currentChat.id
+        ? getChatPath(currentChat.id, { isLocalOnly: currentChat.isLocalOnly })
+        : '/',
+      undefined,
+      { shallow: true },
+    )
+    // The address moves once the project turns out unavailable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectUnavailable])
   useEffect(() => {
     if (!router.isReady || router.query.upgrade !== 'projects') return
     setIsSubscribePromptOpen(true)

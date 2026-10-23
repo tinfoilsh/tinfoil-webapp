@@ -5,6 +5,7 @@ import {
   UI_SIDEBAR_PROJECTS_EXPANDED,
 } from '@/constants/storage-keys'
 import { publish } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import type { Thread, ThreadSummary } from '@/services/harness/types'
 import {
   act,
@@ -811,4 +812,41 @@ it('shows a project chat still replying as generating its response', async () =>
   render(projectView())
   const row = await screen.findByRole('link', { name: /^Project discussion/ })
   expect(within(row).getByText('Generating response')).toBeInTheDocument()
+})
+
+it('leaves the address of a linked project that fails to open, listing every chat again', async () => {
+  routes['/v1/projects/get'] = () => {
+    throw new HarnessError(
+      { code: 'THREAD_NOT_FOUND', message: 'Project not found' },
+      404,
+    )
+  }
+  const { rerender } = render(projectView())
+  await waitFor(() =>
+    expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
+      '/',
+      undefined,
+      { shallow: true },
+    ),
+  )
+  rerender(routeView({}))
+  expect(
+    await screen.findByRole('link', { name: /^Weekend plans/ }),
+  ).toBeInTheDocument()
+})
+
+it('leaves the address of a linked project while the key is refused, instead of loading it forever', async () => {
+  publish({ keyReady: false, keyLocked: true, profileReady: false })
+  render(projectView())
+  await waitFor(() =>
+    expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
+      '/',
+      undefined,
+      { shallow: true },
+    ),
+  )
+  expect(
+    screen.queryByRole('heading', { name: 'Loading...' }),
+  ).not.toBeInTheDocument()
+  expect(requested('/v1/projects/get')).toEqual([])
 })
