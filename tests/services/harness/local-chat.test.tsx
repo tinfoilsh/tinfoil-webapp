@@ -1,4 +1,5 @@
 import { DEFAULT_CHAT_TITLE } from '@/constants/chat'
+import { PROMPT_CACHE_SECRET_PREFIX } from '@/constants/storage-keys'
 import { localThreadStore } from '@/services/harness/local-threads'
 import type { OpenChatResult } from '@/services/harness/open-chat'
 import { HarnessError } from '@/services/harness/sse'
@@ -16,6 +17,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { IDBFactory } from 'fake-indexeddb'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  CACHE_SECRET,
   client,
   KEY,
   signIn as signInTo,
@@ -218,7 +220,11 @@ describe('local chats of a signed-in account without cloud sync', () => {
       local: true,
       content: 'Hi there',
       widgets: ['render_chart'],
-      options: { model: 'test-model', timezone: expect.any(String) },
+      options: {
+        model: 'test-model',
+        timezone: expect.any(String),
+        cacheSecret: CACHE_SECRET,
+      },
       profile: PROFILE,
     })
     expect(await stored(threadId)).toEqual(returned)
@@ -1616,7 +1622,11 @@ describe('temporary chats', () => {
         threadId: turn().threadId,
         kind: 'send',
         widgets: ['render_chart'],
-        options: { model: 'test-model', timezone: expect.any(String) },
+        options: {
+          model: 'test-model',
+          timezone: expect.any(String),
+          cacheSecret: CACHE_SECRET,
+        },
         content: 'Still off',
         local: true,
         thread: returned[0],
@@ -1635,6 +1645,67 @@ describe('temporary chats', () => {
       expect(sessionStorage.getItem('tinfoil-sync-session-chats')).toBeNull()
     },
   )
+})
+
+describe('the prompt cache secret', () => {
+  const secretOf = (userId: string) =>
+    localStorage.getItem(`${PROMPT_CACHE_SECRET_PREFIX}:${userId}`)
+
+  it('is made once for an account on this browser and sent with every turn', async () => {
+    const answer = (_path: string, input: Turn) =>
+      deviceRun(
+        input.threadId!,
+        storedThread(input.threadId!, { lastRequestId: input.clientRequestId }),
+        input.clientRequestId,
+      )()
+    signIn('alice')
+    localStorage.removeItem(`${PROMPT_CACHE_SECRET_PREFIX}:alice`)
+    client.events.mockImplementation(answer)
+    const alice = renderHook(() => useThread())
+    await waitFor(() => expect(alice.result.current.model).toBe('test-model'))
+
+    await act(() => alice.result.current.send({ content: 'first' }))
+    await act(() => alice.result.current.send({ content: 'second' }))
+
+    const sent = turn().options?.cacheSecret
+    expect(sent).toMatch(/^[0-9a-f]{64}$/)
+    expect(turn(1).options?.cacheSecret).toBe(sent)
+    expect(secretOf('alice')).toBe(sent)
+    alice.unmount()
+
+    signIn('bob')
+    localStorage.removeItem(`${PROMPT_CACHE_SECRET_PREFIX}:bob`)
+    client.events.mockImplementation(answer)
+    const bob = renderHook(() => useThread())
+    await waitFor(() => expect(bob.result.current.model).toBe('test-model'))
+
+    await act(() => bob.result.current.send({ content: 'hello' }))
+
+    const sentByBob = turn().options?.cacheSecret
+    expect(sentByBob).toMatch(/^[0-9a-f]{64}$/)
+    expect(sentByBob).not.toBe(sent)
+    expect(secretOf('alice')).toBe(sent)
+    bob.unmount()
+
+    // A visitor's lasts the tab, leaving nothing in localStorage.
+    signIn(null)
+    sessionStorage.clear()
+    client.events.mockImplementation(answer)
+    const visitor = renderHook(() => useThread())
+    await waitFor(() => expect(visitor.result.current.model).toBe('test-model'))
+
+    await act(() => visitor.result.current.send({ content: 'hello' }))
+
+    const sentByVisitor = turn().options?.cacheSecret
+    expect(sentByVisitor).toMatch(/^[0-9a-f]{64}$/)
+    expect(sentByVisitor).not.toBe(sent)
+    expect(
+      sessionStorage.getItem(`${PROMPT_CACHE_SECRET_PREFIX}:anonymous`),
+    ).toBe(sentByVisitor)
+    expect(
+      localStorage.getItem(`${PROMPT_CACHE_SECRET_PREFIX}:anonymous`),
+    ).toBeNull()
+  })
 })
 
 describe('cloud chats', () => {

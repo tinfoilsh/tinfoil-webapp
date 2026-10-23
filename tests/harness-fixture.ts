@@ -1,5 +1,6 @@
 import {
   AUTH_ACTIVE_USER_ID,
+  PROMPT_CACHE_SECRET_PREFIX,
   SETTINGS_CLOUD_SYNC_ENABLED,
 } from '@/constants/storage-keys'
 import type { HarnessClient } from '@/services/harness/client'
@@ -8,6 +9,10 @@ import type { RateLimit, Session } from '@/services/harness/types'
 import { vi, type Mock } from 'vitest'
 
 export const KEY = 'Y29udGVudC1rZXk='
+// The prompt cache secret this browser already holds for the signed-in
+// account, or this tab for a visitor, so a turn's payload can be compared
+// whole.
+export const CACHE_SECRET = '0123456789abcdef'.repeat(4)
 
 export const testSession: Session = {
   user: { id: '', anonymous: true },
@@ -137,6 +142,10 @@ export function signIn({
     localStorage.setItem(AUTH_ACTIVE_USER_ID, userId)
     localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, String(cloud))
   }
+  ;(userId ? localStorage : sessionStorage).setItem(
+    `${PROMPT_CACHE_SECRET_PREFIX}:${encodeURIComponent(userId ?? 'anonymous')}`,
+    CACHE_SECRET,
+  )
   client = {
     ready: vi.fn(async () => {}),
     events: vi.fn(async function* (path: string): AsyncGenerator<never> {
