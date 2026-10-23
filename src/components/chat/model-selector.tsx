@@ -449,7 +449,7 @@ export function ModelSelector({
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="font-medium">{model.label}</span>
-          {!model.auto && model.description && (
+          {isSelected && !model.auto && model.description && (
             <span className="text-xs text-content-muted">
               {model.description}
             </span>
