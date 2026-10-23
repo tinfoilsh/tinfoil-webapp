@@ -213,4 +213,75 @@ describe('a streamed reply', () => {
       screen.getByText("Couldn't display message compose"),
     ).toBeInTheDocument()
   })
+
+  it('shows links to the pages it found as citations while it streams', async () => {
+    let finish!: () => void
+    const sending = sendReply(
+      [
+        {
+          type: 'TOOL_CALL_START',
+          parentMessageId: 'm1',
+          toolCallId: 'search-1',
+          toolCallName: 'web_search',
+        },
+        {
+          type: 'TOOL_CALL_RESULT',
+          toolCallId: 'search-1',
+          content: { query: 'tinfoil', results: [] },
+          display: {
+            query: 'tinfoil',
+            status: 'completed',
+            sources: [{ url: 'https://tinfoil.sh/', title: 'Tinfoil' }],
+          },
+        },
+        {
+          type: 'TOOL_CALL_START',
+          parentMessageId: 'm1',
+          toolCallId: 'read-1',
+          toolCallName: 'web_fetch',
+        },
+        {
+          type: 'TOOL_CALL_RESULT',
+          toolCallId: 'read-1',
+          content: { pages: [], failed: [] },
+          display: {
+            url: 'https://docs.example/page',
+            status: 'completed',
+            sources: [
+              { url: 'https://docs.example/page', title: 'Fetched page' },
+            ],
+          },
+        },
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'm1',
+          delta:
+            'See [Tinfoil](https://tinfoil.sh/), [the docs](https://docs.example/page) and [elsewhere](https://other.example/).',
+        },
+      ],
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+
+    expect(
+      await screen.findByRole('link', { name: 'tinfoil' }),
+    ).toHaveAttribute('href', 'https://tinfoil.sh/')
+    expect(screen.getByRole('link', { name: 'docs' })).toHaveAttribute(
+      'href',
+      'https://docs.example/page',
+    )
+    expect(screen.getByRole('link', { name: 'elsewhere' })).toHaveAttribute(
+      'href',
+      'https://other.example/',
+    )
+    expect(
+      screen.queryByRole('link', { name: 'Tinfoil' }),
+    ).not.toBeInTheDocument()
+
+    await act(async () => {
+      finish()
+      await sending
+    })
+  })
 })

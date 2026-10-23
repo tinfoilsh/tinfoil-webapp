@@ -101,16 +101,6 @@ const DefaultMessageComponent = ({
   const modelDisplayName = message.modelDisplayName?.trim()
   const showMetadata = hasVisibleAssistantMessage(message)
 
-  const citationUrlTitles = React.useMemo(() => {
-    if (!message.annotations || message.annotations.length === 0)
-      return undefined
-    const map = new Map<string, string>()
-    for (const annotation of message.annotations) {
-      const { url, title } = annotation.url_citation
-      if (url) map.set(url, title || '')
-    }
-    return map.size > 0 ? map : undefined
-  }, [message.annotations])
   const displayTimeline = React.useMemo(
     () => (isUser ? [] : (message.timeline ?? [])),
     [isUser, message.timeline],
@@ -133,6 +123,31 @@ const DefaultMessageComponent = ({
       ),
     ]
   }, [displayTimeline, message.annotations])
+  // A link to a page the reply's searches or reads found shows as a
+  // citation while the reply streams, before the harness names what it
+  // cites. The lookup changes only when its pages do, not with each chunk.
+  const citationEntries = React.useMemo(() => {
+    const titles = new Map<string, string>()
+    for (const { url, title } of [
+      ...(message.annotations ?? []).map(
+        (annotation) => annotation.url_citation,
+      ),
+      ...displayTimeline.flatMap((block) =>
+        block.type === 'web_search' ? (block.state.sources ?? []) : [],
+      ),
+      ...displayTimeline.flatMap((block) =>
+        block.type === 'url_fetches'
+          ? block.fetches.flatMap((fetch) => fetch.sources ?? [])
+          : [],
+      ),
+    ])
+      if (url && !titles.get(url)) titles.set(url, title || '')
+    return JSON.stringify([...titles])
+  }, [displayTimeline, message.annotations])
+  const citationUrlTitles = React.useMemo(() => {
+    const entries: [string, string][] = JSON.parse(citationEntries)
+    return entries.length > 0 ? new Map(entries) : undefined
+  }, [citationEntries])
   const [showActions, setShowActions] = React.useState(false)
   const lastContentRef = React.useRef(message.content)
   const showActionsTimeoutRef = React.useRef<ReturnType<
