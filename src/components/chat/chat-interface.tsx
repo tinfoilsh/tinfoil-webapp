@@ -1636,7 +1636,7 @@ export function ChatInterface({
       {/* URL Hash Settings Handler */}
       <UrlHashSettingsHandler
         isReady={
-          !isLoadingConfig && isClient && profileReady && hasValidatedModel
+          isAuthLoaded && !isLoadingConfig && isClient && hasValidatedModel
         }
         onSettingsTabReady={(tab) => {
           setSettingsInitialTab(tab)
