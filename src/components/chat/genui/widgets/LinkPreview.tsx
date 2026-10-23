@@ -1,6 +1,7 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { Favicon } from '@/components/ui/favicon'
 import {
+  linkMetadataOf,
   lookupLinkMetadata,
   type LinkMetadata as ResolvedMetadata,
 } from '@/services/harness/link-metadata'
@@ -119,7 +120,9 @@ export const widget = defineGenUIWidget({
   render: (args, ctx) => (
     <LinkPreview
       {...args}
-      metadata={ctx.result as ResolvedMetadata | undefined}
+      metadata={
+        ctx.result === undefined ? undefined : linkMetadataOf(ctx.result)
+      }
       readPage={ctx.result === undefined && !ctx.isStreaming}
     />
   ),

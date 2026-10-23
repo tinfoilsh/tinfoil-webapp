@@ -13,7 +13,7 @@ beforeEach(() => {
   client.post.mockImplementation(async (path: string, input: unknown) => {
     const { url } = input as { url: string }
     if (path === '/v1/metadata/link' && pages[url]) return pages[url]
-    if (path === '/v1/metadata/favicon') return { status: 'not_found' }
+    if (path === '/v1/metadata/favicon') return { status: 'missing' }
     throw new Error(`Unexpected ${path}`)
   })
 })
@@ -84,4 +84,37 @@ it('waits for a streaming preview to receive its own details', () => {
 
   expect(screen.getByText('Model title')).toBeInTheDocument()
   expect(linkRequests()).toEqual([])
+})
+
+it('keeps blank details and images from other than web addresses out of a preview', async () => {
+  const url = 'https://example.com/odd-post'
+  pages[url] = {
+    url,
+    title: '   ',
+    description: 'Read description',
+    siteName: ' ',
+    image: 'javascript:alert(1)',
+  }
+  renderPreview(url, {})
+
+  expect(await screen.findByText('Read description')).toBeInTheDocument()
+  expect(screen.getByText('Model title')).toBeInTheDocument()
+  expect(screen.getAllByText('example.com')).not.toHaveLength(0)
+  expect(document.querySelector('img[src^="javascript:"]')).toBeNull()
+})
+
+it('shows only a web image a widget stored with its details', () => {
+  const url = 'https://example.com/stored-image'
+  renderPreview(url, {
+    result: {
+      url,
+      title: 'Stored title',
+      description: null,
+      siteName: null,
+      image: 'data:image/svg+xml,<svg/>',
+    },
+  })
+
+  expect(screen.getByText('Stored title')).toBeInTheDocument()
+  expect(document.querySelector('img[src^="data:image/svg"]')).toBeNull()
 })
