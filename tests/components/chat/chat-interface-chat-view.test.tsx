@@ -94,8 +94,8 @@ function view(props: Partial<Parameters<typeof ChatInterface>[0]> = {}) {
 }
 
 // A device run that returns the thread its turn made, with the reply and
-// the title the harness gave it.
-function scriptDeviceRuns(title = 'Trip ideas') {
+// the title the harness gave it. It finishes once `finishing` settles.
+function scriptDeviceRuns(title = 'Trip ideas', finishing?: Promise<void>) {
   const returned: StoredThread[] = []
   client.events.mockImplementation(async function* (
     _path: string,
@@ -145,6 +145,7 @@ function scriptDeviceRuns(title = 'Trip ideas') {
         },
       },
     }
+    await finishing
     yield {
       id: 3,
       event: {
@@ -222,6 +223,40 @@ it('saves a temporary chat on this device with its title', async () => {
     local: true,
     thread: returned[0],
   })
+})
+
+it('saves a temporary chat once the reply streaming when Save was clicked is stored', async () => {
+  signIn()
+  let finish!: () => void
+  const finishing = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  const returned = scriptDeviceRuns('Trip ideas', finishing)
+  render(view())
+  fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
+  await send('Plan a trip')
+  await screen.findByText('Noted')
+  expect(
+    screen.getByRole('button', { name: 'Stop generation' }),
+  ).toBeInTheDocument()
+  const threadId = (client.events.mock.calls[0][1] as Turn).threadId!
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save chat' }))
+
+  expect(await rawRows('chats')).toEqual([])
+  expect(chatPage.router.replace).not.toHaveBeenCalled()
+  finish()
+  await waitFor(() =>
+    expect(chatPage.router.replace).toHaveBeenCalledWith(
+      `/chat/local/${threadId}`,
+      undefined,
+      { shallow: true },
+    ),
+  )
+  expect(await localThreadStore('device').get(threadId)).toEqual(returned[0])
+  expect(
+    within(screen.getByRole('banner')).getByText('Only saved locally'),
+  ).toBeInTheDocument()
 })
 
 it('saves a temporary chat to the cloud with cloud sync', async () => {

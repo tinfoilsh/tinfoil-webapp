@@ -945,9 +945,10 @@ export function ChatInterface({
       { shallow: true },
     )
   }
-  // A temporary chat is kept once its reply has finished.
+  // A temporary chat saved while its reply streams is kept once the reply
+  // is stored.
   const canToggleTemporaryChat = (chat: Chat) =>
-    (!!chat.isBlankChat || !!chat.isTemporary) && !isStreaming
+    !!chat.isBlankChat || !!chat.isTemporary
   const handleSaveTemporaryChat = async () => {
     try {
       await thread.saveTemporary()

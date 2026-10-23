@@ -767,6 +767,34 @@ export function useThread(
       return turns.send(fields)
     },
     ...actions,
+    // A temporary chat saved while its reply streams is kept once no run of
+    // it is left, so the reply is stored with it, unless it was left first.
+    async saveTemporary() {
+      const { id: threadId, temporary: isTemporary } = open.get()
+      if (!threadId || !isTemporary) return
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          const { status } = controller.view.get()
+          if (
+            controller.deviceRuns.get().has(threadId) ||
+            (open.get().id === threadId &&
+              (status === 'submitting' ||
+                status === 'streaming' ||
+                status === 'queued'))
+          )
+            return
+          stops.forEach((stop) => stop())
+          resolve()
+        }
+        const stops = [
+          open.subscribe(check),
+          controller.view.subscribe(check),
+          controller.deviceRuns.subscribe(check),
+        ]
+        check()
+      })
+      if (open.get().id === threadId) return actions.saveTemporary()
+    },
     upload,
     loadImage: (attachment: UIAttachment, signal?: AbortSignal) =>
       openStore().image(open.get().id, attachment, signal),
