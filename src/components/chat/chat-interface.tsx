@@ -949,7 +949,13 @@ export function ChatInterface({
   // is stored.
   const canToggleTemporaryChat = (chat: Chat) =>
     !!chat.isBlankChat || !!chat.isTemporary
+  // The temporary chat whose save waits for its reply to be stored.
+  const [savingTemporaryChatId, setSavingTemporaryChatId] = useState<
+    string | null
+  >(null)
   const handleSaveTemporaryChat = async () => {
+    const savingId = currentChat.id
+    setSavingTemporaryChatId(savingId)
     try {
       await thread.saveTemporary()
     } catch (error) {
@@ -963,6 +969,10 @@ export function ChatInterface({
         description: 'Please try again.',
         variant: 'destructive',
       })
+    } finally {
+      setSavingTemporaryChatId((saving) =>
+        saving === savingId ? null : saving,
+      )
     }
   }
   const handleToggleTemporaryMode = () => {
@@ -1737,20 +1747,25 @@ export function ChatInterface({
         canToggleTemporaryChat(currentChat) &&
         (() => {
           const hasMessages = currentChat.messages.length > 0
+          const saving =
+            !!currentChat.id && savingTemporaryChatId === currentChat.id
           const label = isTemporaryMode
-            ? hasMessages
-              ? 'Save chat'
-              : 'Exit temporary chat'
+            ? saving
+              ? 'Saving chat'
+              : hasMessages
+                ? 'Save chat'
+                : 'Exit temporary chat'
             : 'Temporary chat'
           return (
             <div className="group relative">
               <button
                 type="button"
                 onClick={handleToggleTemporaryMode}
+                disabled={saving}
                 aria-label={label}
                 aria-pressed={isTemporaryMode}
                 className={cn(
-                  'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
+                  'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200 disabled:cursor-wait disabled:opacity-60',
                   isTemporaryMode
                     ? 'border-orange-500/40 bg-surface-chat-background bg-gradient-to-b from-orange-500/15 to-orange-500/15 text-orange-500 hover:from-orange-500/25 hover:to-orange-500/25'
                     : 'border-transparent bg-surface-chat-background text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
