@@ -28,3 +28,17 @@ export function isMobileDevice(): boolean {
 export function isImeComposition(e: KeyboardEvent<HTMLElement>): boolean {
   return e.nativeEvent.isComposing || e.keyCode === IME_PROCESS_KEY_CODE
 }
+
+/**
+ * True when an Enter keydown should submit a chat text box. Cmd/Ctrl+Enter
+ * always submits; plain Enter submits unless the user chose Enter for new
+ * lines or is on a mobile device.
+ */
+export function isSubmitShortcut(
+  e: KeyboardEvent<HTMLElement>,
+  enterToNewline: boolean,
+): boolean {
+  if (e.key !== 'Enter' || e.shiftKey) return false
+  if (e.metaKey || e.ctrlKey) return true
+  return !enterToNewline && !isMobileDevice()
+}

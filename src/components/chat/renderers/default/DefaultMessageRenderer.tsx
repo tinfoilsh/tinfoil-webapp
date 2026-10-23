@@ -19,7 +19,7 @@ import React, { memo, useState, type JSX } from 'react'
 import { ConfirmDialog } from '../../components/confirm-dialog'
 import { CONSTANTS } from '../../constants'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
-import { isImeComposition } from '../../keyboard-utils'
+import { isImeComposition, isSubmitShortcut } from '../../keyboard-utils'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
 import {
@@ -552,11 +552,7 @@ const DefaultMessageComponent = ({
                 if (e.key === 'Enter' && isImeComposition(e)) {
                   return
                 }
-                if (
-                  e.key === 'Enter' &&
-                  !e.shiftKey &&
-                  (!enterToNewline || e.metaKey || e.ctrlKey)
-                ) {
+                if (isSubmitShortcut(e, enterToNewline)) {
                   e.preventDefault()
                   handleSubmitAssistantEdit()
                 } else if (e.key === 'Escape') {
@@ -695,11 +691,7 @@ const DefaultMessageComponent = ({
                       if (e.key === 'Enter' && isImeComposition(e)) {
                         return
                       }
-                      if (
-                        e.key === 'Enter' &&
-                        !e.shiftKey &&
-                        (!enterToNewline || e.metaKey || e.ctrlKey)
-                      ) {
+                      if (isSubmitShortcut(e, enterToNewline)) {
                         e.preventDefault()
                         handleSubmitEdit()
                       } else if (e.key === 'Escape') {
