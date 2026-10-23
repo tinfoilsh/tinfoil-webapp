@@ -68,7 +68,7 @@ import {
   getNewChatPath,
   isPlainPrimaryClick,
 } from '@/utils/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link } from '../link'
 import { Logo } from '../logo'
 import { SIDEBAR_PANEL_ID, SidebarPanel, SidebarRail } from './sidebar-layout'
@@ -273,6 +273,7 @@ export function ChatSidebar({
   // Without cloud sync every chat stays on this device. With it, "Enable
   // local chats" adds a Local tab whose new chats stay on this device.
   const { keyLocked, cloud: cloudSyncEnabled } = useHarness()
+  const settingsAttentionId = useId()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const localOnlyModeEnabled = useLocalChatsSetting()
   const showStorageTabs = cloudSyncEnabled && localOnlyModeEnabled
@@ -825,14 +826,20 @@ export function ChatSidebar({
                   'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
                 )}
                 aria-label="Settings"
+                aria-describedby={keyLocked ? settingsAttentionId : undefined}
               >
                 <TfSetting className="h-5 w-5" aria-hidden="true" />
                 {keyLocked && (
-                  <span
-                    className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
-                    title="Cloud sync needs attention"
-                    aria-hidden="true"
-                  />
+                  <>
+                    <span
+                      className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
+                      title="Cloud sync needs attention"
+                      aria-hidden="true"
+                    />
+                    <span id={settingsAttentionId} className="sr-only">
+                      Cloud sync needs attention
+                    </span>
+                  </>
                 )}
               </button>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">

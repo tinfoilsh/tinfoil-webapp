@@ -98,6 +98,9 @@ export function SidebarAccountMenu({
   const menuId = useId()
   const triggerId = useId()
   const helpMenuId = useId()
+  const attentionId = useId()
+  // What the attention dots show, for assistive technology.
+  const attentionDescription = syncNeedsAttention ? attentionId : undefined
   const isMenuVisible = isSidebarOpen && isOpen
 
   const rateLimit = useRateLimit()
@@ -366,6 +369,11 @@ export function SidebarAccountMenu({
 
   return (
     <div ref={containerRef} className="relative">
+      {syncNeedsAttention && (
+        <span id={attentionId} className="sr-only">
+          Cloud sync needs attention
+        </span>
+      )}
       <button
         ref={triggerRef}
         onPointerEnter={handlePointerEnter}
@@ -380,6 +388,7 @@ export function SidebarAccountMenu({
         type="button"
         id={triggerId}
         data-account-menu-trigger
+        aria-describedby={attentionDescription}
         aria-haspopup="menu"
         aria-expanded={isMenuVisible}
         aria-controls={menuId}
@@ -475,6 +484,7 @@ export function SidebarAccountMenu({
               data-settings-button
               onPointerEnter={handleOtherRowEnter}
               role="menuitem"
+              aria-describedby={attentionDescription}
               tabIndex={-1}
               className={MENU_ITEM_CLASS_NAME}
               onClick={() =>

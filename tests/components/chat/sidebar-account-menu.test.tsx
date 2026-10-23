@@ -2,14 +2,7 @@ import { CONSTANTS } from '@/components/chat/constants'
 import { SidebarAccountMenu } from '@/components/chat/sidebar-account-menu'
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
 import { publish } from '@/services/harness/runtime'
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const DEFAULT_AS_PATH = '/c/chat-1?view=compact#bottom'
@@ -99,14 +92,10 @@ describe('SidebarAccountMenu', () => {
     const { onOpenSettings } = renderMenu({ syncNeedsAttention: true })
 
     const trigger = screen.getByRole('button', { name: /Ada/ })
-    expect(
-      within(trigger).getByTitle('Cloud sync needs attention'),
-    ).toBeInTheDocument()
+    expect(trigger).toHaveAccessibleDescription('Cloud sync needs attention')
     fireEvent.click(trigger)
     const settings = screen.getByRole('menuitem', { name: 'Settings' })
-    expect(
-      within(settings).getByTitle('Cloud sync needs attention'),
-    ).toBeInTheDocument()
+    expect(settings).toHaveAccessibleDescription('Cloud sync needs attention')
     fireEvent.click(settings)
     expect(onOpenSettings).toHaveBeenCalledWith('cloud-sync')
   })
