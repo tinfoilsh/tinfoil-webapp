@@ -4,7 +4,7 @@ import type { Thread } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { client, KEY, signIn } from '../../harness-fixture'
+import { client, KEY, signIn, testSession } from '../../harness-fixture'
 import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
@@ -216,4 +216,23 @@ describe('picking a file to attach', () => {
       }
     },
   )
+
+  it('refuses a file of an unlisted type when no group takes text', async () => {
+    signIn({
+      cloud: true,
+      session: {
+        ...testSession,
+        composer: {
+          ...testSession.composer,
+          attachments: [{ accept: ['.png'], maxBytes: 1000 }],
+        },
+      },
+    })
+    const { result } = renderHook(() => useThread())
+
+    await expect(
+      result.current.upload(new File(['FROM scratch'], 'Dockerfile')),
+    ).rejects.toMatchObject({ status: 415, code: 'ATTACHMENT_UNSUPPORTED' })
+    expect(client.upload).not.toHaveBeenCalled()
+  })
 })
