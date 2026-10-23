@@ -7,7 +7,16 @@ import {
 import { publish } from '@/services/harness/runtime'
 import type { Thread, ThreadSummary } from '@/services/harness/types'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { MotionGlobalConfig } from 'framer-motion'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
 import {
   resetChatStoresAroundEachTest,
@@ -71,6 +80,17 @@ vi.mock('@/hooks/use-toast', () => ({
 }))
 
 resetChatStoresAroundEachTest()
+
+// The sidebars swap at once instead of animating, so no test waits on time.
+beforeAll(() => {
+  MotionGlobalConfig.skipAnimations = true
+})
+afterAll(() => {
+  MotionGlobalConfig.skipAnimations = false
+})
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 const DESKTOP_WIDTH = 1440
 const project = {
@@ -194,20 +214,25 @@ const listItem = (title: string) =>
 // How long a chat must be held over Exit Project to leave the project.
 const EXIT_HOVER_DELAY_MS = 400
 
+// Timeouts run on a clock that keeps real time but that a test can move
+// past the Exit Project hover; installed before rendering, so no timer
+// started meanwhile is lost.
+function installHoverClock() {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout'],
+    shouldAdvanceTime: true,
+  })
+}
+
 // Drags a project chat onto Exit Project and holds it there until the
 // project closes; the drag goes on.
 function dragOntoExitProject(title: string) {
   const drag = dragData()
   fireEvent.dragStart(listItem(title), { dataTransfer: drag })
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-  try {
-    fireEvent.dragEnter(screen.getByRole('button', { name: 'Exit Project' }), {
-      dataTransfer: drag,
-    })
-    act(() => vi.advanceTimersByTime(EXIT_HOVER_DELAY_MS))
-  } finally {
-    vi.useRealTimers()
-  }
+  fireEvent.dragEnter(screen.getByRole('button', { name: 'Exit Project' }), {
+    dataTransfer: drag,
+  })
+  act(() => vi.advanceTimersByTime(EXIT_HOVER_DELAY_MS))
   return drag
 }
 
@@ -364,11 +389,13 @@ it('opens the project list in the chat sidebar after leaving a project', async (
 })
 
 it("leaves a project mid-drag for the open chat's own address, which lists every chat", async () => {
+  installHoverClock()
   routes['/v1/threads/get'] = () => structuredClone(openProjectChat)
   const { rerender } = render(
     routeView({ projectId: project.id, chatId: projectChat.id }),
   )
   await screen.findByText('What did the survey find?')
+  await screen.findByTitle('Rename project')
   await screen.findByRole('link', { name: projectChat.title })
   chatPage.router.push.mockClear()
 
@@ -392,6 +419,7 @@ it("leaves a project mid-drag for the open chat's own address, which lists every
 })
 
 it('opens a project chosen after leaving another mid-drag, before the address has changed', async () => {
+  installHoverClock()
   routes['/v1/projects/list'] = () => ({
     projects: [project, planning],
     nextCursor: null,
@@ -400,6 +428,7 @@ it('opens a project chosen after leaving another mid-drag, before the address ha
   routes['/v1/projects/get'] = (input) =>
     input.id === planning.id ? opening.promise : structuredClone(project)
   const { rerender } = render(projectView())
+  await screen.findByTitle('Rename project')
   await screen.findByRole('link', { name: projectChat.title })
 
   dragOntoExitProject(projectChat.title)
@@ -639,6 +668,7 @@ const requestedAfter = (path: string) => {
 it('confirms a chat moved out of its project and lists the project without it', async () => {
   routes['/v1/threads/update'] = (input) => ({ ...projectChat, ...input })
   render(projectView())
+  await screen.findByTitle('Rename project')
   await screen.findByRole('link', { name: projectChat.title })
   routes['/v1/threads/list'] = (input) =>
     listPage(
@@ -664,10 +694,12 @@ it('confirms a chat moved out of its project and lists the project without it', 
 })
 
 it('reports a chat dropped out of its project that stays in it', async () => {
+  installHoverClock()
   routes['/v1/threads/update'] = () => {
     throw new Error('Sync is unavailable')
   }
   const { rerender } = render(projectView())
+  await screen.findByTitle('Rename project')
   await screen.findByRole('link', { name: projectChat.title })
   const drag = dragOntoExitProject(projectChat.title)
   rerender(routeView({}))
