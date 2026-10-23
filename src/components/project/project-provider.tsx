@@ -121,8 +121,12 @@ export function ProjectProvider({
     closeProject()
   }, [activeProject, loadingProject, closeProject])
   useEffect(() => {
-    const routeChanged = previousInitialProjectId.current !== initialProjectId
-    const exited = previousInitialProjectId.current && !initialProjectId
+    const left = previousInitialProjectId.current
+    const routeChanged = left !== initialProjectId
+    // Leaving a project's route closes it, unless another project has been
+    // opened since.
+    const exited =
+      left && !initialProjectId && (openProjectId.current ?? left) === left
     previousInitialProjectId.current = initialProjectId
     if (exited) closeProject()
     if (

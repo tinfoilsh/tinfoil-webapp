@@ -811,12 +811,20 @@ export function ChatInterface({
     thread.newChat()
     void router.push('/')
   }
-  // Leaving a project while one of its chats is dragged keeps the open chat
-  // and the page, so the drag can end on the Cloud or Local tab.
+  // Leaving a project while one of its chats is dragged keeps the open chat,
+  // so the drag can end on the Cloud or Local tab. The page leaves the
+  // project for the chat's own address, so the chat list shows every chat.
   const handleExitProjectWhileDragging = () => {
     setPendingProjectUpload(null)
     setShowAddToProjectModal(false)
     exitProjectMode()
+    void router.push(
+      currentChat.id && !currentChat.isTemporary
+        ? getChatPath(currentChat.id, { isLocalOnly: currentChat.isLocalOnly })
+        : '/',
+      undefined,
+      { shallow: true },
+    )
   }
   // A temporary chat is kept once its reply has finished.
   const canToggleTemporaryChat = (chat: Chat) =>

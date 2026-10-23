@@ -2,7 +2,7 @@ import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProjectProvider } from '@/components/project/project-provider'
 import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
 import { publish } from '@/services/harness/runtime'
-import type { ThreadSummary } from '@/services/harness/types'
+import type { Thread, ThreadSummary } from '@/services/harness/types'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
@@ -69,6 +69,23 @@ const mainChat: ThreadSummary = {
   ...storedThread('main-chat', { title: 'Weekend plans' }),
   messageCount: 2,
 }
+const openProjectChat: Thread = {
+  ...storedThread(projectChat.id, {
+    title: projectChat.title,
+    projectId: project.id,
+    messages: [
+      {
+        id: 'project-question',
+        role: 'user',
+        createdAt: '2026-10-22T12:00:00Z',
+        content: 'What did the survey find?',
+      },
+    ],
+  }),
+  messageCount: 1,
+  hasOlder: false,
+}
+const planning = { ...project, id: 'project-two', name: 'Planning' }
 const projectDocument = (id: string, filename: string) => ({
   id,
   projectId: project.id,
@@ -111,12 +128,63 @@ async function openDocuments() {
   )
 }
 
-function projectView(id = project.id) {
+// The chat page at a route, as the router renders it.
+function routeView({
+  projectId = null,
+  chatId = null,
+}: {
+  projectId?: string | null
+  chatId?: string | null
+}) {
   return (
-    <ProjectProvider initialProjectId={id}>
-      <ChatInterface initialProjectId={id} suppressIntroModals />
+    <ProjectProvider initialProjectId={projectId}>
+      <ChatInterface
+        initialProjectId={projectId}
+        initialChatId={chatId}
+        suppressIntroModals
+      />
     </ProjectProvider>
   )
+}
+
+const projectView = (id = project.id) => routeView({ projectId: id })
+
+// A drag's data, shared by the events of one drag as a browser shares it.
+function dragData() {
+  const data = new Map<string, string>()
+  return {
+    get types() {
+      return [...data.keys()]
+    },
+    setData: (type: string, value: string) => void data.set(type, value),
+    getData: (type: string) => data.get(type) ?? '',
+  }
+}
+
+// The row a chat is dragged by; its link is never draggable itself.
+const listItem = (title: string) =>
+  screen
+    .getByRole('link', { name: title })
+    .parentElement!.closest('[draggable]')!
+
+// How long a chat must be held over Exit Project to leave the project.
+const EXIT_HOVER_DELAY_MS = 400
+
+// Drags a project chat onto Exit Project and holds it there until the
+// project closes; the drag goes on.
+function dragOntoExitProject(title: string) {
+  const drag = dragData()
+  fireEvent.dragStart(listItem(title), { dataTransfer: drag })
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    fireEvent.dragEnter(screen.getByRole('button', { name: 'Exit Project' }), {
+      dataTransfer: drag,
+    })
+    act(() => vi.advanceTimersByTime(EXIT_HOVER_DELAY_MS))
+  } finally {
+    vi.useRealTimers()
+  }
+  return drag
 }
 
 beforeEach(() => {
@@ -269,4 +337,67 @@ it('opens the project list in the chat sidebar after leaving a project', async (
   expect(
     await screen.findByRole('link', { name: new RegExp(`^${project.name}`) }),
   ).toBeInTheDocument()
+})
+
+it("leaves a project mid-drag for the open chat's own address, which lists every chat", async () => {
+  routes['/v1/threads/get'] = () => structuredClone(openProjectChat)
+  const { rerender } = render(
+    routeView({ projectId: project.id, chatId: projectChat.id }),
+  )
+  await screen.findByText('What did the survey find?')
+  await screen.findByRole('link', { name: projectChat.title })
+  chatPage.router.push.mockClear()
+
+  dragOntoExitProject(projectChat.title)
+
+  expect(chatPage.router.push).toHaveBeenCalledExactlyOnceWith(
+    `/chat/${projectChat.id}`,
+    undefined,
+    { shallow: true },
+  )
+  rerender(routeView({ chatId: projectChat.id }))
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Chats', expanded: false }),
+  )
+  expect(
+    await screen.findByRole('link', { name: mainChat.title }),
+  ).toBeInTheDocument()
+  expect(screen.getByText('What did the survey find?')).toBeInTheDocument()
+  expect(chatPage.router.push).toHaveBeenCalledOnce()
+  expect(chatPage.router.replace).not.toHaveBeenCalled()
+})
+
+it('opens a project chosen after leaving another mid-drag, before the address has changed', async () => {
+  routes['/v1/projects/list'] = () => ({
+    projects: [project, planning],
+    nextCursor: null,
+  })
+  const opening = deferred<unknown>()
+  routes['/v1/projects/get'] = (input) =>
+    input.id === planning.id ? opening.promise : structuredClone(project)
+  const { rerender } = render(projectView())
+  await screen.findByRole('link', { name: projectChat.title })
+
+  dragOntoExitProject(projectChat.title)
+  expect(chatPage.router.push).toHaveBeenLastCalledWith('/', undefined, {
+    shallow: true,
+  })
+  fireEvent.click(await screen.findByRole('link', { name: /^Planning/ }))
+  await waitFor(() =>
+    expect(requested('/v1/projects/get')).toEqual([
+      { key: KEY, id: project.id },
+      { key: KEY, id: planning.id },
+    ]),
+  )
+  rerender(routeView({}))
+  await act(async () => opening.resolve(structuredClone(planning)))
+
+  expect(await screen.findByTitle('Rename project')).toHaveTextContent(
+    planning.name,
+  )
+  expect(chatPage.router.push).toHaveBeenLastCalledWith(
+    `/project/${planning.id}`,
+    undefined,
+    { shallow: true },
+  )
 })
