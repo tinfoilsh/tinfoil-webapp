@@ -175,6 +175,27 @@ it.each(['/', '/newchat'])(
   },
 )
 
+it('titles a new chat Untitled as soon as its first message is sent', async () => {
+  signIn({ cloud: true })
+  const { accepted, reply, finished } = scriptRun()
+  render(
+    <ProjectProvider>
+      <ChatInterface suppressIntroModals />
+    </ProjectProvider>,
+  )
+  await send()
+
+  const header = within(screen.getByRole('banner'))
+  expect(header.getByRole('heading', { level: 1 })).toHaveTextContent(
+    'Untitled',
+  )
+  await act(async () => {
+    accepted.resolve()
+    reply.resolve()
+    finished.resolve()
+  })
+})
+
 it('shows the message and loading dot before device storage is ready, and can stop before sending', async () => {
   signIn()
   scriptRun()

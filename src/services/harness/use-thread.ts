@@ -5,7 +5,7 @@ import type {
   QueuedMessage,
   Attachment as UIAttachment,
 } from '@/components/chat/types'
-import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
+import { DEFAULT_CHAT_TITLE, TEMPORARY_CHAT_TITLE } from '@/constants/chat'
 import {
   ENCRYPTION_KEY_CHANGED_EVENT,
   encryptionService,
@@ -672,9 +672,12 @@ export function useThread(
     openState.failedId ??
     id ??
     (loading ? initialId : null)
+  // A temporary chat is titled as one, whatever the harness names it, and a
+  // new chat is untitled until its run reports it.
   const chat: Chat = summary
     ? {
         ...threadView(summary, messages),
+        ...(temporary ? { title: TEMPORARY_CHAT_TITLE } : {}),
         ...(state.flagged ? { flagged: true } : {}),
         ...(webSearch !== undefined ? { webSearchEnabled: webSearch } : {}),
         isTemporary: temporary,
@@ -684,7 +687,12 @@ export function useThread(
       }
     : {
         id: selectedId ?? '',
-        title: loading ? 'Loading chat…' : PLACEHOLDER_CHAT_TITLE,
+        title: temporary
+          ? TEMPORARY_CHAT_TITLE
+          : loading
+            ? 'Loading chat…'
+            : DEFAULT_CHAT_TITLE,
+        titleState: 'placeholder',
         messages,
         createdAt: new Date(),
         isBlankChat: !selectedId,

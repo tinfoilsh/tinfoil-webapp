@@ -405,16 +405,34 @@ it('keeps the base tab title when chat titles are turned off', async () => {
   expect(document.title).toBe('Tinfoil Chat')
 })
 
-it('keeps the base tab title for a temporary chat the harness named', async () => {
+it('keeps the base tab title while a new chat is untitled', async () => {
+  signIn()
+  scriptDeviceRuns('Trip ideas')
+  render(view())
+  await send('Plan a trip')
+  expect(
+    within(screen.getByRole('banner')).getByRole('heading', { level: 1 }),
+  ).toHaveTextContent('Untitled')
+  expect(document.title).toBe('Tinfoil Chat')
+
+  await screen.findByText('Noted')
+  expect(document.title).toBe('Trip ideas · Tinfoil Chat')
+})
+
+it('titles a temporary chat as one, though the harness named it, and keeps the base tab title', async () => {
   signIn()
   scriptDeviceRuns('Trip ideas')
   render(view())
   fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
   await send('Plan a trip')
+  const header = within(screen.getByRole('banner'))
+  expect(header.getByRole('heading', { level: 1 })).toHaveTextContent(
+    'Temporary Chat',
+  )
   await screen.findByText('Noted')
-  expect(
-    within(screen.getByRole('banner')).getByRole('heading', { level: 1 }),
-  ).toHaveTextContent('Trip ideas')
+  expect(header.getByRole('heading', { level: 1 })).toHaveTextContent(
+    'Temporary Chat',
+  )
 
   expect(document.title).toBe('Tinfoil Chat')
 })
