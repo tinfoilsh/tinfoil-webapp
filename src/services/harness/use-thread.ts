@@ -463,12 +463,15 @@ export function useThread(
       newChat({ local: !!route.newChatLocal })
       return
     }
-    if (
-      !initialId ||
-      opened.current === initialId ||
-      open.get().id === initialId
-    )
+    if (!initialId) return
+    // A route that names the open chat, as once a selection's address
+    // lands, is the one opened last; a later route back to the chat
+    // opened before it opens that chat again.
+    if (open.get().id === initialId) {
+      opened.current = initialId
       return
+    }
+    if (opened.current === initialId) return
     if (!route.local && !keyReady) return
     opened.current = initialId
     void openChat(initialId, { local: !!route.local }).catch(report)

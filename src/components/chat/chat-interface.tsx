@@ -523,7 +523,8 @@ export function ChatInterface({
           result.status === 'opened'
             ? (result.thread.projectId ?? undefined)
             : activeProject?.id
-        return router.push(
+        // Selecting a chat changes the address without adding to history.
+        return router.replace(
           getChatPath(id, {
             isLocalOnly,
             projectId: isLocalOnly ? undefined : projectId,

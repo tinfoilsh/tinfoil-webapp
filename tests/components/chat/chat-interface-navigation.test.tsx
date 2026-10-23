@@ -122,25 +122,25 @@ function open(firstResponse: Promise<Thread>, initialChatId?: string) {
 
 it('starts only one navigation while an unvisited chat route loads', async () => {
   const navigation = deferred<boolean>()
-  chatPage.router.push.mockReturnValue(navigation.promise)
+  chatPage.router.replace.mockReturnValue(navigation.promise)
   open(Promise.resolve(first), first.id)
   await screen.findByText('First conversation')
   chatPage.router.replace.mockClear()
 
   fireEvent.click(screen.getByRole('link', { name: second.title }))
   await screen.findByText('Second conversation')
-  expect(chatPage.router.push).toHaveBeenCalledExactlyOnceWith(
+  expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
     '/chat/second-chat',
     undefined,
     { shallow: true },
   )
-  expect(chatPage.router.replace).not.toHaveBeenCalled()
+  expect(chatPage.router.push).not.toHaveBeenCalled()
   await act(async () => navigation.resolve(true))
 })
 
 it('ignores a superseded route failure after another chat is selected', async () => {
   const navigation = deferred<boolean>()
-  chatPage.router.push.mockReturnValueOnce(navigation.promise)
+  chatPage.router.replace.mockReturnValueOnce(navigation.promise)
   open(Promise.resolve(first), first.id)
   await screen.findByText('First conversation')
   fireEvent.click(screen.getByRole('link', { name: second.title }))
@@ -148,7 +148,7 @@ it('ignores a superseded route failure after another chat is selected', async ()
   fireEvent.click(screen.getByRole('link', { name: first.title }))
   await screen.findByText('First conversation')
   await waitFor(() =>
-    expect(chatPage.router.push).toHaveBeenLastCalledWith(
+    expect(chatPage.router.replace).toHaveBeenLastCalledWith(
       '/chat/first-chat',
       undefined,
       { shallow: true },
@@ -180,7 +180,7 @@ it('opens the not-found view when a listed local chat has been deleted', async (
   await indexedDBStorage.deleteChat(chat.id)
   fireEvent.click(link)
   await waitFor(() =>
-    expect(chatPage.router.push).toHaveBeenCalledWith(
+    expect(chatPage.router.replace).toHaveBeenCalledWith(
       '/chat/local/deleted-chat',
       undefined,
       { shallow: true },
@@ -223,7 +223,7 @@ it.each(['success', 'failure'])(
     fireEvent.click(screen.getByRole('link', { name: second.title }))
     await screen.findByText('Second conversation')
     await waitFor(() =>
-      expect(chatPage.router.push).toHaveBeenCalledWith(
+      expect(chatPage.router.replace).toHaveBeenCalledWith(
         '/chat/second-chat',
         undefined,
         { shallow: true },
@@ -235,11 +235,12 @@ it.each(['success', 'failure'])(
       else pending.reject(new Error('The earlier chat request failed'))
     })
 
-    expect(chatPage.router.push).toHaveBeenCalledExactlyOnceWith(
+    expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
       '/chat/second-chat',
       undefined,
       { shallow: true },
     )
+    expect(chatPage.router.push).not.toHaveBeenCalled()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
       second.title,
     )
@@ -254,3 +255,31 @@ it.each(['success', 'failure'])(
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   },
 )
+
+it('selects chats without adding history, and reopens a chat its route names again', async () => {
+  const { rerender } = open(Promise.resolve(first), first.id)
+  await screen.findByText('First conversation')
+  fireEvent.click(screen.getByRole('link', { name: second.title }))
+  await screen.findByText('Second conversation')
+  await waitFor(() =>
+    expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
+      '/chat/second-chat',
+      undefined,
+      { shallow: true },
+    ),
+  )
+  expect(chatPage.router.push).not.toHaveBeenCalled()
+  // The selection's address lands, then the route names the first chat.
+  rerender(<ChatInterface initialChatId={second.id} suppressIntroModals />)
+  chatPage.router.replace.mockClear()
+  rerender(<ChatInterface initialChatId={first.id} suppressIntroModals />)
+
+  expect(await screen.findByText('First conversation')).toBeInTheDocument()
+  expect(screen.queryByText('Second conversation')).not.toBeInTheDocument()
+  expect(screen.getByRole('link', { name: first.title })).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+  expect(chatPage.router.replace).not.toHaveBeenCalled()
+  expect(chatPage.router.push).not.toHaveBeenCalled()
+})
