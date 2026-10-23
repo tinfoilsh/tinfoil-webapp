@@ -33,6 +33,7 @@ function toolBlock(block: WireBlock, streaming: boolean): TimelineBlock {
     : display?.status === 'completed'
       ? 'completed'
       : 'failed'
+  const timing = { startedAt: block.startedAt, endedAt: block.endedAt }
   if (block.name === 'web_search')
     return {
       type: 'web_search',
@@ -42,11 +43,13 @@ function toolBlock(block: WireBlock, streaming: boolean): TimelineBlock {
         status: SEARCH_STATUS[status],
         sources: display?.sources ?? [],
       },
+      ...timing,
     }
   if (block.name === 'web_fetch')
     return {
       type: 'url_fetches',
       id: block.id,
+      ...timing,
       fetches: [
         {
           id: toolCallId,

@@ -69,6 +69,11 @@ export interface TimelineBlock {
   display?: ToolDisplay
   // A widget's stored arguments no longer match the widget's declaration.
   invalidArguments?: boolean
+  // When a reasoning or tool step ran, in epoch milliseconds, and how long
+  // a reasoning step thought, in seconds.
+  startedAt?: number
+  endedAt?: number
+  duration?: number
 }
 
 export interface Message {

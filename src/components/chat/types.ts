@@ -72,7 +72,7 @@ export type TimelineContentBlock = {
 
 // GenUI tool calls — one block per call. Arguments arrive as JSON-string
 // deltas during streaming.
-export type TimelineToolCallBlock = {
+export type TimelineToolCallBlock = TimelineTiming & {
   type: 'tool_call'
   id: string
   toolCallId: string

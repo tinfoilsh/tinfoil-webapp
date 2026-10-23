@@ -370,6 +370,89 @@ describe('harness reducer', () => {
 
     expect(state.snapshot).toEqual(before)
   })
+  it('records when each reasoning and tool step ran, as the harness does', () => {
+    const start = Date.UTC(2026, 9, 1)
+    const at = (seconds: number) =>
+      new Date(start + seconds * 1000).toISOString()
+    const events: Frame['event'][] = [
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'r-reasoning',
+        delta: 'Plan',
+        timestamp: at(0),
+      },
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'r-reasoning',
+        delta: 'ning',
+        timestamp: at(2.5),
+      },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'r',
+        delta: 'Answer',
+        timestamp: at(3),
+      },
+      {
+        type: 'TOOL_CALL_START',
+        parentMessageId: 'r',
+        toolCallId: 's',
+        toolCallName: 'web_search',
+        timestamp: at(4),
+      },
+      {
+        type: 'TOOL_CALL_RESULT',
+        toolCallId: 's',
+        content: { results: [] },
+        timestamp: at(6),
+      },
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'r-reasoning',
+        delta: 'Next',
+        timestamp: at(7),
+      },
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'r-reasoning',
+        delta: ' step',
+        timestamp: at(8.25),
+      },
+    ]
+    let state = initialChat()
+    for (const event of events) state = reduceEvent(state, { event })
+    expect(state.messages[0].timeline).toEqual([
+      {
+        id: 'r_thinking_0',
+        type: 'thinking',
+        content: 'Planning',
+        startedAt: start,
+        endedAt: start + 2_500,
+        duration: 2.5,
+      },
+      { id: 'r_content_1', type: 'content', content: 'Answer' },
+      {
+        id: 's',
+        toolCallId: 's',
+        type: 'tool_call',
+        name: 'web_search',
+        arguments: '',
+        complete: false,
+        progress: [],
+        result: { results: [] },
+        startedAt: start + 4_000,
+        endedAt: start + 6_000,
+      },
+      {
+        id: 'r_thinking_3',
+        type: 'thinking',
+        content: 'Next step',
+        startedAt: start + 7_000,
+        endedAt: start + 8_250,
+        duration: 1.25,
+      },
+    ])
+  })
   it('leaves the state a frame was applied to as it was', () => {
     const started = reduceEvent(initialChat(), {
       id: 0,

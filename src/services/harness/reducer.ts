@@ -69,6 +69,24 @@ function invalidPatch(): never {
 const replaceAt = <T>(items: readonly T[], index: number, item: T): T[] =>
   items.map((current, at) => (at === index ? item : current))
 
+// When an event happened, in epoch milliseconds, if it says.
+function millisOf(timestamp: string | undefined): number | undefined {
+  const at = timestamp ? Date.parse(timestamp) : NaN
+  return Number.isNaN(at) ? undefined : at
+}
+
+// How long a reasoning block has thought by a chunk at `at`, as the harness
+// stores it.
+function thoughtUntil(
+  block: TimelineBlock,
+  at: number | undefined,
+): Partial<TimelineBlock> {
+  if (block.startedAt === undefined || at === undefined || at < block.startedAt)
+    return {}
+  const duration = (at - block.startedAt) / 1000
+  return { endedAt: at, ...(duration > 0 ? { duration } : {}) }
+}
+
 // The queue and title changes a run sends. Each change copies only what it
 // changes.
 function applyStateDelta(
@@ -255,6 +273,7 @@ export function reduceEvent(
         : event.messageId
       const type = thinking ? 'thinking' : 'content'
       const sealed = next.sealed?.[id] ?? 0
+      const at = millisOf(event.timestamp)
       return {
         ...next,
         messages: withReply(next.messages, id, event.timestamp, (blocks) => {
@@ -263,6 +282,7 @@ export function reduceEvent(
             return replaceAt(blocks, blocks.length - 1, {
               ...last,
               content: (last.content ?? '') + event.delta,
+              ...(thinking ? thoughtUntil(last, at) : {}),
             })
           return [
             ...blocks,
@@ -270,6 +290,9 @@ export function reduceEvent(
               id: `${id}_${type}_${blocks.length}`,
               type,
               content: event.delta,
+              ...(thinking && at !== undefined
+                ? { startedAt: at, endedAt: at }
+                : {}),
             },
           ]
         }),
@@ -282,6 +305,7 @@ export function reduceEvent(
       }
     case 'TOOL_CALL_START': {
       const { toolCallId, toolCallName: name } = event
+      const at = millisOf(event.timestamp)
       const restarted = withToolCall(
         next.messages,
         toolCallId,
@@ -310,6 +334,7 @@ export function reduceEvent(
                 arguments: '',
                 complete: false,
                 progress: [],
+                ...(at !== undefined ? { startedAt: at } : {}),
               },
             ],
           ),
@@ -333,7 +358,8 @@ export function reduceEvent(
             complete: true,
           })) ?? next.messages,
       }
-    case 'TOOL_CALL_RESULT':
+    case 'TOOL_CALL_RESULT': {
+      const at = millisOf(event.timestamp)
       return {
         ...next,
         messages:
@@ -342,8 +368,13 @@ export function reduceEvent(
             result: event.content,
             metadata: event.metadata,
             ...(event.display ? { display: event.display } : {}),
+            ...(at !== undefined &&
+            (block.startedAt === undefined || at >= block.startedAt)
+              ? { endedAt: at }
+              : {}),
           })) ?? next.messages,
       }
+    }
     case 'ACTIVITY_SNAPSHOT':
     case 'ACTIVITY_DELTA': {
       const toolCallId = event.messageId.replace(ACTIVITY_PREFIX, '')

@@ -5,6 +5,7 @@ import type { BaseModel } from '@/config/models'
 import type {
   Annotation,
   ToolDisplay,
+  TimelineBlock as WireBlock,
   Message as WireMessage,
 } from '@/services/harness/types'
 import { messageView } from '@/services/harness/view-model'
@@ -890,6 +891,52 @@ describe('DefaultMessageRenderer work traces', () => {
     )
     expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
       'Worked for 42.0 seconds',
+    )
+  })
+
+  it('says how long the steps of a stored reply took', () => {
+    const thinking: WireBlock = {
+      id: 't',
+      type: 'thinking',
+      content: 'Plan the trip.',
+      startedAt: 1_000,
+      endedAt: 3_500,
+      duration: 2.5,
+    }
+    const answer: WireBlock = { id: 'c', type: 'content', content: 'Go.' }
+    const stored = (timeline: WireBlock[]): WireMessage => ({
+      id: 'a1',
+      role: 'assistant',
+      createdAt: '2026-08-07T00:00:01.000Z',
+      content: 'Go.',
+      timeline,
+    })
+    const { unmount } = renderReply(stored([thinking, answer]), false)
+    expect(screen.getByText('Thought').closest('button')).toHaveTextContent(
+      'Thought for 2.5 seconds',
+    )
+    unmount()
+
+    renderReply(
+      stored([
+        thinking,
+        {
+          id: 's',
+          type: 'tool_call',
+          toolCallId: 's',
+          name: 'web_search',
+          arguments: '{"query":"trip"}',
+          complete: true,
+          display: { query: 'trip', status: 'completed', sources: [] },
+          startedAt: 4_000,
+          endedAt: 11_000,
+        },
+        answer,
+      ]),
+      false,
+    )
+    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
+      'Worked for 10.0 seconds',
     )
   })
 
