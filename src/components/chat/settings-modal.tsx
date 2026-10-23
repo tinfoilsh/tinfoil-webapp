@@ -1278,6 +1278,19 @@ export function SettingsModal({
   const importsOnDevice = !cloudSyncEnabled
   const importTarget: ImportTarget = importsOnDevice ? 'device' : 'cloud'
 
+  // An action that finished stays reported as done when the chat list
+  // cannot reload after it; the list shows its own failure.
+  const refreshChatsAfter = async (action: string) => {
+    try {
+      await onChatsUpdated?.()
+    } catch (cause) {
+      logError('Failed to refresh chats', cause, {
+        component: 'SettingsModal',
+        action,
+      })
+    }
+  }
+
   // Imports upload the original export to the chat service, which converts
   // it. Chats for this device come back and are stored here; cloud data is
   // stored off device, and the user is emailed when a long job finishes. An
@@ -1323,7 +1336,7 @@ export function SettingsModal({
         result.chatsImported > 0 ||
         result.projectsImported > 0
       ) {
-        await onChatsUpdated?.()
+        await refreshChatsAfter('importFiles')
         if (target === 'cloud') await refreshProjects()
       }
     } catch (cause) {
@@ -1336,7 +1349,7 @@ export function SettingsModal({
         description: `Could not start the ${sourceLabel} import`,
         variant: 'destructive',
       })
-      if (result.chatsImported > 0) await onChatsUpdated?.()
+      if (result.chatsImported > 0) await refreshChatsAfter('importFiles')
     } finally {
       if (importAbortControllerRef.current === controller) {
         importAbortControllerRef.current = null
@@ -1724,7 +1737,7 @@ export function SettingsModal({
     try {
       const { cloudDeletionCompleted } = await onDeleteAllChats()
       onAllChatsDeleted?.()
-      await onChatsUpdated?.()
+      await refreshChatsAfter('handleDeleteAllChats')
       setShowDeleteAllChatsConfirm(false)
       setDeleteAllChatsConfirmText('')
       toast(
@@ -1767,7 +1780,7 @@ export function SettingsModal({
       const { deleted } = await deleteAllProjects(api)
       onAllProjectsDeleted?.()
       await refreshProjects()
-      await onChatsUpdated?.()
+      await refreshChatsAfter('handleDeleteAllProjects')
       setShowDeleteAllProjectsConfirm(false)
       setDeleteAllProjectsConfirmText('')
       toast({

@@ -52,7 +52,7 @@ function connect({ cloud = false }: { cloud?: boolean } = {}) {
   signIn({ userId: page.isSignedIn ? 'alice' : null, cloud })
 }
 
-function renderData(props: { isPremium?: boolean } = {}) {
+function renderData(props: Partial<Parameters<typeof SettingsModal>[0]> = {}) {
   render(
     <SettingsModal
       isOpen
@@ -66,7 +66,8 @@ function renderData(props: { isPremium?: boolean } = {}) {
       encryptionKey={null}
       initialTab="data"
       isSignedIn={page.isSignedIn}
-      isPremium={props.isPremium ?? false}
+      isPremium={false}
+      {...props}
     />,
   )
 }
@@ -954,5 +955,89 @@ describe('importing chats from the Data tab', () => {
     expect(within(screen.getByRole('status')).getByText(copy)).toBeVisible()
     expect(screen.queryByText(`harness says ${code}`)).toBeNull()
     expect(await localThreadStore('device').list()).toEqual([])
+  })
+})
+
+describe('a chat list that fails to reload after an action', () => {
+  const failedRefresh = () =>
+    vi.fn(async () => {
+      throw new TypeError('Network unavailable')
+    })
+
+  it('reports an import that stored its chats as complete', async () => {
+    connect()
+    answerImport([importedLine], { jobId: null, warnings: [] })
+    const onChatsUpdated = failedRefresh()
+    renderData({ onChatsUpdated })
+
+    pickFiles('ChatGPT', [chatGptExport])
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Import conversations' }),
+    )
+
+    await waitFor(() => expect(onChatsUpdated).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument(),
+    )
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Import complete',
+      description: 'Imported 1 chat from ChatGPT',
+    })
+    expect(screen.getByRole('status')).toHaveTextContent('1 chat imported')
+    expect(await localThreadStore('device').get(imported.id)).toEqual(imported)
+  })
+
+  it('reports deleted chats as deleted', async () => {
+    connect()
+    const onDeleteAllChats = vi.fn(async () => ({
+      cloudDeletionCompleted: false,
+    }))
+    const onChatsUpdated = failedRefresh()
+    renderData({ isClient: true, onDeleteAllChats, onChatsUpdated })
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Delete all saved chats' }),
+    )
+    fireEvent.change(screen.getByPlaceholderText('delete all chats'), {
+      target: { value: 'delete all chats' },
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Yes, delete all my chats' }),
+    )
+
+    await waitFor(() => expect(page.toast).toHaveBeenCalled())
+    expect(onDeleteAllChats).toHaveBeenCalledOnce()
+    expect(onChatsUpdated).toHaveBeenCalledOnce()
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'All chats deleted',
+      description: 'Removed all chats from this device.',
+    })
+  })
+
+  it('reports deleted projects as deleted', async () => {
+    connect({ cloud: true })
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/projects/delete-all') return { deleted: 2 }
+      if (path === '/v1/projects/list')
+        return { projects: [], nextCursor: null }
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    const onChatsUpdated = failedRefresh()
+    renderData({ isPremium: true, onChatsUpdated })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete all projects' }))
+    fireEvent.change(screen.getByPlaceholderText('delete all projects'), {
+      target: { value: 'delete all projects' },
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Yes, delete all my projects' }),
+    )
+
+    await waitFor(() => expect(page.toast).toHaveBeenCalled())
+    expect(onChatsUpdated).toHaveBeenCalledOnce()
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'All projects deleted',
+      description: 'Deleted 2 projects.',
+    })
   })
 })
