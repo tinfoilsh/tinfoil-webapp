@@ -30,7 +30,6 @@ import {
   TfDownload,
   TfExternalLink,
   TfEye,
-  TfPlay,
   type IconType,
 } from '@tinfoilsh/tinfoil-icons'
 import { FileText } from 'lucide-react'
@@ -327,29 +326,10 @@ const VIEW_TABS: { mode: ViewMode; label: string; icon: IconType }[] = [
 interface ArtifactView {
   source: ArtifactSource
   mode: ViewMode
-  isRunApproved: boolean
 }
 
 function initialView(source: ArtifactSource): ArtifactView {
-  return { source, mode: 'preview', isRunApproved: false }
-}
-
-function RunPreviewPrompt({ onRun }: { onRun: () => void }) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-10 text-center">
-      <button
-        type="button"
-        onClick={onRun}
-        className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat"
-      >
-        <TfPlay className="h-3.5 w-3.5" aria-hidden="true" />
-        Run preview
-      </button>
-      <p className="max-w-xs text-xs text-content-muted">
-        HTML previews run in an isolated sandbox outside the verified app.
-      </p>
-    </div>
-  )
+  return { source, mode: 'preview' }
 }
 
 interface ArtifactPreviewPanelProps extends ArtifactPreviewSidebarDetail {
@@ -376,9 +356,6 @@ export function ArtifactPreviewPanel({
   const [view, setView] = useState<ArtifactView>(() => initialView(source))
   const currentView = view.source === source ? view : initialView(source)
   const { mode } = currentView
-  // HTML runs on the unverified sandbox, so it waits for an explicit click,
-  // for every artifact shown in this panel.
-  const canRunPreview = source.type !== 'html' || currentView.isRunApproved
   const isSidebarLayout = layout === 'sidebar'
   const copyText = sourceToCopyString(source)
   const tabsId = useId()
@@ -453,20 +430,14 @@ export function ArtifactPreviewPanel({
         className={cn(isSidebarLayout ? 'flex min-h-0 flex-1 p-0' : 'p-4')}
       >
         {mode === 'preview' ? (
-          canRunPreview ? (
-            <Preview
-              source={source}
-              title={title}
-              className={
-                isSidebarLayout ? getSidebarPreviewClassName(source) : undefined
-              }
-              shouldAutoFocusIframe={isSidebarLayout}
-            />
-          ) : (
-            <RunPreviewPrompt
-              onRun={() => setView({ ...currentView, isRunApproved: true })}
-            />
-          )
+          <Preview
+            source={source}
+            title={title}
+            className={
+              isSidebarLayout ? getSidebarPreviewClassName(source) : undefined
+            }
+            shouldAutoFocusIframe={isSidebarLayout}
+          />
         ) : (
           <pre
             className={cn(
