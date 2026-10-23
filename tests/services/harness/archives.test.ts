@@ -91,6 +91,20 @@ beforeEach(() => {
 })
 
 describe('runImports', () => {
+  it.each(['device', 'cloud'] as const)(
+    'refuses a signed-out %s import before uploading its archive',
+    async (target) => {
+      signIn({ userId: null })
+      client.multipart.mockResolvedValue(
+        importResponse([], { jobId: 'unexpected-job', warnings: [] }),
+      )
+      await expect(
+        runImports(target, [namedFile('private.json')], { wait: noWait }),
+      ).rejects.toMatchObject({ cause: { code: 'UNAUTHENTICATED' } })
+      expect(client.multipart).not.toHaveBeenCalled()
+    },
+  )
+
   it('refuses signed-out exports before reading account chats', async () => {
     const privateChat = storedThread('account-chat', { title: 'Account data' })
     await localThreadStore('device').add(privateChat)

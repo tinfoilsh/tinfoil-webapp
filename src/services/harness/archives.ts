@@ -306,6 +306,7 @@ async function importFile(
   onStored?: (stored: number) => void,
 ): Promise<FileImport> {
   const api = harnessAPI()
+  const store = deviceStore(api)
   const key = target === 'cloud' ? api.key() : undefined
   const form = new FormData()
   form.append('options', JSON.stringify({ target, ...(key ? { key } : {}) }))
@@ -314,7 +315,6 @@ async function importFile(
     signal,
     keyless: !key,
   })
-  const store = deviceStore(api)
   let stored = 0
   let skipped = 0
   for await (const line of importLines(response)) {
