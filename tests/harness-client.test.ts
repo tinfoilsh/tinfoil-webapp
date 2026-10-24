@@ -954,6 +954,21 @@ describe('attested harness transport', () => {
       expect(getToken).not.toHaveBeenCalledWith({ skipCache: true })
     },
   )
+  it('fails an answer that is not JSON as one the protocol does not allow', async () => {
+    const secure = transport()
+    secure.fetch.mockResolvedValueOnce(new Response('<html>Bad gateway</html>'))
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      () => secure,
+    )
+    await expect(
+      client.post('/v1/threads/search', { query: 'peroxide' }),
+    ).rejects.toMatchObject({
+      status: 200,
+      detail: { code: 'INVALID_RESPONSE', action: 'stop' },
+    })
+  })
   it('asks for nothing more on an action this client does not know', async () => {
     const secure = transport()
     secure.fetch.mockResolvedValueOnce(

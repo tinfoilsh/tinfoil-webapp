@@ -314,11 +314,18 @@ export class HarnessClient {
     input: unknown,
     signal?: AbortSignal,
   ): Promise<T> {
-    return (
-      await this.request(path, JSON.stringify(input), signal, {
-        instance: this.instanceFor(path, input),
-      })
-    ).json() as Promise<T>
+    const response = await this.request(path, JSON.stringify(input), signal, {
+      instance: this.instanceFor(path, input),
+    })
+    try {
+      return (await response.json()) as T
+    } catch (cause) {
+      // An answer that is not JSON is not one the protocol allows. One that
+      // stopped arriving is a lost connection, and fails as it is.
+      if (cause instanceof SyntaxError)
+        throw new HarnessError(invalidResponse(), response.status)
+      throw cause
+    }
   }
   // Routes requests about a chat's run to the instance a hint names, for a
   // run this client did not see start.
