@@ -1,0 +1,270 @@
+{
+  "description": "A turn of a chat kept on the device, whose earlier messages the run shows first.",
+  "frames": [
+    {
+      "id": 0,
+      "event": {
+        "type": "RUN_STARTED",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
+        "runId": "00000000000000000000000000000002",
+        "instance": "00000000000000000000000000000003"
+      }
+    },
+    {
+      "id": 1,
+      "event": {
+        "type": "MESSAGES_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:01Z",
+        "messages": [
+          {
+            "id": "m1",
+            "role": "user",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "content": "first question"
+          },
+          {
+            "id": "m2",
+            "role": "assistant",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "timeline": [
+              {
+                "id": "b1",
+                "type": "content",
+                "content": "first answer"
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "role": "user",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "content": "second question"
+          }
+        ],
+        "hasOlder": false
+      }
+    },
+    {
+      "id": 2,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:02Z",
+        "snapshot": {
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "Kept title",
+            "titleState": "generated",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": null,
+            "activityAt": "2026-01-01T00:00:00Z",
+            "projectId": null,
+            "model": "kimi-k3",
+            "webSearchEnabled": false,
+            "pinned": false,
+            "contextUsage": {
+              "usedTokens": 90,
+              "limitTokens": 6553,
+              "percentage": 1.3734167556844195
+            },
+            "activeRun": {
+              "runId": "00000000000000000000000000000002",
+              "expiresAt": "2026-01-01T00:00:00Z",
+              "instance": "00000000000000000000000000000003"
+            },
+            "messageCount": 3
+          },
+          "queue": [],
+          "rateLimit": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "event": {
+        "type": "TEXT_MESSAGE_CHUNK",
+        "timestamp": "2026-01-01T00:00:03Z",
+        "messageId": "msg_00000000000000000000000000000005",
+        "role": "assistant",
+        "delta": "Second answer."
+      }
+    },
+    {
+      "id": 4,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:04Z",
+        "snapshot": {
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "Kept title",
+            "titleState": "generated",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": null,
+            "activityAt": "2026-01-01T00:00:00Z",
+            "projectId": null,
+            "model": "kimi-k3",
+            "webSearchEnabled": false,
+            "pinned": false,
+            "contextUsage": {
+              "usedTokens": 90,
+              "limitTokens": 6553,
+              "percentage": 1.3734167556844195
+            },
+            "activeRun": null,
+            "messageCount": 4
+          },
+          "queue": [],
+          "rateLimit": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "event": {
+        "type": "RUN_FINISHED",
+        "timestamp": "2026-01-01T00:00:05Z",
+        "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
+        "runId": "00000000000000000000000000000002",
+        "metadata": {
+          "messages": [
+            {
+              "id": "msg_00000000000000000000000000000005",
+              "model": "kimi-k3",
+              "modelDisplayName": "Kimi K3",
+              "usage": {
+                "promptTokens": 0,
+                "completionTokens": 0
+              },
+              "isError": false,
+              "isInterrupted": false
+            }
+          ],
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "Kept title",
+            "titleState": "generated",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "model": "kimi-k3",
+            "projectId": null,
+            "presetId": null,
+            "pinned": false,
+            "webSearchEnabled": false,
+            "messages": [
+              {
+                "id": "m1",
+                "role": "user",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "content": "first question"
+              },
+              {
+                "id": "m2",
+                "role": "assistant",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "content": "first answer",
+                "timeline": [
+                  {
+                    "id": "b1",
+                    "type": "content",
+                    "content": "first answer"
+                  }
+                ]
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000004",
+                "role": "user",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "content": "second question",
+                "attachments": []
+              },
+              {
+                "id": "msg_00000000000000000000000000000005",
+                "role": "assistant",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "content": "Second answer.",
+                "model": "kimi-k3",
+                "modelDisplayName": "Kimi K3",
+                "timeline": [
+                  {
+                    "id": "msg_00000000000000000000000000000005_content_0",
+                    "type": "content",
+                    "content": "Second answer."
+                  }
+                ],
+                "usage": {
+                  "promptTokens": 0,
+                  "completionTokens": 0
+                },
+                "isError": false,
+                "isInterrupted": false
+              }
+            ],
+            "lastRequestId": "00000000-0000-4000-8000-000000000004",
+            "lastRequestKind": "send",
+            "activeRun": null,
+            "contextUsage": {
+              "usedTokens": 90,
+              "limitTokens": 6553,
+              "percentage": 1.3734167556844195
+            },
+            "recordVersion": 1
+          },
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+          },
+          "rateLimit": {
+            "kind": null
+          },
+          "cancelled": false
+        }
+      }
+    }
+  ],
+  "expected": {
+    "messages": [
+      {
+        "content": "first question",
+        "id": "m1",
+        "role": "user",
+        "timeline": []
+      },
+      {
+        "id": "m2",
+        "role": "assistant",
+        "timeline": [
+          {
+            "content": "first answer",
+            "id": "b1",
+            "type": "content"
+          }
+        ]
+      },
+      {
+        "content": "second question",
+        "id": "00000000-0000-4000-8000-000000000004",
+        "role": "user",
+        "timeline": []
+      },
+      {
+        "id": "msg_00000000000000000000000000000005",
+        "role": "assistant",
+        "timeline": [
+          {
+            "content": "Second answer.",
+            "id": "msg_00000000000000000000000000000005_content_0",
+            "type": "content"
+          }
+        ]
+      }
+    ],
+    "title": "Kept title",
+    "titleState": "generated",
+    "status": "idle"
+  }
+}

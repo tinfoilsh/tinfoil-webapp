@@ -29,6 +29,8 @@ npm run build
 
 `npm test` also checks the widget argument types against the harness's tool declarations, read from `HARNESS_WIDGETS_JSON` (CI downloads the harness's `widgets.json` from its main branch) or from the harness repository checked out next to this one; `npm run generate:widgets` regenerates them.
 
+`harness-protocol/` holds the harness's protocol and recorded runs, copied from a harness commit named in `harness-protocol/revision`. `npm test` checks `src/services/harness/openapi.ts` was generated from it. `npm run sync:harness-protocol [harness checkout]` copies them again, from the harness repository next to this one by default, and regenerates the types.
+
 Reproduce a shuffled failure with the seed Vitest prints: `npm run test:shuffle -- --sequence.seed=42`. `npm run test:unit` runs Vitest in watch mode. `npm run check:clerk-privacy` checks the live Clerk environment and runs on a schedule in CI.
 
 ## Releases
