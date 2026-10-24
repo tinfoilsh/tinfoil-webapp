@@ -88,9 +88,6 @@ function projectChat(id: string, title: string) {
     ...storedThread(id, {
       title,
       titleState: 'generated',
-      projectId: project.id,
-      createdAt: at,
-      updatedAt: at,
       messages: [
         {
           id: `${id}-message`,
@@ -100,7 +97,12 @@ function projectChat(id: string, title: string) {
         },
       ],
     }),
+    createdAt: at,
+    updatedAt: at,
     activityAt: at,
+    projectId: project.id,
+    activeRun: null,
+    contextUsage: null,
     messageCount: 1,
     hasOlder: false,
   }

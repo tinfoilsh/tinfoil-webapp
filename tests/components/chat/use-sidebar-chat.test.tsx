@@ -25,13 +25,19 @@ it('rejoins an ask under the thread the harness created for it', async () => {
   events.mockImplementationOnce(async function* () {
     yield {
       id: 0,
-      event: { type: 'RUN_STARTED', threadId: 'ask-thread', runId: 'ask-run' },
+      event: {
+        type: 'RUN_STARTED',
+        threadId: 'ask-thread',
+        runId: 'ask-run',
+        instance: 'instance-1',
+      },
     }
     yield {
       id: 1,
       event: {
         type: 'TEXT_MESSAGE_CHUNK',
         messageId: 'answer',
+        role: 'assistant',
         delta: 'Explanation',
       },
     }
@@ -40,13 +46,19 @@ it('rejoins an ask under the thread the harness created for it', async () => {
   events.mockImplementationOnce(async function* () {
     yield {
       id: 0,
-      event: { type: 'RUN_STARTED', threadId: 'ask-thread', runId: 'ask-run' },
+      event: {
+        type: 'RUN_STARTED',
+        threadId: 'ask-thread',
+        runId: 'ask-run',
+        instance: 'instance-1',
+      },
     }
     yield {
       id: 1,
       event: {
         type: 'TEXT_MESSAGE_CHUNK',
         messageId: 'answer',
+        role: 'assistant',
         delta: 'Explanation',
       },
     }
@@ -55,12 +67,18 @@ it('rejoins an ask under the thread the harness created for it', async () => {
       event: {
         type: 'TEXT_MESSAGE_CHUNK',
         messageId: 'answer',
+        role: 'assistant',
         delta: ' continued',
       },
     }
     yield {
       id: 3,
-      event: { type: 'RUN_FINISHED', threadId: 'ask-thread', runId: 'ask-run' },
+      event: {
+        type: 'RUN_FINISHED',
+        threadId: 'ask-thread',
+        runId: 'ask-run',
+        metadata: {},
+      },
     }
   })
   const { result } = renderHook(() =>
@@ -78,7 +96,7 @@ it('rejoins an ask under the thread the harness created for it', async () => {
   )
   expect(events.mock.calls[1].slice(0, 2)).toEqual([
     '/v1/threads/follow',
-    { threadId: 'ask-thread', runId: 'ask-run' },
+    { threadId: 'ask-thread', runId: 'ask-run', after: 1 },
   ])
 })
 
@@ -92,13 +110,19 @@ it('stops streaming a cancelled ask and keeps its partial answer', async () => {
       try {
         yield {
           id: 0,
-          event: { type: 'RUN_STARTED', threadId: 'thread-1', runId: 'run-1' },
+          event: {
+            type: 'RUN_STARTED',
+            threadId: 'thread-1',
+            runId: 'run-1',
+            instance: 'instance-1',
+          },
         }
         yield {
           id: 1,
           event: {
             type: 'TEXT_MESSAGE_CHUNK',
             messageId: 'answer',
+            role: 'assistant',
             delta: 'It means',
             timestamp: '2026-05-01T10:00:00Z',
           },
@@ -162,6 +186,7 @@ it('shows why an ask failed before the harness sent any message, and the quota i
       {
         code: 'QUOTA_EXHAUSTED',
         message: 'The daily limit is reached',
+        action: 'wait',
         kind: 'free_daily',
         resetsAt: '2026-05-02T00:00:00Z',
         rateLimit,
@@ -253,16 +278,31 @@ function askInProgress(finish: boolean) {
     async function* (_path, _input, signal) {
       yield {
         id: 0,
-        event: { type: 'RUN_STARTED', threadId: 'thread-1', runId: 'run-1' },
+        event: {
+          type: 'RUN_STARTED',
+          threadId: 'thread-1',
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
       }
       yield {
         id: 1,
-        event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'answer', delta: 'It' },
+        event: {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'answer',
+          role: 'assistant',
+          delta: 'It',
+        },
       }
       if (finish) {
         yield {
           id: 2,
-          event: { type: 'RUN_FINISHED', threadId: 'thread-1', runId: 'run-1' },
+          event: {
+            type: 'RUN_FINISHED',
+            threadId: 'thread-1',
+            runId: 'run-1',
+            metadata: {},
+          },
         }
         return
       }
@@ -309,7 +349,12 @@ it('stops the harness running an ask whose stream failed twice', async () => {
   events.mockImplementationOnce(async function* () {
     yield {
       id: 0,
-      event: { type: 'RUN_STARTED', threadId: 'thread-1', runId: 'run-1' },
+      event: {
+        type: 'RUN_STARTED',
+        threadId: 'thread-1',
+        runId: 'run-1',
+        instance: 'instance-1',
+      },
     }
     throw new TypeError('connection closed')
   })

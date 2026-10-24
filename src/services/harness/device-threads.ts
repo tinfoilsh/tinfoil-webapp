@@ -13,7 +13,7 @@ import {
   type LocalThreadStore,
 } from './local-threads'
 import { imageBlob, uploaded, type OpenAttachments } from './open-attachments'
-import { ERROR_CODES, ROUTES } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import type { DeviceRun, RunController } from './run-controller'
 import { getView, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
@@ -23,6 +23,7 @@ import type { StoredThread, TerminalEvent, Thread, Turn } from './types'
 const notOnDevice = (what: string) =>
   new HarnessError({
     code: ERROR_CODES.threadNotFound,
+    action: ERROR_ACTIONS.stop,
     message: `This ${what} is not stored on this device.`,
   })
 
@@ -117,6 +118,7 @@ export function deviceThreads({
     if (!isThread(thread))
       throw new HarnessError({
         code: ERROR_CODES.upstreamRefused,
+        action: ERROR_ACTIONS.retry,
         message: 'The chat service returned an invalid chat.',
       })
     return {
@@ -301,11 +303,10 @@ export function deviceThreads({
     },
     // A run this page started, or one a reloaded page left behind.
     liveRun(thread: Thread) {
+      const runId = controller.deviceRuns.get().get(thread.id)?.runId
+      if (runId) return { runId }
       const receipt = controller.receipt()
-      return (
-        controller.deviceRuns.get().get(thread.id)?.runId ??
-        (receipt?.threadId === thread.id ? receipt.runId : undefined)
-      )
+      return receipt?.threadId === thread.id ? receipt : undefined
     },
     async follow(threadId, runId) {
       return {

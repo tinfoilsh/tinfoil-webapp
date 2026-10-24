@@ -26,9 +26,11 @@ function summary(id: string, projectId: string | null = null): ThreadSummary {
     model: 'gpt-oss-120b',
     createdAt: '2026-10-22T12:00:00Z',
     updatedAt: '2026-10-22T12:00:00Z',
+    activityAt: '2026-10-22T12:00:00Z',
     projectId,
     pinned: false,
     webSearchEnabled: true,
+    contextUsage: null,
     messageCount: 2,
     activeRun: null,
   }
@@ -121,6 +123,49 @@ it('restores sidebar summaries and favorites after a reload before fresh results
   expect(reloaded.result.current.chats.map((chat) => chat.id)).toEqual([
     'fresh',
   ])
+})
+
+it('orders the chats of a cache from before activity times by when they began', async () => {
+  signIn({ cloud: true })
+  const older = {
+    ...summary('older'),
+    createdAt: '2026-10-20T12:00:00Z',
+    activityAt: '2026-10-23T12:00:00Z',
+  }
+  const newer = { ...summary('newer'), createdAt: '2026-10-21T12:00:00Z' }
+  client.post.mockResolvedValue(page([older, newer]))
+  const first = renderHook(() => useThread())
+  await waitFor(() => expect(first.result.current.chats).toHaveLength(2))
+  first.unmount()
+  // The cache as an earlier version wrote it.
+  for (const key of cacheKeys()) {
+    const cached = JSON.parse(localStorage.getItem(key)!)
+    for (const list of [cached.threads, cached.pinned])
+      for (const chat of list) delete chat.activityAt
+    localStorage.setItem(key, JSON.stringify(cached))
+  }
+
+  signIn({ cloud: true })
+  client.post.mockReturnValue(new Promise(() => {}))
+  const reloaded = renderHook(() => useThread())
+
+  expect(reloaded.result.current.chats.map((chat) => chat.id)).toEqual([
+    'newer',
+    'older',
+  ])
+})
+
+it('dates a chat stored without its creation time by its activity', async () => {
+  signIn({ cloud: true })
+  client.post.mockResolvedValue(
+    page([{ ...summary('legacy'), createdAt: null, updatedAt: null }]),
+  )
+  const { result } = renderHook(() => useThread())
+  await waitFor(() => expect(result.current.chats).toHaveLength(1))
+
+  expect(result.current.chats[0].createdAt).toEqual(
+    new Date('2026-10-22T12:00:00Z'),
+  )
 })
 
 it('keeps rename and deletion results through a reload', async () => {

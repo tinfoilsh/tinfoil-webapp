@@ -233,7 +233,7 @@ describe('runImports', () => {
       'job-1': [
         running,
         new HarnessError(
-          { code: 'THREAD_NOT_FOUND', message: 'not found' },
+          { code: 'THREAD_NOT_FOUND', message: 'not found', action: 'stop' },
           404,
         ),
       ],
@@ -264,7 +264,10 @@ describe('runImports', () => {
     statuses = {
       'job-1': [
         job('running'),
-        new HarnessError({ code: 'UPSTREAM_REFUSED', message: 'busy' }, 502),
+        new HarnessError(
+          { code: 'UPSTREAM_REFUSED', message: 'busy', action: 'retry' },
+          502,
+        ),
         job('partial', 5),
       ],
     }
@@ -291,7 +294,7 @@ describe('runImports', () => {
 
   it('gives up once the service stays unreachable instead of starting the next file', async () => {
     const unreachable = new HarnessError(
-      { code: 'UPSTREAM_REFUSED', message: 'bad gateway' },
+      { code: 'UPSTREAM_REFUSED', message: 'bad gateway', action: 'retry' },
       502,
     )
     statuses = {
@@ -325,7 +328,11 @@ describe('runImports', () => {
       'job-1': [job('completed', 4, { warnings: ['job-1 skipped a project'] })],
     }
     const busy = new HarnessError(
-      { code: 'UPSTREAM_REFUSED', message: 'an import is already in progress' },
+      {
+        code: 'UPSTREAM_REFUSED',
+        message: 'an import is already in progress',
+        action: 'stop',
+      },
       409,
     )
     client.multipart

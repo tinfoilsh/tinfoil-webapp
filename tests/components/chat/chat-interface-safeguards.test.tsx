@@ -1,6 +1,6 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { HarnessError } from '@/services/harness/sse'
-import type { Frame, Thread } from '@/services/harness/types'
+import type { Frame, QueueItem, Thread } from '@/services/harness/types'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
@@ -46,10 +46,13 @@ const thread: Thread = {
   titleState: 'generated',
   createdAt: '2026-04-01T09:00:00Z',
   updatedAt: '2026-04-01T09:00:00Z',
+  activityAt: '2026-04-01T09:00:01Z',
   model: 'test-model',
   projectId: null,
+  presetId: null,
   pinned: false,
   webSearchEnabled: true,
+  contextUsage: null,
   messageCount: 2,
   activeRun: null,
   hasOlder: false,
@@ -155,14 +158,28 @@ describe('a chat the safeguards flagged', () => {
     const flagged = new Promise<void>((resolve) => {
       flag = resolve
     })
+    const queued: QueueItem = {
+      queueId: 'queued-1',
+      kind: 'send',
+      content: 'and then?',
+      quote: null,
+      attachments: [],
+      createdAt: '2026-04-01T09:00:02Z',
+    }
     client.events.mockImplementationOnce(async function* () {
       const frames: Frame['event'][] = [
-        { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-1' },
+        {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
         {
           type: 'STATE_SNAPSHOT',
           snapshot: {
             thread: summary,
-            queue: [{ queueId: 'queued-1', content: 'and then?' }],
+            queue: [queued],
+            rateLimit: { kind: null },
           },
         },
       ]
@@ -174,7 +191,8 @@ describe('a chat the safeguards flagged', () => {
           type: 'STATE_SNAPSHOT',
           snapshot: {
             thread: { ...summary, flagged: true },
-            queue: [{ queueId: 'queued-1', content: 'and then?' }],
+            queue: [queued],
+            rateLimit: { kind: null },
           },
         },
       }
@@ -217,7 +235,11 @@ describe('a chat the safeguards flagged', () => {
   it('becomes read-only when the harness refuses a turn as flagged', async () => {
     client.events.mockImplementationOnce(async function* () {
       throw new HarnessError(
-        { code: 'CHAT_FLAGGED', message: 'This chat was flagged.' },
+        {
+          code: 'CHAT_FLAGGED',
+          message: 'This chat was flagged.',
+          action: 'stop',
+        },
         403,
       )
     })

@@ -174,10 +174,33 @@ describe('usage reported by runs', () => {
   function run(runId: string, started: RateLimit, ended: Frame['event']) {
     return async function* (): AsyncGenerator<Frame> {
       const frames: Frame['event'][] = [
-        { type: 'RUN_STARTED', threadId: 'thread-1', runId },
+        {
+          type: 'RUN_STARTED',
+          threadId: 'thread-1',
+          runId,
+          instance: 'instance-1',
+        },
         {
           type: 'STATE_SNAPSHOT',
-          snapshot: { thread: null, queue: [], rateLimit: started },
+          snapshot: {
+            thread: {
+              id: 'thread-1',
+              title: 'New Chat',
+              titleState: 'placeholder',
+              createdAt: '2026-07-24T10:15:30Z',
+              updatedAt: '2026-07-24T10:15:30Z',
+              activityAt: '2026-07-24T10:15:30Z',
+              projectId: null,
+              model: 'test-model',
+              webSearchEnabled: true,
+              pinned: false,
+              contextUsage: null,
+              activeRun: { runId, expiresAt: '2026-07-24T10:25:30Z' },
+              messageCount: 1,
+            },
+            queue: [],
+            rateLimit: started,
+          },
         },
         ended,
       ]
@@ -196,7 +219,11 @@ describe('usage reported by runs', () => {
         runId: 'run-1',
         metadata: {
           rateLimit: hourly(600_000),
-          usage: { prompt_tokens: 100_000 },
+          usage: {
+            prompt_tokens: 100_000,
+            completion_tokens: 0,
+            total_tokens: 100_000,
+          },
         },
       }),
     )
@@ -230,6 +257,7 @@ describe('usage reported by runs', () => {
         runId: 'run-3',
         code: 'QUOTA_EXHAUSTED',
         message: 'The hourly usage limit is reached',
+        action: 'wait',
         metadata: { rateLimit: exhausted },
       }),
     )
@@ -247,7 +275,11 @@ describe('usage reported by runs', () => {
         runId: 'run-1',
         metadata: {
           rateLimit: { kind: null },
-          usage: { prompt_tokens: 100_000 },
+          usage: {
+            prompt_tokens: 100_000,
+            completion_tokens: 0,
+            total_tokens: 100_000,
+          },
         },
       }),
     )

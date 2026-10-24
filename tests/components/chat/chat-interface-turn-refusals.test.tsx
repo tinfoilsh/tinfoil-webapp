@@ -48,10 +48,13 @@ const thread: Thread = {
   titleState: 'generated',
   createdAt: '2026-04-01T09:00:00Z',
   updatedAt: '2026-04-01T09:00:00Z',
+  activityAt: '2026-04-01T09:00:01Z',
   model: 'test-model',
   projectId: null,
+  presetId: null,
   pinned: false,
   webSearchEnabled: true,
+  contextUsage: null,
   messageCount: 2,
   activeRun: { runId: 'run-1', expiresAt: '2026-04-01T10:00:00Z' },
   hasOlder: false,
@@ -160,15 +163,27 @@ describe('a turn the harness refuses', () => {
     })
     client.events.mockImplementationOnce(async function* () {
       const frames: Frame['event'][] = [
-        { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-1' },
-        { type: 'STATE_SNAPSHOT', snapshot: { thread: summary, queue: [] } },
+        {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+        {
+          type: 'STATE_SNAPSHOT',
+          snapshot: { thread: summary, queue: [], rateLimit: { kind: null } },
+        },
       ]
       for (const [id, event] of frames.entries()) yield { id, event }
       await held
     })
     client.events.mockImplementationOnce(async function* () {
       throw new HarnessError(
-        { code: 'QUEUE_FULL', message: 'The turn queue is full' },
+        {
+          code: 'QUEUE_FULL',
+          message: 'The turn queue is full',
+          action: 'retry',
+        },
         429,
       )
     })
@@ -215,7 +230,11 @@ describe('a turn the harness refuses', () => {
     [
       'the hourly limit',
       new HarnessError(
-        { code: 'RATE_LIMITED', message: 'You reached the hourly limit' },
+        {
+          code: 'RATE_LIMITED',
+          message: 'You reached the hourly limit',
+          action: 'retry',
+        },
         429,
       ),
       'Too many requests right nowWait a moment, then resend your message. Your message was not lost.',
@@ -241,8 +260,16 @@ describe('a turn the harness refuses', () => {
       })
       client.events.mockImplementationOnce(async function* () {
         const frames: Frame['event'][] = [
-          { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-1' },
-          { type: 'STATE_SNAPSHOT', snapshot: { thread: summary, queue: [] } },
+          {
+            type: 'RUN_STARTED',
+            threadId: THREAD_ID,
+            runId: 'run-1',
+            instance: 'instance-1',
+          },
+          {
+            type: 'STATE_SNAPSHOT',
+            snapshot: { thread: summary, queue: [], rateLimit: { kind: null } },
+          },
         ]
         for (const [id, event] of frames.entries()) yield { id, event }
         await held
@@ -251,6 +278,7 @@ describe('a turn the harness refuses', () => {
           event: {
             type: 'TEXT_MESSAGE_CHUNK',
             messageId: 'a1',
+            role: 'assistant',
             delta: ' and more',
           },
         }
@@ -267,7 +295,14 @@ describe('a turn the harness refuses', () => {
                 {
                   op: 'add',
                   path: '/queue/-',
-                  value: { queueId: 'run-2', content: 'And one more' },
+                  value: {
+                    queueId: 'run-2',
+                    kind: 'send',
+                    content: 'And one more',
+                    quote: null,
+                    attachments: [],
+                    createdAt: '2026-04-01T09:01:00Z',
+                  },
                 },
               ],
             },

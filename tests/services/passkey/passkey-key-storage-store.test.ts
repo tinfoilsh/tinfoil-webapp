@@ -10,6 +10,7 @@
  */
 
 import { HarnessError } from '@/services/harness/sse'
+import type { ErrorAction, ErrorCode } from '@/services/harness/types'
 import { deriveTinfoilKeyIdHex } from '@/services/keys/tinfoil-key-id'
 import { TINFOIL_PASSKEY_PROFILE } from '@/services/passkey/kit'
 import {
@@ -118,15 +119,15 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     expect(arg.initialBundle.credentialId).toBe('AQID')
   })
 
-  it.each([
-    { code: 'KEY_MISMATCH', conflict: true },
-    { code: 'REVISION_CONFLICT', conflict: false },
+  it.each<{ code: ErrorCode; action: ErrorAction; conflict: boolean }>([
+    { code: 'KEY_MISMATCH', action: 'unlock', conflict: true },
+    { code: 'REVISION_CONFLICT', action: 'reload', conflict: false },
   ])(
     'maps only the harness key-mismatch refusal to a credential conflict: $code',
-    async ({ code, conflict }) => {
+    async ({ code, action, conflict }) => {
       mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
       mockRegisterKey.mockRejectedValue(
-        new HarnessError({ message: 'refused', code }, 409),
+        new HarnessError({ message: 'refused', code, action }, 409),
       )
       const stored = storeEncryptedKeys(wrappedKeys('AQID'), KEY_BUNDLE)
       if (conflict)

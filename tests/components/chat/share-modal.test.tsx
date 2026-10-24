@@ -395,7 +395,10 @@ describe('ShareModal', () => {
   it('keeps sharing enabled when revocation fails and allows a retry', async () => {
     shared = true
     mocks.revoke.mockRejectedValueOnce(
-      new HarnessError({ code: 'UPSTREAM_REFUSED', message: 'Offline' }, 502),
+      new HarnessError(
+        { code: 'UPSTREAM_REFUSED', message: 'Offline', action: 'retry' },
+        502,
+      ),
     )
     render(<ShareModal {...props} />)
     fireEvent.click(await readyCheckbox())
@@ -478,7 +481,11 @@ describe('ShareModal', () => {
   it('reports a refused share without showing a link', async () => {
     mocks.share.mockRejectedValueOnce(
       new HarnessError(
-        { code: 'UPSTREAM_REFUSED', message: 'The chat could not be shared' },
+        {
+          code: 'UPSTREAM_REFUSED',
+          message: 'The chat could not be shared',
+          action: 'retry',
+        },
         502,
       ),
     )
@@ -507,7 +514,11 @@ describe('ShareModal', () => {
     [
       'the harness',
       new HarnessError(
-        { code: 'THREAD_TOO_LARGE', message: 'The chat is too large to store' },
+        {
+          code: 'THREAD_TOO_LARGE',
+          message: 'The chat is too large to store',
+          action: 'revise',
+        },
         413,
       ),
     ],
@@ -517,6 +528,7 @@ describe('ShareModal', () => {
         {
           code: 'UPSTREAM_REFUSED',
           message: 'A downstream service refused the request',
+          action: 'stop',
           status: 413,
         },
         502,

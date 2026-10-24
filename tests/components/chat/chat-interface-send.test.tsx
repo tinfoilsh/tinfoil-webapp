@@ -86,7 +86,12 @@ function scriptRun() {
     await accepted.promise
     yield {
       id: 0,
-      event: { type: 'RUN_STARTED', runId: 'reply', threadId: input.threadId! },
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'reply',
+        threadId: input.threadId!,
+        instance: 'instance-1',
+      },
     }
     await reply.promise
     yield {
@@ -94,6 +99,7 @@ function scriptRun() {
       event: {
         type: 'TEXT_MESSAGE_CHUNK',
         messageId: 'answer',
+        role: 'assistant',
         delta: 'The answer is here.',
       },
     }
@@ -104,6 +110,7 @@ function scriptRun() {
         type: 'RUN_FINISHED',
         runId: 'reply',
         threadId: input.threadId!,
+        metadata: {},
       },
     }
   })

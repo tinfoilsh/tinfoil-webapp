@@ -92,6 +92,7 @@ const imported: ThreadSummary = {
   titleState: 'manual',
   createdAt: '2026-04-01T09:00:00Z',
   updatedAt: '2026-04-02T09:00:00Z',
+  activityAt: '2026-04-01T09:00:00Z',
   model: 'test-model',
   projectId: null,
   pinned: false,
@@ -186,7 +187,10 @@ describe('moving chats from the chat page', () => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/import')
-        throw new HarnessError({ code: 'UPSTREAM_REFUSED', message: 'No' }, 502)
+        throw new HarnessError(
+          { code: 'UPSTREAM_REFUSED', message: 'No', action: 'retry' },
+          502,
+        )
       throw new Error(`Unexpected ${path}`)
     })
     await renderPage()
@@ -256,7 +260,7 @@ describe('moving chats from the chat page', () => {
       }
       if (path === '/v1/threads/update')
         throw new HarnessError(
-          { code: 'THREAD_NOT_FOUND', message: 'Gone' },
+          { code: 'THREAD_NOT_FOUND', message: 'Gone', action: 'stop' },
           404,
         )
       if (path === '/v1/threads/delete') {
@@ -301,7 +305,11 @@ describe('moving chats from the chat page', () => {
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/transcript')
         throw new HarnessError(
-          { code: 'ATTACHMENTS_UNAVAILABLE', message: '1 attachments' },
+          {
+            code: 'ATTACHMENTS_UNAVAILABLE',
+            message: '1 attachments',
+            action: 'retry',
+          },
           409,
         )
       throw new Error(`Unexpected ${path}`)

@@ -19,7 +19,8 @@
     "test:coverage": "vitest run --coverage",
     "prebuild": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs && node scripts/copy-vendor.mjs",
     "predev": "node scripts/copy-vendor.mjs",
-    "postinstall": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs"
+    "postinstall": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs",
+    "sync:harness-protocol": "node scripts/sync-harness-protocol.mjs"
   },
   "dependencies": {
     "@braintree/sanitize-url": "^7.1.1",
@@ -95,6 +96,7 @@
     "husky": "^8.0.3",
     "json-schema-to-typescript": "^16.0.0",
     "lint-staged": "^15.2.10",
+    "openapi-typescript": "7.13.0",
     "prettier": "^3.3.2",
     "prettier-plugin-organize-imports": "^4.1.0",
     "prettier-plugin-tailwindcss": "^0.6.12",

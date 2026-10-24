@@ -15,6 +15,7 @@ export const KEY = 'Y29udGVudC1rZXk='
 export const CACHE_SECRET = '0123456789abcdef'.repeat(4)
 
 export const testSession: Session = {
+  protocol: { version: 1, minimum: 1 },
   user: { id: '', anonymous: true },
   defaultModel: 'test-model',
   models: [
@@ -96,6 +97,7 @@ export interface FakeClient {
   // Mints the account's chat access again; a test reports the quota the
   // control plane answers with through onRateLimit.
   renewCredential: Mock
+  locate: Mock
   onRateLimit?: (rateLimit: RateLimit) => void
 }
 
@@ -159,6 +161,7 @@ export function signIn({
     stream: vi.fn(async (path: string) => unexpected(path)),
     multipart: vi.fn(async (path: string) => unexpected(path)),
     renewCredential: vi.fn(async () => {}),
+    locate: vi.fn(),
   }
   const api = new HarnessAPI(client as unknown as HarnessClient, userId)
   const unlocked = !!userId && !locked

@@ -3,10 +3,12 @@ import type {
   Chat,
   Message,
   TimelineBlock,
+  Annotation as UIAnnotation,
 } from '@/components/chat/types'
 import { DEFAULT_CHAT_TITLE, PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { WIDGET_PREFIX } from './protocol'
 import type {
+  QueueItem,
   ThreadSummary,
   AttachmentDescriptor as WireAttachment,
   TimelineBlock as WireBlock,
@@ -169,6 +171,25 @@ export function attachmentView(
     thumbnailBase64: a.thumbnail ?? undefined,
   }
 }
+// A queued turn's attachments that can be shown. One the chat already holds
+// is named by its id alone.
+export function queuedAttachmentViews(
+  attachments: QueueItem['attachments'],
+): Attachment[] {
+  return attachments.flatMap(({ id, kind, fileName, mimeType, ...rest }) =>
+    id && kind && fileName !== undefined
+      ? [
+          attachmentView({
+            id,
+            kind,
+            fileName,
+            mimeType: mimeType ?? '',
+            ...rest,
+          }),
+        ]
+      : [],
+  )
+}
 // A message as the view shows it, with the latest summary of each thinking
 // block's reasoning.
 export function messageView(
@@ -210,7 +231,10 @@ export function messageView(
     quote: message.quote,
     modelDisplayName: message.modelDisplayName,
     attachments: message.attachments?.map(attachmentView),
-    annotations: message.annotations,
+    annotations: message.annotations?.flatMap(
+      ({ type, url_citation }): UIAnnotation[] =>
+        url_citation ? [{ type, url_citation }] : [],
+    ),
     isError: message.isError,
     isInterrupted: message.isInterrupted,
   }
@@ -231,9 +255,11 @@ export function threadView(
     id: thread.id,
     title: chatTitle(thread),
     titleState: thread.titleState,
-    createdAt: new Date(thread.createdAt),
-    updatedAt: thread.updatedAt,
-    activityAt: thread.activityAt ?? thread.createdAt,
+    // A chat stored without its creation time is dated by its activity; one
+    // without either has no date to show.
+    createdAt: new Date(thread.createdAt ?? thread.activityAt),
+    updatedAt: thread.updatedAt ?? undefined,
+    activityAt: thread.activityAt || undefined,
     model: thread.model,
     projectId: thread.projectId ?? undefined,
     webSearchEnabled: thread.webSearchEnabled,

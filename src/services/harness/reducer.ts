@@ -1,11 +1,10 @@
-import { ERROR_CODES, WIDGET_PREFIX } from './protocol'
+import { actionOf, ERROR_ACTIONS, ERROR_CODES, WIDGET_PREFIX } from './protocol'
 import { HarnessError } from './sse'
 import type {
   ActivityPatch,
   Frame,
   HarnessErrorBody,
   HarnessEvent,
-  Json,
   Message,
   Snapshot,
   StatePatch,
@@ -66,6 +65,7 @@ const DEFAULT_RUN_ERROR = 'The run could not finish.'
 function invalidPatch(): never {
   throw new HarnessError({
     code: ERROR_CODES.invalidStream,
+    action: ERROR_ACTIONS.retry,
     message: 'The chat stream contained an invalid state patch.',
   })
 }
@@ -74,12 +74,12 @@ const replaceAt = <T>(items: readonly T[], index: number, item: T): T[] =>
   items.map((current, at) => (at === index ? item : current))
 
 // Whether a widget call's result refuses the arguments it was drawn from.
-function refusesWidget(block: TimelineBlock, result: Json | undefined) {
+function refusesWidget(block: TimelineBlock, result: unknown) {
   return (
     !!block.name?.startsWith(WIDGET_PREFIX) &&
     typeof result === 'object' &&
     result !== null &&
-    !Array.isArray(result) &&
+    'status' in result &&
     result.status === REFUSED_WIDGET_STATUS
   )
 }
@@ -132,6 +132,16 @@ function applyStateDelta(
 }
 
 // A tool's progress and the output lines it adds.
+// The output a block gathered from its earlier activity events, if any.
+function gathered(activity: unknown): ToolActivity {
+  return typeof activity === 'object' &&
+    activity !== null &&
+    'output' in activity &&
+    Array.isArray(activity.output)
+    ? (activity as ToolActivity)
+    : { output: [] }
+}
+
 function applyActivityDelta(
   activity: ToolActivity,
   patches: readonly ActivityPatch[],
@@ -224,15 +234,20 @@ const withoutQueued = (snapshot: Snapshot, runId?: string): Snapshot => ({
   queue: snapshot.queue.filter((item) => item.queueId !== runId),
 })
 
-// Why a run ended with RUN_ERROR.
+// Why a run ended with RUN_ERROR, with every member a refusal has.
 export const runErrorOf = (
   event: Extract<HarnessEvent, { type: 'RUN_ERROR' }>,
 ): HarnessErrorBody => ({
   code: event.code ?? ERROR_CODES.upstreamRefused,
   message: event.message ?? DEFAULT_RUN_ERROR,
+  action: actionOf(event.action, event.code),
   ...(event.kind ? { kind: event.kind } : {}),
   ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
   ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
+  ...(event.status ? { status: event.status } : {}),
+  ...(event.keyId ? { keyId: event.keyId } : {}),
+  ...(event.upstreamCode ? { upstreamCode: event.upstreamCode } : {}),
+  ...(event.rateLimit ? { rateLimit: event.rateLimit } : {}),
 })
 
 // The events of a widget's retry that the chat applies: the call redrawn
@@ -461,10 +476,7 @@ export function reduceEvent(
             const activity =
               event.type === 'ACTIVITY_SNAPSHOT'
                 ? event.content
-                : applyActivityDelta(
-                    block.activity ?? { output: [] },
-                    event.patch,
-                  )
+                : applyActivityDelta(gathered(block.activity), event.patch)
             return {
               ...block,
               activity,

@@ -1,0 +1,228 @@
+{
+  "description": "A reply that reasons, calls a widget, and answers after its result, all in one assistant message.",
+  "frames": [
+    {
+      "id": 0,
+      "event": {
+        "type": "RUN_STARTED",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
+        "runId": "00000000000000000000000000000002",
+        "instance": "00000000000000000000000000000003"
+      }
+    },
+    {
+      "id": 1,
+      "event": {
+        "type": "MESSAGES_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:01Z",
+        "messages": [
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "role": "user",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "content": "test message"
+          }
+        ],
+        "hasOlder": false
+      }
+    },
+    {
+      "id": 2,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:02Z",
+        "snapshot": {
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "New Chat",
+            "titleState": "placeholder",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "activityAt": "2026-01-01T00:00:00Z",
+            "projectId": null,
+            "model": "kimi-k3",
+            "webSearchEnabled": false,
+            "pinned": false,
+            "contextUsage": {
+              "usedTokens": 552,
+              "limitTokens": 6553,
+              "percentage": 8.423622768197772
+            },
+            "activeRun": {
+              "runId": "00000000000000000000000000000002",
+              "expiresAt": "2026-01-01T00:00:00Z",
+              "instance": "00000000000000000000000000000003"
+            },
+            "messageCount": 1
+          },
+          "queue": [],
+          "rateLimit": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "event": {
+        "type": "REASONING_MESSAGE_CHUNK",
+        "timestamp": "2026-01-01T00:00:03Z",
+        "messageId": "msg_00000000000000000000000000000005-reasoning",
+        "delta": "reason first"
+      }
+    },
+    {
+      "id": 4,
+      "event": {
+        "type": "TOOL_CALL_START",
+        "timestamp": "2026-01-01T00:00:04Z",
+        "toolCallId": "clock-call",
+        "toolCallName": "render_clock",
+        "parentMessageId": "msg_00000000000000000000000000000005"
+      }
+    },
+    {
+      "id": 5,
+      "event": {
+        "type": "TOOL_CALL_ARGS",
+        "timestamp": "2026-01-01T00:00:05Z",
+        "toolCallId": "clock-call",
+        "delta": "{}"
+      }
+    },
+    {
+      "id": 6,
+      "event": {
+        "type": "TOOL_CALL_END",
+        "timestamp": "2026-01-01T00:00:06Z",
+        "toolCallId": "clock-call"
+      }
+    },
+    {
+      "id": 7,
+      "event": {
+        "type": "TOOL_CALL_RESULT",
+        "timestamp": "2026-01-01T00:00:07Z",
+        "messageId": "msg_00000000000000000000000000000006",
+        "toolCallId": "clock-call",
+        "role": "tool",
+        "content": "[rendered for the user]"
+      }
+    },
+    {
+      "id": 8,
+      "event": {
+        "type": "TEXT_MESSAGE_CHUNK",
+        "timestamp": "2026-01-01T00:00:08Z",
+        "messageId": "msg_00000000000000000000000000000005",
+        "role": "assistant",
+        "delta": "the clock is ready"
+      }
+    },
+    {
+      "id": 9,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:09Z",
+        "snapshot": {
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "New Chat",
+            "titleState": "placeholder",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "activityAt": "2026-01-01T00:00:00Z",
+            "projectId": null,
+            "model": "kimi-k3",
+            "webSearchEnabled": false,
+            "pinned": false,
+            "contextUsage": {
+              "usedTokens": 552,
+              "limitTokens": 6553,
+              "percentage": 8.423622768197772
+            },
+            "activeRun": null,
+            "messageCount": 2
+          },
+          "queue": [],
+          "rateLimit": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "event": {
+        "type": "RUN_FINISHED",
+        "timestamp": "2026-01-01T00:00:10Z",
+        "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
+        "runId": "00000000000000000000000000000002",
+        "metadata": {
+          "messages": [
+            {
+              "id": "msg_00000000000000000000000000000005",
+              "model": "kimi-k3",
+              "modelDisplayName": "Kimi K3",
+              "usage": {
+                "promptTokens": 0,
+                "completionTokens": 0
+              },
+              "isError": false,
+              "isInterrupted": false
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+          },
+          "rateLimit": {
+            "kind": null
+          },
+          "cancelled": false
+        }
+      }
+    }
+  ],
+  "expected": {
+    "messages": [
+      {
+        "content": "test message",
+        "id": "00000000-0000-4000-8000-000000000004",
+        "role": "user",
+        "timeline": []
+      },
+      {
+        "id": "msg_00000000000000000000000000000005",
+        "role": "assistant",
+        "timeline": [
+          {
+            "content": "reason first",
+            "id": "msg_00000000000000000000000000000005_thinking_0",
+            "type": "thinking"
+          },
+          {
+            "arguments": "{}",
+            "complete": true,
+            "id": "clock-call",
+            "name": "render_clock",
+            "progress": [],
+            "result": "[rendered for the user]",
+            "toolCallId": "clock-call",
+            "type": "tool_call"
+          },
+          {
+            "content": "the clock is ready",
+            "id": "msg_00000000000000000000000000000005_content_2",
+            "type": "content"
+          }
+        ]
+      }
+    ],
+    "title": "New Chat",
+    "titleState": "placeholder",
+    "status": "idle"
+  }
+}

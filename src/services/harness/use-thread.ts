@@ -26,7 +26,7 @@ import {
   type OpenChatResult,
   type PresetChoice,
 } from './open-chat'
-import { ERROR_CODES, ROUTES } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import { useHarness } from './provider'
 import { initialChat, type ChatState } from './reducer'
 import { RunController } from './run-controller'
@@ -39,7 +39,7 @@ import type {
   Turn,
   Message as WireMessage,
 } from './types'
-import { attachmentView, messageView, threadView } from './view-model'
+import { messageView, queuedAttachmentViews, threadView } from './view-model'
 
 export interface ThreadRoute {
   // The route names a chat stored on this device (/chat/local/:id).
@@ -291,7 +291,11 @@ export function useThread(
           patch({
             failure: {
               message,
-              detail: { code: ERROR_CODES.localSaveFailed, message },
+              detail: {
+                code: ERROR_CODES.localSaveFailed,
+                action: ERROR_ACTIONS.stop,
+                message,
+              },
             },
           })
         }
@@ -328,9 +332,10 @@ export function useThread(
       })
       // A run of the chat may still be live: one this page started, one a
       // reloaded page left behind, or one the harness names.
-      const runId = store.liveRun(thread)
-      if (!runId) return { status: 'opened', thread }
-      const { input, device: run } = await store.follow(threadId, runId)
+      const live = store.liveRun(thread)
+      if (!live) return { status: 'opened', thread }
+      if (live.instance) api.client.locate(threadId, live.instance)
+      const { input, device: run } = await store.follow(threadId, live.runId)
       if (!shown()) return { status: 'superseded' }
       void controller.run(ROUTES.follow, input, { device: run, quiet: !!run })
       return { status: 'opened', thread }
@@ -711,7 +716,7 @@ export function useThread(
     text: item.content ?? '',
     ...(item.quote ? { quote: item.quote } : {}),
     ...(item.attachments?.length
-      ? { attachments: item.attachments.map(attachmentView) }
+      ? { attachments: queuedAttachmentViews(item.attachments) }
       : {}),
   }))
   return {
@@ -804,6 +809,7 @@ export function useThread(
       if (!threadId)
         throw new HarnessError({
           code: ERROR_CODES.threadNotFound,
+          action: ERROR_ACTIONS.stop,
           message: 'This chat is not saved yet.',
         })
       return openStore().speech(threadId, messageId, signal)
@@ -817,7 +823,12 @@ export function useThread(
     // The thread an ask reads: a chat on this device sends its transcript.
     async askContext(): Promise<AskContext> {
       const threadId = open.get().id
-      if (!threadId) return { key: api.key(), threadId: null }
+      if (!threadId)
+        throw new HarnessError({
+          code: ERROR_CODES.threadNotFound,
+          action: ERROR_ACTIONS.stop,
+          message: 'This chat is not saved yet.',
+        })
       return openStore().askContext(threadId, getView().profile)
     },
     refresh: () => list.refresh(),

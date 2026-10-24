@@ -22,10 +22,13 @@ const thread: Thread = {
   titleState: 'generated',
   createdAt: '2026-04-01T09:00:00Z',
   updatedAt: '2026-04-01T09:00:00Z',
+  activityAt: '2026-04-01T09:00:00Z',
   model: 'test-model',
   projectId: null,
+  presetId: null,
   pinned: false,
   webSearchEnabled: true,
+  contextUsage: null,
   messageCount: 1,
   activeRun: null,
   hasOlder: false,
@@ -73,6 +76,28 @@ describe('attachments of a stored chat', () => {
     return hook
   }
 
+  it('shows each attachment by its name, type, size and thumbnail', async () => {
+    const { result } = await openStored()
+
+    expect(result.current.chat.messages[0].attachments).toEqual([
+      {
+        id: 'att_report',
+        type: 'document',
+        fileName: 'report.pdf',
+        mimeType: 'application/pdf',
+        fileSize: 2048,
+      },
+      {
+        id: 'att_chart',
+        type: 'image',
+        fileName: 'chart.png',
+        mimeType: 'image/png',
+        fileSize: 512,
+        thumbnailBase64: 'dGh1bWI=',
+      },
+    ])
+  })
+
   it('downloads a full-size image under its chat', async () => {
     const { result } = await openStored()
     const image = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })
@@ -116,7 +141,11 @@ describe('attachments of a stored chat', () => {
     const [report] = result.current.chat.messages[0].attachments!
     client.download
       .mockRejectedValueOnce(
-        new HarnessError({ code: 'UPSTREAM_REFUSED', message: 'offline' }),
+        new HarnessError({
+          code: 'UPSTREAM_REFUSED',
+          message: 'offline',
+          action: 'retry',
+        }),
       )
       .mockResolvedValueOnce(new Blob(['Recovered']))
 

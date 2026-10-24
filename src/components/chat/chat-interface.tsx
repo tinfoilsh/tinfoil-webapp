@@ -320,6 +320,7 @@ export function ChatInterface({
         resetsAt: failure?.resetsAt,
         retryAfter: failure?.retryAfter,
         upstreamCode: failure?.upstreamCode,
+        action: failure?.action,
         timestamp: thread.errorAt,
       }
     : null

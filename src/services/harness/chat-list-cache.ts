@@ -6,21 +6,29 @@ import { logError } from '@/utils/error-handling'
 import { z } from 'zod'
 import type { ThreadSummary } from './types'
 
-const summarySchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  titleState: z.enum(['placeholder', 'generated', 'manual']),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  activityAt: z.string().optional(),
-  model: z.string(),
-  projectId: z.string().nullable(),
-  pinned: z.boolean(),
-  webSearchEnabled: z.boolean(),
-  messageCount: z.number(),
-  activeRun: z.null(),
-  flagged: z.boolean().optional(),
-})
+// A summary an earlier version cached has no activity time; the chat's
+// creation stands in for it.
+const summarySchema = z
+  .object({
+    id: z.string(),
+    title: z.string(),
+    titleState: z.enum(['placeholder', 'generated', 'manual']),
+    createdAt: z.string().nullable(),
+    updatedAt: z.string().nullable(),
+    activityAt: z.string().optional(),
+    model: z.string(),
+    projectId: z.string().nullable(),
+    pinned: z.boolean(),
+    webSearchEnabled: z.boolean(),
+    messageCount: z.number(),
+    contextUsage: z.null().default(null),
+    activeRun: z.null(),
+    flagged: z.boolean().optional(),
+  })
+  .transform((summary) => ({
+    ...summary,
+    activityAt: summary.activityAt ?? summary.createdAt ?? '',
+  }))
 
 const cacheSchema = z.object({
   threads: z.array(summarySchema),
@@ -74,7 +82,11 @@ function write(key: string, list: CachedChatList) {
   // Persist only sidebar fields. Run hints and message contents belong to
   // the live response, even if a caller supplies a complete thread.
   const summaries = (threads: ThreadSummary[]) =>
-    threads.map((thread) => ({ ...thread, activeRun: null }))
+    threads.map((thread) => ({
+      ...thread,
+      activeRun: null,
+      contextUsage: null,
+    }))
   const snapshot = cacheSchema.parse({
     threads: summaries(list.threads),
     pinned: summaries(list.pinned),

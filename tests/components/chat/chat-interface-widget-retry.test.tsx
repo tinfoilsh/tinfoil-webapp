@@ -2,7 +2,12 @@ import { ChatInterface } from '@/components/chat/chat-interface'
 import { authTokenManager } from '@/services/auth'
 import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
-import type { Frame, Thread } from '@/services/harness/types'
+import type {
+  ErrorAction,
+  ErrorCode,
+  Frame,
+  Thread,
+} from '@/services/harness/types'
 import { resetSafeguards } from '@/services/safeguards'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -49,10 +54,13 @@ const thread: Thread = {
   titleState: 'generated',
   createdAt: '2026-04-01T09:00:00Z',
   updatedAt: '2026-04-01T09:00:00Z',
+  activityAt: '2026-04-01T09:00:01Z',
   model: 'test-model',
   projectId: null,
+  presetId: null,
   pinned: false,
   webSearchEnabled: true,
+  contextUsage: null,
   messageCount: 2,
   activeRun: null,
   hasOlder: false,
@@ -141,16 +149,22 @@ async function retryWidget(
 }
 
 // A retry's run that ends with the harness's error.
-const failedRun = (code: string) =>
+const failedRun = (code: ErrorCode, action: ErrorAction) =>
   async function* (): AsyncGenerator<Frame> {
     const events: Frame['event'][] = [
-      { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-retry' },
+      {
+        type: 'RUN_STARTED',
+        threadId: THREAD_ID,
+        runId: 'run-retry',
+        instance: 'instance-1',
+      },
       {
         type: 'RUN_ERROR',
         threadId: THREAD_ID,
         runId: 'run-retry',
         code,
         message: 'The retry failed.',
+        action,
       },
     ]
     for (const [id, event] of events.entries()) yield { id, event }
@@ -180,7 +194,12 @@ describe('retrying a widget on the chat page', () => {
   it('draws the widget again from the arguments the harness sends', async () => {
     await retryWidget(async function* (): AsyncGenerator<Frame> {
       const events: Frame['event'][] = [
-        { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-retry' },
+        {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-retry',
+          instance: 'instance-1',
+        },
         {
           type: 'TOOL_CALL_START',
           parentMessageId: 'a1',
@@ -197,7 +216,12 @@ describe('retrying a widget on the chat page', () => {
           }),
         },
         { type: 'TOOL_CALL_END', toolCallId: 'w1' },
-        { type: 'RUN_FINISHED', threadId: THREAD_ID, runId: 'run-retry' },
+        {
+          type: 'RUN_FINISHED',
+          threadId: THREAD_ID,
+          runId: 'run-retry',
+          metadata: {},
+        },
       ]
       for (const [id, event] of events.entries()) yield { id, event }
     })
@@ -235,7 +259,12 @@ describe('retrying a widget on the chat page', () => {
     await retryWidget(
       async function* (): AsyncGenerator<Frame> {
         const events: Frame['event'][] = [
-          { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-retry' },
+          {
+            type: 'RUN_STARTED',
+            threadId: THREAD_ID,
+            runId: 'run-retry',
+            instance: 'instance-1',
+          },
           {
             type: 'TOOL_CALL_START',
             parentMessageId: 'a1',
@@ -261,7 +290,12 @@ describe('retrying a widget on the chat page', () => {
               image: null,
             },
           },
-          { type: 'RUN_FINISHED', threadId: THREAD_ID, runId: 'run-retry' },
+          {
+            type: 'RUN_FINISHED',
+            threadId: THREAD_ID,
+            runId: 'run-retry',
+            metadata: {},
+          },
         ]
         for (const [id, event] of events.entries()) yield { id, event }
       },
@@ -278,7 +312,12 @@ describe('retrying a widget on the chat page', () => {
   it('keeps the model that wrote the reply once its widget is redrawn', async () => {
     await retryWidget(async function* (): AsyncGenerator<Frame> {
       const events: Frame['event'][] = [
-        { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-retry' },
+        {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-retry',
+          instance: 'instance-1',
+        },
         {
           type: 'TOOL_CALL_START',
           parentMessageId: 'a1',
@@ -333,7 +372,12 @@ describe('retrying a widget on the chat page', () => {
     await retryWidget(async function* (): AsyncGenerator<Frame> {
       yield {
         id: 0,
-        event: { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-retry' },
+        event: {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-retry',
+          instance: 'instance-1',
+        },
       }
       yield {
         id: 1,
@@ -354,6 +398,7 @@ describe('retrying a widget on the chat page', () => {
           runId: 'run-retry',
           code: 'UPSTREAM_REFUSED',
           message: 'The replacement widget arguments do not match the schema',
+          action: 'retry',
         },
       }
     })
@@ -385,6 +430,7 @@ describe('retrying a widget on the chat page', () => {
           {
             code: 'THREAD_NOT_FOUND',
             message: 'The widget call was not found',
+            action: 'stop',
           },
           404,
         )
@@ -398,6 +444,7 @@ describe('retrying a widget on the chat page', () => {
           {
             code: 'TOOL_UNAVAILABLE',
             message: 'This widget is not enabled for the client',
+            action: 'retry',
           },
           503,
         )
@@ -406,12 +453,12 @@ describe('retrying a widget on the chat page', () => {
     },
     {
       failure: 'a widget that changed during the retry',
-      run: failedRun('REVISION_CONFLICT'),
+      run: failedRun('REVISION_CONFLICT', 'reload'),
       says: 'The component changed while retrying. Try its current version.',
     },
     {
       failure: 'a replacement the model could not give',
-      run: failedRun('UPSTREAM_REFUSED'),
+      run: failedRun('UPSTREAM_REFUSED', 'retry'),
       says: 'Could not request a replacement. Try the widget again.',
     },
   ])('says why it failed for $failure', async ({ run, says }) => {

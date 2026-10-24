@@ -368,7 +368,11 @@ it('points the settings entries to Cloud Sync only while the key is refused', as
     },
     () => {
       throw new HarnessError(
-        { code: 'KEY_MISMATCH', message: 'Another key is required' },
+        {
+          code: 'KEY_MISMATCH',
+          message: 'Another key is required',
+          action: 'unlock',
+        },
         409,
       )
     },

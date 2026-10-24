@@ -89,8 +89,19 @@ function finishEachTurn() {
     input: Turn,
   ): AsyncGenerator<Frame> {
     const threadId = input.threadId!
-    yield { id: 0, event: { type: 'RUN_STARTED', threadId, runId: 'run-1' } }
-    yield { id: 1, event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' } }
+    yield {
+      id: 0,
+      event: {
+        type: 'RUN_STARTED',
+        threadId,
+        runId: 'run-1',
+        instance: 'instance-1',
+      },
+    }
+    yield {
+      id: 1,
+      event: { type: 'RUN_FINISHED', threadId, runId: 'run-1', metadata: {} },
+    }
   })
 }
 

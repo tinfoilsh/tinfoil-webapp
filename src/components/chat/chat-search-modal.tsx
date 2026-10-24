@@ -138,7 +138,7 @@ export function ChatSearchModal({
         : search.results.map((result) => ({
             id: result.id,
             title: chatTitle(result),
-            updatedAt: result.updatedAt,
+            updatedAt: result.updatedAt ?? undefined,
             activityAt: result.activityAt,
             projectId: result.projectId ?? undefined,
           }))
