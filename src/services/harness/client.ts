@@ -247,7 +247,11 @@ export class HarnessClient {
           ),
         }
       const needsCredential = detail.code === ERROR_CODES.credentialRequired
-      if (response.status === 401 && token && attempt === 0) {
+      if (
+        detail.action === ERROR_ACTIONS.reauthenticate &&
+        token &&
+        attempt === 0
+      ) {
         if (anonymous) {
           this.anonymous.reject(token)
           token = await this.anonymous.get(signal)

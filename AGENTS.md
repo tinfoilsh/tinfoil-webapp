@@ -14,7 +14,7 @@ The harness's wire types come from `harness-protocol/openapi.yaml` through `src/
 
 # Error Classification
 
-NEVER string match on error messages to drive control flow (retries, fallbacks, recovery). Messages vary across browsers, SDK versions, and locales. Classify errors with structured signals instead: error classes (instanceof, e.g. the OpenAI SDK's APIConnectionError), spec-defined error names (DOMException "AbortError"), error codes, and HTTP status codes.
+NEVER string match on error messages to drive control flow (retries, fallbacks, recovery). Messages vary across browsers, SDK versions, and locales. Classify errors with structured signals instead: error classes (instanceof, e.g. the OpenAI SDK's APIConnectionError), spec-defined error names (DOMException "AbortError"), error codes, and HTTP status codes. A harness error with a code this client has no handling for is handled by its `action`; every error this client creates names one too.
 
 # Testing
 

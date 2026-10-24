@@ -599,6 +599,49 @@ describe('retrying after an error', () => {
     expect(result.current.status).toBe('idle')
   })
 
+  it('shows the stored chat, without an error, when a run ends because the chat changed', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))
+    client.events.mockImplementationOnce(async function* () {
+      const events: Frame['event'][] = [
+        {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+        {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: transcript.slice(0, 3).map(wire),
+          hasOlder: false,
+        },
+        {
+          type: 'RUN_ERROR',
+          threadId: THREAD_ID,
+          runId: 'run-1',
+          code: 'REVISION_CONFLICT',
+          message: 'The stored row changed',
+          action: 'reload',
+        },
+      ]
+      for (const [id, event] of events.entries()) yield { id, event }
+    })
+    client.post.mockImplementation(async (path: string) =>
+      path === '/v1/threads/get' ? cloudThread() : {},
+    )
+
+    await act(() => result.current.send({ content: 'two' }))
+
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+    ])
+    expect(result.current.error).toBe('')
+    expect(result.current.status).toBe('idle')
+  })
+
   it('shows the quota a refused turn reports', async () => {
     const { result } = openCloud()
     await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))

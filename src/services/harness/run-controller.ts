@@ -30,12 +30,10 @@ const CONNECTION_LOST: HarnessErrorBody = {
 }
 const interrupted = (cause: unknown) =>
   !(cause instanceof HarnessError) || cause.code === CONNECTION_LOST.code
-// A turn sent again after the harness applied it changed the chat already,
-// and a run the harness no longer has ended, finished or not.
+// The chat changed from the copy this client shows, as when the harness
+// had applied a turn sent again, or no longer has the run, finished or not.
 const gone = (cause: unknown) =>
-  cause instanceof HarnessError &&
-  (cause.code === ERROR_CODES.alreadyApplied ||
-    cause.code === ERROR_CODES.runNotFound)
+  cause instanceof HarnessError && cause.detail.action === ERROR_ACTIONS.reload
 
 // A run of a chat the browser stores. Its final event returns the whole
 // thread, without the image bytes the browser holds for it.
@@ -275,6 +273,14 @@ export class RunController {
         }
         this.forgetReceipt(runId)
         this.hooks.ended?.()
+        if (
+          event.type === 'RUN_ERROR' &&
+          runErrorOf(event).action === ERROR_ACTIONS.reload &&
+          attached()
+        ) {
+          this.pending = null
+          await this.hooks.gone?.(threadId!)
+        }
       }
     } catch (cause) {
       if (controller.signal.aborted) return false

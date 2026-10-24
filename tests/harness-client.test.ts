@@ -867,6 +867,57 @@ describe('attested harness transport', () => {
     })
     expect(secure.fetch).toHaveBeenCalledTimes(1)
   })
+  // A refusal signing in again cannot change: a key this device must unlock,
+  // or a stored chat a signed-out caller asked for.
+  it.each([
+    { code: 'KEY_REQUIRED', action: 'unlock' },
+    { code: 'UNAUTHENTICATED', action: 'stop' },
+  ])(
+    'sends a request the harness refused with $action once',
+    async ({ code, action }) => {
+      const secure = transport()
+      secure.fetch.mockResolvedValueOnce(
+        Response.json(
+          { error: { code, message: 'Refused', action } },
+          { status: 401 },
+        ),
+      )
+      const getToken = vi.fn().mockResolvedValue('clerk')
+      const client = new HarnessClient(
+        'https://harness.example',
+        getToken,
+        () => secure,
+      )
+      await expect(client.post('/v1/threads/get', {})).rejects.toMatchObject({
+        status: 401,
+        detail: { code, action },
+      })
+      expect(secure.fetch).toHaveBeenCalledTimes(1)
+      expect(getToken).not.toHaveBeenCalledWith({ skipCache: true })
+    },
+  )
+  it('signs in again for a 401 from a harness that names no action', async () => {
+    const secure = transport()
+    secure.fetch
+      .mockResolvedValueOnce(
+        Response.json(
+          { error: { code: 'UNAUTHENTICATED', message: 'Expired session' } },
+          { status: 401 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response('{"ok":true}'))
+    const client = new HarnessClient(
+      'https://harness.example',
+      vi.fn().mockResolvedValueOnce('old').mockResolvedValueOnce('fresh'),
+      () => secure,
+    )
+    await expect(client.post('/v1/session', {})).resolves.toEqual({ ok: true })
+    expect(
+      secure.fetch.mock.calls.map((call) =>
+        new Headers(call[1].headers).get('Authorization'),
+      ),
+    ).toEqual(['Bearer old', 'Bearer fresh'])
+  })
   it('uses the same verified connection for multipart, binary, and follow requests', async () => {
     const secure = transport()
     const client = new HarnessClient(

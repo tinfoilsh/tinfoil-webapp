@@ -809,30 +809,45 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(sessionStorage.getItem('harness-run:alice')).toBeNull()
   })
 
-  it('forgets a run the harness no longer has', async () => {
-    signIn('alice')
-    await reloadDuringRun()
-    client.events.mockImplementationOnce(async function* () {
-      throw new HarnessError(
-        {
-          code: 'RUN_NOT_FOUND',
-          message: 'The run is not running here',
-          action: 'reload',
-        },
-        404,
+  // One the harness no longer has, and one it refuses to let this caller
+  // follow, as when signing in again failed.
+  it.each([
+    {
+      refusal: {
+        code: 'RUN_NOT_FOUND',
+        message: 'The run is not running here',
+        action: 'reload',
+      },
+      status: 404,
+    },
+    {
+      refusal: {
+        code: 'UNAUTHENTICATED',
+        message: 'Authentication is required',
+        action: 'reauthenticate',
+      },
+      status: 401,
+    },
+  ] as const)(
+    'forgets a run the harness refuses to rejoin with $refusal.code',
+    async ({ refusal, status }) => {
+      signIn('alice')
+      await reloadDuringRun()
+      client.events.mockImplementationOnce(async function* () {
+        throw new HarnessError({ ...refusal }, status)
+      })
+      const { result } = renderHook(() =>
+        useThread(SEEDED_ID, null, { local: true }),
       )
-    })
-    const { result } = renderHook(() =>
-      useThread(SEEDED_ID, null, { local: true }),
-    )
 
-    await waitFor(() =>
-      expect(sessionStorage.getItem('harness-run:alice')).toBeNull(),
-    )
-    expect(client.events).toHaveBeenCalledOnce()
-    expect(result.current.error).toBe('')
-    expect(result.current.chat.messages).toHaveLength(4)
-  })
+      await waitFor(() =>
+        expect(sessionStorage.getItem('harness-run:alice')).toBeNull(),
+      )
+      expect(client.events).toHaveBeenCalledOnce()
+      expect(result.current.error).toBe('')
+      expect(result.current.chat.messages).toHaveLength(4)
+    },
+  )
 
   it('does not rejoin the run of a chat closed while it opened', async () => {
     signIn('alice')

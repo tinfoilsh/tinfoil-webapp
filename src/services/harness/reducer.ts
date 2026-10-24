@@ -234,7 +234,7 @@ const withoutQueued = (snapshot: Snapshot, runId?: string): Snapshot => ({
   queue: snapshot.queue.filter((item) => item.queueId !== runId),
 })
 
-// Why a run ended with RUN_ERROR.
+// Why a run ended with RUN_ERROR, with every member a refusal has.
 export const runErrorOf = (
   event: Extract<HarnessEvent, { type: 'RUN_ERROR' }>,
 ): HarnessErrorBody => ({
@@ -244,6 +244,10 @@ export const runErrorOf = (
   ...(event.kind ? { kind: event.kind } : {}),
   ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
   ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
+  ...(event.status ? { status: event.status } : {}),
+  ...(event.keyId ? { keyId: event.keyId } : {}),
+  ...(event.upstreamCode ? { upstreamCode: event.upstreamCode } : {}),
+  ...(event.rateLimit ? { rateLimit: event.rateLimit } : {}),
 })
 
 // The events of a widget's retry that the chat applies: the call redrawn
