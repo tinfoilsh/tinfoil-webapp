@@ -76,6 +76,28 @@ describe('attachments of a stored chat', () => {
     return hook
   }
 
+  it('shows each attachment by its name, type, size and thumbnail', async () => {
+    const { result } = await openStored()
+
+    expect(result.current.chat.messages[0].attachments).toEqual([
+      {
+        id: 'att_report',
+        type: 'document',
+        fileName: 'report.pdf',
+        mimeType: 'application/pdf',
+        fileSize: 2048,
+      },
+      {
+        id: 'att_chart',
+        type: 'image',
+        fileName: 'chart.png',
+        mimeType: 'image/png',
+        fileSize: 512,
+        thumbnailBase64: 'dGh1bWI=',
+      },
+    ])
+  })
+
   it('downloads a full-size image under its chat', async () => {
     const { result } = await openStored()
     const image = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })

@@ -931,14 +931,19 @@ describe('changing messages of a local chat', () => {
 
   it("rewrites a reply's text through the harness, and the next turn sends the chat it returns", async () => {
     const { result } = await openLocal()
-    const edited = localThread([
-      ...transcript.slice(0, 3),
-      {
-        ...transcript[3],
-        content: 'Better',
-        timeline: [{ id: 'b2', type: 'content', content: 'Better' }],
-      },
-    ])
+    const edited = {
+      ...localThread([
+        ...transcript.slice(0, 3),
+        {
+          ...transcript[3],
+          content: 'Better',
+          timeline: [{ id: 'b2', type: 'content', content: 'Better' }],
+        },
+      ]),
+      // A member this client does not know, as a newer harness may add,
+      // which it keeps and sends back.
+      memoryIds: ['memory-1'],
+    }
     client.post.mockResolvedValueOnce({ thread: edited })
 
     await act(() => result.current.editReply(3, 'Better'))
@@ -976,6 +981,8 @@ describe('changing messages of a local chat', () => {
         },
       ]),
       recordVersion: 1,
+      // A member this client does not know, which it keeps.
+      memoryIds: ['memory-1'],
     }
     client.events.mockImplementationOnce(async function* () {
       const events: Frame['event'][] = [
