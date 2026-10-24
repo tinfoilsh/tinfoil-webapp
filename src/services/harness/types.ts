@@ -17,6 +17,7 @@ export type ClientErrorCode =
   | 'CONFIGURATION'
   | 'CONNECTION'
   | 'INVALID_STREAM'
+  | 'INVALID_RESPONSE'
   | 'STREAM_INTERRUPTED'
   | 'LOCAL_SAVE_FAILED'
 

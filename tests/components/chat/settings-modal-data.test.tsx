@@ -709,6 +709,7 @@ describe('importing chats from the Data tab', () => {
             error: {
               code: 'UPSTREAM_REFUSED',
               message: 'Storage refused the chats.',
+              action: 'retry',
             },
           },
         ]

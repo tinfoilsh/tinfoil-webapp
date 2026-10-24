@@ -1,6 +1,11 @@
 // The chat service's routes and the error codes the browser acts on.
 import type { paths } from './openapi'
-import type { ClientErrorCode, ErrorAction, ErrorCode } from './types'
+import type {
+  ClientErrorCode,
+  ErrorAction,
+  ErrorCode,
+  HarnessErrorBody,
+} from './types'
 
 export const ROUTES = {
   session: '/v1/session',
@@ -76,6 +81,9 @@ export const ERROR_CODES = {
   // A stream that closed before its run ended. The run may go on.
   streamInterrupted: 'STREAM_INTERRUPTED',
   invalidStream: 'INVALID_STREAM',
+  // Set by this client, not the harness: a refusal or a run's error without
+  // the members the protocol requires of it.
+  invalidResponse: 'INVALID_RESPONSE',
   upstreamRefused: 'UPSTREAM_REFUSED',
   keyRequired: 'KEY_REQUIRED',
   keyMismatch: 'KEY_MISMATCH',
@@ -124,27 +132,21 @@ export const ERROR_ACTIONS = {
   stop: 'stop',
 } as const satisfies Record<string, ErrorAction>
 
-// The action an error asks for. An action this client does not know is
-// stop. A harness from before errors named their action asks for none,
-// which is met as this client met such an error then.
-export function actionOf(
-  action: unknown,
-  code: string,
-  status?: number,
-): ErrorAction {
-  if (action === undefined) {
-    if (code === ERROR_CODES.alreadyApplied || code === ERROR_CODES.runNotFound)
-      return ERROR_ACTIONS.reload
-    return status === UNAUTHORIZED_STATUS
-      ? ERROR_ACTIONS.reauthenticate
-      : ERROR_ACTIONS.retry
-  }
-  return Object.values<unknown>(ERROR_ACTIONS).includes(action)
+// The action an error asks for. One this client does not know, as a later
+// harness may ask for, fails the request: the client shows the error and
+// offers nothing more.
+export const actionOf = (action: string): ErrorAction =>
+  Object.values<string>(ERROR_ACTIONS).includes(action)
     ? (action as ErrorAction)
     : ERROR_ACTIONS.stop
-}
 
-const UNAUTHORIZED_STATUS = 401
+// Why a request failed when the harness's answer to it is not one the
+// protocol allows.
+export const invalidResponse = (): HarnessErrorBody => ({
+  code: ERROR_CODES.invalidResponse,
+  action: ERROR_ACTIONS.stop,
+  message: 'The chat service sent a response this client cannot read.',
+})
 
 // Carries a signed-in account's chat access, which the harness checks before
 // it reads a request's body.

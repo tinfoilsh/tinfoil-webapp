@@ -426,4 +426,30 @@ describe('runImports', () => {
     })
     expect(await localThreadStore('device').get(plants.id)).toEqual(plants)
   })
+
+  // A last line without the members the protocol requires of it.
+  it.each([
+    {
+      line: 'an error without an action',
+      last: { error: { code: 'UPSTREAM_REFUSED', message: 'Storage refused' } },
+    },
+    { line: 'an end without warnings', last: { done: { jobId: null } } },
+  ])('fails a file whose response ends with $line', async ({ last }) => {
+    client.multipart.mockResolvedValue(
+      new Response(`${JSON.stringify(last)}\n`),
+    )
+
+    const error = await runImports(
+      'device',
+      [namedFile('conversations.json')],
+      {
+        wait: noWait,
+      },
+    ).catch((cause: unknown) => cause)
+
+    expect(error).toBeInstanceOf(ImportSequenceError)
+    expect((error as ImportSequenceError).cause).toMatchObject({
+      detail: { code: 'INVALID_STREAM', action: 'stop' },
+    })
+  })
 })

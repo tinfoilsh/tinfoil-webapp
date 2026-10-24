@@ -89,6 +89,7 @@ describe('wire-contract', () => {
                   error: {
                     code: 'THREAD_NOT_FOUND',
                     message: 'The requested data was not found',
+                    action: 'stop',
                   },
                 },
                 404,

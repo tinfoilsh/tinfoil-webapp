@@ -8,6 +8,7 @@ import {
   ERROR_CODES,
   HARNESS_INSTANCE_HEADER,
   INFERENCE_KEY_HEADER,
+  invalidResponse,
   LAST_EVENT_ID_HEADER,
   ROUTES,
   type HarnessRoute,
@@ -243,16 +244,9 @@ export class HarnessClient {
         credentials: 'omit',
       })
       if (response.ok) return response
-      // A refusal without the harness's error envelope names no action.
-      let detail: HarnessErrorBody = {
-        code: ERROR_CODES.upstreamRefused,
-        action: actionOf(
-          undefined,
-          ERROR_CODES.upstreamRefused,
-          response.status,
-        ),
-        message: 'The chat service could not complete the request.',
-      }
+      // A refusal without the harness's error envelope, or one that names
+      // no action, is not one the protocol allows.
+      let detail = invalidResponse()
       const value: unknown = await response.json().catch(() => null)
       if (
         value &&
@@ -263,15 +257,13 @@ export class HarnessClient {
         'code' in value.error &&
         typeof value.error.code === 'string' &&
         'message' in value.error &&
-        typeof value.error.message === 'string'
+        typeof value.error.message === 'string' &&
+        'action' in value.error &&
+        typeof value.error.action === 'string'
       )
         detail = {
           ...(value.error as HarnessErrorBody),
-          action: actionOf(
-            'action' in value.error ? value.error.action : undefined,
-            value.error.code,
-            response.status,
-          ),
+          action: actionOf(value.error.action),
         }
       const needsCredential = detail.code === ERROR_CODES.credentialRequired
       if (
@@ -401,7 +393,7 @@ export class HarnessClient {
     ) {
       throw new HarnessError({
         code: ERROR_CODES.invalidStream,
-        action: ERROR_ACTIONS.retry,
+        action: ERROR_ACTIONS.stop,
         message: 'The chat service did not return an event stream.',
       })
     }

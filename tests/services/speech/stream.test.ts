@@ -163,6 +163,7 @@ describe('speech requests', () => {
             error: {
               code: 'TOOL_UNAVAILABLE',
               message: 'Speech is unavailable',
+              action: 'retry',
             },
           }),
           { status: 503, headers: { 'Content-Type': 'application/json' } },
@@ -203,7 +204,11 @@ describe('speech requests', () => {
       () =>
         new Response(
           JSON.stringify({
-            error: { code: 'RATE_LIMITED', message: 'private request details' },
+            error: {
+              code: 'RATE_LIMITED',
+              message: 'private request details',
+              action: 'wait',
+            },
           }),
           { status: 429, headers: { 'Content-Type': 'application/json' } },
         ),
@@ -220,21 +225,23 @@ describe('speech requests', () => {
     [
       400,
       'BAD_REQUEST',
+      'stop',
       'There is nothing to read aloud',
       'There is no readable text in this response.',
     ],
     [
       413,
       'PAYLOAD_TOO_LARGE',
+      'revise',
       'The text is too long to read aloud',
       'This response is too long to read aloud.',
     ],
   ])(
     'shows why the harness refuses a text with status %i',
-    async (status, code, message, shown) => {
+    async (status, code, action, message, shown) => {
       const { speech } = connect(
         () =>
-          new Response(JSON.stringify({ error: { code, message } }), {
+          new Response(JSON.stringify({ error: { code, message, action } }), {
             status,
             headers: { 'Content-Type': 'application/json' },
           }),

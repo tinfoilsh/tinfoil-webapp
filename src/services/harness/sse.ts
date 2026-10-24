@@ -62,7 +62,7 @@ export async function* readEvents(
             } catch {
               throw new HarnessError({
                 code: ERROR_CODES.invalidStream,
-                action: ERROR_ACTIONS.retry,
+                action: ERROR_ACTIONS.stop,
                 message: 'The chat stream contained an invalid event.',
               })
             }
@@ -84,7 +84,7 @@ export async function* readEvents(
             if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
               throw new HarnessError({
                 code: ERROR_CODES.invalidStream,
-                action: ERROR_ACTIONS.retry,
+                action: ERROR_ACTIONS.stop,
                 message: 'The chat stream contained an invalid cursor.',
               })
             }
@@ -94,14 +94,14 @@ export async function* readEvents(
         if (size > maxFrameCharacters)
           throw new HarnessError({
             code: ERROR_CODES.invalidStream,
-            action: ERROR_ACTIONS.retry,
+            action: ERROR_ACTIONS.stop,
             message: 'The chat event exceeded its size limit.',
           })
       }
       if (size + buffer.length > maxFrameCharacters)
         throw new HarnessError({
           code: ERROR_CODES.invalidStream,
-          action: ERROR_ACTIONS.retry,
+          action: ERROR_ACTIONS.stop,
           message: 'The chat event exceeded its size limit.',
         })
       if (chunk.done) break

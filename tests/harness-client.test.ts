@@ -56,15 +56,21 @@ describe('harness SSE', () => {
     expect(frames[0]).toMatchObject({ id: 0, event: { delta: '🙂 café' } })
     expect(frames[1].id).toBeUndefined()
   })
+  // A stream that closed early can be rejoined; one that breaks the
+  // protocol cannot be read again either.
   it('requires a terminal event and rejects invalid cursors and JSON', async () => {
     await expect(
       collect(stream('data: {"type":"RUN_STARTED"}\n\n')),
-    ).rejects.toMatchObject({ detail: { code: 'STREAM_INTERRUPTED' } })
+    ).rejects.toMatchObject({
+      detail: { code: 'STREAM_INTERRUPTED', action: 'retry' },
+    })
     await expect(
       collect(stream('id: -1\ndata: {"type":"RUN_FINISHED"}\n\n')),
-    ).rejects.toMatchObject({ detail: { code: 'INVALID_STREAM' } })
+    ).rejects.toMatchObject({
+      detail: { code: 'INVALID_STREAM', action: 'stop' },
+    })
     await expect(collect(stream('data: nope\n\n'))).rejects.toMatchObject({
-      detail: { code: 'INVALID_STREAM' },
+      detail: { code: 'INVALID_STREAM', action: 'stop' },
     })
   })
 })
@@ -142,6 +148,24 @@ describe('harness reducer', () => {
     expect(finished.messages[1]).toMatchObject(metadata)
     expect(finished.messages[1].timeline).toEqual(state.messages[1].timeline)
     expect(state.messages[1]).not.toHaveProperty('annotations')
+  })
+  // A run's error without the members the protocol requires of it.
+  it('fails a run whose error names no action, asking for nothing', () => {
+    const state = reduceEvent(initialChat(), {
+      id: 0,
+      event: {
+        type: 'RUN_ERROR',
+        threadId: 't',
+        runId: 'run',
+        code: 'UPSTREAM_REFUSED',
+        message: 'The model could not finish the reply.',
+      } as Frame['event'],
+    })
+    expect(state.status).toBe('error')
+    expect(state.error).toMatchObject({
+      code: 'INVALID_RESPONSE',
+      action: 'stop',
+    })
   })
   it('keeps the active run when a separately streamed queued turn is removed', () => {
     let state = reduceEvent(initialChat(), {
@@ -896,27 +920,66 @@ describe('attested harness transport', () => {
       expect(getToken).not.toHaveBeenCalledWith({ skipCache: true })
     },
   )
-  it('signs in again for a 401 from a harness that names no action', async () => {
-    const secure = transport()
-    secure.fetch
-      .mockResolvedValueOnce(
+  // A refusal the protocol does not allow fails as it is: the client does
+  // not guess what it asks for.
+  it.each([
+    {
+      refusal: 'names no action',
+      response: () =>
         Response.json(
           { error: { code: 'UNAUTHENTICATED', message: 'Expired session' } },
           { status: 401 },
         ),
+    },
+    {
+      refusal: 'is not the harness envelope',
+      response: () => new Response('Unauthorized', { status: 401 }),
+    },
+  ])(
+    'fails a 401 that $refusal without signing in again',
+    async ({ response }) => {
+      const secure = transport()
+      secure.fetch.mockResolvedValueOnce(response())
+      const getToken = vi.fn().mockResolvedValue('clerk')
+      const client = new HarnessClient(
+        'https://harness.example',
+        getToken,
+        () => secure,
       )
-      .mockResolvedValueOnce(new Response('{"ok":true}'))
+      await expect(client.post('/v1/session', {})).rejects.toMatchObject({
+        status: 401,
+        detail: { code: 'INVALID_RESPONSE', action: 'stop' },
+      })
+      expect(secure.fetch).toHaveBeenCalledOnce()
+      expect(getToken).not.toHaveBeenCalledWith({ skipCache: true })
+    },
+  )
+  it('asks for nothing more on an action this client does not know', async () => {
+    const secure = transport()
+    secure.fetch.mockResolvedValueOnce(
+      Response.json(
+        {
+          error: {
+            code: 'ESCALATED',
+            message: 'A person must review this',
+            action: 'escalate',
+          },
+        },
+        { status: 409 },
+      ),
+    )
     const client = new HarnessClient(
       'https://harness.example',
-      vi.fn().mockResolvedValueOnce('old').mockResolvedValueOnce('fresh'),
+      async () => 'clerk',
       () => secure,
     )
-    await expect(client.post('/v1/session', {})).resolves.toEqual({ ok: true })
-    expect(
-      secure.fetch.mock.calls.map((call) =>
-        new Headers(call[1].headers).get('Authorization'),
-      ),
-    ).toEqual(['Bearer old', 'Bearer fresh'])
+    await expect(client.post('/v1/threads/get', {})).rejects.toMatchObject({
+      detail: {
+        code: 'ESCALATED',
+        message: 'A person must review this',
+        action: 'stop',
+      },
+    })
   })
   it('names the last event a follow applied in Last-Event-ID, apart from its body', async () => {
     const secure = transport()

@@ -1,4 +1,10 @@
-import { actionOf, ERROR_ACTIONS, ERROR_CODES, WIDGET_PREFIX } from './protocol'
+import {
+  actionOf,
+  ERROR_ACTIONS,
+  ERROR_CODES,
+  invalidResponse,
+  WIDGET_PREFIX,
+} from './protocol'
 import { HarnessError } from './sse'
 import type {
   ActivityPatch,
@@ -60,12 +66,11 @@ const ACTIVITY_PREFIX = /^act_/
 // The status of a widget call's result when the harness refused its
 // arguments and asked the model to call the widget again.
 const REFUSED_WIDGET_STATUS = 'error'
-const DEFAULT_RUN_ERROR = 'The run could not finish.'
 
 function invalidPatch(): never {
   throw new HarnessError({
     code: ERROR_CODES.invalidStream,
-    action: ERROR_ACTIONS.retry,
+    action: ERROR_ACTIONS.stop,
     message: 'The chat stream contained an invalid state patch.',
   })
 }
@@ -234,21 +239,30 @@ const withoutQueued = (snapshot: Snapshot, runId?: string): Snapshot => ({
   queue: snapshot.queue.filter((item) => item.queueId !== runId),
 })
 
-// Why a run ended with RUN_ERROR, with every member a refusal has.
-export const runErrorOf = (
+// Why a run ended with RUN_ERROR. One without the code, message and action
+// the protocol requires of it is not one the client can read.
+export function runErrorOf(
   event: Extract<HarnessEvent, { type: 'RUN_ERROR' }>,
-): HarnessErrorBody => ({
-  code: event.code ?? ERROR_CODES.upstreamRefused,
-  message: event.message ?? DEFAULT_RUN_ERROR,
-  action: actionOf(event.action, event.code),
-  ...(event.kind ? { kind: event.kind } : {}),
-  ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
-  ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
-  ...(event.status ? { status: event.status } : {}),
-  ...(event.keyId ? { keyId: event.keyId } : {}),
-  ...(event.upstreamCode ? { upstreamCode: event.upstreamCode } : {}),
-  ...(event.rateLimit ? { rateLimit: event.rateLimit } : {}),
-})
+): HarnessErrorBody {
+  if (
+    typeof event.code !== 'string' ||
+    typeof event.message !== 'string' ||
+    typeof event.action !== 'string'
+  )
+    return invalidResponse()
+  return {
+    code: event.code,
+    message: event.message,
+    action: actionOf(event.action),
+    ...(event.kind ? { kind: event.kind } : {}),
+    ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
+    ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
+    ...(event.status ? { status: event.status } : {}),
+    ...(event.keyId ? { keyId: event.keyId } : {}),
+    ...(event.upstreamCode ? { upstreamCode: event.upstreamCode } : {}),
+    ...(event.rateLimit ? { rateLimit: event.rateLimit } : {}),
+  }
+}
 
 // The events of a widget's retry that the chat applies: the call redrawn
 // from its new arguments, and what the call read for them, as a link
