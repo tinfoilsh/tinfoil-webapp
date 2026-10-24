@@ -332,9 +332,10 @@ export function useThread(
       })
       // A run of the chat may still be live: one this page started, one a
       // reloaded page left behind, or one the harness names.
-      const runId = store.liveRun(thread)
-      if (!runId) return { status: 'opened', thread }
-      const { input, device: run } = await store.follow(threadId, runId)
+      const live = store.liveRun(thread)
+      if (!live) return { status: 'opened', thread }
+      if (live.instance) api.client.locate(threadId, live.instance)
+      const { input, device: run } = await store.follow(threadId, live.runId)
       if (!shown()) return { status: 'superseded' }
       void controller.run(ROUTES.follow, input, { device: run, quiet: !!run })
       return { status: 'opened', thread }

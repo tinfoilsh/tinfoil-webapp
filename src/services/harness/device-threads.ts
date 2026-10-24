@@ -303,11 +303,10 @@ export function deviceThreads({
     },
     // A run this page started, or one a reloaded page left behind.
     liveRun(thread: Thread) {
+      const runId = controller.deviceRuns.get().get(thread.id)?.runId
+      if (runId) return { runId }
       const receipt = controller.receipt()
-      return (
-        controller.deviceRuns.get().get(thread.id)?.runId ??
-        (receipt?.threadId === thread.id ? receipt.runId : undefined)
-      )
+      return receipt?.threadId === thread.id ? receipt : undefined
     },
     async follow(threadId, runId) {
       return {

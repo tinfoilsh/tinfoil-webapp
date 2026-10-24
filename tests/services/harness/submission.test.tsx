@@ -80,6 +80,7 @@ it('keeps the run receipt when an early stop is refused, so reopening rejoins it
   expect(JSON.parse(sessionStorage.getItem('harness-run:alice')!)).toEqual({
     threadId,
     runId: 'recoverable',
+    instance: 'instance-1',
   })
   first.unmount()
   const second = renderHook(() => useThread(threadId, null, { local: true }))
@@ -92,6 +93,11 @@ it('keeps the run receipt when an early stop is refused, so reopening rejoins it
     '/v1/threads/follow',
     { threadId, runId: 'recoverable' },
   ])
+  // The reloaded page follows the run at the instance its receipt names.
+  expect(client.locate).toHaveBeenCalledExactlyOnceWith(threadId, 'instance-1')
+  expect(client.locate.mock.invocationCallOrder[0]).toBeLessThan(
+    client.events.mock.invocationCallOrder[1],
+  )
 })
 
 it('cancels a deleted background chat without stopping the open submission', async () => {

@@ -918,6 +918,75 @@ describe('attested harness transport', () => {
       ),
     ).toEqual(['Bearer old', 'Bearer fresh'])
   })
+  it("sends requests about a chat's run to the instance its run named", async () => {
+    const secure = transport()
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      () => secure,
+    )
+    const run = (instance: string) =>
+      new Response(
+        stream(
+          `id: 0\ndata: ${JSON.stringify({ type: 'RUN_STARTED', threadId: 't', runId: 'r', instance })}\n\n` +
+            `id: 1\ndata: ${JSON.stringify({ type: 'RUN_FINISHED', threadId: 't', runId: 'r', metadata: {} })}\n\n`,
+        ),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      )
+    secure.fetch.mockImplementation(async (url: string) =>
+      url.endsWith('/v1/threads/follow')
+        ? run('instance-2')
+        : Response.json({}),
+    )
+    secure.fetch.mockResolvedValueOnce(run('instance-1'))
+    // Each run is read to its end, as the client reads it.
+    const typesOf = async (frames: AsyncIterable<Frame>) => {
+      const types: string[] = []
+      for await (const frame of frames) types.push(frame.event.type)
+      return types
+    }
+    expect(
+      await typesOf(
+        client.events('/v1/threads/turn', {
+          clientRequestId: 'nonce',
+          threadId: 't',
+        }),
+      ),
+    ).toEqual(['RUN_STARTED', 'RUN_FINISHED'])
+    await client.post('/v1/threads/cancel', { threadId: 't', runId: 'r' })
+    await client.post('/v1/threads/queue/send', { threadId: 't', queueId: 'q' })
+    await client.post('/v1/threads/queue/remove', {
+      threadId: 't',
+      queueId: 'q',
+    })
+    await client.post('/v1/threads/cancel', { threadId: 'other', runId: 'o' })
+    expect(
+      await typesOf(
+        client.events('/v1/threads/follow', { threadId: 't', runId: 'r' }),
+      ),
+    ).toEqual(['RUN_STARTED', 'RUN_FINISHED'])
+    // A run another instance holds now names that one.
+    await client.post('/v1/threads/cancel', { threadId: 't', runId: 'r' })
+    // A chat's running hint names the instance of a run this client did not
+    // see start.
+    client.locate('other', 'instance-3')
+    await client.post('/v1/threads/cancel', { threadId: 'other', runId: 'o' })
+    expect(
+      secure.fetch.mock.calls.map(([url, init]) => [
+        new URL(url).pathname,
+        new Headers(init.headers).get('X-Tinfoil-Harness-Instance'),
+      ]),
+    ).toEqual([
+      ['/v1/threads/turn', null],
+      ['/v1/threads/cancel', 'instance-1'],
+      ['/v1/threads/queue/send', 'instance-1'],
+      ['/v1/threads/queue/remove', 'instance-1'],
+      ['/v1/threads/cancel', null],
+      ['/v1/threads/follow', 'instance-1'],
+      ['/v1/threads/cancel', 'instance-2'],
+      ['/v1/threads/cancel', 'instance-3'],
+    ])
+  })
   it('uses the same verified connection for multipart, binary, and follow requests', async () => {
     const secure = transport()
     const client = new HarnessClient(

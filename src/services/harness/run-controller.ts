@@ -97,6 +97,7 @@ export interface RunHooks {
 interface Receipt {
   threadId: string
   runId: string
+  instance?: string
 }
 
 // Streams the runs of the chat a view shows: a turn's run, or a live run it
@@ -232,7 +233,15 @@ export class RunController {
           view = next
           if (shown) this.view.set(next)
           if (event.type === 'RUN_STARTED') {
-            this.started(event.runId, threadId!, device, shown && !widgetRetry)
+            this.started(
+              {
+                threadId: threadId!,
+                runId: event.runId,
+                instance: event.instance,
+              },
+              device,
+              shown && !widgetRetry,
+            )
             if (shown)
               this.hooks.started?.({
                 threadId: event.threadId,
@@ -353,12 +362,8 @@ export class RunController {
     return succeeded && attached()
   }
 
-  private started(
-    runId: string,
-    threadId: string,
-    device: DeviceRun | undefined,
-    shown: boolean,
-  ) {
+  private started(run: Receipt, device: DeviceRun | undefined, shown: boolean) {
+    const { threadId, runId } = run
     if (device) {
       this.settle(device)
       device.runId = runId
@@ -370,7 +375,7 @@ export class RunController {
     this.pending = null
     // A stored chat names its run itself; a chat on this device is
     // rejoined after a reload through this receipt.
-    if (device) this.writeReceipt({ threadId, runId })
+    if (device) this.writeReceipt(run)
     else this.hooks.accepted?.(threadId)
   }
 
@@ -436,10 +441,17 @@ export class RunController {
     if (!this.receiptKey) return null
     try {
       const receipt = JSON.parse(sessionStorage.getItem(this.receiptKey) ?? '')
-      return typeof receipt?.threadId === 'string' &&
-        typeof receipt?.runId === 'string'
-        ? receipt
-        : null
+      if (
+        typeof receipt?.threadId !== 'string' ||
+        typeof receipt?.runId !== 'string'
+      )
+        return null
+      const { threadId, runId, instance } = receipt
+      return {
+        threadId,
+        runId,
+        ...(typeof instance === 'string' ? { instance } : {}),
+      }
     } catch {
       // Receipts are optional routing hints; an invalid one is discarded.
       return null

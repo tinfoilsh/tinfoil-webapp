@@ -2128,7 +2128,11 @@ describe('cloud chats', () => {
     const reads = [
       {
         ...stored,
-        activeRun: { runId: 'run-1', expiresAt: '2026-05-01T10:10:00Z' },
+        activeRun: {
+          runId: 'run-1',
+          expiresAt: '2026-05-01T10:10:00Z',
+          instance: 'instance-2',
+        },
         messages: [question],
         hasOlder: false,
       },
@@ -2162,6 +2166,14 @@ describe('cloud chats', () => {
       '/v1/threads/follow',
       { key: KEY, threadId: stored.id, runId: 'run-1' },
     ])
+    // The follow goes to the instance the chat's running hint names.
+    expect(client.locate).toHaveBeenCalledExactlyOnceWith(
+      stored.id,
+      'instance-2',
+    )
+    expect(client.locate.mock.invocationCallOrder[0]).toBeLessThan(
+      client.events.mock.invocationCallOrder[0],
+    )
     expect(result.current.error).toBe('')
     expect(result.current.status).toBe('idle')
   })

@@ -149,3 +149,7 @@ const UNAUTHORIZED_STATUS = 401
 // Carries a signed-in account's chat access, which the harness checks before
 // it reads a request's body.
 export const INFERENCE_KEY_HEADER = 'X-Tinfoil-Inference-Key'
+
+// Names the harness instance holding a run, so a request about the run can
+// be routed to it.
+export const HARNESS_INSTANCE_HEADER = 'X-Tinfoil-Harness-Instance'
