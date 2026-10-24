@@ -35,6 +35,11 @@ const interrupted = (cause: unknown) =>
 const gone = (cause: unknown) =>
   cause instanceof HarnessError && cause.detail.action === ERROR_ACTIONS.reload
 
+// Following a run resumes after the last frame of it this client applied,
+// when it applied one.
+const resumed = (input: FollowInput, after?: number): FollowInput =>
+  input.after === undefined && after !== undefined ? { ...input, after } : input
+
 // A run of a chat the browser stores. Its final event returns the whole
 // thread, without the image bytes the browser holds for it.
 export interface DeviceRun {
@@ -195,7 +200,10 @@ export class RunController {
     let threadId = input.threadId
     let succeeded = false
     let view = this.view.get()
-    const sent = 'kind' in input ? scopedTurn(input, this.api.userId) : input
+    const sent =
+      'clientRequestId' in input
+        ? scopedTurn(input, this.api.userId)
+        : resumed(input, view.cursors[input.runId])
     try {
       for await (const frame of this.api.client.events(
         route,
@@ -294,11 +302,14 @@ export class RunController {
       ) {
         let follow: FollowInput
         try {
-          follow = {
-            ...(input.key ? { key: this.api.key() } : {}),
-            threadId: threadId!,
-            runId,
-          }
+          follow = resumed(
+            {
+              ...(input.key ? { key: this.api.key() } : {}),
+              threadId: threadId!,
+              runId,
+            },
+            view.cursors[runId],
+          )
         } catch (refusal) {
           if (attached()) this.fail(refusal)
           return false

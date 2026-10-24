@@ -5,6 +5,7 @@ import type { OpenChatResult } from '@/services/harness/open-chat'
 import { HarnessError } from '@/services/harness/sse'
 import type {
   AttachmentDescriptor,
+  FollowInput,
   Frame,
   Message,
   RunMetadata,
@@ -2027,33 +2028,36 @@ describe('cloud chats', () => {
       return hook
     }
 
-    it('rejoin their run, which replays it', async () => {
+    it('rejoin their run after the last frame they applied', async () => {
       const { result } = await openStored()
+      const run: Frame['event'][] = [
+        ...started,
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'a1',
+          role: 'assistant',
+          delta: 'lo',
+        },
+        {
+          type: 'RUN_FINISHED',
+          threadId: stored.id,
+          runId: 'run-1',
+          metadata: {},
+        },
+      ]
       client.events
         .mockImplementationOnce(dropsAfter(started))
-        .mockImplementationOnce(
-          frames(
-            ...started,
-            {
-              type: 'TEXT_MESSAGE_CHUNK',
-              messageId: 'a1',
-              role: 'assistant',
-              delta: 'lo',
-            },
-            {
-              type: 'RUN_FINISHED',
-              threadId: stored.id,
-              runId: 'run-1',
-              metadata: {},
-            },
-          ),
-        )
+        // The harness resumes the run after the frame named.
+        .mockImplementationOnce(async function* (_path, input: FollowInput) {
+          for (const [id, event] of run.entries())
+            if (id > (input.after ?? -1)) yield { id, event }
+        })
 
       await act(() => result.current.send({ content: 'Question' }))
 
       expect(client.events.mock.calls[1]).toEqual([
         '/v1/threads/follow',
-        { key: KEY, threadId: stored.id, runId: 'run-1' },
+        { key: KEY, threadId: stored.id, runId: 'run-1', after: 2 },
         expect.any(AbortSignal),
       ])
       expect(result.current.chat.messages.map((m) => m.content)).toEqual([
@@ -2095,7 +2099,7 @@ describe('cloud chats', () => {
 
       expect(client.events.mock.calls[2].slice(0, 2)).toEqual([
         '/v1/threads/follow',
-        { key: KEY, threadId: stored.id, runId: 'run-1' },
+        { key: KEY, threadId: stored.id, runId: 'run-1', after: 2 },
       ])
       expect(result.current.chat.messages.map((m) => m.content)).toEqual([
         'Question',
