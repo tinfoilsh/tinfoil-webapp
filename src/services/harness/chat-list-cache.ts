@@ -6,29 +6,24 @@ import { logError } from '@/utils/error-handling'
 import { z } from 'zod'
 import type { ThreadSummary } from './types'
 
-// A summary an earlier version cached has no activity time; the chat's
-// creation stands in for it.
-const summarySchema = z
-  .object({
-    id: z.string(),
-    title: z.string(),
-    titleState: z.enum(['placeholder', 'generated', 'manual']),
-    createdAt: z.string().nullable(),
-    updatedAt: z.string().nullable(),
-    activityAt: z.string().optional(),
-    model: z.string(),
-    projectId: z.string().nullable(),
-    pinned: z.boolean(),
-    webSearchEnabled: z.boolean(),
-    messageCount: z.number(),
-    contextUsage: z.null().default(null),
-    activeRun: z.null(),
-    flagged: z.boolean().optional(),
-  })
-  .transform((summary) => ({
-    ...summary,
-    activityAt: summary.activityAt ?? summary.createdAt ?? '',
-  }))
+// A list an earlier version cached in another shape is not read, and the
+// list is fetched again.
+const summarySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  titleState: z.enum(['placeholder', 'generated', 'manual']),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  activityAt: z.string(),
+  model: z.string(),
+  projectId: z.string().nullable(),
+  pinned: z.boolean(),
+  webSearchEnabled: z.boolean(),
+  messageCount: z.number(),
+  contextUsage: z.null(),
+  activeRun: z.null(),
+  flagged: z.boolean().optional(),
+})
 
 const cacheSchema = z.object({
   threads: z.array(summarySchema),

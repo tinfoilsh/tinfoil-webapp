@@ -129,33 +129,26 @@ it('restores sidebar summaries and favorites after a reload before fresh results
   ])
 })
 
-it('orders the chats of a cache from before activity times by when they began', async () => {
+it('does not restore a list an earlier version cached without activity times', async () => {
   signIn({ cloud: true })
-  const older = {
-    ...summary('older'),
-    createdAt: '2026-10-20T12:00:00Z',
-    activityAt: '2026-10-23T12:00:00Z',
-  }
-  const newer = { ...summary('newer'), createdAt: '2026-10-21T12:00:00Z' }
-  client.post.mockResolvedValue(page([older, newer]))
+  client.post.mockResolvedValue(page([summary('cached')]))
   const first = renderHook(() => useThread())
-  await waitFor(() => expect(first.result.current.chats).toHaveLength(2))
+  await waitFor(() => expect(first.result.current.chats).toHaveLength(1))
   first.unmount()
-  // The cache as an earlier version wrote it.
   for (const key of cacheKeys()) {
     const cached = JSON.parse(localStorage.getItem(key)!)
-    for (const list of [cached.threads, cached.pinned])
-      for (const chat of list) delete chat.activityAt
+    for (const chat of cached.threads) delete chat.activityAt
     localStorage.setItem(key, JSON.stringify(cached))
   }
 
   signIn({ cloud: true })
-  client.post.mockReturnValue(new Promise(() => {}))
+  const fresh = deferred<ReturnType<typeof page>>()
+  client.post.mockReturnValue(fresh.promise)
   const reloaded = renderHook(() => useThread())
-
+  expect(reloaded.result.current.chats).toEqual([])
+  await act(async () => fresh.resolve(page([summary('fresh')])))
   expect(reloaded.result.current.chats.map((chat) => chat.id)).toEqual([
-    'newer',
-    'older',
+    'fresh',
   ])
 })
 
