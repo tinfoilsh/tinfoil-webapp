@@ -86,7 +86,11 @@ it('restores sidebar summaries and favorites after a reload before fresh results
   signIn({ cloud: true })
   const cached = {
     ...summary('cached'),
-    activeRun: { runId: 'running', expiresAt: '2099-01-01T00:00:00Z' },
+    activeRun: {
+      runId: 'running',
+      expiresAt: '2099-01-01T00:00:00Z',
+      instance: 'instance-a',
+    },
     messages: [
       { id: 'message', role: 'user', content: 'Private message content' },
     ],

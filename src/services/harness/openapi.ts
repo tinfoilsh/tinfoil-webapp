@@ -985,7 +985,8 @@ export interface components {
     }
     /**
      * @description What a client does about an error it has no handling of its own for.
-     *     A client treats an action it does not know as stop.
+     *     An error with an action the client does not know fails the request:
+     *     the client shows the error and offers nothing more.
      *
      *     - reauthenticate: refresh the caller's identity and chat access, and
      *       send the request again once, without telling the user. Ask the user
@@ -1039,6 +1040,7 @@ export interface components {
       | 'QUEUE_FULL'
       | 'QUOTA_EXHAUSTED'
       | 'RATE_LIMITED'
+      | 'RECORD_UNSUPPORTED'
       | 'REQUEST_TIMEOUT'
       | 'REVISION_CONFLICT'
       | 'RUN_IN_FLIGHT'
@@ -1216,8 +1218,6 @@ export interface components {
       key?: string
       threadId: components['schemas']['Identifier']
       runId: string
-      /** @description The cursor of the last event the client applied. The stream resumes after it. Without one, or with one the run never sent, it starts from the run's first event. */
-      after?: number
     }
     /** @description A run, or a turn queued behind one, of a chat. */
     RunRequest: {
@@ -1555,8 +1555,8 @@ export interface components {
       activeRun: {
         runId: string
         expiresAt: components['schemas']['Timestamp']
-        /** @description The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance. A hint stored before runs named their instance has none. */
-        instance?: string
+        /** @description The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance. */
+        instance: string
       } | null
       messageCount: number
       /** @description The safeguards flagged the chat, which takes no more turns. */
@@ -1585,8 +1585,8 @@ export interface components {
       activeRun: {
         runId: string
         expiresAt: components['schemas']['Timestamp']
-        /** @description The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance. A hint stored before runs named their instance has none. */
-        instance?: string
+        /** @description The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance. */
+        instance: string
       } | null
       messageCount: number
       /** @description The safeguards flagged the chat, which takes no more turns. */
@@ -1727,14 +1727,14 @@ export interface components {
       activeRun?: {
         runId: string
         expiresAt: components['schemas']['Timestamp']
-        /** @description The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance. A hint stored before runs named their instance has none. */
-        instance?: string
+        /** @description The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance. */
+        instance: string
       } | null
       contextUsage?: components['schemas']['ContextUsage']
       flagged?: boolean
       /** @description How many leading messages an ask's chat holds as context without showing them. */
       harnessHiddenCount?: number
-      /** @description The format the harness wrote the record in. Records older clients kept have none, and are still read. */
+      /** @description The format the harness wrote the record in. */
       recordVersion: number
     }
     MessageRecord: {
@@ -1752,8 +1752,10 @@ export interface components {
       isError?: boolean
       isInterrupted?: boolean
     }
-    /** @description A device chat as its client sends it, a ThreadRecord or one an older client kept. The harness reads the members it knows and keeps the rest. */
+    /** @description A device chat as its client sends it: a ThreadRecord the harness returned, sent back whole, or a record without a recordVersion that an older client kept or a client made for a new chat. The harness refuses a ThreadRecord with a member its version does not have. */
     ThreadInput: {
+      /** @description The version of the ThreadRecord the harness returned. Absent from a record an older client kept or a client made. */
+      recordVersion?: number
       title?: string
       titleState?: string
       model?: string
@@ -2116,6 +2118,8 @@ export interface components {
     }
   }
   parameters: {
+    /** @description The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it. A cursor the run never sent is refused. */
+    LastEventId: number
     /** @description The instance a run's RUN_STARTED named. A deployment of several harnesses routes a request about the run to it by this header, which says nothing about the caller. */
     HarnessInstance: string
   }
@@ -2217,6 +2221,8 @@ export interface operations {
       header?: {
         /** @description The instance a run's RUN_STARTED named. A deployment of several harnesses routes a request about the run to it by this header, which says nothing about the caller. */
         'X-Tinfoil-Harness-Instance'?: components['parameters']['HarnessInstance']
+        /** @description The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it. A cursor the run never sent is refused. */
+        'Last-Event-ID'?: components['parameters']['LastEventId']
       }
       path?: never
       cookie?: never

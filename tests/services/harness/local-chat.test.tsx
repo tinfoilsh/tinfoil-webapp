@@ -1,11 +1,11 @@
 import { DEFAULT_CHAT_TITLE } from '@/constants/chat'
 import { PROMPT_CACHE_SECRET_PREFIX } from '@/constants/storage-keys'
+import type { FollowRequest } from '@/services/harness/client'
 import { localThreadStore } from '@/services/harness/local-threads'
 import type { OpenChatResult } from '@/services/harness/open-chat'
 import { HarnessError } from '@/services/harness/sse'
 import type {
   AttachmentDescriptor,
-  FollowInput,
   Frame,
   Message,
   RunMetadata,
@@ -2048,16 +2048,16 @@ describe('cloud chats', () => {
       client.events
         .mockImplementationOnce(dropsAfter(started))
         // The harness resumes the run after the frame named.
-        .mockImplementationOnce(async function* (_path, input: FollowInput) {
+        .mockImplementationOnce(async function* (_path, input: FollowRequest) {
           for (const [id, event] of run.entries())
-            if (id > (input.after ?? -1)) yield { id, event }
+            if (id > (input.lastEventId ?? -1)) yield { id, event }
         })
 
       await act(() => result.current.send({ content: 'Question' }))
 
       expect(client.events.mock.calls[1]).toEqual([
         '/v1/threads/follow',
-        { key: KEY, threadId: stored.id, runId: 'run-1', after: 2 },
+        { key: KEY, threadId: stored.id, runId: 'run-1', lastEventId: 2 },
         expect.any(AbortSignal),
       ])
       expect(result.current.chat.messages.map((m) => m.content)).toEqual([
@@ -2099,7 +2099,7 @@ describe('cloud chats', () => {
 
       expect(client.events.mock.calls[2].slice(0, 2)).toEqual([
         '/v1/threads/follow',
-        { key: KEY, threadId: stored.id, runId: 'run-1', after: 2 },
+        { key: KEY, threadId: stored.id, runId: 'run-1', lastEventId: 2 },
       ])
       expect(result.current.chat.messages.map((m) => m.content)).toEqual([
         'Question',

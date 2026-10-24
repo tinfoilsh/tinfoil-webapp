@@ -570,7 +570,11 @@ it('shows the attachments and quote of each queued message', async () => {
           createdAt: '2026-10-22T12:00:00Z',
         },
       ],
-      activeRun: { runId: 'run-1', expiresAt: '2026-10-22T13:00:00Z' },
+      activeRun: {
+        runId: 'run-1',
+        expiresAt: '2026-10-22T13:00:00Z',
+        instance: 'instance-1',
+      },
     }),
     activityAt: '2026-10-22T12:00:00Z',
     contextUsage: null,

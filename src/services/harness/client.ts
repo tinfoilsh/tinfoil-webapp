@@ -8,6 +8,7 @@ import {
   ERROR_CODES,
   HARNESS_INSTANCE_HEADER,
   INFERENCE_KEY_HEADER,
+  LAST_EVENT_ID_HEADER,
   ROUTES,
   type HarnessRoute,
   type RunRoute,
@@ -33,6 +34,16 @@ type Transport = Pick<
   SecureClient,
   'ready' | 'fetch' | 'getVerificationDocument'
 >
+
+// A follow as this client makes it: the body the protocol names, and the
+// last event of the run it applied, which it sends as Last-Event-ID.
+export type FollowRequest = FollowInput & { lastEventId?: number }
+
+// What a request says in its headers beyond who is asking.
+interface RouteHeaders {
+  instance?: string
+  lastEventId?: number
+}
 
 // The routes about a chat's run, which go to the instance holding it.
 const RUN_ROUTES: ReadonlySet<HarnessRoute> = new Set([
@@ -172,7 +183,7 @@ export class HarnessClient {
     path: HarnessRoute,
     body: string | FormData,
     signal?: AbortSignal,
-    instance?: string,
+    { instance, lastEventId }: RouteHeaders = {},
   ): Promise<Response> {
     if (!/^\/v1\/(?:[a-z-]+\/)*[a-z-]+$/.test(path)) {
       throw new HarnessError({
@@ -220,6 +231,8 @@ export class HarnessClient {
       if (token) headers.set('Authorization', `Bearer ${token}`)
       if (credential) headers.set(INFERENCE_KEY_HEADER, credential)
       if (instance) headers.set(HARNESS_INSTANCE_HEADER, instance)
+      if (lastEventId !== undefined)
+        headers.set(LAST_EVENT_ID_HEADER, String(lastEventId))
       const response = await this.secure.fetch(this.origin + path, {
         method: 'POST',
         headers,
@@ -310,12 +323,9 @@ export class HarnessClient {
     signal?: AbortSignal,
   ): Promise<T> {
     return (
-      await this.request(
-        path,
-        JSON.stringify(input),
-        signal,
-        this.instanceFor(path, input),
-      )
+      await this.request(path, JSON.stringify(input), signal, {
+        instance: this.instanceFor(path, input),
+      })
     ).json() as Promise<T>
   }
   // Routes requests about a chat's run to the instance a hint names, for a
@@ -372,15 +382,16 @@ export class HarnessClient {
   // A run's events. Following a run replays it from its first frame.
   async *events(
     path: RunRoute,
-    input: Turn | FollowInput,
+    input: Turn | FollowRequest,
     signal?: AbortSignal,
   ): AsyncGenerator<Frame> {
-    const response = await this.request(
-      path,
-      JSON.stringify(input),
-      signal,
-      this.instanceFor(path, input),
-    )
+    let body: Turn | FollowInput = input
+    let lastEventId: number | undefined
+    if ('lastEventId' in input) ({ lastEventId, ...body } = input)
+    const response = await this.request(path, JSON.stringify(body), signal, {
+      instance: this.instanceFor(path, input),
+      lastEventId,
+    })
     if (
       !response.headers
         .get('Content-Type')

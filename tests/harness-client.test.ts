@@ -918,6 +918,41 @@ describe('attested harness transport', () => {
       ),
     ).toEqual(['Bearer old', 'Bearer fresh'])
   })
+  it('names the last event a follow applied in Last-Event-ID, apart from its body', async () => {
+    const secure = transport()
+    secure.fetch.mockImplementation(
+      async () =>
+        new Response(
+          stream(
+            `id: 3\ndata: ${JSON.stringify({ type: 'RUN_FINISHED', threadId: 't', runId: 'r', metadata: {} })}\n\n`,
+          ),
+          { headers: { 'Content-Type': 'text/event-stream' } },
+        ),
+    )
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      () => secure,
+    )
+    const ids: (number | undefined)[] = []
+    for (const lastEventId of [2, undefined])
+      for await (const frame of client.events('/v1/threads/follow', {
+        threadId: 't',
+        runId: 'r',
+        ...(lastEventId === undefined ? {} : { lastEventId }),
+      }))
+        ids.push(frame.id)
+    expect(ids).toEqual([3, 3])
+    expect(
+      secure.fetch.mock.calls.map(([, init]) => [
+        new Headers(init.headers).get('Last-Event-ID'),
+        JSON.parse(init.body),
+      ]),
+    ).toEqual([
+      ['2', { threadId: 't', runId: 'r' }],
+      [null, { threadId: 't', runId: 'r' }],
+    ])
+  })
   it("sends requests about a chat's run to the instance its run named", async () => {
     const secure = transport()
     const client = new HarnessClient(

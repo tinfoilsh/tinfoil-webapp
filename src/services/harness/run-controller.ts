@@ -1,3 +1,4 @@
+import type { FollowRequest } from './client'
 import type { ImagesById, LocalThreadStore, Originals } from './local-threads'
 import { scopedTurn } from './prompt-cache-secret'
 import { ERROR_ACTIONS, ERROR_CODES, ROUTES, type RunRoute } from './protocol'
@@ -13,7 +14,6 @@ import type { HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import { createStore } from './store'
 import type {
-  FollowInput,
   HarnessErrorBody,
   HarnessEvent,
   TerminalEvent,
@@ -37,8 +37,10 @@ const gone = (cause: unknown) =>
 
 // Following a run resumes after the last frame of it this client applied,
 // when it applied one.
-const resumed = (input: FollowInput, after?: number): FollowInput =>
-  input.after === undefined && after !== undefined ? { ...input, after } : input
+const resumed = (input: FollowRequest, after?: number): FollowRequest =>
+  input.lastEventId === undefined && after !== undefined
+    ? { ...input, lastEventId: after }
+    : input
 
 // A run of a chat the browser stores. Its final event returns the whole
 // thread, without the image bytes the browser holds for it.
@@ -188,7 +190,7 @@ export class RunController {
 
   async run(
     route: RunRoute,
-    input: Turn | FollowInput,
+    input: Turn | FollowRequest,
     options: RunOptions = {},
   ): Promise<boolean> {
     const { device, quiet = false, widgetRetry } = options
@@ -309,7 +311,7 @@ export class RunController {
         interrupted(cause) &&
         (device || attached())
       ) {
-        let follow: FollowInput
+        let follow: FollowRequest
         try {
           follow = resumed(
             {

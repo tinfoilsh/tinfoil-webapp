@@ -221,7 +221,11 @@ it('lists a new stored chat while its first reply streams, then once', async () 
   const created = summaryOf(
     cloudChat(threadId, PLACEHOLDER_CHAT_TITLE, started, {
       titleState: 'placeholder',
-      activeRun: { runId: 'reply', expiresAt: '2026-10-22T12:10:00Z' },
+      activeRun: {
+        runId: 'reply',
+        expiresAt: '2026-10-22T12:10:00Z',
+        instance: 'instance-1',
+      },
     }),
   )
   runs.emit(
@@ -320,7 +324,11 @@ it('keeps a stored chat marked running after moving to another chat', async () =
     ...summaryOf(older),
     activityAt: '2026-10-22T13:00:00Z',
     messageCount: 2,
-    activeRun: { runId: 'reply', expiresAt: '2026-10-22T13:10:00Z' },
+    activeRun: {
+      runId: 'reply',
+      expiresAt: '2026-10-22T13:10:00Z',
+      instance: 'instance-1',
+    },
   }
   runs.emit(
     {

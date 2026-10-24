@@ -56,7 +56,11 @@ const thread: Thread = {
   webSearchEnabled: true,
   contextUsage: null,
   messageCount: 2,
-  activeRun: { runId: 'run-1', expiresAt: '2026-04-01T10:00:00Z' },
+  activeRun: {
+    runId: 'run-1',
+    expiresAt: '2026-04-01T10:00:00Z',
+    instance: 'instance-1',
+  },
   hasOlder: false,
   messages: [
     {

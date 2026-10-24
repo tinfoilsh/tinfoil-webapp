@@ -195,7 +195,11 @@ describe('usage reported by runs', () => {
               webSearchEnabled: true,
               pinned: false,
               contextUsage: null,
-              activeRun: { runId, expiresAt: '2026-07-24T10:25:30Z' },
+              activeRun: {
+                runId,
+                expiresAt: '2026-07-24T10:25:30Z',
+                instance: 'instance-1',
+              },
               messageCount: 1,
             },
             queue: [],

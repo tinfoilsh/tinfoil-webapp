@@ -1,10 +1,5 @@
-import type {
-  FollowInput,
-  Frame,
-  Message,
-  Thread,
-  Turn,
-} from '@/services/harness/types'
+import type { FollowRequest } from '@/services/harness/client'
+import type { Frame, Message, Thread, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -170,7 +165,7 @@ it('rejoins an accepted turn by its run when its stream drops', async () => {
       throw new TypeError('connection closed')
     })
     // The harness resumes the run after the frame the client applied last.
-    .mockImplementationOnce(async function* (_path, input: FollowInput) {
+    .mockImplementationOnce(async function* (_path, input: FollowRequest) {
       const run = [
         started,
         messages,
@@ -178,7 +173,7 @@ it('rejoins an accepted turn by its run when its stream drops', async () => {
         chunk(3, ', and the end'),
         { ...finished, id: 4 },
       ]
-      yield* run.filter((frame) => frame.id! > (input.after ?? -1))
+      yield* run.filter((frame) => frame.id! > (input.lastEventId ?? -1))
     })
   const { result } = renderHook(() => useThread())
   await act(() => result.current.send({ content: 'private question' }))
@@ -187,7 +182,7 @@ it('rejoins an accepted turn by its run when its stream drops', async () => {
     {
       threadId: (client.events.mock.calls[0][1] as Turn).threadId,
       runId: 'run-1',
-      after: 2,
+      lastEventId: 2,
     },
     expect.any(AbortSignal),
   ])

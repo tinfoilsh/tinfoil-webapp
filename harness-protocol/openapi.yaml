@@ -8,25 +8,33 @@ info:
 
     Every request is a POST through an attested, EHBP-sealed transport, so
     bodies are private to the client and the enclave while headers are
-    visible to the gateway. Nothing but authentication goes in headers:
+    visible to the gateway. Headers carry only what is not private:
     `Authorization` carries the caller's identity (a Clerk session token, or
-    a `free_` key for a signed-out caller) and `X-Tinfoil-Inference-Key` the
-    chat access the client minted. A client also sends `Accept-Language`.
-    The account's content key, when a route needs it, is the `key` member of
-    the body.
+    a `free_` key for a signed-out caller), `X-Tinfoil-Inference-Key` the
+    chat access the client minted, and `Accept-Language` the caller's
+    languages. A request about a run names the instance holding it and, when
+    following it, the last event the client applied. Everything else,
+    including the account's content key when a route needs it, is in the
+    body.
 
     A run's events arrive as server-sent events. Each frame's `data` is one
     event, described by `x-item-schema` (OpenAPI 3.2's `itemSchema`), and its
-    `id` is the event's cursor in the run.
+    `id` is the event's cursor in the run, which a client following the run
+    again sends back as `Last-Event-ID`.
 
     This document changes by these rules, so a client released against it
     keeps working:
 
     - Changes are additive. A route, member, event or error code is not
       removed, and does not change meaning, while a supported client uses it.
-    - A client ignores members, events and error codes it does not know.
+    - A client ignores members and events it does not know. It handles an
+      error code it does not know by the error's action.
     - A client keeps a ThreadRecord whole, members it does not know included,
       and sends it back as it was returned.
+    - A change to what a ThreadRecord or a stored row holds changes its
+      recordVersion. The harness reads a record in its current version as
+      written, reads one without a version as an older client kept it, and
+      refuses any other with RECORD_UNSUPPORTED.
     - The harness ignores request members it does not know, except in a
       profile patch, which refuses them.
     - Optional behavior is announced in the session's `features`. A client
@@ -155,7 +163,9 @@ paths:
       operationId: follow
       summary: Rejoin a live run
       tags: [runs]
-      parameters: [{$ref: "#/components/parameters/HarnessInstance"}]
+      parameters:
+        - {$ref: "#/components/parameters/HarnessInstance"}
+        - {$ref: "#/components/parameters/LastEventId"}
       description: Streams a live run again, for a client that lost its stream, from after the last event it applied.
       requestBody:
         required: true
@@ -1242,6 +1252,12 @@ paths:
 
 components:
   parameters:
+    LastEventId:
+      name: Last-Event-ID
+      in: header
+      description: The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it. A cursor the run never sent is refused.
+      schema: {type: integer, minimum: 0}
+
     HarnessInstance:
       name: X-Tinfoil-Harness-Instance
       in: header
@@ -1413,7 +1429,8 @@ components:
     ErrorAction:
       description: |
         What a client does about an error it has no handling of its own for.
-        A client treats an action it does not know as stop.
+        An error with an action the client does not know fails the request:
+        the client shows the error and offers nothing more.
 
         - reauthenticate: refresh the caller's identity and chat access, and
           send the request again once, without telling the user. Ask the user
@@ -1461,6 +1478,7 @@ components:
         - QUEUE_FULL
         - QUOTA_EXHAUSTED
         - RATE_LIMITED
+        - RECORD_UNSUPPORTED
         - REQUEST_TIMEOUT
         - REVISION_CONFLICT
         - RUN_IN_FLIGHT
@@ -1664,7 +1682,6 @@ components:
         key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
         threadId: {$ref: "#/components/schemas/Identifier"}
         runId: {type: string}
-        after: {type: integer, minimum: 0, description: "The cursor of the last event the client applied. The stream resumes after it. Without one, or with one the run never sent, it starts from the run's first event."}
 
     RunRequest:
       description: A run, or a turn queued behind one, of a chat.
@@ -2028,11 +2045,11 @@ components:
         activeRun:
           description: "A hint that a reply may be streaming, until the run's deadline. It never locks the chat."
           type: [object, "null"]
-          required: [runId, expiresAt]
+          required: [runId, expiresAt, instance]
           properties:
             runId: {type: string}
             expiresAt: {$ref: "#/components/schemas/Timestamp"}
-            instance: {type: string, description: "The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance. A hint stored before runs named their instance has none."}
+            instance: {type: string, description: "The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance."}
         messageCount: {type: integer}
         flagged: {type: boolean, description: "The safeguards flagged the chat, which takes no more turns."}
 
@@ -2062,11 +2079,11 @@ components:
         activeRun:
           description: "A hint that a reply may be streaming, until the run's deadline. It never locks the chat."
           type: [object, "null"]
-          required: [runId, expiresAt]
+          required: [runId, expiresAt, instance]
           properties:
             runId: {type: string}
             expiresAt: {$ref: "#/components/schemas/Timestamp"}
-            instance: {type: string, description: "The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance. A hint stored before runs named their instance has none."}
+            instance: {type: string, description: "The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance."}
         messageCount: {type: integer}
         flagged: {type: boolean, description: "The safeguards flagged the chat, which takes no more turns."}
         revision: {type: string}
@@ -2224,15 +2241,15 @@ components:
         activeRun:
           description: "A hint that a reply may be streaming, until the run's deadline. It never locks the chat."
           type: [object, "null"]
-          required: [runId, expiresAt]
+          required: [runId, expiresAt, instance]
           properties:
             runId: {type: string}
             expiresAt: {$ref: "#/components/schemas/Timestamp"}
-            instance: {type: string, description: "The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance. A hint stored before runs named their instance has none."}
+            instance: {type: string, description: "The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance."}
         contextUsage: {$ref: "#/components/schemas/ContextUsage"}
         flagged: {type: boolean}
         harnessHiddenCount: {type: integer, description: "How many leading messages an ask's chat holds as context without showing them."}
-        recordVersion: {type: integer, description: "The format the harness wrote the record in. Records older clients kept have none, and are still read."}
+        recordVersion: {type: integer, description: "The format the harness wrote the record in."}
 
     MessageRecord:
       type: object
@@ -2253,10 +2270,11 @@ components:
         isInterrupted: {type: boolean}
 
     ThreadInput:
-      description: A device chat as its client sends it, a ThreadRecord or one an older client kept. The harness reads the members it knows and keeps the rest.
+      description: "A device chat as its client sends it: a ThreadRecord the harness returned, sent back whole, or a record without a recordVersion that an older client kept or a client made for a new chat. The harness refuses a ThreadRecord with a member its version does not have."
       type: object
       additionalProperties: true
       properties:
+        recordVersion: {type: integer, description: "The version of the ThreadRecord the harness returned. Absent from a record an older client kept or a client made."}
         title: {type: string}
         titleState: {type: string}
         model: {type: string}

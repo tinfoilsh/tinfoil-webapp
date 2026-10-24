@@ -96,7 +96,7 @@ it('rejoins an ask under the thread the harness created for it', async () => {
   )
   expect(events.mock.calls[1].slice(0, 2)).toEqual([
     '/v1/threads/follow',
-    { threadId: 'ask-thread', runId: 'ask-run', after: 1 },
+    { threadId: 'ask-thread', runId: 'ask-run', lastEventId: 1 },
   ])
 })
 

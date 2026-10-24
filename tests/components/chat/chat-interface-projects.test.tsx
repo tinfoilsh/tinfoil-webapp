@@ -828,7 +828,11 @@ it('shows a project chat still replying as generating its response', async () =>
     listPage([
       {
         ...projectChat,
-        activeRun: { runId: 'run-1', expiresAt: '2026-10-22T12:10:00Z' },
+        activeRun: {
+          runId: 'run-1',
+          expiresAt: '2026-10-22T12:10:00Z',
+          instance: 'instance-1',
+        },
       },
     ])
   render(projectView())

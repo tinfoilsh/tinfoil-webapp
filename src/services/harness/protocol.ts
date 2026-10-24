@@ -153,3 +153,7 @@ export const INFERENCE_KEY_HEADER = 'X-Tinfoil-Inference-Key'
 // Names the harness instance holding a run, so a request about the run can
 // be routed to it.
 export const HARNESS_INSTANCE_HEADER = 'X-Tinfoil-Harness-Instance'
+
+// Names the last event of a run a client applied, which following the run
+// resumes after.
+export const LAST_EVENT_ID_HEADER = 'Last-Event-ID'

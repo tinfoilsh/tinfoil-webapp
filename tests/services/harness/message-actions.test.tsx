@@ -292,7 +292,11 @@ describe('regenerating a reply', () => {
       path === '/v1/threads/get'
         ? {
             ...cloudThread(),
-            activeRun: { runId: 'run-1', expiresAt: '2026-04-01T10:00:00Z' },
+            activeRun: {
+              runId: 'run-1',
+              expiresAt: '2026-04-01T10:00:00Z',
+              instance: 'instance-1',
+            },
           }
         : path === '/v1/threads/list'
           ? { threads: [], nextCursor: null }
