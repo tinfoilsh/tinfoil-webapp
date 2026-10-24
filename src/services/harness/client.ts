@@ -3,6 +3,8 @@ import { SecureClient } from 'tinfoil'
 import { AnonymousCredentialCache } from './anonymous-credential'
 import { ChatCredentialCache } from './chat-credential'
 import {
+  actionOf,
+  ERROR_ACTIONS,
   ERROR_CODES,
   INFERENCE_KEY_HEADER,
   ROUTES,
@@ -71,6 +73,7 @@ export class HarnessClient {
     ) {
       throw new HarnessError({
         code: ERROR_CODES.configuration,
+        action: ERROR_ACTIONS.stop,
         message: 'Configure an HTTPS origin for the chat service.',
       })
     }
@@ -90,6 +93,7 @@ export class HarnessClient {
             reject(
               new HarnessError({
                 code: ERROR_CODES.connection,
+                action: ERROR_ACTIONS.retry,
                 message:
                   'The chat service could not be verified in time. Check your connection and try again.',
               }),
@@ -160,6 +164,7 @@ export class HarnessClient {
     if (!/^\/v1\/(?:[a-z-]+\/)*[a-z-]+$/.test(path)) {
       throw new HarnessError({
         code: ERROR_CODES.badRequest,
+        action: ERROR_ACTIONS.stop,
         message: 'Invalid chat service path.',
       })
     }
@@ -211,8 +216,14 @@ export class HarnessClient {
         credentials: 'omit',
       })
       if (response.ok) return response
+      // A refusal without the harness's error envelope names no action.
       let detail: HarnessErrorBody = {
         code: ERROR_CODES.upstreamRefused,
+        action: actionOf(
+          undefined,
+          ERROR_CODES.upstreamRefused,
+          response.status,
+        ),
         message: 'The chat service could not complete the request.',
       }
       const value: unknown = await response.json().catch(() => null)
@@ -227,7 +238,14 @@ export class HarnessClient {
         'message' in value.error &&
         typeof value.error.message === 'string'
       )
-        detail = value.error as HarnessErrorBody
+        detail = {
+          ...(value.error as HarnessErrorBody),
+          action: actionOf(
+            'action' in value.error ? value.error.action : undefined,
+            value.error.code,
+            response.status,
+          ),
+        }
       const needsCredential = detail.code === ERROR_CODES.credentialRequired
       if (response.status === 401 && token && attempt === 0) {
         if (anonymous) {
@@ -248,6 +266,7 @@ export class HarnessClient {
           throw new HarnessError(
             {
               code: ERROR_CODES.unauthenticated,
+              action: ERROR_ACTIONS.reauthenticate,
               message: 'Sign in again to continue.',
             },
             401,
@@ -260,6 +279,7 @@ export class HarnessClient {
     throw new HarnessError(
       {
         code: ERROR_CODES.unauthenticated,
+        action: ERROR_ACTIONS.reauthenticate,
         message: 'Sign in again to continue.',
       },
       401,
@@ -328,6 +348,7 @@ export class HarnessClient {
     ) {
       throw new HarnessError({
         code: ERROR_CODES.invalidStream,
+        action: ERROR_ACTIONS.retry,
         message: 'The chat service did not return an event stream.',
       })
     }

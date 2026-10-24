@@ -13,6 +13,7 @@ describe('uploadErrorMessage', () => {
           {
             code: 'UPSTREAM_REFUSED',
             message,
+            action: 'revise',
             status: 502,
             upstreamCode: 'document_parser_timeout',
           },
@@ -43,6 +44,7 @@ describe('uploadErrorMessage', () => {
             {
               code: 'RATE_LIMITED',
               message: 'parser busy',
+              action: 'retry',
               ...(retryAfter ? { retryAfter } : {}),
               ...(upstreamCode ? { upstreamCode } : {}),
             },
@@ -55,7 +57,10 @@ describe('uploadErrorMessage', () => {
 
   it('names the quota an upload exhausted', () => {
     const refusal = (kind: string) =>
-      new HarnessError({ code: 'QUOTA_EXHAUSTED', message: 'quota', kind }, 429)
+      new HarnessError(
+        { code: 'QUOTA_EXHAUSTED', message: 'quota', action: 'wait', kind },
+        429,
+      )
     expect(uploadErrorMessage(refusal('hourly'))).toBe(
       "You've reached your hourly usage limit.",
     )

@@ -99,7 +99,11 @@ it('shows a refresh from one hook wherever the projects are listed', async () =>
 it('resolves a failed refresh and keeps its error', async () => {
   post.mockRejectedValue(
     new HarnessError(
-      { code: 'UPSTREAM_REFUSED', message: 'Projects are unavailable' },
+      {
+        code: 'UPSTREAM_REFUSED',
+        message: 'Projects are unavailable',
+        action: 'retry',
+      },
       503,
     ),
   )

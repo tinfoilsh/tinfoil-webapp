@@ -1,4 +1,6 @@
 // The chat service's routes and the error codes the browser acts on.
+import type { paths } from './openapi'
+import type { ClientErrorCode, ErrorAction, ErrorCode } from './types'
 
 export const ROUTES = {
   session: '/v1/session',
@@ -51,7 +53,7 @@ export const ROUTES = {
   export: '/v1/export',
   import: '/v1/import',
   importStatus: '/v1/import/status',
-} as const
+} as const satisfies Record<string, keyof paths>
 
 export type HarnessRoute = (typeof ROUTES)[keyof typeof ROUTES]
 
@@ -109,7 +111,40 @@ export const ERROR_CODES = {
   credentialRequired: 'CREDENTIAL_REQUIRED',
   // Set by this client, not the harness: a reply this device could not store.
   localSaveFailed: 'LOCAL_SAVE_FAILED',
-} as const
+} as const satisfies Record<string, ErrorCode | ClientErrorCode>
+
+// What this client does about an error it has no handling of its own for.
+export const ERROR_ACTIONS = {
+  reauthenticate: 'reauthenticate',
+  reload: 'reload',
+  retry: 'retry',
+  wait: 'wait',
+  unlock: 'unlock',
+  revise: 'revise',
+  stop: 'stop',
+} as const satisfies Record<string, ErrorAction>
+
+// The action an error asks for. An action this client does not know is
+// stop. A harness from before errors named their action asks for none,
+// which is met as this client met such an error then.
+export function actionOf(
+  action: unknown,
+  code: string,
+  status?: number,
+): ErrorAction {
+  if (action === undefined) {
+    if (code === ERROR_CODES.alreadyApplied || code === ERROR_CODES.runNotFound)
+      return ERROR_ACTIONS.reload
+    return status === UNAUTHORIZED_STATUS
+      ? ERROR_ACTIONS.reauthenticate
+      : ERROR_ACTIONS.retry
+  }
+  return Object.values<unknown>(ERROR_ACTIONS).includes(action)
+    ? (action as ErrorAction)
+    : ERROR_ACTIONS.stop
+}
+
+const UNAUTHORIZED_STATUS = 401
 
 // Carries a signed-in account's chat access, which the harness checks before
 // it reads a request's body.

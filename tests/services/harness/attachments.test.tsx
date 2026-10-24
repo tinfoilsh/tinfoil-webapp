@@ -22,10 +22,13 @@ const thread: Thread = {
   titleState: 'generated',
   createdAt: '2026-04-01T09:00:00Z',
   updatedAt: '2026-04-01T09:00:00Z',
+  activityAt: '2026-04-01T09:00:00Z',
   model: 'test-model',
   projectId: null,
+  presetId: null,
   pinned: false,
   webSearchEnabled: true,
+  contextUsage: null,
   messageCount: 1,
   activeRun: null,
   hasOlder: false,
@@ -116,7 +119,11 @@ describe('attachments of a stored chat', () => {
     const [report] = result.current.chat.messages[0].attachments!
     client.download
       .mockRejectedValueOnce(
-        new HarnessError({ code: 'UPSTREAM_REFUSED', message: 'offline' }),
+        new HarnessError({
+          code: 'UPSTREAM_REFUSED',
+          message: 'offline',
+          action: 'retry',
+        }),
       )
       .mockResolvedValueOnce(new Blob(['Recovered']))
 

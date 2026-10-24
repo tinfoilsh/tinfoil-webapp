@@ -1,6 +1,6 @@
 import type { ImagesById, LocalThreadStore, Originals } from './local-threads'
 import { scopedTurn } from './prompt-cache-secret'
-import { ERROR_CODES, ROUTES, type RunRoute } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES, ROUTES, type RunRoute } from './protocol'
 import {
   initialChat,
   isTerminal,
@@ -25,6 +25,7 @@ import type {
 // connection dropped. Its run may go on.
 const CONNECTION_LOST: HarnessErrorBody = {
   code: ERROR_CODES.streamInterrupted,
+  action: ERROR_ACTIONS.retry,
   message: 'The connection closed. Reconnect to continue.',
 }
 const interrupted = (cause: unknown) =>

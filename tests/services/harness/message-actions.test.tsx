@@ -7,7 +7,7 @@ import { HarnessError } from '@/services/harness/sse'
 import type {
   Frame,
   Message,
-  StoredThread,
+  RunMetadata,
   Thread,
   ThreadMessage,
   Turn,
@@ -112,10 +112,13 @@ function cloudThread(messages = transcript): Thread {
     titleState: 'generated',
     createdAt: '2026-04-01T09:00:00Z',
     updatedAt: '2026-04-01T09:01:01Z',
+    activityAt: messages.at(-1)?.createdAt ?? '2026-04-01T09:00:00Z',
     model: 'test-model',
     projectId: null,
+    presetId: null,
     pinned: false,
     webSearchEnabled: true,
+    contextUsage: null,
     messageCount: messages.length,
     activeRun: null,
     hasOlder: false,
@@ -125,14 +128,20 @@ function cloudThread(messages = transcript): Thread {
 
 // A run that writes a new reply. A device run's final event returns the
 // whole thread.
-function regenerated(window: Message[], thread?: StoredThread) {
+function regenerated(window: Message[], thread?: RunMetadata['thread']) {
   return async function* (): AsyncGenerator<Frame> {
     const events: Frame['event'][] = [
-      { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-regen' },
+      {
+        type: 'RUN_STARTED',
+        threadId: THREAD_ID,
+        runId: 'run-regen',
+        instance: 'instance-1',
+      },
       { type: 'MESSAGES_SNAPSHOT', messages: window, hasOlder: false },
       {
         type: 'TEXT_MESSAGE_CHUNK',
         messageId: 'msg_regen',
+        role: 'assistant',
         delta: 'new answer',
         timestamp: '2026-04-01T09:02:00Z',
       },
@@ -140,7 +149,7 @@ function regenerated(window: Message[], thread?: StoredThread) {
         type: 'RUN_FINISHED',
         threadId: THREAD_ID,
         runId: 'run-regen',
-        ...(thread ? { metadata: { thread } } : {}),
+        metadata: thread ? { thread } : {},
       },
     ]
     for (const [id, event] of events.entries()) yield { id, event }
@@ -220,15 +229,19 @@ describe('regenerating a reply', () => {
   it("regenerates a local chat's reply and stores the thread its run returns", async () => {
     signIn({ cloud: false, session })
     await localThreadStore('device').update(THREAD_ID, () => localThread())
-    const returned = localThread([
-      ...transcript.slice(0, 3),
-      {
-        id: 'msg_regen',
-        role: 'assistant',
-        createdAt: '2026-04-01T09:02:00Z',
-        timeline: [{ id: 'b3', type: 'content', content: 'new answer' }],
-      },
-    ])
+    const returned = {
+      ...localThread([
+        ...transcript.slice(0, 3),
+        {
+          id: 'msg_regen',
+          role: 'assistant',
+          createdAt: '2026-04-01T09:02:00Z',
+          content: 'new answer',
+          timeline: [{ id: 'b3', type: 'content', content: 'new answer' }],
+        },
+      ]),
+      recordVersion: 1,
+    }
     client.events.mockImplementation(
       regenerated(transcript.slice(0, 3).map(wire), returned),
     )
@@ -292,7 +305,12 @@ describe('regenerating a reply', () => {
     client.events.mockImplementationOnce(async function* () {
       yield {
         id: 0,
-        event: { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-1' },
+        event: {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
       }
       await held
     })
@@ -410,7 +428,11 @@ describe('the chat a regenerated or edited turn leaves', () => {
     await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
     client.events.mockImplementationOnce(async function* () {
       throw new HarnessError(
-        { code: 'RATE_LIMITED', message: 'Chat access is busy; retry shortly' },
+        {
+          code: 'RATE_LIMITED',
+          message: 'Chat access is busy; retry shortly',
+          action: 'retry',
+        },
         429,
       )
     })
@@ -445,19 +467,30 @@ describe('retrying after an error', () => {
     await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))
     client.events.mockImplementationOnce(async function* () {
       const events: Frame['event'][] = [
-        { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-1' },
+        {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
         {
           type: 'MESSAGES_SNAPSHOT',
           messages: transcript.slice(0, 3).map(wire),
           hasOlder: false,
         },
-        { type: 'TEXT_MESSAGE_CHUNK', messageId: 'msg_err', delta: 'Half' },
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'msg_err',
+          role: 'assistant',
+          delta: 'Half',
+        },
         {
           type: 'RUN_ERROR',
           threadId: THREAD_ID,
           runId: 'run-1',
           code: 'MODEL_UNAVAILABLE',
           message: 'The model is temporarily unavailable',
+          action: 'retry',
         },
       ]
       for (const [id, event] of events.entries()) yield { id, event }
@@ -469,6 +502,7 @@ describe('retrying after an error', () => {
     expect(result.current.errorDetail).toEqual({
       code: 'MODEL_UNAVAILABLE',
       message: 'The model is temporarily unavailable',
+      action: 'retry',
     })
 
     await act(() => result.current.retry())
@@ -502,6 +536,7 @@ describe('retrying after an error', () => {
         {
           code: 'RATE_LIMITED',
           message: 'Chat access is busy; retry shortly',
+          action: 'retry',
           retryAfter: 2,
         },
         429,
@@ -538,7 +573,11 @@ describe('retrying after an error', () => {
     ])
     client.events.mockImplementationOnce(async function* () {
       throw new HarnessError(
-        { code: 'ALREADY_APPLIED', message: 'The turn was already applied' },
+        {
+          code: 'ALREADY_APPLIED',
+          message: 'The turn was already applied',
+          action: 'reload',
+        },
         409,
       )
     })
@@ -574,6 +613,7 @@ describe('retrying after an error', () => {
         {
           code: 'QUOTA_EXHAUSTED',
           message: 'The daily limit is reached',
+          action: 'wait',
           kind: 'free_daily',
           resetsAt: '2026-07-25T00:00:00Z',
           rateLimit,
@@ -768,6 +808,7 @@ describe('changing messages of a stored chat', () => {
           type: 'RUN_STARTED',
           threadId: THREAD_ID,
           runId: 'run-continue',
+          instance: 'instance-1',
           messageId: 'a1',
         },
         {
@@ -775,8 +816,18 @@ describe('changing messages of a stored chat', () => {
           messages: transcript.slice(0, 2).map(wire),
           hasOlder: false,
         },
-        { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: ', continued' },
-        { type: 'RUN_FINISHED', threadId: THREAD_ID, runId: 'run-continue' },
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'a1',
+          role: 'assistant',
+          delta: ', continued',
+        },
+        {
+          type: 'RUN_FINISHED',
+          threadId: THREAD_ID,
+          runId: 'run-continue',
+          metadata: {},
+        },
       ]
       for (const [id, event] of events.entries()) yield { id, event }
     })
@@ -870,22 +921,26 @@ describe('changing messages of a local chat', () => {
 
   it('continues a reply with its thread and stores the thread its run returns', async () => {
     const { result } = await openLocal()
-    const returned = localThread([
-      transcript[0],
-      {
-        ...transcript[1],
-        content: undefined,
-        timeline: [
-          { id: 'b1', type: 'content', content: 'first answer, continued' },
-        ],
-      },
-    ])
+    const returned = {
+      ...localThread([
+        transcript[0],
+        {
+          ...transcript[1],
+          content: 'first answer, continued',
+          timeline: [
+            { id: 'b1', type: 'content', content: 'first answer, continued' },
+          ],
+        },
+      ]),
+      recordVersion: 1,
+    }
     client.events.mockImplementationOnce(async function* () {
       const events: Frame['event'][] = [
         {
           type: 'RUN_STARTED',
           threadId: THREAD_ID,
           runId: 'run-continue',
+          instance: 'instance-1',
           messageId: 'a1',
         },
         {
@@ -893,7 +948,12 @@ describe('changing messages of a local chat', () => {
           messages: transcript.slice(0, 2).map(wire),
           hasOlder: false,
         },
-        { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: ', continued' },
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'a1',
+          role: 'assistant',
+          delta: ', continued',
+        },
         {
           type: 'RUN_FINISHED',
           threadId: THREAD_ID,
@@ -927,6 +987,7 @@ describe('changing messages of a local chat', () => {
           type: 'RUN_STARTED',
           threadId: THREAD_ID,
           runId: 'run-continue',
+          instance: 'instance-1',
           messageId: 'a1',
         },
         {
@@ -935,6 +996,7 @@ describe('changing messages of a local chat', () => {
           runId: 'run-continue',
           code: 'MODEL_UNAVAILABLE',
           message: 'The model is temporarily unavailable',
+          action: 'retry',
         },
       ]
       for (const [id, event] of events.entries()) yield { id, event }
@@ -1014,7 +1076,12 @@ describe('keeping the earlier messages the user loaded', () => {
     const { result } = await openWithEarlier()
     client.events.mockImplementationOnce(async function* () {
       const events: Frame['event'][] = [
-        { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-2' },
+        {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-2',
+          instance: 'instance-1',
+        },
         {
           type: 'MESSAGES_SNAPSHOT',
           messages: [transcript[3], question].map(wire),
@@ -1023,10 +1090,16 @@ describe('keeping the earlier messages the user loaded', () => {
         {
           type: 'TEXT_MESSAGE_CHUNK',
           messageId: 'a3',
+          role: 'assistant',
           delta: 'third answer',
           timestamp: '2026-04-01T09:02:01Z',
         },
-        { type: 'RUN_FINISHED', threadId: THREAD_ID, runId: 'run-2' },
+        {
+          type: 'RUN_FINISHED',
+          threadId: THREAD_ID,
+          runId: 'run-2',
+          metadata: {},
+        },
       ]
       for (const [id, event] of events.entries()) yield { id, event }
     })

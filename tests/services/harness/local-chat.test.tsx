@@ -7,6 +7,7 @@ import type {
   AttachmentDescriptor,
   Frame,
   Message,
+  RunMetadata,
   StoredThread,
   ThreadMessage,
   Turn,
@@ -71,6 +72,7 @@ function summary(threadId: string, title = 'New Chat') {
     titleState: title === 'New Chat' ? 'placeholder' : 'generated',
     createdAt: '2026-05-01T10:00:00Z',
     updatedAt: '2026-05-01T10:00:00Z',
+    activityAt: '2026-05-01T10:00:00Z',
     model: 'test-model',
     projectId: null,
     pinned: false,
@@ -81,8 +83,19 @@ function summary(threadId: string, title = 'New Chat') {
   } as const
 }
 
+// A whole thread as a device run returns it, in the record format the
+// harness writes.
+type ReturnedThread = NonNullable<RunMetadata['thread']>
+const RECORD_VERSION = 1
+const recorded = (thread: StoredThread): ReturnedThread => ({
+  ...thread,
+  recordVersion: RECORD_VERSION,
+})
+const returnedThread = (id: string, fields?: Partial<StoredThread>) =>
+  recorded(storedThread(id, fields))
+
 // A device run's final event, which returns the whole thread.
-function finished(threadId: string, thread: StoredThread, runId = 'run-1') {
+function finished(threadId: string, thread: ReturnedThread, runId = 'run-1') {
   return {
     type: 'RUN_FINISHED',
     threadId,
@@ -92,9 +105,9 @@ function finished(threadId: string, thread: StoredThread, runId = 'run-1') {
 }
 
 // A device run that shows its window and returns the thread.
-function deviceRun(threadId: string, thread: StoredThread, runId = 'run-1') {
+function deviceRun(threadId: string, thread: ReturnedThread, runId = 'run-1') {
   return frames(
-    { type: 'RUN_STARTED', threadId, runId },
+    { type: 'RUN_STARTED', threadId, runId, instance: 'instance-1' },
     {
       type: 'MESSAGES_SNAPSHOT',
       messages: thread.messages as Message[],
@@ -114,6 +127,7 @@ const SEEDED_MESSAGES: ThreadMessage[] = [
     id: 'a1',
     role: 'assistant',
     createdAt: 't2',
+    content: 'first answer',
     model: 'test-model',
     timeline: [{ id: 'b1', type: 'content', content: 'first answer' }],
   },
@@ -122,6 +136,7 @@ const SEEDED_MESSAGES: ThreadMessage[] = [
     id: 'a2',
     role: 'assistant',
     createdAt: 't4',
+    content: 'second answer',
     model: 'test-model',
     timeline: [{ id: 'b2', type: 'content', content: 'second answer' }],
   },
@@ -142,10 +157,10 @@ describe('local chats of a signed-in account without cloud sync', () => {
   it('sends a turn without a key and stores the thread its run returns', async () => {
     const api = signIn('alice')
     expect(() => api.key()).toThrow(HarnessError)
-    let returned!: StoredThread
+    let returned!: ReturnedThread
     client.events.mockImplementation((_path: string, input: Turn) => {
       const threadId = input.threadId!
-      returned = storedThread(threadId, {
+      returned = returnedThread(threadId, {
         title: 'Greeting',
         titleState: 'generated',
         createdAt: '2026-05-01T10:00:00Z',
@@ -163,6 +178,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
             id: 'msg_reply',
             role: 'assistant',
             createdAt: '2026-05-01T10:00:03Z',
+            content: 'Hello Sam',
             model: 'test-model',
             modelDisplayName: 'Test model',
             usage: USAGE,
@@ -177,7 +193,12 @@ describe('local chats of a signed-in account without cloud sync', () => {
         ],
       })
       return frames(
-        { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+        {
+          type: 'RUN_STARTED',
+          threadId,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
         {
           type: 'MESSAGES_SNAPSHOT',
           messages: [returned.messages[0] as Message],
@@ -185,15 +206,25 @@ describe('local chats of a signed-in account without cloud sync', () => {
         },
         {
           type: 'STATE_SNAPSHOT',
-          snapshot: { thread: summary(threadId), queue: [] },
+          snapshot: {
+            thread: summary(threadId),
+            queue: [],
+            rateLimit: { kind: null },
+          },
         },
         {
           type: 'TEXT_MESSAGE_CHUNK',
           messageId: 'msg_reply',
+          role: 'assistant',
           delta: 'Hello ',
           timestamp: '2026-05-01T10:00:03Z',
         },
-        { type: 'TEXT_MESSAGE_CHUNK', messageId: 'msg_reply', delta: 'Sam' },
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'msg_reply',
+          role: 'assistant',
+          delta: 'Sam',
+        },
         {
           type: 'STATE_DELTA',
           delta: [
@@ -259,7 +290,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     )
     client.events.mockImplementation((_path: string, input: Turn) => {
       const threadId = input.threadId!
-      const returned = storedThread(threadId, {
+      const returned = returnedThread(threadId, {
         messages: [
           {
             id: input.clientRequestId,
@@ -272,7 +303,12 @@ describe('local chats of a signed-in account without cloud sync', () => {
       return (async function* (): AsyncGenerator<Frame> {
         yield {
           id: 0,
-          event: { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+          event: {
+            type: 'RUN_STARTED',
+            threadId,
+            runId: 'run-1',
+            instance: 'instance-1',
+          },
         }
         // Only the reply's own save fails.
         refuse = true
@@ -287,6 +323,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     await waitFor(() =>
       expect(result.current.errorDetail).toEqual({
         code: 'LOCAL_SAVE_FAILED',
+        action: 'stop',
         message: 'This chat could not be saved on this device.',
       }),
     )
@@ -298,7 +335,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
-    let returned!: StoredThread
+    let returned!: ReturnedThread
     client.events.mockImplementation(async function* (
       _path: string,
       input: Turn,
@@ -311,7 +348,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
         content: 'Hi',
       }
       // The harness stamps the profile's default prompt and its settings.
-      returned = storedThread(threadId, {
+      returned = returnedThread(threadId, {
         title: 'Greeting',
         titleState: 'generated',
         model: 'deep-model',
@@ -320,7 +357,15 @@ describe('local chats of a signed-in account without cloud sync', () => {
         lastRequestId: input.clientRequestId,
         messages: [question],
       })
-      yield { id: 0, event: { type: 'RUN_STARTED', threadId, runId: 'run-1' } }
+      yield {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          threadId,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+      }
       await held
       yield { id: 1, event: finished(threadId, returned) }
     })
@@ -366,20 +411,27 @@ describe('local chats of a signed-in account without cloud sync', () => {
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
-    const returned = seeded({
-      title: 'Generated',
-      titleState: 'generated',
-      lastRequestId: 'request-1',
-      messages: [
-        ...SEEDED_MESSAGES,
-        { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
-      ],
-      ...fields,
-    })
+    const returned = recorded(
+      seeded({
+        title: 'Generated',
+        titleState: 'generated',
+        lastRequestId: 'request-1',
+        messages: [
+          ...SEEDED_MESSAGES,
+          { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
+        ],
+        ...fields,
+      }),
+    )
     client.events.mockImplementation(async function* () {
       yield {
         id: 0,
-        event: { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-1' },
+        event: {
+          type: 'RUN_STARTED',
+          threadId: SEEDED_ID,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
       }
       await held
       yield { id: 1, event: finished(SEEDED_ID, returned) }
@@ -503,7 +555,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     content: 'Q',
   }
   const answered = (threadId: string) =>
-    storedThread(threadId, {
+    returnedThread(threadId, {
       title: 'Answers',
       titleState: 'generated',
       messages: [
@@ -512,6 +564,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
           id: 'msg_reply',
           role: 'assistant',
           createdAt: 't2',
+          content: 'Long answer',
           model: 'test-model',
           timeline: [
             {
@@ -533,7 +586,15 @@ describe('local chats of a signed-in account without cloud sync', () => {
       input: Turn,
     ) {
       const threadId = input.threadId!
-      yield { id: 0, event: { type: 'RUN_STARTED', threadId, runId: 'run-1' } }
+      yield {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          threadId,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+      }
       yield {
         id: 1,
         event: {
@@ -547,6 +608,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
         event: {
           type: 'TEXT_MESSAGE_CHUNK',
           messageId: 'msg_reply',
+          role: 'assistant',
           delta: 'Long answer',
           timestamp: 't2',
         },
@@ -686,26 +748,34 @@ describe('local chats of a signed-in account without cloud sync', () => {
       createdAt: 't5',
       content: 'third',
     }
-    const returned = seeded({
-      messages: [
-        ...SEEDED_MESSAGES,
-        question,
-        {
-          id: 'a3',
-          role: 'assistant',
-          createdAt: 't6',
-          timeline: [
-            { id: 'a3_content_0', type: 'content', content: 'third answer' },
-          ],
-        },
-      ],
-    })
+    const returned = recorded(
+      seeded({
+        messages: [
+          ...SEEDED_MESSAGES,
+          question,
+          {
+            id: 'a3',
+            role: 'assistant',
+            createdAt: 't6',
+            content: 'third answer',
+            timeline: [
+              { id: 'a3_content_0', type: 'content', content: 'third answer' },
+            ],
+          },
+        ],
+      }),
+    )
     client.events
       .mockImplementationOnce(unreachable)
       .mockImplementationOnce(unreachable)
       .mockImplementationOnce(
         frames(
-          { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-a3' },
+          {
+            type: 'RUN_STARTED',
+            threadId: SEEDED_ID,
+            runId: 'run-a3',
+            instance: 'instance-1',
+          },
           {
             type: 'MESSAGES_SNAPSHOT',
             messages: [...SEEDED_MESSAGES, question] as Message[],
@@ -714,6 +784,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
           {
             type: 'TEXT_MESSAGE_CHUNK',
             messageId: 'a3',
+            role: 'assistant',
             delta: 'third answer',
             timestamp: 't6',
           },
@@ -743,7 +814,11 @@ describe('local chats of a signed-in account without cloud sync', () => {
     await reloadDuringRun()
     client.events.mockImplementationOnce(async function* () {
       throw new HarnessError(
-        { code: 'RUN_NOT_FOUND', message: 'The run is not running here' },
+        {
+          code: 'RUN_NOT_FOUND',
+          message: 'The run is not running here',
+          action: 'reload',
+        },
         404,
       )
     })
@@ -835,27 +910,32 @@ describe('local chats of a signed-in account without cloud sync', () => {
     signIn('alice')
     await localThreadStore('device').update(SEEDED_ID, () => seeded())
     const [u1, a1] = SEEDED_MESSAGES
-    let returned!: StoredThread
+    let returned!: ReturnedThread
     client.events.mockImplementation((_path: string, input: Turn) => {
-      returned = seeded({
-        lastRequestId: input.clientRequestId,
-        messages: [
-          u1,
-          a1,
-          {
-            id: input.clientRequestId,
-            role: 'user',
-            createdAt: 't5',
-            content: 'second, edited',
-          },
-          {
-            id: 'msg_new',
-            role: 'assistant',
-            createdAt: 't6',
-            timeline: [{ id: 'b3', type: 'content', content: 'edited answer' }],
-          },
-        ],
-      })
+      returned = recorded(
+        seeded({
+          lastRequestId: input.clientRequestId,
+          messages: [
+            u1,
+            a1,
+            {
+              id: input.clientRequestId,
+              role: 'user',
+              createdAt: 't5',
+              content: 'second, edited',
+            },
+            {
+              id: 'msg_new',
+              role: 'assistant',
+              createdAt: 't6',
+              content: 'edited answer',
+              timeline: [
+                { id: 'b3', type: 'content', content: 'edited answer' },
+              ],
+            },
+          ],
+        }),
+      )
       return deviceRun(SEEDED_ID, returned)()
     })
     const { result } = renderHook(() =>
@@ -901,7 +981,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     client.events.mockImplementation((_path: string, input: Turn) =>
       deviceRun(
         input.threadId!,
-        storedThread(input.threadId!, {
+        returnedThread(input.threadId!, {
           messages: [
             {
               id: input.clientRequestId,
@@ -914,6 +994,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
               id: 'msg_answer',
               role: 'assistant',
               createdAt: 't2',
+              content: 'A red one',
               timeline: [{ id: 'b1', type: 'content', content: 'A red one' }],
             },
           ],
@@ -957,7 +1038,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     first.unmount()
 
     client.events.mockImplementation(
-      deviceRun(threadId, storedThread(threadId)),
+      deviceRun(threadId, returnedThread(threadId)),
     )
     const reloaded = renderHook(() =>
       useThread(threadId, null, { local: true }),
@@ -973,7 +1054,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
 
     await act(() => reloaded.result.current.send({ content: 'And now?' }))
 
-    expect(turn(1).thread?.messages[0].attachments).toEqual([kept])
+    expect(turn(1).thread?.messages?.[0].attachments).toEqual([kept])
   })
 
   it('sends the stored chat with every image it holds', async () => {
@@ -998,7 +1079,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
       seeded({ messages: photos }),
     )
     client.events.mockImplementation(
-      deviceRun(SEEDED_ID, seeded({ messages: photos })),
+      deviceRun(SEEDED_ID, recorded(seeded({ messages: photos }))),
     )
     const { result } = renderHook(() =>
       useThread(SEEDED_ID, null, { local: true }),
@@ -1076,7 +1157,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
         },
       ],
     })
-    const upgraded = storedThread(SEEDED_ID, {
+    const upgraded = returnedThread(SEEDED_ID, {
       title: 'Cats',
       titleState: 'generated',
       messages: [
@@ -1100,6 +1181,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
           id: `${SEEDED_ID}-message-1`,
           role: 'assistant',
           createdAt: '2026-01-01T00:00:02Z',
+          content: 'A cat',
           timeline: [
             {
               id: `${SEEDED_ID}-message-1-content`,
@@ -1162,7 +1244,12 @@ describe('local chats of a signed-in account without cloud sync', () => {
     }
     client.events.mockImplementation(
       frames(
-        { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-1' },
+        {
+          type: 'RUN_STARTED',
+          threadId: SEEDED_ID,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
         {
           type: 'MESSAGES_SNAPSHOT',
           messages: [u2, a2, question] as Message[],
@@ -1170,7 +1257,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
         },
         finished(
           SEEDED_ID,
-          seeded({ messages: [...SEEDED_MESSAGES, question] }),
+          recorded(seeded({ messages: [...SEEDED_MESSAGES, question] })),
         ),
       ),
     )
@@ -1202,7 +1289,12 @@ describe('local chats of a signed-in account without cloud sync', () => {
     }
     client.events.mockImplementation(
       frames(
-        { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-1' },
+        {
+          type: 'RUN_STARTED',
+          threadId: SEEDED_ID,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
         {
           type: 'MESSAGES_SNAPSHOT',
           messages: [question] as Message[],
@@ -1210,7 +1302,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
         },
         finished(
           SEEDED_ID,
-          seeded({ messages: [...SEEDED_MESSAGES, question] }),
+          recorded(seeded({ messages: [...SEEDED_MESSAGES, question] })),
         ),
       ),
     )
@@ -1251,6 +1343,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
           type: 'RUN_STARTED',
           threadId: input.threadId!,
           runId: 'run-1',
+          instance: 'instance-1',
         },
       }
       await held
@@ -1579,13 +1672,14 @@ describe('signed-out chats', () => {
           id: 'msg_a',
           role: 'assistant',
           createdAt: 't2',
+          content: 'Hi',
           timeline: [{ id: 'b1', type: 'content', content: 'Hi' }],
         },
       ]
       client.events.mockImplementation((_path: string, input: Turn) =>
         deviceRun(
           input.threadId!,
-          storedThread(input.threadId!, { messages }),
+          returnedThread(input.threadId!, { messages }),
         )(),
       )
       const { result } = renderHook(() => useThread())
@@ -1628,22 +1722,23 @@ describe('temporary chats', () => {
           return { threads: [], nextCursor: null }
         throw new Error(`Unexpected ${path}`)
       })
-      const returned: StoredThread[] = []
+      const returned: ReturnedThread[] = []
       client.events.mockImplementation((_path: string, input: Turn) => {
-        const thread = storedThread(input.threadId!, {
+        const thread = returnedThread(input.threadId!, {
           lastRequestId: input.clientRequestId,
           messages: [
-            ...(input.thread?.messages ?? []),
+            ...(returned.at(-1)?.messages ?? []),
             {
               id: input.clientRequestId,
               role: 'user',
               createdAt: 't1',
-              content: input.content,
+              content: input.content ?? '',
             },
             {
               id: `reply-${returned.length}`,
               role: 'assistant',
               createdAt: 't2',
+              content: 'Noted',
               timeline: [{ id: 'b1', type: 'content', content: 'Noted' }],
             },
           ],
@@ -1696,7 +1791,9 @@ describe('the prompt cache secret', () => {
     const answer = (_path: string, input: Turn) =>
       deviceRun(
         input.threadId!,
-        storedThread(input.threadId!, { lastRequestId: input.clientRequestId }),
+        returnedThread(input.threadId!, {
+          lastRequestId: input.clientRequestId,
+        }),
         input.clientRequestId,
       )()
     signIn('alice')
@@ -1757,8 +1854,18 @@ describe('cloud chats', () => {
     )
     client.events.mockImplementation(
       frames(
-        { type: 'RUN_STARTED', threadId: 'cloud-thread', runId: 'run-1' },
-        { type: 'RUN_FINISHED', threadId: 'cloud-thread', runId: 'run-1' },
+        {
+          type: 'RUN_STARTED',
+          threadId: 'cloud-thread',
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+        {
+          type: 'RUN_FINISHED',
+          threadId: 'cloud-thread',
+          runId: 'run-1',
+          metadata: {},
+        },
       ),
     )
     const { result } = renderHook(() => useThread(null, 'project-1'))
@@ -1786,14 +1893,28 @@ describe('cloud chats', () => {
     client.events
       .mockImplementationOnce(async function* () {
         throw new HarnessError(
-          { code: 'RATE_LIMITED', message: 'Chat access is busy' },
+          {
+            code: 'RATE_LIMITED',
+            message: 'Chat access is busy',
+            action: 'retry',
+          },
           429,
         )
       })
       .mockImplementationOnce((_path: string, input: Turn) =>
         frames(
-          { type: 'RUN_STARTED', threadId: input.threadId!, runId: 'run-1' },
-          { type: 'RUN_FINISHED', threadId: input.threadId!, runId: 'run-1' },
+          {
+            type: 'RUN_STARTED',
+            threadId: input.threadId!,
+            runId: 'run-1',
+            instance: 'instance-1',
+          },
+          {
+            type: 'RUN_FINISHED',
+            threadId: input.threadId!,
+            runId: 'run-1',
+            metadata: {},
+          },
         )(),
       )
     const { result } = renderHook(() => useThread(null, 'project-1'))
@@ -1840,9 +1961,19 @@ describe('cloud chats', () => {
       content: 'Question',
     }
     const started: Frame['event'][] = [
-      { type: 'RUN_STARTED', threadId: stored.id, runId: 'run-1' },
+      {
+        type: 'RUN_STARTED',
+        threadId: stored.id,
+        runId: 'run-1',
+        instance: 'instance-1',
+      },
       { type: 'MESSAGES_SNAPSHOT', messages: [question], hasOlder: false },
-      { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: 'Hel' },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'a1',
+        role: 'assistant',
+        delta: 'Hel',
+      },
     ]
     function dropsAfter(events: Frame['event'][]) {
       return async function* () {
@@ -1888,8 +2019,18 @@ describe('cloud chats', () => {
         .mockImplementationOnce(
           frames(
             ...started,
-            { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: 'lo' },
-            { type: 'RUN_FINISHED', threadId: stored.id, runId: 'run-1' },
+            {
+              type: 'TEXT_MESSAGE_CHUNK',
+              messageId: 'a1',
+              role: 'assistant',
+              delta: 'lo',
+            },
+            {
+              type: 'RUN_FINISHED',
+              threadId: stored.id,
+              runId: 'run-1',
+              metadata: {},
+            },
           ),
         )
 
@@ -1921,11 +2062,16 @@ describe('cloud chats', () => {
       expect(result.current.status).toBe('error')
       expect(result.current.errorDetail).toEqual({
         code: 'STREAM_INTERRUPTED',
+        action: 'retry',
         message: 'The connection closed. Reconnect to continue.',
       })
       client.events.mockImplementationOnce(async function* () {
         throw new HarnessError(
-          { code: 'RUN_NOT_FOUND', message: 'The run is not running here' },
+          {
+            code: 'RUN_NOT_FOUND',
+            message: 'The run is not running here',
+            action: 'reload',
+          },
           404,
         )
       })
@@ -1976,7 +2122,11 @@ describe('cloud chats', () => {
     })
     client.events.mockImplementationOnce(async function* () {
       throw new HarnessError(
-        { code: 'RUN_NOT_FOUND', message: 'The run is not running here' },
+        {
+          code: 'RUN_NOT_FOUND',
+          message: 'The run is not running here',
+          action: 'reload',
+        },
         404,
       )
     })
@@ -2051,12 +2201,22 @@ describe('cloud chats', () => {
     client.events.mockImplementation(async function* () {
       yield {
         id: 0,
-        event: { type: 'RUN_STARTED', threadId: stored.id, runId: 'run-1' },
+        event: {
+          type: 'RUN_STARTED',
+          threadId: stored.id,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
       }
       await held
       yield {
         id: 1,
-        event: { type: 'RUN_FINISHED', threadId: stored.id, runId: 'run-1' },
+        event: {
+          type: 'RUN_FINISHED',
+          threadId: stored.id,
+          runId: 'run-1',
+          metadata: {},
+        },
       }
     })
     const { result } = renderHook(() => useThread())
@@ -2084,7 +2244,11 @@ describe('cloud chats', () => {
     signIn('alice', true)
     const stored = summary('cloud-thread', 'Stored')
     const refusal = new HarnessError(
-      { code: 'UPSTREAM_REFUSED', message: 'The chat could not be renamed' },
+      {
+        code: 'UPSTREAM_REFUSED',
+        message: 'The chat could not be renamed',
+        action: 'retry',
+      },
       502,
     )
     client.post.mockImplementation(async (path: string) => {
@@ -2102,12 +2266,22 @@ describe('cloud chats', () => {
     client.events.mockImplementation(async function* () {
       yield {
         id: 0,
-        event: { type: 'RUN_STARTED', threadId: stored.id, runId: 'run-1' },
+        event: {
+          type: 'RUN_STARTED',
+          threadId: stored.id,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
       }
       await held
       yield {
         id: 1,
-        event: { type: 'RUN_FINISHED', threadId: stored.id, runId: 'run-1' },
+        event: {
+          type: 'RUN_FINISHED',
+          threadId: stored.id,
+          runId: 'run-1',
+          metadata: {},
+        },
       }
     })
     const { result } = renderHook(() => useThread(stored.id))
@@ -2160,12 +2334,22 @@ describe('cloud chats', () => {
         const threadId = input.threadId!
         yield {
           id: 0,
-          event: { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+          event: {
+            type: 'RUN_STARTED',
+            threadId,
+            runId: 'run-1',
+            instance: 'instance-1',
+          },
         }
         await held
         yield {
           id: 1,
-          event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+          event: {
+            type: 'RUN_FINISHED',
+            threadId,
+            runId: 'run-1',
+            metadata: {},
+          },
         }
       })
       const { result } = renderHook(() => useThread())
@@ -2178,6 +2362,7 @@ describe('cloud chats', () => {
       const refusal = new HarnessError({
         code: 'KEY_REQUIRED',
         message: 'Unlock your encryption key in Settings to continue.',
+        action: 'unlock',
       })
       vi.mocked(api.key).mockImplementation(() => {
         throw refusal
@@ -2216,7 +2401,12 @@ describe('cloud chats', () => {
     ) {
       const threadId = input.threadId!
       const events: Frame['event'][] = [
-        { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+        {
+          type: 'RUN_STARTED',
+          threadId,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
         {
           type: 'TOOL_CALL_START',
           toolCallId: 'call-1',
@@ -2231,7 +2421,13 @@ describe('cloud chats', () => {
         {
           type: 'ACTIVITY_SNAPSHOT',
           messageId: 'act_call-1',
-          content: { toolCallId: 'call-1', progress: 0, output: [] },
+          activityType: 'TOOL',
+          content: {
+            toolCallId: 'call-1',
+            tool: 'web_search',
+            progress: 0,
+            output: [],
+          },
           display: { query: 'red doors', status: 'running', sources: [] },
         },
       ]
@@ -2241,7 +2437,9 @@ describe('cloud chats', () => {
         id: 4,
         event: {
           type: 'TOOL_CALL_RESULT',
+          messageId: 'tool-call-1',
           toolCallId: 'call-1',
+          role: 'tool',
           content: { results: [] },
           display: {
             query: 'red doors',
@@ -2252,7 +2450,7 @@ describe('cloud chats', () => {
       }
       yield {
         id: 5,
-        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1', metadata: {} },
       }
     })
     const { result } = renderHook(() => useThread())

@@ -10,6 +10,7 @@ import type {
   Frame,
   Json,
   Message,
+  QueueItem,
   RateLimit,
   TimelineBlock,
 } from '@/services/harness/types'
@@ -69,6 +70,15 @@ describe('harness SSE', () => {
 })
 
 describe('harness reducer', () => {
+  // A turn queued behind the running reply, as a run's state lists it.
+  const queued = (queueId: string, content: string): QueueItem => ({
+    queueId,
+    kind: 'send',
+    content,
+    quote: null,
+    attachments: [],
+    createdAt: '2026-10-01T00:00:00Z',
+  })
   it('applies committed metadata to each reply without changing earlier replies', () => {
     let state = initialChat()
     state.messages = [
@@ -81,13 +91,19 @@ describe('harness reducer', () => {
     ]
     state = reduceEvent(state, {
       id: 0,
-      event: { type: 'RUN_STARTED', runId: 'run' },
+      event: {
+        type: 'RUN_STARTED',
+        threadId: 't',
+        runId: 'run',
+        instance: 'instance-1',
+      },
     })
     state = reduceEvent(state, {
       id: 1,
       event: {
         type: 'TEXT_MESSAGE_CHUNK',
         messageId: 'answer',
+        role: 'assistant',
         delta: 'A sourced answer.',
       },
     })
@@ -98,7 +114,12 @@ describe('harness reducer', () => {
       annotations: [
         {
           type: 'url_citation' as const,
-          url_citation: { url: 'https://example.org', title: 'Source' },
+          url_citation: {
+            url: 'https://example.org',
+            title: 'Source',
+            start_index: 0,
+            end_index: 17,
+          },
         },
       ],
       usage: { promptTokens: 17, completionTokens: 4 },
@@ -109,7 +130,11 @@ describe('harness reducer', () => {
       id: 2,
       event: {
         type: 'RUN_ERROR',
+        threadId: 't',
         runId: 'run',
+        code: 'UPSTREAM_REFUSED',
+        message: 'The model could not finish the reply.',
+        action: 'retry',
         metadata: { messages: [metadata] },
       },
     })
@@ -121,7 +146,12 @@ describe('harness reducer', () => {
   it('keeps the active run when a separately streamed queued turn is removed', () => {
     let state = reduceEvent(initialChat(), {
       id: 0,
-      event: { type: 'RUN_STARTED', runId: 'active', threadId: 't' },
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'active',
+        threadId: 't',
+        instance: 'instance-1',
+      },
     })
     state = reduceEvent(state, {
       id: 0,
@@ -132,7 +162,7 @@ describe('harness reducer', () => {
           {
             op: 'add',
             path: '/queue/-',
-            value: { queueId: 'queued', content: 'later' },
+            value: queued('queued', 'later'),
           },
         ],
       },
@@ -141,6 +171,7 @@ describe('harness reducer', () => {
       id: 1,
       event: {
         type: 'RUN_FINISHED',
+        threadId: 't',
         runId: 'queued',
         metadata: { cancelled: true },
       },
@@ -150,11 +181,21 @@ describe('harness reducer', () => {
     expect(state.snapshot.queue).toEqual([])
     state = reduceEvent(state, {
       id: 0,
-      event: { type: 'RUN_STARTED', runId: 'next' },
+      event: {
+        type: 'RUN_STARTED',
+        threadId: 't',
+        runId: 'next',
+        instance: 'instance-1',
+      },
     })
     state = reduceEvent(state, {
       id: 2,
-      event: { type: 'RUN_FINISHED', runId: 'active' },
+      event: {
+        type: 'RUN_FINISHED',
+        threadId: 't',
+        runId: 'active',
+        metadata: {},
+      },
     })
     expect(state.status).toBe('streaming')
     expect(state.runId).toBe('next')
@@ -162,12 +203,21 @@ describe('harness reducer', () => {
   it('replaces the cursor snapshot, deduplicates deltas and retries the same widget', () => {
     let state = initialChat()
     const frames: Frame[] = [
-      { id: 0, event: { type: 'RUN_STARTED', runId: 'r', threadId: 't' } },
+      {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          runId: 'r',
+          threadId: 't',
+          instance: 'instance-1',
+        },
+      },
       {
         id: 1,
         event: {
           type: 'TEXT_MESSAGE_CHUNK',
           messageId: 'm',
+          role: 'assistant',
           delta: 'Keep this',
         },
       },
@@ -192,7 +242,9 @@ describe('harness reducer', () => {
         id: 4,
         event: {
           type: 'TOOL_CALL_RESULT',
+          messageId: 'tool-result',
           toolCallId: 'call',
+          role: 'tool',
           content: { result: 'kept' },
         },
       },
@@ -200,12 +252,21 @@ describe('harness reducer', () => {
     for (const frame of frames) state = reduceEvent(state, frame)
     expect(reduceEvent(state, frames[1])).toBe(state)
     state = reduceEvent(state, {
-      event: { type: 'MESSAGES_SNAPSHOT', messages: state.messages },
+      event: {
+        type: 'MESSAGES_SNAPSHOT',
+        messages: state.messages,
+        hasOlder: false,
+      },
     })
     state.messages[0].timeline![1].invalidArguments = true
     state = reduceEvent(state, {
       id: 0,
-      event: { type: 'RUN_STARTED', runId: 'retry', threadId: 't' },
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'retry',
+        threadId: 't',
+        instance: 'instance-1',
+      },
     })
     state = reduceEvent(state, {
       id: 1,
@@ -248,7 +309,12 @@ describe('harness reducer', () => {
         messageId: 'm-reasoning',
         delta: 'Think',
       },
-      { type: 'TEXT_MESSAGE_CHUNK', messageId: 'm', delta: 'Text' },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'm',
+        role: 'assistant',
+        delta: 'Text',
+      },
       {
         type: 'TOOL_CALL_START',
         parentMessageId: 'm',
@@ -258,15 +324,19 @@ describe('harness reducer', () => {
       {
         type: 'ACTIVITY_SNAPSHOT',
         messageId: 'act_c',
-        content: { output: [] },
+        activityType: 'TOOL',
+        content: { toolCallId: 'c', tool: 'python', progress: 0, output: [] },
       },
       {
         type: 'ACTIVITY_DELTA',
         messageId: 'act_c',
+        activityType: 'TOOL',
         patch: [{ op: 'add' as const, path: '/output/-', value: '1' }],
       },
       {
         type: 'RUN_FINISHED',
+        threadId: 't',
+        runId: 'r',
         metadata: {
           cancelled: true,
           messages: [{ id: 'm', isInterrupted: true }],
@@ -282,23 +352,30 @@ describe('harness reducer', () => {
     expect(state.messages[0].timeline?.[2].progress).toEqual(['1'])
     expect(state.messages[0].isInterrupted).toBe(true)
   })
+  const summary = {
+    id: 't',
+    title: 'New Chat',
+    titleState: 'placeholder',
+    createdAt: 't0',
+    updatedAt: 't0',
+    activityAt: 't0',
+    model: 'test-model',
+    projectId: null,
+    pinned: false,
+    webSearchEnabled: true,
+    contextUsage: null,
+    messageCount: 1,
+    activeRun: null,
+  } as const
   it('applies the queue and title changes a run sends, and refuses others', () => {
-    const summary = {
-      id: 't',
-      title: 'New Chat',
-      titleState: 'placeholder',
-      createdAt: 't0',
-      updatedAt: 't0',
-      model: 'test-model',
-      projectId: null,
-      pinned: false,
-      webSearchEnabled: true,
-      messageCount: 1,
-      activeRun: null,
-    } as const
     let state = reduceEvent(initialChat(), {
       id: 0,
-      event: { type: 'RUN_STARTED', runId: 'r', threadId: 't' },
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'r',
+        threadId: 't',
+        instance: 'instance-1',
+      },
     })
     state = reduceEvent(state, {
       id: 1,
@@ -306,7 +383,8 @@ describe('harness reducer', () => {
         type: 'STATE_SNAPSHOT',
         snapshot: {
           thread: summary,
-          queue: [{ queueId: 'q1', content: 'first' }],
+          queue: [queued('q1', 'first')],
+          rateLimit: { kind: null },
         },
       },
     })
@@ -319,7 +397,7 @@ describe('harness reducer', () => {
           {
             op: 'add',
             path: '/queue/-',
-            value: { queueId: 'q2', content: 'second' },
+            value: queued('q2', 'second'),
           },
           { op: 'replace', path: '/thread/title', value: 'Named' },
           { op: 'replace', path: '/thread/titleState', value: 'generated' },
@@ -328,14 +406,13 @@ describe('harness reducer', () => {
     })
     expect(state.snapshot).toEqual({
       thread: { ...summary, title: 'Named', titleState: 'generated' },
-      queue: [
-        { queueId: 'q1', content: 'first' },
-        { queueId: 'q2', content: 'second' },
-      ],
+      queue: [queued('q1', 'first'), queued('q2', 'second')],
+      rateLimit: { kind: null },
     })
     expect(before.snapshot).toEqual({
       thread: summary,
-      queue: [{ queueId: 'q1', content: 'first' }],
+      queue: [queued('q1', 'first')],
+      rateLimit: { kind: null },
     })
     state = reduceEvent(state, {
       id: 3,
@@ -361,8 +438,9 @@ describe('harness reducer', () => {
       event: {
         type: 'STATE_SNAPSHOT',
         snapshot: {
-          thread: null,
-          queue: [{ queueId: 'q1', content: 'first' }],
+          thread: summary,
+          queue: [queued('q1', 'first')],
+          rateLimit: { kind: null },
         },
       },
     })
@@ -377,7 +455,7 @@ describe('harness reducer', () => {
             {
               op: 'add',
               path: '/queue/-',
-              value: { queueId: 'q2', content: 'second' },
+              value: queued('q2', 'second'),
             },
             { op: 'remove', path: '/queue/0' },
           ] as never,
@@ -401,6 +479,7 @@ describe('harness reducer', () => {
   const text = (delta: string, seconds: number): Frame['event'] => ({
     type: 'TEXT_MESSAGE_CHUNK',
     messageId: 'r',
+    role: 'assistant',
     delta,
     timestamp: stepAt(seconds),
   })
@@ -429,7 +508,9 @@ describe('harness reducer', () => {
       },
       {
         type: 'TOOL_CALL_RESULT',
+        messageId: 'tool-result',
         toolCallId: 's',
+        role: 'tool',
         content: { results: [] },
         timestamp: stepAt(6),
       },
@@ -482,7 +563,13 @@ describe('harness reducer', () => {
       },
       { type: 'TOOL_CALL_ARGS', toolCallId, delta: '{"url":"x"}' },
       { type: 'TOOL_CALL_END', toolCallId },
-      { type: 'TOOL_CALL_RESULT', toolCallId, content },
+      {
+        type: 'TOOL_CALL_RESULT',
+        messageId: `tool-${toolCallId}`,
+        toolCallId,
+        role: 'tool',
+        content,
+      },
     ]
     const refusal = { status: 'error', error: 'The arguments did not match.' }
     let state = initialChat()
@@ -529,15 +616,30 @@ describe('harness reducer', () => {
   it('leaves the state a frame was applied to as it was', () => {
     const started = reduceEvent(initialChat(), {
       id: 0,
-      event: { type: 'RUN_STARTED', runId: 'r', threadId: 't' },
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'r',
+        threadId: 't',
+        instance: 'instance-1',
+      },
     })
     const first = reduceEvent(started, {
       id: 1,
-      event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'm', delta: 'Hello' },
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'm',
+        role: 'assistant',
+        delta: 'Hello',
+      },
     })
     const second = reduceEvent(first, {
       id: 2,
-      event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'm', delta: ' there' },
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'm',
+        role: 'assistant',
+        delta: ' there',
+      },
     })
 
     expect(first.messages[0].timeline).toEqual([
@@ -564,7 +666,13 @@ describe('continuing a reply', () => {
   function run(window: Message[], ...events: Frame['event'][]) {
     let state = initialChat()
     for (const [id, event] of [
-      { type: 'RUN_STARTED', threadId: 't', runId: 'run-2', messageId: 'a1' },
+      {
+        type: 'RUN_STARTED',
+        threadId: 't',
+        runId: 'run-2',
+        instance: 'instance-1',
+        messageId: 'a1',
+      },
       { type: 'MESSAGES_SNAPSHOT', messages: window, hasOlder: false },
       ...events,
       {
@@ -589,7 +697,12 @@ describe('continuing a reply', () => {
           { id: 'c', type: 'content', content: 'Once upon' },
         ),
       ],
-      { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: ' a time' },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'a1',
+        role: 'assistant',
+        delta: ' a time',
+      },
     )
     expect(state.messages).toHaveLength(2)
     expect(state.messages[1].timeline).toEqual([
@@ -615,7 +728,12 @@ describe('continuing a reply', () => {
           },
         ),
       ],
-      { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: 'Here it is.' },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'a1',
+        role: 'assistant',
+        delta: 'Here it is.',
+      },
     )
     expect(state.messages[1].timeline?.map((block) => block.type)).toEqual([
       'thinking',
@@ -670,11 +788,23 @@ describe('attested harness transport', () => {
   beforeEach(() => {
     stubChatAccess()
   })
+  // The harness's refusal of an expired Clerk session.
+  const expiredSession = () =>
+    Response.json(
+      {
+        error: {
+          code: 'UNAUTHENTICATED',
+          message: 'Expired session',
+          action: 'reauthenticate',
+        },
+      },
+      { status: 401 },
+    )
   it('refreshes an expired Clerk JWT once while retaining the same turn nonce and body', async () => {
     vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['fr-FR', 'fr'])
     const secure = transport()
     secure.fetch
-      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
+      .mockResolvedValueOnce(expiredSession())
       .mockResolvedValueOnce(new Response('{"ok":true}'))
     const getToken = vi
       .fn()
@@ -726,7 +856,7 @@ describe('attested harness transport', () => {
   })
   it('never downgrades rejected authentication to anonymous', async () => {
     const secure = transport()
-    secure.fetch.mockResolvedValueOnce(new Response('{}', { status: 401 }))
+    secure.fetch.mockResolvedValueOnce(expiredSession())
     const client = new HarnessClient(
       'https://harness.example',
       vi.fn().mockResolvedValueOnce('old').mockResolvedValueOnce(null),
@@ -855,7 +985,11 @@ describe('chat access a signed-in client mints', () => {
   const needsAccess = () =>
     Response.json(
       {
-        error: { code: 'CREDENTIAL_REQUIRED', message: 'Chat access expired' },
+        error: {
+          code: 'CREDENTIAL_REQUIRED',
+          message: 'Chat access expired',
+          action: 'reauthenticate',
+        },
       },
       { status: 401 },
     )
@@ -1186,7 +1320,13 @@ describe('chat access a signed-in client mints', () => {
       const headers = new Headers(init.headers)
       if (headers.get('Authorization') === 'Bearer expired')
         return Response.json(
-          { error: { code: 'UNAUTHENTICATED', message: 'Expired session' } },
+          {
+            error: {
+              code: 'UNAUTHENTICATED',
+              message: 'Expired session',
+              action: 'reauthenticate',
+            },
+          },
           { status: 401 },
         )
       return headers.has(INFERENCE_KEY_HEADER)

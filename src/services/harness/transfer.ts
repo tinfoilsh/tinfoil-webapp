@@ -1,6 +1,6 @@
 import { logError } from '@/utils/error-handling'
 import type { LocalThreadStore, Originals } from './local-threads'
-import { ERROR_CODES, ROUTES } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import type { HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import type { StoredThread, ThreadSummary } from './types'
@@ -21,6 +21,7 @@ export function transferInFlight(): HarnessError {
   return new HarnessError(
     {
       code: ERROR_CODES.runInFlight,
+      action: ERROR_ACTIONS.retry,
       message: 'Wait for the reply to finish before moving this chat.',
     },
     409,
@@ -31,6 +32,7 @@ const alreadyOnDevice = () =>
   new HarnessError(
     {
       code: ERROR_CODES.threadExists,
+      action: ERROR_ACTIONS.stop,
       message: 'This chat is already stored on this device.',
     },
     409,
@@ -78,6 +80,7 @@ async function cloudTranscript(
   )
     throw new HarnessError({
       code: ERROR_CODES.upstreamRefused,
+      action: ERROR_ACTIONS.retry,
       message: 'The chat service returned an invalid chat.',
     })
   return {
@@ -139,6 +142,7 @@ async function deviceCopy(
     throw new HarnessError(
       {
         code: ERROR_CODES.threadNotFound,
+        action: ERROR_ACTIONS.stop,
         message: 'This chat is no longer stored on this device.',
       },
       404,

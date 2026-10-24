@@ -1,7 +1,7 @@
 import type { AttachmentOriginal } from '@/services/storage/indexed-db'
 import { isThread, localThreadStore, type Originals } from './local-threads'
 import { imageBlob } from './open-attachments'
-import { ERROR_CODES, ROUTES } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import { harnessAPI, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import type {
@@ -52,6 +52,7 @@ const deviceStore = (api: HarnessAPI) => {
   if (!api.userId)
     throw new HarnessError({
       code: ERROR_CODES.unauthenticated,
+      action: ERROR_ACTIONS.stop,
       message: 'Sign in to import or export chats.',
     })
   return localThreadStore('device')
@@ -163,6 +164,7 @@ function countClaudeProjects(text: string): ClaudeProjectsExport {
   if (!Array.isArray(projects))
     throw new HarnessError({
       code: ERROR_CODES.invalidStream,
+      action: ERROR_ACTIONS.retry,
       message: 'The chat service returned an invalid export.',
     })
   return {
@@ -212,6 +214,7 @@ interface FileImport extends ImportDone {
 const invalidImport = () =>
   new HarnessError({
     code: ERROR_CODES.invalidStream,
+    action: ERROR_ACTIONS.retry,
     message: 'The chat service returned an invalid import.',
   })
 
@@ -328,6 +331,7 @@ async function importFile(
   }
   throw new HarnessError({
     code: ERROR_CODES.streamInterrupted,
+    action: ERROR_ACTIONS.retry,
     message: 'The import ended before it finished.',
   })
 }

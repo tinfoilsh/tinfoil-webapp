@@ -27,6 +27,7 @@ function summary(id: string, title: string): ThreadSummary {
     titleState: 'generated',
     createdAt: '2026-04-01T09:00:00Z',
     updatedAt: '2026-04-01T09:05:00Z',
+    activityAt: '2026-04-01T09:00:00Z',
     model: 'test-model',
     projectId: null,
     pinned: false,
@@ -83,6 +84,7 @@ const deviceCopy: StoredThread = storedThread(CHAT_ID, {
       id: 'r1',
       role: 'assistant',
       createdAt: '2026-04-01T09:00:02Z',
+      content: 'Nice beds',
       model: 'test-model',
       timeline: [
         { id: 'r1_thinking_0', type: 'thinking', content: 'Looking' },
@@ -159,7 +161,11 @@ describe('moving a stored chat to this device', () => {
     signIn({ cloud: true })
     const cloud = [summary(CHAT_ID, 'Garden plans')]
     const refusal = new HarnessError(
-      { code: 'KEY_MISMATCH', message: 'The chat is sealed with another key' },
+      {
+        code: 'KEY_MISMATCH',
+        message: 'The chat is sealed with another key',
+        action: 'unlock',
+      },
       409,
     )
     let copied: StoredThread | null = null
@@ -197,7 +203,11 @@ describe('moving a stored chat to this device', () => {
     [
       'a server error',
       new HarnessError(
-        { code: 'SYNC_OUTCOME_UNKNOWN', message: 'Sync did not answer' },
+        {
+          code: 'SYNC_OUTCOME_UNKNOWN',
+          message: 'Sync did not answer',
+          action: 'retry',
+        },
         503,
       ),
     ],
@@ -237,6 +247,7 @@ describe('moving a stored chat to this device', () => {
       {
         code: 'ATTACHMENTS_UNAVAILABLE',
         message: '1 attachments in this chat could not be read',
+        action: 'retry',
       },
       409,
     )
@@ -430,7 +441,11 @@ describe('moving a chat from this device to the cloud', () => {
     signIn({ cloud: true })
     await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
     const refusal = new HarnessError(
-      { code: 'THREAD_EXISTS', message: 'This chat is already in the cloud' },
+      {
+        code: 'THREAD_EXISTS',
+        message: 'This chat is already in the cloud',
+        action: 'stop',
+      },
       409,
     )
     client.post.mockImplementation(async (path: string) => {

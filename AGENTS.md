@@ -10,6 +10,8 @@ NEVER run npm run dev, npm start, or start the development server. Only make cod
 
 NEVER use raw fetch() for API requests to Tinfoil enclaves. Always use the Tinfoil SDK client for the enclave: `HarnessClient` (src/services/harness/client.ts) for the chat harness, which makes every inference call itself, and the SDK's `SecureClient` for any other enclave. The SDK handles attestation verification which is critical for security.
 
+The harness's wire types come from `harness-protocol/openapi.yaml` through `src/services/harness/openapi.ts`; `types.ts` only names them. Never hand-write a harness request, response or event type, or edit the generated file: sync the protocol from the harness (see DEVELOPMENT.md).
+
 # Error Classification
 
 NEVER string match on error messages to drive control flow (retries, fallbacks, recovery). Messages vary across browsers, SDK versions, and locales. Classify errors with structured signals instead: error classes (instanceof, e.g. the OpenAI SDK's APIConnectionError), spec-defined error names (DOMException "AbortError"), error codes, and HTTP status codes.

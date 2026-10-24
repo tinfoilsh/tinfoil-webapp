@@ -24,7 +24,12 @@ import {
   localProfileChanges,
   saveLocalProfile,
 } from './local-profile'
-import { ERROR_CODES, ROUTES, type HarnessRoute } from './protocol'
+import {
+  ERROR_ACTIONS,
+  ERROR_CODES,
+  ROUTES,
+  type HarnessRoute,
+} from './protocol'
 import { HarnessError } from './sse'
 import type { Json, RateLimit, Session, TokenBudget } from './types'
 
@@ -198,12 +203,14 @@ export class HarnessAPI {
     if (localStorage.getItem(AUTH_ACTIVE_USER_ID) !== this.userId)
       throw new HarnessError({
         code: ERROR_CODES.keyRequired,
+        action: ERROR_ACTIONS.retry,
         message: 'Wait for your account to finish unlocking.',
       })
     const bytes = encryptionService.getCurrentKeyBytes()
     if (!bytes)
       throw new HarnessError({
         code: ERROR_CODES.keyRequired,
+        action: ERROR_ACTIONS.unlock,
         message: 'Unlock your encryption key in Settings to continue.',
       })
     try {
@@ -573,6 +580,7 @@ export function harnessAPI(): HarnessAPI {
   if (!active)
     throw new HarnessError({
       code: ERROR_CODES.unauthenticated,
+      action: ERROR_ACTIONS.retry,
       message: 'Wait for your session to load.',
     })
   return active

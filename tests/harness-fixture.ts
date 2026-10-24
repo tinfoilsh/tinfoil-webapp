@@ -15,6 +15,7 @@ export const KEY = 'Y29udGVudC1rZXk='
 export const CACHE_SECRET = '0123456789abcdef'.repeat(4)
 
 export const testSession: Session = {
+  protocol: { version: 1, minimum: 1 },
   user: { id: '', anonymous: true },
   defaultModel: 'test-model',
   models: [

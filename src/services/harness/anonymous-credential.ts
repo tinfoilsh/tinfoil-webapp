@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '@/config'
-import { ERROR_CODES } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES } from './protocol'
 import { HarnessError } from './sse'
 
 interface Credential {
@@ -61,6 +61,7 @@ export class AnonymousCredentialCache {
     )
       throw new HarnessError({
         code: ERROR_CODES.configuration,
+        action: ERROR_ACTIONS.stop,
         message: 'Configure an HTTPS origin for the controlplane.',
       })
     // Controlplane is public HTTPS, not an enclave. Calling it from the
@@ -82,6 +83,8 @@ export class AnonymousCredentialCache {
             response.status === 429
               ? ERROR_CODES.quotaExhausted
               : ERROR_CODES.upstreamRefused,
+          action:
+            response.status === 429 ? ERROR_ACTIONS.wait : ERROR_ACTIONS.retry,
           message: 'Unable to obtain anonymous chat access. Please try again.',
         },
         response.status,
@@ -102,6 +105,7 @@ export class AnonymousCredentialCache {
     )
       throw new HarnessError({
         code: ERROR_CODES.upstreamRefused,
+        action: ERROR_ACTIONS.retry,
         message: 'Controlplane returned invalid anonymous chat access.',
       })
     this.lifetime.signal.throwIfAborted()

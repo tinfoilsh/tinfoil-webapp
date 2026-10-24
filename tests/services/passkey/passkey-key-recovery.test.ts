@@ -366,7 +366,7 @@ describe('recoverPasskeyKeyBundle', () => {
       if (remoteState === 'unavailable') {
         mockKeyCurrent.mockRejectedValue(
           new HarnessError(
-            { code: 'UPSTREAM_REFUSED', message: 'opaque' },
+            { code: 'UPSTREAM_REFUSED', message: 'opaque', action: 'retry' },
             503,
           ),
         )

@@ -1,5 +1,5 @@
 import type { BaseModel } from '@/config/models'
-import { ERROR_CODES } from '@/services/harness/protocol'
+import { ERROR_ACTIONS, ERROR_CODES } from '@/services/harness/protocol'
 import { sharedAttachment } from '@/services/harness/shares'
 import { speakText } from '@/services/harness/speech'
 import { HarnessError } from '@/services/harness/sse'
@@ -70,6 +70,7 @@ export function SharedChatView({
       if (!attKey)
         throw new HarnessError({
           code: ERROR_CODES.threadNotFound,
+          action: ERROR_ACTIONS.stop,
           message: 'This document is not part of the share.',
         })
       return (await sharedAttachment(attachment.id, attKey)).text()

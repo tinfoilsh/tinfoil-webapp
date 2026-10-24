@@ -22,7 +22,11 @@ it('keeps the run receipt when an early stop is refused, so reopening rejoins it
   client.post.mockImplementation(async (path) => {
     if (path === '/v1/threads/cancel')
       throw new HarnessError(
-        { code: 'UPSTREAM_REFUSED', message: 'Stop unavailable' },
+        {
+          code: 'UPSTREAM_REFUSED',
+          message: 'Stop unavailable',
+          action: 'retry',
+        },
         503,
       )
     throw new Error(`Unexpected ${path}`)
@@ -38,6 +42,7 @@ it('keeps the run receipt when an early stop is refused, so reopening rejoins it
         type: 'RUN_STARTED',
         threadId: turn.threadId!,
         runId: 'recoverable',
+        instance: 'instance-1',
       },
     }
     yield {
@@ -45,6 +50,7 @@ it('keeps the run receipt when an early stop is refused, so reopening rejoins it
       event: {
         type: 'TEXT_MESSAGE_CHUNK',
         messageId: 'reply',
+        role: 'assistant',
         delta: 'Recovered answer',
       },
     }
@@ -54,6 +60,7 @@ it('keeps the run receipt when an early stop is refused, so reopening rejoins it
         type: 'RUN_FINISHED',
         threadId: turn.threadId!,
         runId: 'recoverable',
+        metadata: {},
       },
     }
   })
@@ -105,6 +112,7 @@ it('cancels a deleted background chat without stopping the open submission', asy
           type: 'RUN_STARTED',
           threadId: firstId,
           runId: 'background-run',
+          instance: 'instance-1',
         },
       }
       await background.promise
@@ -125,6 +133,7 @@ it('cancels a deleted background chat without stopping the open submission', asy
           type: 'RUN_STARTED',
           threadId: turn.threadId!,
           runId: 'open-run',
+          instance: 'instance-1',
         },
       }
       await finish.promise
@@ -134,6 +143,7 @@ it('cancels a deleted background chat without stopping the open submission', asy
           type: 'RUN_FINISHED',
           threadId: turn.threadId!,
           runId: 'open-run',
+          metadata: {},
         },
       }
     }
@@ -202,6 +212,7 @@ it('retries an unacknowledged stop when the run is rejoined after a failed cance
         type: 'RUN_STARTED',
         threadId: turn.threadId!,
         runId: 'cancel-me',
+        instance: 'instance-1',
       },
     }
     await stopped.promise

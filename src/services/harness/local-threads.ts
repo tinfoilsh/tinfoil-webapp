@@ -10,7 +10,7 @@ import {
 } from '@/services/storage/indexed-db'
 import { sessionChatStorage } from '@/services/storage/session-storage'
 import { logError } from '@/utils/error-handling'
-import { ERROR_CODES, ROUTES } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import { harnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import type {
@@ -103,10 +103,10 @@ export function localSummary(thread: StoredThread): ThreadSummary {
 }
 
 function activityAt(
-  createdAt: string,
+  createdAt: string | undefined,
   messages: readonly ThreadMessage[],
 ): string {
-  let latest = Date.parse(createdAt) || 0
+  let latest = Date.parse(createdAt ?? '') || 0
   for (const message of messages) {
     const time = Date.parse(message.createdAt)
     if (time > latest) latest = time
@@ -122,9 +122,9 @@ function summaryOf(
     id: thread.id,
     title: thread.title,
     titleState: thread.titleState,
-    createdAt: thread.createdAt,
-    updatedAt: thread.updatedAt,
-    activityAt: thread.activityAt ?? thread.createdAt,
+    createdAt: thread.createdAt ?? null,
+    updatedAt: thread.updatedAt ?? null,
+    activityAt: thread.activityAt ?? thread.createdAt ?? '',
     model: thread.model ?? '',
     projectId: null,
     pinned: false,
@@ -293,6 +293,7 @@ async function upgradeRow(row: Value): Promise<StoredThread | null> {
   if (rest.length || !isThread(thread))
     throw new HarnessError({
       code: ERROR_CODES.upstreamRefused,
+      action: ERROR_ACTIONS.retry,
       message: 'The chat service returned an invalid chat.',
     })
   return { ...thread, id: str(row.id) || thread.id }
@@ -344,8 +345,8 @@ interface ThreadRow {
   isLocalOnly: true
   threadFormat: typeof THREAD_FORMAT
   title: string
-  createdAt: string
-  updatedAt: string
+  createdAt?: string
+  updatedAt?: string
   messages: ThreadMessage[]
   thread: Omit<StoredThread, 'messages'>
 }

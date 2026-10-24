@@ -1,6 +1,7 @@
 import { SettingsModal } from '@/components/chat/settings-modal'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
+import type { ErrorAction, ErrorCode } from '@/services/harness/types'
 import {
   fireEvent,
   render,
@@ -268,7 +269,10 @@ describe('exporting chats from the Data tab', () => {
     connect({ cloud: true })
     answerCloudChats([deviceChat])
     client.multipart.mockRejectedValue(
-      new HarnessError({ code: 'UPSTREAM_REFUSED', message: 'Down' }, 503),
+      new HarnessError(
+        { code: 'UPSTREAM_REFUSED', message: 'Down', action: 'retry' },
+        503,
+      ),
     )
     renderData()
 
@@ -287,7 +291,12 @@ describe('exporting chats from the Data tab', () => {
     answerCloudChats([deviceChat])
     client.multipart.mockRejectedValue(
       new HarnessError(
-        { code: 'TEMP_SPACE_BUSY', message: 'retry shortly', retryAfter: 30 },
+        {
+          code: 'TEMP_SPACE_BUSY',
+          message: 'retry shortly',
+          action: 'retry',
+          retryAfter: 30,
+        },
         503,
       ),
     )
@@ -308,7 +317,12 @@ describe('exporting chats from the Data tab', () => {
     connect({ cloud: true })
     client.multipart.mockRejectedValue(
       new HarnessError(
-        { code: 'TEMP_SPACE_BUSY', message: 'retry shortly', retryAfter: 30 },
+        {
+          code: 'TEMP_SPACE_BUSY',
+          message: 'retry shortly',
+          action: 'retry',
+          retryAfter: 30,
+        },
         503,
       ),
     )
@@ -894,56 +908,68 @@ describe('importing chats from the Data tab', () => {
     )
   })
 
-  it.each([
+  it.each<[ErrorCode, ErrorAction, number, string]>([
     [
       'ARCHIVE_TOO_LARGE',
+      'revise',
       413,
       'This archive is too large for the chat service to process.',
     ],
     [
       'TEMP_SPACE_BUSY',
+      'retry',
       503,
       'The chat service is busy with other archives. Try again shortly.',
     ],
     [
       'PROJECTS_REQUIRE_CLOUD',
+      'stop',
       400,
       'This file includes projects, which are kept in the cloud. Turn on cloud sync, then try again.',
     ],
     [
       'IMPORT_INVALID',
+      'revise',
       400,
       'This file could not be read. Select a Tinfoil backup or a ChatGPT, Claude, or Tinfoil export as you downloaded it.',
     ],
     [
       'IMPORT_TOO_LARGE',
+      'revise',
       413,
       'This file is larger than the import limits allow. Try a smaller export or backup.',
     ],
     [
       'PAYLOAD_TOO_LARGE',
+      'revise',
       413,
       'This is more than the chat service accepts. Remove some large images or documents, or choose a smaller file, then try again.',
     ],
-  ])('explains an import refused with %s', async (code, status, copy) => {
-    connect()
-    client.multipart.mockRejectedValue(
-      new HarnessError({ code, message: `harness says ${code}` }, status),
-    )
-    renderData()
+  ])(
+    'explains an import refused with %s',
+    async (code, action, status, copy) => {
+      connect()
+      client.multipart.mockRejectedValue(
+        new HarnessError(
+          { code, message: `harness says ${code}`, action },
+          status,
+        ),
+      )
+      renderData()
 
-    pickFiles('ChatGPT', [chatGptExport])
-    await importStaged()
+      pickFiles('ChatGPT', [chatGptExport])
+      await importStaged()
 
-    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
-      title: 'Import failed',
-      description: 'Could not start the ChatGPT import',
-      variant: 'destructive',
-    })
-    expect(within(screen.getByRole('status')).getByText(copy)).toBeVisible()
-    expect(screen.queryByText(`harness says ${code}`)).toBeNull()
-    expect(await localThreadStore('device').list()).toEqual([])
-  })
+      expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+        title: 'Import failed',
+        description: 'Could not start the ChatGPT import',
+        variant: 'destructive',
+      })
+      expect(within(screen.getByRole('status')).getByText(copy)).toBeVisible()
+      expect(screen.queryByText(`harness says ${code}`)).toBeNull()
+      expect(await localThreadStore('device').list()).toEqual([])
+    },
+  )
 })
 
 describe('a chat list that fails to reload after an action', () => {

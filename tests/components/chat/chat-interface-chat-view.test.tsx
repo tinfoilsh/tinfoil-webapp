@@ -99,32 +99,41 @@ function scriptDeviceRuns(title = 'Trip ideas', finishing?: Promise<void>) {
   const returned: StoredThread[] = []
   client.events.mockImplementation(async function* (
     _path: string,
-    input: Turn,
+    input: Omit<Turn, 'thread'> & { thread?: StoredThread },
   ): AsyncGenerator<Frame> {
-    const thread = storedThread(input.threadId!, {
-      title,
-      titleState: 'generated',
-      lastRequestId: input.clientRequestId,
-      messages: [
-        ...(input.thread?.messages ?? []),
-        {
-          id: input.clientRequestId,
-          role: 'user',
-          createdAt: '2026-10-22T12:00:00Z',
-          content: input.content,
-        },
-        {
-          id: `reply-${returned.length}`,
-          role: 'assistant',
-          createdAt: '2026-10-22T12:00:01Z',
-          timeline: [{ id: 'b1', type: 'content', content: 'Noted' }],
-        },
-      ],
-    })
+    const thread = {
+      ...storedThread(input.threadId!, {
+        title,
+        titleState: 'generated',
+        lastRequestId: input.clientRequestId,
+        messages: [
+          ...(input.thread?.messages ?? []),
+          {
+            id: input.clientRequestId,
+            role: 'user',
+            createdAt: '2026-10-22T12:00:00Z',
+            content: input.content ?? '',
+          },
+          {
+            id: `reply-${returned.length}`,
+            role: 'assistant',
+            createdAt: '2026-10-22T12:00:01Z',
+            content: 'Noted',
+            timeline: [{ id: 'b1', type: 'content', content: 'Noted' }],
+          },
+        ],
+      }),
+      recordVersion: 1,
+    }
     returned.push(thread)
     yield {
       id: 0,
-      event: { type: 'RUN_STARTED', threadId: input.threadId!, runId: 'run' },
+      event: {
+        type: 'RUN_STARTED',
+        threadId: input.threadId!,
+        runId: 'run',
+        instance: 'instance-1',
+      },
     }
     yield {
       id: 1,
@@ -140,8 +149,18 @@ function scriptDeviceRuns(title = 'Trip ideas', finishing?: Promise<void>) {
       event: {
         type: 'STATE_SNAPSHOT',
         snapshot: {
-          thread: { ...summary, messageCount: messages.length },
+          thread: {
+            ...summary,
+            createdAt: summary.createdAt ?? null,
+            updatedAt: summary.updatedAt ?? null,
+            activityAt: '2026-10-22T12:00:01Z',
+            projectId: summary.projectId ?? null,
+            activeRun: summary.activeRun ?? null,
+            contextUsage: null,
+            messageCount: messages.length,
+          },
           queue: [],
+          rateLimit: { kind: null },
         },
       },
     }
@@ -490,8 +509,16 @@ it.each([
         if (failure === 'unreachable') throw new TypeError('Network down')
         throw new HarnessError(
           failure === 'missing'
-            ? { code: 'THREAD_NOT_FOUND', message: 'No such chat' }
-            : { code: 'KEY_MISMATCH', message: 'Another key' },
+            ? {
+                code: 'THREAD_NOT_FOUND',
+                message: 'No such chat',
+                action: 'stop',
+              }
+            : {
+                code: 'KEY_MISMATCH',
+                message: 'Another key',
+                action: 'unlock',
+              },
           failure === 'missing' ? 404 : 409,
         )
       },
@@ -526,7 +553,7 @@ it.each([
     answerChatPage({
       '/v1/threads/get': () => {
         throw new HarnessError(
-          { code: 'THREAD_NOT_FOUND', message: 'No such chat' },
+          { code: 'THREAD_NOT_FOUND', message: 'No such chat', action: 'stop' },
           404,
         )
       },
@@ -554,7 +581,11 @@ it('explains a chat that failed to load once and offers a new chat', async () =>
   answerChatPage({
     '/v1/threads/get': () => {
       throw new HarnessError(
-        { code: 'UPSTREAM_REFUSED', message: 'sync: 502 bad gateway' },
+        {
+          code: 'UPSTREAM_REFUSED',
+          message: 'sync: 502 bad gateway',
+          action: 'retry',
+        },
         502,
       )
     },
@@ -608,6 +639,7 @@ const TURNS = [1, 2, 3].flatMap((turn) => [
     id: `a${turn}`,
     role: 'assistant' as const,
     createdAt: `2026-10-22T12:0${turn}:30Z`,
+    content: `Answer ${turn}`,
     timeline: [
       { id: `b${turn}`, type: 'content' as const, content: `Answer ${turn}` },
     ],
