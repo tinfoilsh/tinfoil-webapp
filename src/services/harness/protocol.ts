@@ -111,6 +111,8 @@ export const ERROR_CODES = {
   // Other archives hold the harness's temporary space for now.
   tempSpaceBusy: 'TEMP_SPACE_BUSY',
   projectsRequireCloud: 'PROJECTS_REQUIRE_CLOUD',
+  // The search index could not be rebuilt for a search.
+  searchIndexFailed: 'SEARCH_INDEX_FAILED',
   importInvalid: 'IMPORT_INVALID',
   importTooLarge: 'IMPORT_TOO_LARGE',
   payloadTooLarge: 'PAYLOAD_TOO_LARGE',

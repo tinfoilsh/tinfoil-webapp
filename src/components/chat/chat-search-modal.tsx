@@ -2,6 +2,8 @@
 
 import { cn } from '@/components/ui/utils'
 import { useChatSearch, useChatsOutsideProjects } from '@/hooks/use-chat-search'
+import { ERROR_ACTIONS, ERROR_CODES } from '@/services/harness/protocol'
+import type { HarnessErrorBody } from '@/services/harness/types'
 import { chatTitle, threadView } from '@/services/harness/view-model'
 import type { Project } from '@/types/project'
 import { isSearchableChat } from '@/utils/chat-search-visibility'
@@ -61,6 +63,57 @@ interface ChatSearchModalProps {
 type ResultRow =
   | { kind: 'chat'; id: string; title: string; projectId?: string }
   | { kind: 'project'; id: string; name: string }
+
+// What a failed search tells the user, from its error's code and then its
+// action, and whether running it again may help.
+function searchFailureCopy(failure: HarnessErrorBody): {
+  message: string
+  canRetry: boolean
+} {
+  switch (failure.code) {
+    case ERROR_CODES.searchIndexFailed:
+      return {
+        message: "Your chats couldn't be prepared for search. Try again.",
+        canRetry: true,
+      }
+    case ERROR_CODES.connection:
+      return {
+        message:
+          "Couldn't reach the chat service. Check your connection and try again.",
+        canRetry: true,
+      }
+    case ERROR_CODES.keyMismatch:
+      return {
+        message:
+          'Your encryption key is out of date. Recover your current key to search your chats.',
+        canRetry: false,
+      }
+  }
+  switch (failure.action) {
+    case ERROR_ACTIONS.retry:
+    case ERROR_ACTIONS.reload:
+      return { message: "The search didn't finish. Try again.", canRetry: true }
+    case ERROR_ACTIONS.wait:
+      return {
+        message: 'Too many requests right now. Wait a moment, then try again.',
+        canRetry: true,
+      }
+    case ERROR_ACTIONS.reauthenticate:
+      return { message: 'Sign in again to search your chats.', canRetry: false }
+    case ERROR_ACTIONS.unlock:
+      return {
+        message: 'Unlock your encryption key to search your chats.',
+        canRetry: false,
+      }
+    case ERROR_ACTIONS.revise:
+      return { message: 'Change your search, then try again.', canRetry: false }
+    default:
+      return { message: "This search couldn't be completed.", canRetry: false }
+  }
+}
+
+const unreadableNote = (count: number) =>
+  `${count} matching ${count === 1 ? 'chat' : 'chats'} couldn't be opened.`
 
 const toTime = (value?: Date | string): number => {
   if (!value) return 0
@@ -234,15 +287,19 @@ export function ChatSearchModal({
     }
   }
 
-  const isSearching = Boolean(needle) && searchEnabled && search.isSearching
-  const showIndexing = Boolean(needle) && searchEnabled && search.isIndexing
-  const searchFailed = Boolean(needle) && searchEnabled && search.failed
+  const searched = Boolean(needle) && searchEnabled
+  const isSearching = searched && search.isSearching
+  const showIndexing = searched && search.isIndexing
+  const failure =
+    searched && search.failure ? searchFailureCopy(search.failure) : null
+  const unreadable = searched && !failure ? search.unreadable : 0
+  const lockedProjects = tab === 'projects' && !isPremium
 
   let emptyMessage: string
-  if (tab === 'projects' && !isPremium)
-    emptyMessage = 'Projects require a Pro subscription.'
-  else if (searchFailed) emptyMessage = 'Search is unavailable right now.'
+  if (lockedProjects) emptyMessage = 'Projects require a Pro subscription.'
+  else if (failure) emptyMessage = failure.message
   else if (isSearching) emptyMessage = 'Searching...'
+  else if (needle && unreadable) emptyMessage = unreadableNote(unreadable)
   else if (needle) emptyMessage = 'No matches.'
   else if (tab === 'chats') emptyMessage = 'No chats yet.'
   else emptyMessage = 'No projects yet.'
@@ -378,6 +435,30 @@ export function ChatSearchModal({
                     </button>
                   )
                 })
+              )}
+              {failure && rows.length > 0 && (
+                <p
+                  role="status"
+                  className="px-3 pt-2 font-aeonik-fono text-xs text-content-muted"
+                >
+                  {failure.message}
+                </p>
+              )}
+              {failure?.canRetry && !lockedProjects && (
+                <div className="flex justify-center px-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={search.retry}
+                    className="rounded-md border border-border-subtle px-3 py-1 text-xs text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+              {unreadable > 0 && rows.length > 0 && (
+                <p className="px-3 pt-2 font-aeonik-fono text-xs text-content-muted">
+                  {unreadableNote(unreadable)}
+                </p>
               )}
               {isSearching && rows.length > 0 && (
                 <p

@@ -1046,6 +1046,7 @@ export interface components {
       | 'RUN_IN_FLIGHT'
       | 'RUN_LOG_FULL'
       | 'RUN_NOT_FOUND'
+      | 'SEARCH_INDEX_FAILED'
       | 'SYNC_OUTCOME_UNKNOWN'
       | 'TEMP_SPACE_BUSY'
       | 'THREAD_EXISTS'
@@ -2351,7 +2352,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description The stored chats that match, and whether the search index is still being built. */
+      /** @description The stored chats that match, how many more match that the harness could not open, and whether the search index is still being built. A chat sync could not fetch in time fails the search with UPSTREAM_REFUSED, and a failed rebuild of the search index with SEARCH_INDEX_FAILED. */
       200: {
         headers: {
           [name: string]: unknown
@@ -2359,6 +2360,8 @@ export interface operations {
         content: {
           'application/json': {
             results: components['schemas']['ThreadSummary'][]
+            /** @description Matching chats left out of results because they cannot be opened, such as one sealed with another key or stored in a format this harness cannot read. */
+            unreadable: number
             indexing: boolean
           }
         }
