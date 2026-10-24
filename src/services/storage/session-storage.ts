@@ -7,7 +7,7 @@ import { deletedChatsTracker } from './deleted-chats-tracker'
 function restoreChat(chat: Chat): Chat {
   return {
     ...chat,
-    createdAt: new Date(chat.createdAt),
+    ...(chat.createdAt ? { createdAt: new Date(chat.createdAt) } : {}),
     messages: Array.isArray(chat.messages)
       ? chat.messages.map((message) => ({
           ...message,

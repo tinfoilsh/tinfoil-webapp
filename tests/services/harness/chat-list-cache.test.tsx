@@ -159,7 +159,7 @@ it('orders the chats of a cache from before activity times by when they began', 
   ])
 })
 
-it('dates a chat stored without its creation time by its activity', async () => {
+it('leaves a chat stored without its creation time undated', async () => {
   signIn({ cloud: true })
   client.post.mockResolvedValue(
     page([{ ...summary('legacy'), createdAt: null, updatedAt: null }]),
@@ -167,9 +167,7 @@ it('dates a chat stored without its creation time by its activity', async () => 
   const { result } = renderHook(() => useThread())
   await waitFor(() => expect(result.current.chats).toHaveLength(1))
 
-  expect(result.current.chats[0].createdAt).toEqual(
-    new Date('2026-10-22T12:00:00Z'),
-  )
+  expect(result.current.chats[0]).not.toHaveProperty('createdAt')
 })
 
 it('keeps rename and deletion results through a reload', async () => {

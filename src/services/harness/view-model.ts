@@ -247,6 +247,15 @@ export const chatTitle = ({
   titleState === 'placeholder' && title === PLACEHOLDER_CHAT_TITLE
     ? DEFAULT_CHAT_TITLE
     : title
+// When a chat was last active, by which lists order it. A chat with no date
+// at all is ordered last.
+export const lastActive = (
+  chat: Pick<Chat, 'activityAt' | 'createdAt'>,
+): number =>
+  chat.activityAt
+    ? Date.parse(chat.activityAt)
+    : (chat.createdAt?.getTime() ?? 0)
+
 export function threadView(
   thread: ThreadSummary,
   messages: Message[] = [],
@@ -255,9 +264,7 @@ export function threadView(
     id: thread.id,
     title: chatTitle(thread),
     titleState: thread.titleState,
-    // A chat stored without its creation time is dated by its activity; one
-    // without either has no date to show.
-    createdAt: new Date(thread.createdAt ?? thread.activityAt),
+    ...(thread.createdAt ? { createdAt: new Date(thread.createdAt) } : {}),
     updatedAt: thread.updatedAt ?? undefined,
     activityAt: thread.activityAt || undefined,
     model: thread.model,

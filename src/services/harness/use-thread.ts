@@ -39,7 +39,12 @@ import type {
   Turn,
   Message as WireMessage,
 } from './types'
-import { messageView, queuedAttachmentViews, threadView } from './view-model'
+import {
+  lastActive,
+  messageView,
+  queuedAttachmentViews,
+  threadView,
+} from './view-model'
 
 export interface ThreadRoute {
   // The route names a chat stored on this device (/chat/local/:id).
@@ -621,8 +626,7 @@ export function useThread(
       return runId ? { ...listed, activeRun: { runId } } : listed
     }
     const recent = (listed: Chat): Chat =>
-      listed.id === id &&
-      shownActivity > new Date(listed.activityAt ?? listed.createdAt).getTime()
+      listed.id === id && shownActivity > lastActive(listed)
         ? { ...listed, activityAt: new Date(shownActivity).toISOString() }
         : listed
     return [
@@ -640,11 +644,7 @@ export function useThread(
       })),
     ]
       .map((listed) => recent(liveRun(listed)))
-      .sort(
-        (a, b) =>
-          new Date(b.activityAt ?? b.createdAt).getTime() -
-          new Date(a.activityAt ?? a.createdAt).getTime(),
-      )
+      .sort((a, b) => lastActive(b) - lastActive(a))
   }, [
     listsCloud,
     cloudListed,

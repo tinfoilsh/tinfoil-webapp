@@ -35,6 +35,7 @@ import {
 import { toast } from '@/hooks/use-toast'
 import { acceptOf } from '@/services/harness/composer'
 import { useHarness } from '@/services/harness/provider'
+import { lastActive } from '@/services/harness/view-model'
 import type { Project } from '@/types/project'
 import { logError } from '@/utils/error-handling'
 import { formatFileSize } from '@/utils/format-file-size'
@@ -75,7 +76,7 @@ interface ProjectChat {
   id: string
   title: string
   messageCount: number
-  createdAt: Date
+  createdAt?: Date
   updatedAt?: string
   activityAt?: string
   projectId?: string
@@ -558,11 +559,7 @@ export function ProjectSidebar({
   // Convert chatsProp to ChatItemData format and sort by latest activity.
   const projectChats: ChatItemData[] = (chatsProp || [])
     .filter((c) => !c.isBlankChat)
-    .sort(
-      (a, b) =>
-        new Date(b.activityAt ?? b.createdAt).getTime() -
-        new Date(a.activityAt ?? a.createdAt).getTime(),
-    )
+    .sort((a, b) => lastActive(b) - lastActive(a))
     .map((c) => ({
       id: c.id,
       title: c.title,

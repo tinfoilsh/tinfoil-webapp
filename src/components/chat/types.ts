@@ -164,7 +164,7 @@ export type Chat = {
   messages: Message[]
   messageCount?: number
   isMetadataOnly?: boolean
-  createdAt: Date
+  createdAt?: Date
   // Latest server-bumped write time, independent of conversation activity.
   updatedAt?: string
   activityAt?: string
