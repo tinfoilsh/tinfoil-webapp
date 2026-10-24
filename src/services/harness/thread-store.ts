@@ -83,9 +83,8 @@ export interface ThreadStore {
     turn: { defaults: Turn; fields: Partial<Turn>; key: { key?: string } },
     settings: TurnSettings,
   ): Promise<PreparedTurn | null>
-  // A run of the chat that may still be live, and the instance holding it
-  // when a hint names it.
-  liveRun(thread: Thread): { runId: string; instance?: string } | undefined
+  // A run of the chat that may still be live, and the instance holding it.
+  liveRun(thread: Thread): { runId: string; instance: string } | undefined
   follow(
     threadId: string,
     runId: string,

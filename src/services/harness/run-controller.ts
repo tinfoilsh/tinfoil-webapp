@@ -51,7 +51,8 @@ export interface DeviceRun {
   images: ImagesById
   // The originals of the images the turn sent, stored with the thread.
   originals?: Originals
-  runId?: string
+  // The run, once it started.
+  run?: Receipt
   // When the run's turn read the chat, on the controller's clock.
   since: number
 }
@@ -96,10 +97,10 @@ export interface RunHooks {
 }
 
 // A hint that rejoins a device chat's run after a reload, kept for the tab.
-interface Receipt {
+export interface Receipt {
   threadId: string
   runId: string
-  instance?: string
+  instance: string
 }
 
 // Streams the runs of the chat a view shows: a turn's run, or a live run it
@@ -365,10 +366,10 @@ export class RunController {
   }
 
   private started(run: Receipt, device: DeviceRun | undefined, shown: boolean) {
-    const { threadId, runId } = run
+    const { threadId } = run
     if (device) {
       this.settle(device)
-      device.runId = runId
+      device.run = run
       this.deviceRuns.update((runs) =>
         new Map(runs).set(device.threadId, device),
       )
@@ -445,15 +446,12 @@ export class RunController {
       const receipt = JSON.parse(sessionStorage.getItem(this.receiptKey) ?? '')
       if (
         typeof receipt?.threadId !== 'string' ||
-        typeof receipt?.runId !== 'string'
+        typeof receipt?.runId !== 'string' ||
+        typeof receipt?.instance !== 'string'
       )
         return null
       const { threadId, runId, instance } = receipt
-      return {
-        threadId,
-        runId,
-        ...(typeof instance === 'string' ? { instance } : {}),
-      }
+      return { threadId, runId, instance }
     } catch {
       // Receipts are optional routing hints; an invalid one is discarded.
       return null

@@ -204,7 +204,7 @@ export function chatActions({
     async remove(threadId: string) {
       // A chat deleted during its move is deleted where the move left it.
       await moving.get(threadId)?.catch(() => {})
-      const runId = controller.deviceRuns.get().get(threadId)?.runId
+      const runId = controller.deviceRuns.get().get(threadId)?.run?.runId
       if (runId) void controller.cancel({ threadId, runId }).catch(() => {})
       const store = storeOf(threadId)
       const undo = list.previewRemoval(threadId)

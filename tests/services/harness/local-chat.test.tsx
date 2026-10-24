@@ -730,6 +730,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
       JSON.stringify({
         threadId: SEEDED_ID,
         runId: 'run-a3',
+        instance: 'instance-1',
         temporary: false,
         local: true,
       }),

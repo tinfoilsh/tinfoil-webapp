@@ -334,7 +334,7 @@ export function useThread(
       // reloaded page left behind, or one the harness names.
       const live = store.liveRun(thread)
       if (!live) return { status: 'opened', thread }
-      if (live.instance) api.client.locate(threadId, live.instance)
+      api.client.locate(threadId, live.instance)
       const { input, device: run } = await store.follow(threadId, live.runId)
       if (!shown()) return { status: 'superseded' }
       void controller.run(ROUTES.follow, input, { device: run, quiet: !!run })
@@ -616,7 +616,7 @@ export function useThread(
     const liveRun = (listed: Chat): Chat => {
       if (listed.activeRun) return listed
       const runId =
-        deviceRuns.get(listed.id)?.runId ??
+        deviceRuns.get(listed.id)?.run?.runId ??
         (listed.id === id ? shownRun : undefined)
       return runId ? { ...listed, activeRun: { runId } } : listed
     }
