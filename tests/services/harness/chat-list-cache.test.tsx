@@ -135,6 +135,7 @@ it('does not restore a list an earlier version cached without activity times', a
   const first = renderHook(() => useThread())
   await waitFor(() => expect(first.result.current.chats).toHaveLength(1))
   first.unmount()
+  expect(cacheKeys()).toHaveLength(1)
   for (const key of cacheKeys()) {
     const cached = JSON.parse(localStorage.getItem(key)!)
     for (const chat of cached.threads) delete chat.activityAt
