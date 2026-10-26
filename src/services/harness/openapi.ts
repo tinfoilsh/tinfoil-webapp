@@ -107,7 +107,10 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Stop a run */
+    /**
+     * Stop a run
+     * @description Stops the chat's running reply. The turns queued behind it end too, each with a cancelled RUN_FINISHED, so the harness keeps nothing of a chat once its reply stops.
+     */
     post: operations['cancel']
     delete?: never
     options?: never
