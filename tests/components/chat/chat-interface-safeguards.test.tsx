@@ -137,7 +137,7 @@ describe('a chat the safeguards flagged', () => {
     ).toBeInTheDocument()
   })
 
-  it('stops its reply in progress and its queued turns once its summary is flagged', async () => {
+  it('stops its reply in progress, and with it its queued turns, once its summary is flagged', async () => {
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/get')
         return {
@@ -228,10 +228,12 @@ describe('a chat the safeguards flagged', () => {
         expect.any(AbortSignal),
       ),
     )
-    expect(client.post).toHaveBeenCalledWith(
+    // Stopping the reply ends the turns queued behind it, so none is removed
+    // on its own, which the harness would refuse once the reply has stopped.
+    expect(client.post).not.toHaveBeenCalledWith(
       '/v1/threads/queue/remove',
-      { key: KEY, threadId: THREAD_ID, queueId: 'queued-1' },
-      expect.any(AbortSignal),
+      expect.anything(),
+      expect.anything(),
     )
     release()
   })

@@ -1107,17 +1107,18 @@ export function ChatInterface({
     }
   }
   const sidebarChat = useSidebarChat({ context: thread.askContext, options })
-  // A flag stops the chat: its reply in progress, its queued turns, and an
-  // ask about it.
+  // A flag stops the chat: its reply in progress, which takes the turns
+  // queued behind it with it, and an ask about it.
   const runningRef = useRef(isStreaming)
   runningRef.current = isStreaming
   const queueRef = useRef(thread.queue)
   queueRef.current = thread.queue
   useEffect(() => {
     if (!currentChatIsFlagged) return
-    for (const item of queueRef.current)
-      void thread.removeQueued(item.id).catch(thread.report)
     if (runningRef.current) void thread.cancel().catch(thread.report)
+    else
+      for (const item of queueRef.current)
+        void thread.removeQueued(item.id).catch(thread.report)
     setIsAskSidebarOpen(false)
     sidebarChat.reset()
     // Only a newly flagged chat is stopped.
