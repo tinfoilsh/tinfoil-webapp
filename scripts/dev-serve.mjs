@@ -61,7 +61,9 @@ function serveStatic(req, res) {
     if (fs.existsSync(withHtml)) {
       filePath = withHtml
     } else {
-      const fallback = path.join(OUT_DIR, '[...slug].html')
+      // Mirrors vercel.json: each section has its own exported shell.
+      const section = urlPath.split('/')[1]
+      const fallback = path.join(OUT_DIR, section, '[[...slug]].html')
       if (fs.existsSync(fallback)) {
         filePath = fallback
       } else {
