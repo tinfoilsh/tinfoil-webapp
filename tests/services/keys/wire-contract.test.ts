@@ -1,8 +1,8 @@
 /**
  * Pin every wire-contract literal to the exact string sent on the wire.
- * The harness forwards key requests to the sync enclave verbatim, so the
- * sentinels must match github.com/tinfoilsh/controlplane/pkg/contract; the
- * harness translates key refusals to its own error codes.
+ * The harness passes the key registry's sentinels to the controlplane as
+ * sent, so they must match github.com/tinfoilsh/controlplane/pkg/contract;
+ * the harness reports key refusals with its own error codes.
  *
  * Do not relax these assertions to "string truthy" — the point is to
  * catch typos before they reach a running server.

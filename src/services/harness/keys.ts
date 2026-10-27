@@ -1,8 +1,7 @@
 import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { ROUTES, type HarnessRoute } from './protocol'
 import { harnessAPI } from './runtime'
-import { HarnessError as SyncEnclaveError } from './sse'
-export { SyncEnclaveError }
+import { HarnessError } from './sse'
 export interface OKResponse {
   ok: boolean
 }
@@ -170,7 +169,7 @@ export async function keyCurrent(
     // migrate-all bootstrap before any bundle exists).
     return { ...resp, key_id: resp.key_id ?? null, bundles: resp.bundles ?? {} }
   } catch (err) {
-    if (err instanceof SyncEnclaveError && err.status === 404) {
+    if (err instanceof HarnessError && err.status === 404) {
       return { key_id: null, bundles: {}, has_data: false }
     }
     throw err
