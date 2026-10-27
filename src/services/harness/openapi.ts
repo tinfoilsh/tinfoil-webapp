@@ -1100,7 +1100,7 @@ export interface components {
       icon: string
       description: string
       badges: {
-        /** @enum {unknown} */
+        /** @enum {string} */
         kind: 'experimental' | 'deprecated'
         label: string
         tooltip: string
@@ -1137,7 +1137,7 @@ export interface components {
     }
     /** @description A free key's daily request quota, or a subscriber's hourly token budgets. */
     RateLimit: {
-      /** @enum {unknown} */
+      /** @enum {string|null} */
       kind: 'free_daily' | 'hourly' | null
       maxRequests?: number
       remaining?: number
@@ -1162,7 +1162,7 @@ export interface components {
       threadId: components['schemas']['Identifier']
       /**
        * @description send when absent.
-       * @enum {unknown}
+       * @enum {string}
        */
       kind?:
         | 'send'
@@ -1528,7 +1528,7 @@ export interface components {
       isInterrupted?: boolean
       annotations?: components['schemas']['Annotation'][]
     }
-    /** @enum {unknown} */
+    /** @enum {string} */
     TitleState: 'placeholder' | 'generated' | 'manual'
     /** @description How much of the model's window the chat's last prompt filled. */
     ContextUsage: {
@@ -1618,7 +1618,7 @@ export interface components {
       annotations?: components['schemas']['Annotation'][]
       attachments?: components['schemas']['AttachmentView'][]
     }
-    /** @enum {unknown} */
+    /** @enum {string} */
     Role: 'user' | 'assistant'
     MessageUsage: {
       promptTokens: number
@@ -1627,7 +1627,7 @@ export interface components {
     /** @description One step of a reply, text, reasoning, or a tool call. What a tool returned is kept as it came. */
     Block: {
       id: string
-      /** @enum {unknown} */
+      /** @enum {string} */
       type: 'content' | 'thinking' | 'tool_call'
       content?: string
       toolCallId?: string
@@ -1652,7 +1652,7 @@ export interface components {
     ToolDisplay: {
       query?: string
       url?: string
-      /** @enum {unknown} */
+      /** @enum {string} */
       status: 'running' | 'completed' | 'failed'
       sources: {
         url: string
@@ -1671,7 +1671,7 @@ export interface components {
         end_index: number
       }
     }
-    /** @enum {unknown} */
+    /** @enum {string} */
     AttachmentKind: 'image' | 'document' | 'audio'
     /** @description An attachment's metadata, thumbnail and any text it holds inline. */
     AttachmentView: {
@@ -1840,9 +1840,9 @@ export interface components {
     }
     /** @description The account's settings. A field a profile leaves out takes its value from the session's profileDefaults. */
     Profile: {
-      /** @enum {unknown} */
+      /** @enum {string} */
       themeMode?: 'light' | 'dark' | 'system'
-      /** @enum {unknown} */
+      /** @enum {string} */
       chatFont?: 'system' | 'serif' | 'mono' | 'dyslexic'
       language?: string
       nickname?: string
@@ -1873,9 +1873,9 @@ export interface components {
       }
     }
     ProfileView: {
-      /** @enum {unknown} */
+      /** @enum {string} */
       themeMode?: 'light' | 'dark' | 'system'
-      /** @enum {unknown} */
+      /** @enum {string} */
       chatFont?: 'system' | 'serif' | 'mono' | 'dyslexic'
       language?: string
       nickname?: string
@@ -1942,7 +1942,7 @@ export interface components {
       createdAt?: components['schemas']['Timestamp']
       updatedAt?: components['schemas']['Timestamp']
     }
-    /** @enum {unknown} */
+    /** @enum {string} */
     KeyOrigin: 'passkey' | 'manual' | 'recovery' | 'start_fresh'
     KeyRef: {
       /** @description A content key, base64. */
@@ -2782,9 +2782,9 @@ export interface operations {
           key?: string
           /** @description The fields to set. A field the profile does not have is refused. A null defaultPromptPresetId clears the default prompt. */
           patch: {
-            /** @enum {unknown} */
+            /** @enum {string} */
             themeMode?: 'light' | 'dark' | 'system'
-            /** @enum {unknown} */
+            /** @enum {string} */
             chatFont?: 'system' | 'serif' | 'mono' | 'dyslexic'
             language?: string
             nickname?: string

@@ -34,7 +34,10 @@ info:
     - A change to what a ThreadRecord or a stored row holds changes its
       recordVersion. The harness reads a record in its current version as
       written, reads one without a version as an older client kept it, and
-      refuses any other with RECORD_UNSUPPORTED.
+      refuses any other with RECORD_UNSUPPORTED. A member of a stored row it
+      does not name is read past, since other clients of the same rows write
+      members of their own; the harness leaves such members out when it
+      writes the row back.
     - The harness ignores request members it does not know, except in a
       profile patch, which refuses them.
     - Optional behavior is announced in the session's `features`. A client
@@ -641,8 +644,8 @@ paths:
                   description: The fields to set. A field the profile does not have is refused. A null defaultPromptPresetId clears the default prompt.
                   type: object
                   properties:
-                    themeMode: {enum: [light, dark, system]}
-                    chatFont: {enum: [system, serif, mono, dyslexic]}
+                    themeMode: {type: string, enum: [light, dark, system]}
+                    chatFont: {type: string, enum: [system, serif, mono, dyslexic]}
                     language: {type: string}
                     nickname: {type: string}
                     profession: {type: string}
@@ -1145,7 +1148,7 @@ paths:
                     type: object
                     properties:
                       key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
-                      target: {enum: [device, cloud]}
+                      target: {type: string, enum: [device, cloud]}
       responses:
         "200":
           description: One line per device chat, then a line that says the import is done. An import that fails after its first line ends with an error line.
@@ -1197,7 +1200,7 @@ paths:
                     type: object
                     properties:
                       key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
-                      format: {enum: [native, conversations]}
+                      format: {type: string, enum: [native, conversations]}
                 thread: {type: array, items: {type: string, contentMediaType: application/json}, description: "Device chats, one per part."}
                 file: {type: array, items: {type: string, contentMediaType: application/octet-stream}, description: "The originals of the device chats' images."}
       responses:
@@ -1557,7 +1560,7 @@ components:
             type: object
             required: [kind, label, tooltip]
             properties:
-              kind: {enum: [experimental, deprecated]}
+              kind: {type: string, enum: [experimental, deprecated]}
               label: {type: string}
               tooltip: {type: string}
         reasoning:
@@ -1605,7 +1608,7 @@ components:
       type: object
       required: [kind]
       properties:
-        kind: {enum: [free_daily, hourly, null]}
+        kind: {type: [string, "null"], enum: [free_daily, hourly, null]}
         maxRequests: {type: integer}
         remaining: {type: integer}
         resetsAt: {$ref: "#/components/schemas/Timestamp"}
@@ -1630,7 +1633,7 @@ components:
         key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
         clientRequestId: {type: string, format: uuid, description: "A nonce. A turn sent again with it is answered with the run it started."}
         threadId: {$ref: "#/components/schemas/Identifier"}
-        kind: {enum: [send, edit, regenerate, continue, retry, retryToolCall, ask], description: "send when absent."}
+        kind: {type: string, enum: [send, edit, regenerate, continue, retry, retryToolCall, ask], description: "send when absent."}
         ephemeral: {type: boolean, description: "An ask that is never stored."}
         local: {type: boolean, description: "The chat is kept on the device, which sends it as thread."}
         thread: {$ref: "#/components/schemas/ThreadInput"}
@@ -2011,7 +2014,7 @@ components:
 
     # --- Threads --------------------------------------------------------------
 
-    TitleState: {enum: [placeholder, generated, manual]}
+    TitleState: {type: string, enum: [placeholder, generated, manual]}
 
     ContextUsage:
       description: How much of the model's window the chat's last prompt filled.
@@ -2113,7 +2116,7 @@ components:
         annotations: {type: array, items: {$ref: "#/components/schemas/Annotation"}}
         attachments: {type: array, items: {$ref: "#/components/schemas/AttachmentView"}}
 
-    Role: {enum: [user, assistant]}
+    Role: {type: string, enum: [user, assistant]}
 
     MessageUsage:
       type: object
@@ -2128,7 +2131,7 @@ components:
       required: [id, type]
       properties:
         id: {type: string}
-        type: {enum: [content, thinking, tool_call]}
+        type: {type: string, enum: [content, thinking, tool_call]}
         content: {type: string}
         toolCallId: {type: string}
         name: {type: string}
@@ -2151,7 +2154,7 @@ components:
       properties:
         query: {type: string}
         url: {type: string}
-        status: {enum: [running, completed, failed]}
+        status: {type: string, enum: [running, completed, failed]}
         sources:
           type: array
           items:
@@ -2177,7 +2180,7 @@ components:
             start_index: {type: integer}
             end_index: {type: integer}
 
-    AttachmentKind: {enum: [image, document, audio]}
+    AttachmentKind: {type: string, enum: [image, document, audio]}
 
     AttachmentView:
       description: An attachment's metadata, thumbnail and any text it holds inline.
@@ -2380,8 +2383,8 @@ components:
       description: The account's settings. A field a profile leaves out takes its value from the session's profileDefaults.
       type: object
       properties:
-        themeMode: {enum: [light, dark, system]}
-        chatFont: {enum: [system, serif, mono, dyslexic]}
+        themeMode: {type: string, enum: [light, dark, system]}
+        chatFont: {type: string, enum: [system, serif, mono, dyslexic]}
         language: {type: string}
         nickname: {type: string}
         profession: {type: string}
@@ -2411,8 +2414,8 @@ components:
     ProfileView:
       type: object
       properties:
-        themeMode: {enum: [light, dark, system]}
-        chatFont: {enum: [system, serif, mono, dyslexic]}
+        themeMode: {type: string, enum: [light, dark, system]}
+        chatFont: {type: string, enum: [system, serif, mono, dyslexic]}
         language: {type: string}
         nickname: {type: string}
         profession: {type: string}
@@ -2490,7 +2493,7 @@ components:
 
     # --- Keys -----------------------------------------------------------------
 
-    KeyOrigin: {enum: [passkey, manual, recovery, start_fresh]}
+    KeyOrigin: {type: string, enum: [passkey, manual, recovery, start_fresh]}
 
     KeyRef:
       type: object
