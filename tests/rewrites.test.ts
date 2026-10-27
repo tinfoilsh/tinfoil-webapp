@@ -36,6 +36,8 @@ describe('section rewrites', () => {
 
   it.each([
     '/no-such-page',
+    '/chat/missing.js',
+    '/share/abc/x.png',
     '/_next/static/chunks/missing.js',
     '/_next/missing',
     '/.well-known/webcat/manifest.json',

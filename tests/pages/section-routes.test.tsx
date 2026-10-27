@@ -1,8 +1,8 @@
 import ChatCatchAllPage from '@/pages/chat/[[...slug]]'
 import ProjectCatchAllPage from '@/pages/project/[[...slug]]'
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   router: { isReady: true, query: {} as { slug?: string | string[] } },
@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('next/router', () => ({ useRouter: () => mocks.router }))
+vi.mock('@/components/ui/logo-loading', () => ({
+  LogoLoading: () => <div role="status" aria-label="Loading route" />,
+}))
 vi.mock('@/components/chat', () => ({
   ChatInterface: (props: unknown) => {
     mocks.chat(props)
@@ -28,6 +31,11 @@ vi.mock('@/components/project/premium-project-route', () => ({
 }))
 
 describe('section pages', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.router = { isReady: true, query: {} }
+  })
+
   it.each([
     [undefined, { initialChatId: null, isLocalChatUrl: false }],
     [['c1'], { initialChatId: 'c1', isLocalChatUrl: false }],
@@ -35,7 +43,7 @@ describe('section pages', () => {
   ])('chat page routes slug %j', (slug, props) => {
     mocks.router.query = { slug }
     render(<ChatCatchAllPage />)
-    expect(mocks.chat).toHaveBeenCalledWith(props)
+    expect(mocks.chat).toHaveBeenCalledExactlyOnceWith(props)
   })
 
   it.each([
@@ -44,6 +52,21 @@ describe('section pages', () => {
   ])('project page routes slug %j', (slug, props) => {
     mocks.router.query = { slug }
     render(<ProjectCatchAllPage />)
-    expect(mocks.project).toHaveBeenCalledWith(props)
+    expect(mocks.project).toHaveBeenCalledExactlyOnceWith(props)
   })
+
+  it.each([
+    ['chat', ChatCatchAllPage, mocks.chat],
+    ['project', ProjectCatchAllPage, mocks.project],
+  ])(
+    '%s page shows the loader and mounts nothing before the router is ready',
+    (_name, Page, target) => {
+      mocks.router = { isReady: false, query: {} }
+      render(<Page />)
+      expect(
+        screen.getByRole('status', { name: 'Loading route' }),
+      ).toBeVisible()
+      expect(target).not.toHaveBeenCalled()
+    },
+  )
 })

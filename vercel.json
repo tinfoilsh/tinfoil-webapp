@@ -15,11 +15,7 @@
       "destination": "/chat/%5B%5B...slug%5D%5D.html"
     },
     {
-      "source": "/chat/",
-      "destination": "/chat/%5B%5B...slug%5D%5D.html"
-    },
-    {
-      "source": "/chat/:path*",
+      "source": "/chat/:path((?!.*\\.[^/]+$).*)",
       "destination": "/chat/%5B%5B...slug%5D%5D.html"
     },
     {
@@ -27,11 +23,7 @@
       "destination": "/project/%5B%5B...slug%5D%5D.html"
     },
     {
-      "source": "/project/",
-      "destination": "/project/%5B%5B...slug%5D%5D.html"
-    },
-    {
-      "source": "/project/:path*",
+      "source": "/project/:path((?!.*\\.[^/]+$).*)",
       "destination": "/project/%5B%5B...slug%5D%5D.html"
     },
     {
@@ -39,11 +31,7 @@
       "destination": "/share/%5B%5B...slug%5D%5D.html"
     },
     {
-      "source": "/share/",
-      "destination": "/share/%5B%5B...slug%5D%5D.html"
-    },
-    {
-      "source": "/share/:path*",
+      "source": "/share/:path((?!.*\\.[^/]+$).*)",
       "destination": "/share/%5B%5B...slug%5D%5D.html"
     },
     {
