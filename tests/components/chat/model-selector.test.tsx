@@ -91,6 +91,28 @@ describe('model lifecycle tags', () => {
     },
   )
 
+  it('shows no badge of a kind this client does not know', () => {
+    const model: BaseModel = {
+      ...MODEL,
+      badges: [
+        { kind: 'retiring', label: 'Retiring', tooltip: 'Leaving soon.' },
+        EXPERIMENTAL,
+      ],
+    }
+    render(
+      <ModelSelector
+        selectedModel={model.id}
+        models={[model]}
+        onSelect={vi.fn()}
+        isDarkMode={false}
+      />,
+    )
+
+    const row = screen.getByRole('menuitemradio', { name: /GPT-OSS 120B/ })
+    expect(within(row).getByText('Experimental')).toBeVisible()
+    expect(within(row).queryByText('Retiring')).not.toBeInTheDocument()
+  })
+
   it('hides deprecated models unless one is the current selection', () => {
     const selectedDeprecated: BaseModel = {
       ...MODEL,
