@@ -80,7 +80,7 @@ tags:
   - name: projects
     description: Projects and their documents.
   - name: keys
-    description: The account's content key and its passkey bundles, which sync keeps.
+    description: The account's content key and its passkey bundles, as the control plane keeps them.
   - name: attachments
     description: Uploads and attachment downloads.
   - name: archives
@@ -274,7 +274,7 @@ paths:
                 limit: {type: integer}
       responses:
         "200":
-          description: The stored chats that match, how many more match that the harness could not open, and whether the search index is still being built. A chat sync could not fetch in time fails the search with UPSTREAM_REFUSED, and a failed rebuild of the search index with SEARCH_INDEX_FAILED.
+          description: The stored chats that match, how many more match that the harness could not open, and whether the search index is still being built. A chat the control plane could not serve in time fails the search with UPSTREAM_REFUSED, and a failed rebuild of the search index with SEARCH_INDEX_FAILED.
           content:
             application/json:
               schema:
@@ -903,7 +903,7 @@ paths:
       operationId: keysCurrent
       summary: Read the current content key
       tags: [keys]
-      description: The account's current content key id and its passkey bundles, as sync reports them.
+      description: The account's current content key id and its passkey bundles.
       requestBody:
         content:
           application/json:
@@ -996,7 +996,11 @@ paths:
       operationId: keysMigrateAll
       summary: Reseal stored data under the current key
       tags: [keys]
-      description: Seals every row an older key sealed under the target key.
+      description: |
+        Seals every row an older key sealed under the target key, which must
+        be the account's registered key, in the background. A call while the
+        reseal runs, or shortly after it ends, reports on that reseal rather
+        than starting another.
       requestBody:
         required: true
         content:
@@ -1009,10 +1013,10 @@ paths:
                 target: {$ref: "#/components/schemas/KeyRef"}
       responses:
         "200":
-          description: Sync's report of the migration.
+          description: The harness's report of the reseal when the call returns.
           content:
             application/json:
-              schema: {type: object}
+              schema: {$ref: "#/components/schemas/ResealReport"}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/attachments/upload:
@@ -2531,6 +2535,17 @@ components:
         created_via: {$ref: "#/components/schemas/KeyOrigin"}
         created_at: {type: string}
         has_data: {type: boolean, description: "The account has rows not sealed under this key."}
+
+    ResealReport:
+      description: "Where a reseal stands: the rows resealed so far, the rows still to try, and the rows no given key opens."
+      type: object
+      required: [status, migrated, remaining, blocked, partial]
+      properties:
+        status: {type: string, enum: [running, complete, failed]}
+        migrated: {type: integer}
+        remaining: {type: integer}
+        blocked: {type: integer}
+        partial: {type: boolean, description: "The reseal's time or the account's credential ran out before every row was tried; a later call continues it."}
 
     # --- Archives -------------------------------------------------------------
 

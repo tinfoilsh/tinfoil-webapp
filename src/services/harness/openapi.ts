@@ -666,7 +666,7 @@ export interface paths {
     put?: never
     /**
      * Read the current content key
-     * @description The account's current content key id and its passkey bundles, as sync reports them.
+     * @description The account's current content key id and its passkey bundles.
      */
     post: operations['keysCurrent']
     delete?: never
@@ -737,7 +737,10 @@ export interface paths {
     put?: never
     /**
      * Reseal stored data under the current key
-     * @description Seals every row an older key sealed under the target key.
+     * @description Seals every row an older key sealed under the target key, which must
+     *     be the account's registered key, in the background. A call while the
+     *     reseal runs, or shortly after it ends, reports on that reseal rather
+     *     than starting another.
      */
     post: operations['keysMigrateAll']
     delete?: never
@@ -1975,6 +1978,16 @@ export interface components {
       /** @description The account has rows not sealed under this key. */
       has_data?: boolean
     }
+    /** @description Where a reseal stands: the rows resealed so far, the rows still to try, and the rows no given key opens. */
+    ResealReport: {
+      /** @enum {string} */
+      status: 'running' | 'complete' | 'failed'
+      migrated: number
+      remaining: number
+      blocked: number
+      /** @description The reseal's time or the account's credential ran out before every row was tried; a later call continues it. */
+      partial: boolean
+    }
     /** @description One line of a device import. */
     ImportLine: {
       /** @description A device chat. Its images' attachments carry the archive's original as originalBase64. */
@@ -2355,7 +2368,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description The stored chats that match, how many more match that the harness could not open, and whether the search index is still being built. A chat sync could not fetch in time fails the search with UPSTREAM_REFUSED, and a failed rebuild of the search index with SEARCH_INDEX_FAILED. */
+      /** @description The stored chats that match, how many more match that the harness could not open, and whether the search index is still being built. A chat the control plane could not serve in time fails the search with UPSTREAM_REFUSED, and a failed rebuild of the search index with SEARCH_INDEX_FAILED. */
       200: {
         headers: {
           [name: string]: unknown
@@ -3206,13 +3219,13 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Sync's report of the migration. */
+      /** @description The harness's report of the reseal when the call returns. */
       200: {
         headers: {
           [name: string]: unknown
         }
         content: {
-          'application/json': Record<string, never>
+          'application/json': components['schemas']['ResealReport']
         }
       }
       default: components['responses']['Error']
