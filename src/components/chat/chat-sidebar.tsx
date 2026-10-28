@@ -31,13 +31,17 @@ import {
   TfMagnifyingGlass,
   TfMicrophone,
   TfSetting,
-  TfSidebarClose,
-  TfSidebarOpen,
   TfSparkle,
   TfThumbtack,
   TfWarning,
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfChat2Animated,
+  TfSidebarCloseAnimated,
+  TfSidebarOpenAnimated,
+  TfThumbtackAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useRouter } from 'next/router'
 import { PiSpinner } from 'react-icons/pi'
@@ -706,7 +710,7 @@ export function ChatSidebar({
                 alt=""
                 className="h-6 w-6 group-hover/logo:opacity-0"
               />
-              <TfSidebarOpen
+              <TfSidebarOpenAnimated
                 className="absolute inset-0 m-auto h-5 w-5 -scale-x-100 text-content-secondary opacity-0 group-hover/logo:opacity-100"
                 aria-hidden="true"
               />
@@ -762,7 +766,7 @@ export function ChatSidebar({
                   )}
                   aria-label="Favorites"
                 >
-                  <TfThumbtack className="h-5 w-5" aria-hidden="true" />
+                  <TfThumbtackAnimated className="h-5 w-5" aria-hidden="true" />
                 </button>
                 <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                   Favorites
@@ -810,7 +814,7 @@ export function ChatSidebar({
                 )}
                 aria-label="Chats"
               >
-                <TfChat2 className="h-5 w-5" aria-hidden="true" />
+                <TfChat2Animated className="h-5 w-5" aria-hidden="true" />
               </button>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 Chats <span className="text-content-muted">{modKey}.</span>
@@ -874,7 +878,7 @@ export function ChatSidebar({
               aria-label="Close sidebar"
               data-sidebar-close
             >
-              <TfSidebarClose
+              <TfSidebarCloseAnimated
                 className="h-5 w-5 -scale-x-100"
                 aria-hidden="true"
               />
@@ -1124,7 +1128,7 @@ export function ChatSidebar({
                 )}
               >
                 <span className="flex items-center gap-2">
-                  <TfThumbtack className="h-4 w-4" aria-hidden="true" />
+                  <TfThumbtackAnimated className="h-4 w-4" aria-hidden="true" />
                   <span
                     role="heading"
                     aria-level={2}
@@ -1664,7 +1668,7 @@ export function ChatSidebar({
                   className="flex min-w-0 flex-1 items-center justify-between py-3 pl-4 pr-4 text-left"
                 >
                   <span className="flex items-center gap-2">
-                    <TfChat2 className="h-4 w-4" aria-hidden="true" />
+                    <TfChat2Animated className="h-4 w-4" aria-hidden="true" />
                     <span className="truncate font-aeonik font-medium">
                       Chats
                     </span>
