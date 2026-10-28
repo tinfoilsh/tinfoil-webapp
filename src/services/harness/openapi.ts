@@ -1013,54 +1013,59 @@ export interface components {
      *       chat.
      *     - stop: nothing the client or the user does makes the request succeed
      *       now. Tell the user, and do not offer to try again.
-     * @enum {string}
      */
     ErrorAction:
-      | 'reauthenticate'
-      | 'reload'
-      | 'retry'
-      | 'wait'
-      | 'unlock'
-      | 'revise'
-      | 'stop'
-    /** @enum {string} */
+      | (
+          | 'reauthenticate'
+          | 'reload'
+          | 'retry'
+          | 'wait'
+          | 'unlock'
+          | 'revise'
+          | 'stop'
+        )
+      | string
+    /** @description A client handles a code it does not know by the error's action. */
     ErrorCode:
-      | 'ALREADY_APPLIED'
-      | 'ARCHIVE_TOO_LARGE'
-      | 'ATTACHMENT_TOO_LARGE'
-      | 'ATTACHMENT_UNSUPPORTED'
-      | 'ATTACHMENTS_UNAVAILABLE'
-      | 'BAD_REQUEST'
-      | 'CHAT_FLAGGED'
-      | 'CONTEXT_TOO_LARGE'
-      | 'CREDENTIAL_REQUIRED'
-      | 'IMPORT_INVALID'
-      | 'IMPORT_TOO_LARGE'
-      | 'KEY_MISMATCH'
-      | 'KEY_REQUIRED'
-      | 'MAX_TURNS'
-      | 'MISSING_ATTACHMENT'
-      | 'MODEL_UNAVAILABLE'
-      | 'PAYLOAD_TOO_LARGE'
-      | 'PROJECTS_REQUIRE_CLOUD'
-      | 'QUEUE_FULL'
-      | 'QUOTA_EXHAUSTED'
-      | 'RATE_LIMITED'
-      | 'RECORD_UNSUPPORTED'
-      | 'REQUEST_TIMEOUT'
-      | 'REVISION_CONFLICT'
-      | 'RUN_IN_FLIGHT'
-      | 'RUN_LOG_FULL'
-      | 'RUN_NOT_FOUND'
-      | 'SEARCH_INDEX_FAILED'
-      | 'SYNC_OUTCOME_UNKNOWN'
-      | 'TEMP_SPACE_BUSY'
-      | 'THREAD_EXISTS'
-      | 'THREAD_NOT_FOUND'
-      | 'THREAD_TOO_LARGE'
-      | 'TOOL_UNAVAILABLE'
-      | 'UNAUTHENTICATED'
-      | 'UPSTREAM_REFUSED'
+      | (
+          | 'ALREADY_APPLIED'
+          | 'ARCHIVE_TOO_LARGE'
+          | 'ATTACHMENT_TOO_LARGE'
+          | 'ATTACHMENT_UNSUPPORTED'
+          | 'ATTACHMENTS_UNAVAILABLE'
+          | 'BAD_REQUEST'
+          | 'CHAT_FLAGGED'
+          | 'CONTEXT_TOO_LARGE'
+          | 'CREDENTIAL_REQUIRED'
+          | 'IMPORT_INVALID'
+          | 'IMPORT_TOO_LARGE'
+          | 'KEY_MISMATCH'
+          | 'KEY_REQUIRED'
+          | 'MAX_TURNS'
+          | 'MISSING_ATTACHMENT'
+          | 'MODEL_UNAVAILABLE'
+          | 'PAYLOAD_TOO_LARGE'
+          | 'PROJECTS_REQUIRE_CLOUD'
+          | 'QUEUE_FULL'
+          | 'QUOTA_EXHAUSTED'
+          | 'RATE_LIMITED'
+          | 'RECORD_UNSUPPORTED'
+          | 'REQUEST_TIMEOUT'
+          | 'REVISION_CONFLICT'
+          | 'RUN_IN_FLIGHT'
+          | 'RUN_LOG_FULL'
+          | 'RUN_NOT_FOUND'
+          | 'SEARCH_INDEX_FAILED'
+          | 'SYNC_OUTCOME_UNKNOWN'
+          | 'TEMP_SPACE_BUSY'
+          | 'THREAD_EXISTS'
+          | 'THREAD_NOT_FOUND'
+          | 'THREAD_TOO_LARGE'
+          | 'TOOL_UNAVAILABLE'
+          | 'UNAUTHENTICATED'
+          | 'UPSTREAM_REFUSED'
+        )
+      | string
     Session: {
       /** @description The versions of this document the harness speaks. A client knows its own as the info.version of the document it was built from. */
       protocol: {
@@ -1103,8 +1108,8 @@ export interface components {
       icon: string
       description: string
       badges: {
-        /** @enum {string} */
-        kind: 'experimental' | 'deprecated'
+        /** @description A client shows no badge of a kind it does not know. */
+        kind: ('experimental' | 'deprecated') | string
         label: string
         tooltip: string
       }[]
@@ -1140,8 +1145,8 @@ export interface components {
     }
     /** @description A free key's daily request quota, or a subscriber's hourly token budgets. */
     RateLimit: {
-      /** @enum {string|null} */
-      kind: 'free_daily' | 'hourly' | null
+      /** @description A client shows no quota of a kind it does not know. */
+      kind: ('free_daily' | 'hourly' | null) | string
       maxRequests?: number
       remaining?: number
       resetsAt?: components['schemas']['Timestamp']
@@ -1531,8 +1536,8 @@ export interface components {
       isInterrupted?: boolean
       annotations?: components['schemas']['Annotation'][]
     }
-    /** @enum {string} */
-    TitleState: 'placeholder' | 'generated' | 'manual'
+    /** @description How a chat came by its title. A client shows the title of a state it does not know as it is. */
+    TitleState: ('placeholder' | 'generated' | 'manual') | string
     /** @description How much of the model's window the chat's last prompt filled. */
     ContextUsage: {
       usedTokens: number
@@ -1621,8 +1626,8 @@ export interface components {
       annotations?: components['schemas']['Annotation'][]
       attachments?: components['schemas']['AttachmentView'][]
     }
-    /** @enum {string} */
-    Role: 'user' | 'assistant'
+    /** @description Who wrote a message. A client leaves out a message whose role it does not know. */
+    Role: ('user' | 'assistant') | string
     MessageUsage: {
       promptTokens: number
       completionTokens: number
@@ -1630,8 +1635,8 @@ export interface components {
     /** @description One step of a reply, text, reasoning, or a tool call. What a tool returned is kept as it came. */
     Block: {
       id: string
-      /** @enum {string} */
-      type: 'content' | 'thinking' | 'tool_call'
+      /** @description A client leaves out a block of a type it does not know. */
+      type: ('content' | 'thinking' | 'tool_call') | string
       content?: string
       toolCallId?: string
       name?: string
@@ -1655,8 +1660,8 @@ export interface components {
     ToolDisplay: {
       query?: string
       url?: string
-      /** @enum {string} */
-      status: 'running' | 'completed' | 'failed'
+      /** @description A client shows a status it does not know as completed. */
+      status: ('running' | 'completed' | 'failed') | string
       sources: {
         url: string
         title: string
@@ -1674,8 +1679,8 @@ export interface components {
         end_index: number
       }
     }
-    /** @enum {string} */
-    AttachmentKind: 'image' | 'document' | 'audio'
+    /** @description What an attachment holds. A client shows an attachment of a kind it does not know as a file. */
+    AttachmentKind: ('image' | 'document' | 'audio') | string
     /** @description An attachment's metadata, thumbnail and any text it holds inline. */
     AttachmentView: {
       id: string
@@ -1843,10 +1848,10 @@ export interface components {
     }
     /** @description The account's settings. A field a profile leaves out takes its value from the session's profileDefaults. */
     Profile: {
-      /** @enum {string} */
-      themeMode?: 'light' | 'dark' | 'system'
-      /** @enum {string} */
-      chatFont?: 'system' | 'serif' | 'mono' | 'dyslexic'
+      /** @description A client applies its own default for a value it does not know, and keeps the value. */
+      themeMode?: ('light' | 'dark' | 'system') | string
+      /** @description A client applies its own default for a value it does not know, and keeps the value. */
+      chatFont?: ('system' | 'serif' | 'mono' | 'dyslexic') | string
       language?: string
       nickname?: string
       profession?: string
@@ -1876,10 +1881,10 @@ export interface components {
       }
     }
     ProfileView: {
-      /** @enum {string} */
-      themeMode?: 'light' | 'dark' | 'system'
-      /** @enum {string} */
-      chatFont?: 'system' | 'serif' | 'mono' | 'dyslexic'
+      /** @description A client applies its own default for a value it does not know, and keeps the value. */
+      themeMode?: ('light' | 'dark' | 'system') | string
+      /** @description A client applies its own default for a value it does not know, and keeps the value. */
+      chatFont?: ('system' | 'serif' | 'mono' | 'dyslexic') | string
       language?: string
       nickname?: string
       profession?: string
@@ -1945,8 +1950,8 @@ export interface components {
       createdAt?: components['schemas']['Timestamp']
       updatedAt?: components['schemas']['Timestamp']
     }
-    /** @enum {string} */
-    KeyOrigin: 'passkey' | 'manual' | 'recovery' | 'start_fresh'
+    /** @description How the account's key was set up. A client treats an origin it does not know as unknown. */
+    KeyOrigin: ('passkey' | 'manual' | 'recovery' | 'start_fresh') | string
     KeyRef: {
       /** @description A content key, base64. */
       key: string
@@ -1980,8 +1985,8 @@ export interface components {
     }
     /** @description Where a reseal stands: the rows resealed so far, the rows still to try, and the rows no given key opens. */
     ResealReport: {
-      /** @enum {string} */
-      status: 'running' | 'complete' | 'failed'
+      /** @description A client treats a status it does not know as running. */
+      status: ('running' | 'complete' | 'failed') | string
       migrated: number
       remaining: number
       blocked: number

@@ -29,6 +29,10 @@ info:
       removed, and does not change meaning, while a supported client uses it.
     - A client ignores members and events it does not know. It handles an
       error code it does not know by the error's action.
+    - A list of values a response holds may gain values: such a list is an
+      anyOf of the values it names and any string. The harness sends only
+      the values named; a client treats one it does not know as the list's
+      description says.
     - A client keeps a ThreadRecord whole, members it does not know included,
       and sends it back as it was returned.
     - A change to what a ThreadRecord or a stored row holds changes its
@@ -1460,48 +1464,52 @@ components:
           chat.
         - stop: nothing the client or the user does makes the request succeed
           now. Tell the user, and do not offer to try again.
-      type: string
-      enum: [reauthenticate, reload, retry, wait, unlock, revise, stop]
+      anyOf:
+        - {type: string, enum: [reauthenticate, reload, retry, wait, unlock, revise, stop]}
+        - {type: string}
 
     ErrorCode:
-      type: string
-      enum:
-        - ALREADY_APPLIED
-        - ARCHIVE_TOO_LARGE
-        - ATTACHMENT_TOO_LARGE
-        - ATTACHMENT_UNSUPPORTED
-        - ATTACHMENTS_UNAVAILABLE
-        - BAD_REQUEST
-        - CHAT_FLAGGED
-        - CONTEXT_TOO_LARGE
-        - CREDENTIAL_REQUIRED
-        - IMPORT_INVALID
-        - IMPORT_TOO_LARGE
-        - KEY_MISMATCH
-        - KEY_REQUIRED
-        - MAX_TURNS
-        - MISSING_ATTACHMENT
-        - MODEL_UNAVAILABLE
-        - PAYLOAD_TOO_LARGE
-        - PROJECTS_REQUIRE_CLOUD
-        - QUEUE_FULL
-        - QUOTA_EXHAUSTED
-        - RATE_LIMITED
-        - RECORD_UNSUPPORTED
-        - REQUEST_TIMEOUT
-        - REVISION_CONFLICT
-        - RUN_IN_FLIGHT
-        - RUN_LOG_FULL
-        - RUN_NOT_FOUND
-        - SEARCH_INDEX_FAILED
-        - SYNC_OUTCOME_UNKNOWN
-        - TEMP_SPACE_BUSY
-        - THREAD_EXISTS
-        - THREAD_NOT_FOUND
-        - THREAD_TOO_LARGE
-        - TOOL_UNAVAILABLE
-        - UNAUTHENTICATED
-        - UPSTREAM_REFUSED
+      description: A client handles a code it does not know by the error's action.
+      anyOf:
+        - type: string
+          enum:
+            - ALREADY_APPLIED
+            - ARCHIVE_TOO_LARGE
+            - ATTACHMENT_TOO_LARGE
+            - ATTACHMENT_UNSUPPORTED
+            - ATTACHMENTS_UNAVAILABLE
+            - BAD_REQUEST
+            - CHAT_FLAGGED
+            - CONTEXT_TOO_LARGE
+            - CREDENTIAL_REQUIRED
+            - IMPORT_INVALID
+            - IMPORT_TOO_LARGE
+            - KEY_MISMATCH
+            - KEY_REQUIRED
+            - MAX_TURNS
+            - MISSING_ATTACHMENT
+            - MODEL_UNAVAILABLE
+            - PAYLOAD_TOO_LARGE
+            - PROJECTS_REQUIRE_CLOUD
+            - QUEUE_FULL
+            - QUOTA_EXHAUSTED
+            - RATE_LIMITED
+            - RECORD_UNSUPPORTED
+            - REQUEST_TIMEOUT
+            - REVISION_CONFLICT
+            - RUN_IN_FLIGHT
+            - RUN_LOG_FULL
+            - RUN_NOT_FOUND
+            - SEARCH_INDEX_FAILED
+            - SYNC_OUTCOME_UNKNOWN
+            - TEMP_SPACE_BUSY
+            - THREAD_EXISTS
+            - THREAD_NOT_FOUND
+            - THREAD_TOO_LARGE
+            - TOOL_UNAVAILABLE
+            - UNAUTHENTICATED
+            - UPSTREAM_REFUSED
+        - {type: string}
 
     # --- Session --------------------------------------------------------------
 
@@ -1564,7 +1572,11 @@ components:
             type: object
             required: [kind, label, tooltip]
             properties:
-              kind: {type: string, enum: [experimental, deprecated]}
+              kind:
+                description: A client shows no badge of a kind it does not know.
+                anyOf:
+                  - {type: string, enum: [experimental, deprecated]}
+                  - {type: string}
               label: {type: string}
               tooltip: {type: string}
         reasoning:
@@ -1612,7 +1624,11 @@ components:
       type: object
       required: [kind]
       properties:
-        kind: {type: [string, "null"], enum: [free_daily, hourly, null]}
+        kind:
+          description: A client shows no quota of a kind it does not know.
+          anyOf:
+            - {type: [string, "null"], enum: [free_daily, hourly, null]}
+            - {type: string}
         maxRequests: {type: integer}
         remaining: {type: integer}
         resetsAt: {$ref: "#/components/schemas/Timestamp"}
@@ -2018,7 +2034,11 @@ components:
 
     # --- Threads --------------------------------------------------------------
 
-    TitleState: {type: string, enum: [placeholder, generated, manual]}
+    TitleState:
+      description: How a chat came by its title. A client shows the title of a state it does not know as it is.
+      anyOf:
+        - {type: string, enum: [placeholder, generated, manual]}
+        - {type: string}
 
     ContextUsage:
       description: How much of the model's window the chat's last prompt filled.
@@ -2120,7 +2140,11 @@ components:
         annotations: {type: array, items: {$ref: "#/components/schemas/Annotation"}}
         attachments: {type: array, items: {$ref: "#/components/schemas/AttachmentView"}}
 
-    Role: {type: string, enum: [user, assistant]}
+    Role:
+      description: Who wrote a message. A client leaves out a message whose role it does not know.
+      anyOf:
+        - {type: string, enum: [user, assistant]}
+        - {type: string}
 
     MessageUsage:
       type: object
@@ -2135,7 +2159,11 @@ components:
       required: [id, type]
       properties:
         id: {type: string}
-        type: {type: string, enum: [content, thinking, tool_call]}
+        type:
+          description: A client leaves out a block of a type it does not know.
+          anyOf:
+            - {type: string, enum: [content, thinking, tool_call]}
+            - {type: string}
         content: {type: string}
         toolCallId: {type: string}
         name: {type: string}
@@ -2158,7 +2186,11 @@ components:
       properties:
         query: {type: string}
         url: {type: string}
-        status: {type: string, enum: [running, completed, failed]}
+        status:
+          description: A client shows a status it does not know as completed.
+          anyOf:
+            - {type: string, enum: [running, completed, failed]}
+            - {type: string}
         sources:
           type: array
           items:
@@ -2184,7 +2216,11 @@ components:
             start_index: {type: integer}
             end_index: {type: integer}
 
-    AttachmentKind: {type: string, enum: [image, document, audio]}
+    AttachmentKind:
+      description: What an attachment holds. A client shows an attachment of a kind it does not know as a file.
+      anyOf:
+        - {type: string, enum: [image, document, audio]}
+        - {type: string}
 
     AttachmentView:
       description: An attachment's metadata, thumbnail and any text it holds inline.
@@ -2387,8 +2423,16 @@ components:
       description: The account's settings. A field a profile leaves out takes its value from the session's profileDefaults.
       type: object
       properties:
-        themeMode: {type: string, enum: [light, dark, system]}
-        chatFont: {type: string, enum: [system, serif, mono, dyslexic]}
+        themeMode:
+          description: A client applies its own default for a value it does not know, and keeps the value.
+          anyOf:
+            - {type: string, enum: [light, dark, system]}
+            - {type: string}
+        chatFont:
+          description: A client applies its own default for a value it does not know, and keeps the value.
+          anyOf:
+            - {type: string, enum: [system, serif, mono, dyslexic]}
+            - {type: string}
         language: {type: string}
         nickname: {type: string}
         profession: {type: string}
@@ -2418,8 +2462,16 @@ components:
     ProfileView:
       type: object
       properties:
-        themeMode: {type: string, enum: [light, dark, system]}
-        chatFont: {type: string, enum: [system, serif, mono, dyslexic]}
+        themeMode:
+          description: A client applies its own default for a value it does not know, and keeps the value.
+          anyOf:
+            - {type: string, enum: [light, dark, system]}
+            - {type: string}
+        chatFont:
+          description: A client applies its own default for a value it does not know, and keeps the value.
+          anyOf:
+            - {type: string, enum: [system, serif, mono, dyslexic]}
+            - {type: string}
         language: {type: string}
         nickname: {type: string}
         profession: {type: string}
@@ -2497,7 +2549,11 @@ components:
 
     # --- Keys -----------------------------------------------------------------
 
-    KeyOrigin: {type: string, enum: [passkey, manual, recovery, start_fresh]}
+    KeyOrigin:
+      description: How the account's key was set up. A client treats an origin it does not know as unknown.
+      anyOf:
+        - {type: string, enum: [passkey, manual, recovery, start_fresh]}
+        - {type: string}
 
     KeyRef:
       type: object
@@ -2541,7 +2597,11 @@ components:
       type: object
       required: [status, migrated, remaining, blocked, partial]
       properties:
-        status: {type: string, enum: [running, complete, failed]}
+        status:
+          description: A client treats a status it does not know as running.
+          anyOf:
+            - {type: string, enum: [running, complete, failed]}
+            - {type: string}
         migrated: {type: integer}
         remaining: {type: integer}
         blocked: {type: integer}
