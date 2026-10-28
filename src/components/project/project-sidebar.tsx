@@ -48,10 +48,8 @@ import { useAuth } from '@clerk/react'
 import { ArrowLeftIcon, NoSymbolIcon } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
-  TfChat2,
   TfChevronDown,
   TfChevronRight,
-  TfChevronUp,
   TfDocument,
   TfDocumentPlus,
   TfFolder,
@@ -60,6 +58,10 @@ import {
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
 import {
+  TfChat2Animated,
+  TfChevronDownAnimated,
+  TfChevronRightAnimated,
+  TfChevronUpAnimated,
   TfSidebarCloseAnimated,
   TfSidebarOpenAnimated,
   TfThumbtackAnimated,
@@ -1010,9 +1012,12 @@ export function ProjectSidebar({
                 </span>
               </span>
               {settingsExpanded && !isLoading ? (
-                <TfChevronDown className="h-4 w-4" aria-hidden="true" />
+                <TfChevronDownAnimated className="h-4 w-4" aria-hidden="true" />
               ) : (
-                <TfChevronRight className="h-4 w-4" aria-hidden="true" />
+                <TfChevronRightAnimated
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
               )}
             </button>
 
@@ -1153,12 +1158,12 @@ export function ProjectSidebar({
                         >
                           <span>Danger Zone</span>
                           {dangerZoneExpanded ? (
-                            <TfChevronUp
+                            <TfChevronUpAnimated
                               className="h-4 w-4"
                               aria-hidden="true"
                             />
                           ) : (
-                            <TfChevronDown
+                            <TfChevronDownAnimated
                               className="h-4 w-4"
                               aria-hidden="true"
                             />
@@ -1227,9 +1232,12 @@ export function ProjectSidebar({
                 </span>
               </span>
               {documentsExpanded && !isLoading ? (
-                <TfChevronDown className="h-4 w-4" aria-hidden="true" />
+                <TfChevronDownAnimated className="h-4 w-4" aria-hidden="true" />
               ) : (
-                <TfChevronRight className="h-4 w-4" aria-hidden="true" />
+                <TfChevronRightAnimated
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
               )}
             </button>
             <input
@@ -1392,7 +1400,7 @@ export function ProjectSidebar({
           <section className="relative z-10 mt-2 flex min-h-48 flex-1 flex-col">
             <div className="relative z-10 mx-2 flex-none rounded-lg border border-border-subtle bg-surface-sidebar px-4 py-3">
               <h3 className="flex items-center gap-2 font-aeonik text-sm font-medium text-content-primary">
-                <TfChat2 className="h-4 w-4" aria-hidden="true" />
+                <TfChat2Animated className="h-4 w-4" aria-hidden="true" />
                 <span>Project Chats</span>
               </h3>
             </div>

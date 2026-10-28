@@ -25,7 +25,12 @@ vi.mock('@/hooks/use-toast', () => ({
 vi.mock('@tinfoilsh/tinfoil-icons', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tinfoilsh/tinfoil-icons')>()),
   TfGlobe: () => <svg data-testid="globe-icon" />,
-  TfLockLocked: () => <svg data-testid="lock-icon" />,
+}))
+vi.mock('@tinfoilsh/tinfoil-icons/animated', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@tinfoilsh/tinfoil-icons/animated')
+  >()),
+  TfLockLockedAnimated: () => <svg data-testid="lock-icon" />,
 }))
 
 const SHARE_URL = 'https://chat.tinfoil.sh/share/chat-id#v2:' + 'ab'.repeat(32)

@@ -8,12 +8,8 @@ import { chatTitle, threadView } from '@/services/harness/view-model'
 import type { Project } from '@/types/project'
 import { isSearchableChat } from '@/utils/chat-search-visibility'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import {
-  TfBoxX,
-  TfChat2,
-  TfFolder,
-  TfMagnifyingGlass,
-} from '@tinfoilsh/tinfoil-icons'
+import { TfBoxX, TfFolder, TfMagnifyingGlass } from '@tinfoilsh/tinfoil-icons'
+import { TfChat2Animated } from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CONSTANTS } from './constants'
 import type { Chat } from './types'
@@ -419,7 +415,7 @@ export function ChatSearchModal({
                           aria-hidden="true"
                         />
                       ) : (
-                        <TfChat2
+                        <TfChat2Animated
                           className="h-4 w-4 flex-none"
                           aria-hidden="true"
                         />

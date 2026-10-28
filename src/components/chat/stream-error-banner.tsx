@@ -4,11 +4,8 @@ import { cn } from '@/components/ui/utils'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { ERROR_ACTIONS, ERROR_CODES } from '@/services/harness/protocol'
 import type { ErrorAction } from '@/services/harness/types'
-import {
-  TfBoxX,
-  TfChevronDown,
-  TfRefreshTwoArrows,
-} from '@tinfoilsh/tinfoil-icons'
+import { TfBoxX, TfRefreshTwoArrows } from '@tinfoilsh/tinfoil-icons'
+import { TfChevronDownAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 
 export type StreamErrorInfo = {
@@ -445,7 +442,7 @@ export function StreamErrorBanner({
               isDarkMode ? 'hover:bg-red-500/20' : 'hover:bg-red-500/10',
             )}
           >
-            <TfChevronDown
+            <TfChevronDownAnimated
               className={cn(
                 'h-4 w-4 transition-transform',
                 isExpanded && 'rotate-180',

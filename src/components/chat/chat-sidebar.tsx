@@ -20,24 +20,24 @@ import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useAuth, useUser } from '@clerk/react'
 import {
   TfBoxX,
-  TfChat2,
   TfChevronDown,
   TfChevronRight,
-  TfCloud,
   TfFloppyDisk,
   TfFolder,
   TfFolderPlus,
-  TfLockLocked,
   TfMagnifyingGlass,
   TfMicrophone,
   TfSetting,
   TfSparkle,
-  TfThumbtack,
   TfWarning,
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
 import {
   TfChat2Animated,
+  TfChevronDownAnimated,
+  TfChevronRightAnimated,
+  TfCloudFaceAnimated,
+  TfLockLockedAnimated,
   TfSidebarCloseAnimated,
   TfSidebarOpenAnimated,
   TfThumbtackAnimated,
@@ -970,7 +970,7 @@ export function ChatSidebar({
                 ) : (
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-3 text-xs text-content-secondary">
-                      <TfChat2
+                      <TfChat2Animated
                         className="h-4 w-4 flex-shrink-0 text-content-muted"
                         aria-hidden="true"
                       />
@@ -978,7 +978,7 @@ export function ChatSidebar({
                     </div>
 
                     <div className="flex items-center gap-3 text-xs text-content-secondary">
-                      <TfCloud
+                      <TfCloudFaceAnimated
                         className="h-4 w-4 flex-shrink-0 text-content-muted"
                         aria-hidden="true"
                       />
@@ -986,7 +986,7 @@ export function ChatSidebar({
                     </div>
 
                     <div className="flex items-center gap-3 text-xs text-content-secondary">
-                      <TfThumbtack
+                      <TfThumbtackAnimated
                         className="h-4 w-4 flex-shrink-0 text-content-muted"
                         aria-hidden="true"
                       />
@@ -1294,9 +1294,9 @@ export function ChatSidebar({
                   </span>
                   <span className="flex items-center gap-1">
                     {isProjectsExpanded ? (
-                      <TfChevronDown className="h-4 w-4" />
+                      <TfChevronDownAnimated className="h-4 w-4" />
                     ) : (
-                      <TfChevronRight className="h-4 w-4" />
+                      <TfChevronRightAnimated className="h-4 w-4" />
                     )}
                   </span>
                 </button>
@@ -1334,7 +1334,7 @@ export function ChatSidebar({
                             onClick={openCloudSyncSetup}
                             className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
                           >
-                            <TfCloud
+                            <TfCloudFaceAnimated
                               className="h-3.5 w-3.5"
                               aria-hidden="true"
                             />
@@ -1806,7 +1806,10 @@ export function ChatSidebar({
                               STORAGE_TAB_DROP_TARGET_CLASS_NAME,
                           )}
                         >
-                          <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
+                          <TfCloudFaceAnimated
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                          />
                           Cloud
                         </button>
                         <button
@@ -1909,7 +1912,7 @@ export function ChatSidebar({
                               }
                               className="flex w-full items-center gap-2 text-left transition-colors hover:text-content-secondary"
                             >
-                              <TfLockLocked
+                              <TfLockLockedAnimated
                                 className="h-3 w-3 shrink-0"
                                 aria-hidden="true"
                               />
@@ -1963,7 +1966,10 @@ export function ChatSidebar({
                           onClick={openCloudSyncSetup}
                           className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
                         >
-                          <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
+                          <TfCloudFaceAnimated
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                          />
                           Enable Cloud Sync
                         </button>
                       </div>

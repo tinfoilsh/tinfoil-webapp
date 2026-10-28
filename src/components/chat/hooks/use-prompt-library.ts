@@ -1,23 +1,25 @@
 import { reportProfileError, useHarness } from '@/services/harness/provider'
 import {
-  TfCode2,
   TfLightbulb,
   TfLightning,
   TfMask,
-  TfScholar,
   TfTranslation,
-  TfWriting,
   TfWriting2,
   type IconType,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfCode2Animated,
+  TfScholarAnimated,
+  TfWritingAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import type {
   PromptPreset,
   PromptPresetSettings,
   UserPromptPreset,
 } from '../prompts/types'
 const presetIcons: Record<string, IconType> = {
-  student: TfScholar,
-  code: TfCode2,
+  student: TfScholarAnimated,
+  code: TfCode2Animated,
   'pencil-line': TfWriting2,
   lightbulb: TfLightbulb,
   translate: TfTranslation,
@@ -46,13 +48,13 @@ export function usePromptLibrary() {
   const raw: UserPromptPreset[] = profile.customPromptPresets ?? []
   const userPresets: PromptPreset[] = raw.map((p) => ({
     ...p,
-    Icon: TfWriting,
+    Icon: TfWritingAnimated,
     isBuiltIn: false,
   }))
   const builtInPresets: PromptPreset[] = (session?.presets ?? []).map((p) => ({
     ...p,
     description: p.description ?? '',
-    Icon: presetIcons[p.icon ?? ''] ?? TfWriting,
+    Icon: presetIcons[p.icon ?? ''] ?? TfWritingAnimated,
     isBuiltIn: true,
     systemPrompt: p.systemPrompt ?? '',
   }))
@@ -95,7 +97,7 @@ export function usePromptLibrary() {
       input,
     )
     save((presets) => [...presets, p])
-    return { ...p, Icon: TfWriting, isBuiltIn: false }
+    return { ...p, Icon: TfWritingAnimated, isBuiltIn: false }
   }
   return {
     builtInPresets,

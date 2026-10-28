@@ -8,7 +8,7 @@ import {
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
 import { useHarness } from '@/services/harness/provider'
 import { useUser } from '@clerk/react'
-import { TfLockLocked } from '@tinfoilsh/tinfoil-icons'
+import { TfLockLockedAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { motion } from 'framer-motion'
 import React, { memo, useRef, useState } from 'react'
 import { ChatInput } from './chat-input'
@@ -331,7 +331,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
               onClick={() => setIsPrivacyOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-sm text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
             >
-              <TfLockLocked
+              <TfLockLockedAnimated
                 className="h-4 w-4 !text-brand-accent-dark dark:!text-brand-accent-light"
                 aria-hidden="true"
               />
