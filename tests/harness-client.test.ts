@@ -15,7 +15,7 @@ import type {
   TimelineBlock,
 } from '@/services/harness/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { stubChatAccess } from './harness-fixture'
+import { SEALED, stubChatAccess } from './harness-fixture'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
@@ -822,7 +822,7 @@ describe('attested harness transport', () => {
           action: 'reauthenticate',
         },
       },
-      { status: 401 },
+      { status: 401, headers: SEALED },
     )
   it('refreshes an expired Clerk JWT once while retaining the same turn nonce and body', async () => {
     vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['fr-FR', 'fr'])
@@ -903,7 +903,7 @@ describe('attested harness transport', () => {
       secure.fetch.mockResolvedValueOnce(
         Response.json(
           { error: { code, message: 'Refused', action } },
-          { status: 401 },
+          { status: 401, headers: SEALED },
         ),
       )
       const getToken = vi.fn().mockResolvedValue('clerk')
@@ -928,12 +928,13 @@ describe('attested harness transport', () => {
       response: () =>
         Response.json(
           { error: { code: 'UNAUTHENTICATED', message: 'Expired session' } },
-          { status: 401 },
+          { status: 401, headers: SEALED },
         ),
     },
     {
       refusal: 'is not the harness envelope',
-      response: () => new Response('Unauthorized', { status: 401 }),
+      response: () =>
+        new Response('Unauthorized', { status: 401, headers: SEALED }),
     },
   ])(
     'fails a 401 that $refusal without signing in again',
@@ -954,6 +955,39 @@ describe('attested harness transport', () => {
       expect(getToken).not.toHaveBeenCalledWith({ skipCache: true })
     },
   )
+  // Only the harness's answers are sealed: a refusal that is not came from
+  // something in front of the enclave and is neither shown nor acted on.
+  it('fails a refusal the enclave did not seal as a lost connection', async () => {
+    const secure = transport()
+    secure.fetch.mockResolvedValueOnce(
+      Response.json(
+        {
+          error: {
+            code: 'UNAUTHENTICATED',
+            message: 'Sign in again',
+            action: 'reauthenticate',
+          },
+        },
+        { status: 401 },
+      ),
+    )
+    const getToken = vi.fn().mockResolvedValue('clerk')
+    const client = new HarnessClient(
+      'https://harness.example',
+      getToken,
+      () => secure,
+    )
+    const refusal = await client
+      .post('/v1/threads/delete', { id: 't' })
+      .catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(HarnessError)
+    expect(refusal).toMatchObject({
+      status: undefined,
+      detail: { code: 'CONNECTION', action: 'retry' },
+    })
+    expect(secure.fetch).toHaveBeenCalledOnce()
+    expect(getToken).not.toHaveBeenCalledWith({ skipCache: true })
+  })
   it('fails an answer that is not JSON as one the protocol does not allow', async () => {
     const secure = transport()
     secure.fetch.mockResolvedValueOnce(new Response('<html>Bad gateway</html>'))
@@ -980,7 +1014,7 @@ describe('attested harness transport', () => {
             action: 'escalate',
           },
         },
-        { status: 409 },
+        { status: 409, headers: SEALED },
       ),
     )
     const client = new HarnessClient(
@@ -1224,7 +1258,7 @@ describe('chat access a signed-in client mints', () => {
           action: 'reauthenticate',
         },
       },
-      { status: 401 },
+      { status: 401, headers: SEALED },
     )
 
   it('mints a subscriber token once while it lasts and reports its quota', async () => {
@@ -1560,7 +1594,7 @@ describe('chat access a signed-in client mints', () => {
               action: 'reauthenticate',
             },
           },
-          { status: 401 },
+          { status: 401, headers: SEALED },
         )
       return headers.has(INFERENCE_KEY_HEADER)
         ? Response.json({ ok: true })

@@ -150,6 +150,21 @@ export const invalidResponse = (): HarnessErrorBody => ({
   message: 'The chat service sent a response this client cannot read.',
 })
 
+// Set on every answer the enclave seals, which is every answer the harness
+// gives; one without it came from whatever stands in front of the enclave.
+export const RESPONSE_NONCE_HEADER = 'Ehbp-Response-Nonce'
+
+// Why a request failed when its answer did not come from the harness: a
+// refusal the enclave did not seal says nothing this client may show or act
+// on, and whether the request took effect is unknown, as when the connection
+// drops.
+export const unsealedRefusal = (): HarnessErrorBody => ({
+  code: ERROR_CODES.connection,
+  action: ERROR_ACTIONS.retry,
+  message:
+    'The chat service could not be reached. Check your connection and try again.',
+})
+
 // Carries a signed-in account's chat access, which the harness checks before
 // it reads a request's body.
 export const INFERENCE_KEY_HEADER = 'X-Tinfoil-Inference-Key'

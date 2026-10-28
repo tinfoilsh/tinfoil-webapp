@@ -2,6 +2,7 @@ import { API_BASE_URL } from '@/config'
 import { AnonymousCredentialCache } from '@/services/harness/anonymous-credential'
 import { HarnessClient } from '@/services/harness/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SEALED } from './harness-fixture'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
@@ -23,7 +24,7 @@ const rejected = () =>
         action: 'reauthenticate',
       },
     },
-    { status: 401 },
+    { status: 401, headers: SEALED },
   )
 
 const controlplane = vi.fn<typeof fetch>()
@@ -129,7 +130,7 @@ describe('anonymous client credentials', () => {
             action: 'wait',
           },
         },
-        { status: 429 },
+        { status: 429, headers: SEALED },
       ),
     )
     await expect(client.post('/v1/threads/turn', {})).rejects.toMatchObject({

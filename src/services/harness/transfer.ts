@@ -41,10 +41,12 @@ const alreadyOnDevice = () =>
 const SERVER_ERROR_STATUS = 500
 
 // A request the harness refused, or that failed before it was sent, changed
-// nothing. A server error may come after the change committed.
+// nothing. A server error may come after the change committed, and so may a
+// request whose connection failed.
 function isRefusal(error: unknown): boolean {
   return (
     error instanceof HarnessError &&
+    error.detail.code !== ERROR_CODES.connection &&
     (error.status === undefined || error.status < SERVER_ERROR_STATUS)
   )
 }

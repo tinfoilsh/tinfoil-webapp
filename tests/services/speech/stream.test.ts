@@ -5,7 +5,7 @@ import { SPEECH } from '@/services/speech/constants'
 import { speechErrorMessage } from '@/services/speech/errors'
 import { decodePcmStream, speechSource } from '@/services/speech/stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { stubChatAccess } from '../../harness-fixture'
+import { SEALED, stubChatAccess } from '../../harness-fixture'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
@@ -166,7 +166,10 @@ describe('speech requests', () => {
               action: 'retry',
             },
           }),
-          { status: 503, headers: { 'Content-Type': 'application/json' } },
+          {
+            status: 503,
+            headers: { 'Content-Type': 'application/json', ...SEALED },
+          },
         ),
     )
     const refusal = await collect(speech(new AbortController().signal)).catch(
@@ -210,7 +213,10 @@ describe('speech requests', () => {
               action: 'wait',
             },
           }),
-          { status: 429, headers: { 'Content-Type': 'application/json' } },
+          {
+            status: 429,
+            headers: { 'Content-Type': 'application/json', ...SEALED },
+          },
         ),
     )
     const result = collect(speech(new AbortController().signal)).catch(
@@ -243,7 +249,7 @@ describe('speech requests', () => {
         () =>
           new Response(JSON.stringify({ error: { code, message, action } }), {
             status,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...SEALED },
           }),
       )
       const result = collect(speech(new AbortController().signal)).catch(

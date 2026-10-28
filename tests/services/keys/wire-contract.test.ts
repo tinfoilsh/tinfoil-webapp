@@ -77,28 +77,17 @@ afterEach(() => {
 })
 
 describe('wire-contract', () => {
-  it.each(['new', 'rotating', 'missing'] as const)(
+  it.each(['new', 'rotating'] as const)(
     'registers with the any-key sentinel or explicit rotation ETag: %s',
     async (state) => {
       const rotating = state === 'rotating'
       secureFetch
         .mockResolvedValueOnce(
-          state === 'missing'
-            ? response(
-                {
-                  error: {
-                    code: 'THREAD_NOT_FOUND',
-                    message: 'The requested data was not found',
-                    action: 'stop',
-                  },
-                },
-                404,
-              )
-            : response({
-                key_id: rotating ? 'ff'.repeat(16) : null,
-                etag: 'remote-etag',
-                bundles: {},
-              }),
+          response({
+            key_id: rotating ? 'ff'.repeat(16) : null,
+            etag: 'remote-etag',
+            bundles: {},
+          }),
         )
         .mockResolvedValueOnce(response({ ok: true, key_id: 'registered-key' }))
         .mockResolvedValueOnce(

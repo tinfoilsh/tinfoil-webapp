@@ -10,7 +10,9 @@ import {
   INFERENCE_KEY_HEADER,
   invalidResponse,
   LAST_EVENT_ID_HEADER,
+  RESPONSE_NONCE_HEADER,
   ROUTES,
+  unsealedRefusal,
   type HarnessRoute,
   type RunRoute,
 } from './protocol'
@@ -244,6 +246,8 @@ export class HarnessClient {
         credentials: 'omit',
       })
       if (response.ok) return response
+      if (!response.headers.has(RESPONSE_NONCE_HEADER))
+        throw new HarnessError(unsealedRefusal())
       // A refusal without the harness's error envelope, or one that names
       // no action, is not one the protocol allows.
       let detail = invalidResponse()

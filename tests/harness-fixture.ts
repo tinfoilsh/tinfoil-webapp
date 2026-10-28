@@ -8,6 +8,9 @@ import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import type { RateLimit, Session } from '@/services/harness/types'
 import { vi, type Mock } from 'vitest'
 
+// The enclave seals every answer the harness gives, refusals included.
+export const SEALED = { 'Ehbp-Response-Nonce': '00'.repeat(32) }
+
 export const KEY = 'Y29udGVudC1rZXk='
 // The prompt cache secret this browser already holds for the signed-in
 // account, or this tab for a visitor, so a turn's payload can be compared
