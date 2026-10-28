@@ -3,6 +3,7 @@ import type {
   Chat,
   Message,
   TimelineBlock,
+  TitleState,
   Annotation as UIAnnotation,
 } from '@/components/chat/types'
 import { DEFAULT_CHAT_TITLE, PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
@@ -25,6 +26,26 @@ const FETCH_STATUS = {
   completed: 'completed',
   failed: 'failed',
 } as const
+type ToolStatus = keyof typeof SEARCH_STATUS
+
+// The roles and title states this client knows. A later harness may send
+// others.
+const ROLES: ReadonlySet<string> = new Set<Message['role']>([
+  'user',
+  'assistant',
+])
+const TITLE_STATES: ReadonlySet<string> = new Set<TitleState>([
+  'placeholder',
+  'generated',
+  'manual',
+])
+
+const isTitleState = (state: string): state is TitleState =>
+  TITLE_STATES.has(state)
+
+// A tool status this client does not know shows as completed.
+const toolStatus = (status: string): ToolStatus =>
+  Object.hasOwn(SEARCH_STATUS, status) ? (status as ToolStatus) : 'completed'
 
 const isShownTool = (name = '') =>
   name === 'web_search' ||
@@ -104,9 +125,10 @@ function mergedReads(timeline: TimelineBlock[]): TimelineBlock[] {
 function toolBlock(block: WireBlock, streaming: boolean): TimelineBlock | null {
   const toolCallId = block.toolCallId ?? block.id
   const { display } = block
+  const reported = display && toolStatus(display.status)
   const status = streaming
-    ? (display?.status ?? 'running')
-    : display?.status === 'completed'
+    ? (reported ?? 'running')
+    : reported === 'completed'
       ? 'completed'
       : 'failed'
   const timing = { startedAt: block.startedAt, endedAt: block.endedAt }
@@ -190,10 +212,19 @@ export function queuedAttachmentViews(
       : [],
   )
 }
+// A message of a role this client knows.
+type Known<M> = M & { role: Message['role'] }
+export type ShownMessage = Known<WireMessage>
+
+// The messages a chat shows, without those whose role this client does not
+// know. The message actions name a message by its index among them.
+export const shownMessages = <M extends Pick<WireMessage, 'role'>>(
+  messages: readonly M[],
+) => messages.filter((message): message is Known<M> => ROLES.has(message.role))
 // A message as the view shows it, with the latest summary of each thinking
 // block's reasoning.
 export function messageView(
-  message: WireMessage,
+  message: ShownMessage,
   streaming = false,
   summaries: Readonly<Record<string, string>> = {},
 ): Message {
@@ -211,6 +242,8 @@ export function messageView(
       }
     if (block.type === 'content')
       return { ...block, type: 'content', content: block.content ?? '' }
+    // A block of a type this client does not know has no view.
+    if (block.type !== 'tool_call') return []
     // A tool that is neither a search nor a widget, as the code an older
     // chat ran, has no view.
     if (!isShownTool(block.name)) return []
@@ -263,7 +296,8 @@ export function threadView(
   return {
     id: thread.id,
     title: chatTitle(thread),
-    titleState: thread.titleState,
+    // The title of a state this client does not know shows as it is.
+    titleState: isTitleState(thread.titleState) ? thread.titleState : undefined,
     ...(thread.createdAt ? { createdAt: new Date(thread.createdAt) } : {}),
     updatedAt: thread.updatedAt ?? undefined,
     activityAt: thread.activityAt || undefined,

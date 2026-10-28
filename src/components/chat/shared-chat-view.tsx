@@ -4,7 +4,7 @@ import { sharedAttachment } from '@/services/harness/shares'
 import { speakText } from '@/services/harness/speech'
 import { HarnessError } from '@/services/harness/sse'
 import type { SharedThread } from '@/services/harness/types'
-import { messageView } from '@/services/harness/view-model'
+import { messageView, shownMessages } from '@/services/harness/view-model'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { useCallback, useEffect, useState } from 'react'
 import { DocumentTextProvider } from './document-text-context'
@@ -22,12 +22,13 @@ export function SharedChatView({
   model: BaseModel
 }) {
   const [messages, setMessages] = useState(() =>
-    chatData.messages.map((m) => messageView(m)),
+    shownMessages(chatData.messages).map((m) => messageView(m)),
   )
   useEffect(() => {
     const abort = new AbortController()
-    setMessages(chatData.messages.map((m) => messageView(m)))
-    for (const message of chatData.messages)
+    const shown = shownMessages(chatData.messages)
+    setMessages(shown.map((m) => messageView(m)))
+    for (const message of shown)
       for (const attachment of message.attachments ?? []) {
         if (attachment.kind !== 'image' || !attachment.attKey) continue
         void sharedAttachment(attachment.id, attachment.attKey, abort.signal)

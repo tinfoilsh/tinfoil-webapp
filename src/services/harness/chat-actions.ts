@@ -16,6 +16,7 @@ import {
   type DeviceChatCopy,
 } from './transfer'
 import type { Message, Thread, ThreadSummary, TimelineBlock } from './types'
+import { shownMessages } from './view-model'
 
 // The id of the block holding a reply's rewritten text when it had none.
 const EDITED_CONTENT_ID = 'edited-content'
@@ -129,7 +130,7 @@ export function chatActions({
   ) {
     const threadId = open.get().id
     const before = controller.view.get().messages
-    const messageId = before[index]?.id
+    const messageId = shownMessages(before)[index]?.id
     if (!threadId || !messageId || moving.has(threadId)) return
     const shown = controller.track()
     const changed = changeLoaded(before, messageId)
@@ -236,7 +237,9 @@ export function chatActions({
     // messages through it, and opens the fork.
     async fork(messageIndex: number) {
       const { id: threadId, temporary } = open.get()
-      const messageId = controller.view.get().messages[messageIndex]?.id
+      const messageId = shownMessages(controller.view.get().messages)[
+        messageIndex
+      ]?.id
       if (!threadId || temporary || !messageId) return null
       const store = storeOf(threadId)
       const shown = controller.track()
@@ -259,7 +262,10 @@ export function chatActions({
     },
     // Rewrites a reply's text in place; later messages stay.
     editReply(index: number, content: string) {
-      if (controller.view.get().messages[index]?.role !== 'assistant')
+      if (
+        shownMessages(controller.view.get().messages)[index]?.role !==
+        'assistant'
+      )
         return Promise.resolve()
       return changeMessage(
         index,

@@ -6,9 +6,11 @@ import type {
   Annotation,
   ToolDisplay,
   TimelineBlock as WireBlock,
-  Message as WireMessage,
 } from '@/services/harness/types'
-import { messageView } from '@/services/harness/view-model'
+import {
+  messageView,
+  type ShownMessage as WireMessage,
+} from '@/services/harness/view-model'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi, type Mock } from 'vitest'
 

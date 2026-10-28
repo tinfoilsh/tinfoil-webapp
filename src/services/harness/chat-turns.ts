@@ -26,6 +26,7 @@ import type {
   ThreadMessage,
   Turn,
 } from './types'
+import { shownMessages } from './view-model'
 
 // What a widget's card says of a retry the harness refused or could not
 // finish.
@@ -332,13 +333,14 @@ export function chatTurns({
   // progress is stopped first.
   async function regenerate(index: number, fields: Partial<Turn> = {}) {
     const { messages, status } = controller.view.get()
-    const target = messages[index]
+    const shown = shownMessages(messages)
+    const target = shown[index]
     if (!target) return false
     const reply =
       target.role === 'assistant'
         ? target
-        : messages[index + 1]?.role === 'assistant'
-          ? messages[index + 1]
+        : shown[index + 1]?.role === 'assistant'
+          ? shown[index + 1]
           : undefined
     const turn: Partial<Turn> = reply
       ? { kind: 'regenerate', messageId: reply.id, content: '' }
@@ -350,7 +352,7 @@ export function chatTurns({
   // Asks the model to resume a reply where it stopped. The harness drops the
   // messages after it, so the continued reply ends the chat.
   function continueReply(index: number, fields: Partial<Turn> = {}) {
-    const reply = controller.view.get().messages[index]
+    const reply = shownMessages(controller.view.get().messages)[index]
     if (reply?.role !== 'assistant') return
     return send({
       ...fields,

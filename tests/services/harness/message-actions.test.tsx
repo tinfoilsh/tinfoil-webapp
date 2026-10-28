@@ -343,6 +343,40 @@ describe('regenerating a reply', () => {
   })
 })
 
+describe('a message whose role this client does not know', () => {
+  it('is left out, and the message actions name messages among those shown', async () => {
+    signIn({ cloud: false, session })
+    const aside: ThreadMessage = {
+      id: 'n1',
+      role: 'narrator',
+      createdAt: '2026-04-01T09:00:00.500Z',
+      content: 'an aside',
+    }
+    const messages = [transcript[0], aside, ...transcript.slice(1)]
+    await localThreadStore('device').update(THREAD_ID, () =>
+      localThread(messages),
+    )
+    client.events.mockImplementation(regenerated([wire(transcript[0]), aside]))
+    const { result } = renderHook(() =>
+      useThread(THREAD_ID, null, { local: true }),
+    )
+    await waitFor(() =>
+      expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+        'u1',
+        'a1',
+        'u2',
+        'a2',
+      ]),
+    )
+
+    // The first question's index, as its Regenerate button passes it.
+    await act(() => result.current.regenerate(0))
+
+    expect(turn()).toMatchObject({ kind: 'regenerate', messageId: 'a1' })
+    expect(turn().thread).toEqual(localThread(messages))
+  })
+})
+
 describe('the chat a regenerated or edited turn leaves', () => {
   function openCloud() {
     signIn({ cloud: true, session })

@@ -11,7 +11,7 @@ import type { ThreadSummary } from './types'
 const summarySchema = z.object({
   id: z.string(),
   title: z.string(),
-  titleState: z.enum(['placeholder', 'generated', 'manual']),
+  titleState: z.string(),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
   activityAt: z.string(),

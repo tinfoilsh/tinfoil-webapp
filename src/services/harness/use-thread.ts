@@ -43,7 +43,9 @@ import {
   lastActive,
   messageView,
   queuedAttachmentViews,
+  shownMessages,
   threadView,
+  type ShownMessage,
 } from './view-model'
 
 export interface ThreadRoute {
@@ -579,7 +581,7 @@ export function useThread(
     state.status === 'streaming' ||
     state.status === 'queued'
   const isLocalChat = local && !temporary
-  const viewOf = (message: WireMessage, streaming: boolean) => {
+  const viewOf = (message: ShownMessage, streaming: boolean) => {
     const kept = views.get(message)
     if (kept?.streaming === streaming && kept.summaries === state.summaries)
       return kept.view
@@ -587,8 +589,8 @@ export function useThread(
     views.set(message, { streaming, summaries: state.summaries, view })
     return view
   }
-  const messages = state.messages.map((m, index) => {
-    const view = viewOf(m, running && index === state.messages.length - 1)
+  const messages = shownMessages(state.messages).map((m) => {
+    const view = viewOf(m, running && m === state.messages.at(-1))
     if (!onDevice(openState) || !view.attachments?.length) return view
     // An image the previous client stored without a thumbnail shows its
     // bytes; others load them when opened in the gallery.

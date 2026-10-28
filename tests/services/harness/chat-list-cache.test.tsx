@@ -1,3 +1,4 @@
+import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { CLOUD_CHAT_LIST_CACHE_PREFIX } from '@/constants/storage-keys'
 import {
   ENCRYPTION_KEY_CHANGED_EVENT,
@@ -151,6 +152,29 @@ it('does not restore a list an earlier version cached without activity times', a
   expect(reloaded.result.current.chats.map((chat) => chat.id)).toEqual([
     'fresh',
   ])
+})
+
+it('restores a chat whose title state this client does not know, titled as it is', async () => {
+  signIn({ cloud: true })
+  const suggested = {
+    ...summary('suggested'),
+    title: PLACEHOLDER_CHAT_TITLE,
+    titleState: 'suggested',
+  }
+  client.post.mockResolvedValue(page([suggested]))
+  const first = renderHook(() => useThread())
+  await waitFor(() => expect(first.result.current.chats).toHaveLength(1))
+  first.unmount()
+
+  signIn({ cloud: true })
+  const fresh = deferred<ReturnType<typeof page>>()
+  client.post.mockReturnValue(fresh.promise)
+  const reloaded = renderHook(() => useThread())
+  expect(reloaded.result.current.chats).toHaveLength(1)
+  const [chat] = reloaded.result.current.chats
+  expect(chat).toMatchObject({ id: 'suggested', title: PLACEHOLDER_CHAT_TITLE })
+  expect(chat.titleState).toBeUndefined()
+  await act(async () => fresh.resolve(page([suggested])))
 })
 
 it('leaves a chat stored without its creation time undated', async () => {
