@@ -1,7 +1,7 @@
 'use client'
 
 import { ChatList, type ChatItemData } from '@/components/chat/chat-list'
-import { formatRelativeTime } from '@/components/chat/chat-list-utils'
+import { updatedLabel } from '@/components/chat/chat-list-utils'
 import {
   FilePreview,
   imageDataUrl,
@@ -764,9 +764,11 @@ export function ProjectSidebar({
                     />
                   </button>
                 </h2>
-                <p className="truncate font-aeonik-fono text-xs leading-4 text-content-muted">
-                  Updated {formatRelativeTime(new Date(project.updatedAt))}
-                </p>
+                {updatedLabel(project.updatedAt) && (
+                  <p className="truncate font-aeonik-fono text-xs leading-4 text-content-muted">
+                    {updatedLabel(project.updatedAt)}
+                  </p>
+                )}
               </>
             ) : null}
           </div>

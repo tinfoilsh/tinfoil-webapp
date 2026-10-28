@@ -42,7 +42,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useRouter } from 'next/router'
 import { PiSpinner } from 'react-icons/pi'
 import { ChatList, type ChatItemData } from './chat-list'
-import { formatRelativeTime } from './chat-list-utils'
+import { updatedLabel } from './chat-list-utils'
 import { CONSTANTS } from './constants'
 import { useDrag } from './drag-context'
 import { consumeFavoriteDrop } from './favorite-drag'
@@ -1418,9 +1418,11 @@ export function ChatSidebar({
                                       <span className="truncate font-aeonik-fono text-sm font-medium leading-5 text-content-primary">
                                         {project.name}
                                       </span>
-                                      <span className="text-xs text-content-muted">
-                                        {`Updated ${formatRelativeTime(new Date(project.updatedAt))}`}
-                                      </span>
+                                      {updatedLabel(project.updatedAt) && (
+                                        <span className="text-xs text-content-muted">
+                                          {updatedLabel(project.updatedAt)}
+                                        </span>
+                                      )}
                                     </div>
                                   </>
                                 )
