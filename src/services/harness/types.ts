@@ -68,6 +68,7 @@ export type RateLimit = Schemas['RateLimit']
 export type SessionModel = Schemas['SessionModel']
 export type Session = Schemas['Session']
 export type FileGroup = Schemas['FileGroup']
+export type KeyOrigin = Schemas['KeyOrigin']
 
 export type Turn = Schemas['Turn']
 export type FollowInput = Schemas['FollowInput']

@@ -1,6 +1,7 @@
 import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { ROUTES, type HarnessRoute } from './protocol'
 import { harnessAPI } from './runtime'
+import type { KeyOrigin } from './types'
 export interface OKResponse {
   ok: boolean
 }
@@ -85,7 +86,7 @@ export interface KeyCurrentResponse {
   etag?: string
   /** Map of credential_id → bundle body. Empty when key_id is null. */
   bundles: Record<string, KeyCurrentBundle>
-  created_via?: 'passkey' | 'manual' | 'recovery' | 'start_fresh'
+  created_via?: KeyOrigin
   created_at?: string
   /**
    * Whether the user owns encrypted blobs not sealed under the reported
