@@ -110,7 +110,13 @@ it('moves legacy data to a recovered Start Fresh key instead of dropping it', as
 
   expect(recovered).toBe(BACKUP_KEY)
   expect(result.current.passkeyRecoveryFailure).toBeNull()
-  expect(mocks.registerKey).not.toHaveBeenCalled()
+  expect(mocks.registerKey).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      keyB64: base64(2),
+      ifMatch: '*',
+      createdVia: 'recovery',
+    }),
+  )
   expect(harnessAPI().client.post).toHaveBeenCalledExactlyOnceWith(
     '/v1/keys/migrate-all',
     {

@@ -22,40 +22,39 @@ export async function authorizeCurrentPrimaryKeyOrThrow(): Promise<void> {
       validation.remoteState,
     )
   const { current } = validation
-  if (!current.key_id) {
-    if (current.has_data) {
-      // Only key candidates cross the connection. The service owns the migration job.
-      const keys = [
-        ...new Set([
-          requirePrimaryKeyB64(),
-          ...[
-            encryptionService.getKey(),
-            ...encryptionService.getStoredAlternatives(),
-          ].flatMap((value) => {
-            const bytes =
-              value && encryptionService.getAlternativeKeyBytes(value)
-            if (!bytes) return []
-            try {
-              return [btoa(String.fromCharCode(...bytes))]
-            } finally {
-              bytes.fill(0)
-            }
-          }),
-        ]),
-      ].map((key) => ({ key }))
-      await harnessAPI().post(
-        ROUTES.keysMigrateAll,
-        { keys, target: { key: requirePrimaryKeyB64() } },
-        { keyless: true },
-      )
-    } else
-      await registerKey({
-        keyB64: requirePrimaryKeyB64(),
-        ifMatch: '*',
-        createdVia: 'manual',
-        idempotencyKey: newIdempotencyKey(),
-      })
-  }
+  // An account whose rows predate the registry registers the key as the one
+  // that recovers them; the harness reseals only under the registered key.
+  if (!current.key_id)
+    await registerKey({
+      keyB64: requirePrimaryKeyB64(),
+      ifMatch: '*',
+      createdVia: current.has_data ? 'recovery' : 'manual',
+      idempotencyKey: newIdempotencyKey(),
+    })
+  if (!current.has_data) return
+  // Only key candidates cross the connection. The service owns the migration job.
+  const keys = [
+    ...new Set([
+      requirePrimaryKeyB64(),
+      ...[
+        encryptionService.getKey(),
+        ...encryptionService.getStoredAlternatives(),
+      ].flatMap((value) => {
+        const bytes = value && encryptionService.getAlternativeKeyBytes(value)
+        if (!bytes) return []
+        try {
+          return [btoa(String.fromCharCode(...bytes))]
+        } finally {
+          bytes.fill(0)
+        }
+      }),
+    ]),
+  ].map((key) => ({ key }))
+  await harnessAPI().post(
+    ROUTES.keysMigrateAll,
+    { keys, target: { key: requirePrimaryKeyB64() } },
+    { keyless: true },
+  )
 }
 export async function registerStartFreshKeyIfNeeded() {
   const validation = await validateCurrentPrimaryKey()
