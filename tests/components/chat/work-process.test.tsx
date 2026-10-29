@@ -157,11 +157,11 @@ describe('WorkProcess once the run has finished', () => {
         search('s1'),
         read('r2', ['completed', 'completed', 'completed']),
       ],
-      label: 'Thought, searched the web, and read 3 pages',
+      label: 'Thought, searched the web, and read 3 links',
     },
     {
       blocks: [search('s0'), read('r1', ['completed', 'failed'])],
-      label: 'Searched the web and read a page',
+      label: 'Searched the web and read a link',
     },
     {
       blocks: [thinking('t0'), search('s1'), thinking('t2'), search('s3')],
@@ -173,11 +173,11 @@ describe('WorkProcess once the run has finished', () => {
         thinking('t1'),
         read('r2', ['completed']),
       ],
-      label: 'Read 3 pages and thought',
+      label: 'Read 3 links and thought',
     },
     {
       blocks: [thinking('t0'), read('r1', ['failed', 'failed'])],
-      label: 'Thought and tried to read 2 pages',
+      label: 'Thought and tried to read 2 links',
     },
     { blocks: [search('s0'), search('s1')], label: 'Searched the web' },
   ])('names what its steps did: $label', ({ blocks, label }) => {
