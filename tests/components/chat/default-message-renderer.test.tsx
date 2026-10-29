@@ -899,12 +899,13 @@ describe('DefaultMessageRenderer work traces', () => {
         isStreaming
       />,
     )
-    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
-      'Worked for 42.0 seconds',
-    )
+    expect(
+      screen.getByRole('button', { name: 'Thought and searched the web' }),
+    ).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Working')).not.toBeInTheDocument()
   })
 
-  it('says how long the steps of a stored reply took', () => {
+  it('says how long a stored reply thought, and names its steps', () => {
     const thinking: WireBlock = {
       id: 't',
       type: 'thinking',
@@ -945,9 +946,12 @@ describe('DefaultMessageRenderer work traces', () => {
       ]),
       false,
     )
-    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
-      'Worked for 10.0 seconds',
-    )
+    expect(
+      screen.getByRole('button', { name: 'Thought and searched the web' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Thought for 2.5 seconds' }),
+    ).toBeInTheDocument()
   })
 
   it("lists the last search's results and the citations as the reply's sources", () => {
@@ -1056,88 +1060,9 @@ describe('DefaultMessageRenderer work traces', () => {
     // One step lists every page; only the pages read count as read.
     expect(screen.getByRole('button', { name: 'Read 2 links' })).toBeVisible()
     expect(container).not.toHaveTextContent('Read 1 link')
-    expect(container).not.toHaveTextContent('Worked')
+    expect(container).not.toHaveTextContent('Read 2 pages')
     for (const page of ['a.example/one', 'b.example/two', 'c.example/three'])
       expect(screen.getByText(page)).toBeInTheDocument()
-  })
-
-  it('times back-to-back reads from the first start to the last end', () => {
-    const fetch = (id: string, startedAt: number, endedAt: number) => ({
-      id,
-      type: 'tool_call' as const,
-      toolCallId: id,
-      name: 'web_fetch',
-      arguments: JSON.stringify({ urls: [`https://${id}.example/`] }),
-      complete: true,
-      display: { status: 'completed' as const, sources: [] },
-      startedAt,
-      endedAt,
-    })
-    renderReply(
-      {
-        id: 'a1',
-        role: 'assistant',
-        createdAt: '2026-08-07T00:00:01.000Z',
-        content: 'Read them.',
-        timeline: [
-          fetch('first', 1_000, 4_000),
-          fetch('second', 4_000, 9_000),
-          {
-            id: 't',
-            type: 'thinking',
-            content: 'Both read.',
-            startedAt: 5_000,
-            endedAt: 6_000,
-            duration: 1,
-          },
-          { id: 'c', type: 'content', content: 'Read them.' },
-        ],
-      },
-      false,
-    )
-
-    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
-      'Worked for 8.0 seconds',
-    )
-  })
-
-  it('times a cut-off read as long as it ran when it follows another read', () => {
-    const fetch = (id: string, startedAt: number, endedAt?: number) => ({
-      id,
-      type: 'tool_call' as const,
-      toolCallId: id,
-      name: 'web_fetch',
-      arguments: JSON.stringify({ urls: [`https://${id}.example/`] }),
-      complete: true,
-      startedAt,
-      endedAt,
-    })
-    renderReply(
-      {
-        id: 'a1',
-        role: 'assistant',
-        createdAt: '2026-08-07T00:00:01.000Z',
-        content: 'Read them.',
-        timeline: [
-          {
-            id: 't',
-            type: 'thinking',
-            content: 'Reading both.',
-            startedAt: 500,
-            endedAt: 900,
-            duration: 0.4,
-          },
-          fetch('first', 1_000, 4_000),
-          fetch('second', 5_000),
-          { id: 'c', type: 'content', content: 'Read them.' },
-        ],
-      },
-      false,
-    )
-
-    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
-      'Worked for 4.5 seconds',
-    )
   })
 
   it('shows nothing of the code an older chat ran, unlike a retired widget', () => {

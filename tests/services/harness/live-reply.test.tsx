@@ -130,7 +130,7 @@ describe('a streamed reply', () => {
     )
   })
 
-  it('says how long its steps took together', async () => {
+  it('names the steps it took, and how long it thought', async () => {
     await streamReply([
       {
         type: 'REASONING_MESSAGE_CHUNK',
@@ -169,9 +169,12 @@ describe('a streamed reply', () => {
       },
     ])
 
-    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
-      'Worked for 9.0 seconds',
-    )
+    expect(
+      screen.getByRole('button', { name: 'Thought and searched the web' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Thought for 1.0 seconds' }),
+    ).toBeInTheDocument()
   })
 
   it('shows a widget the harness refused as it streams', async () => {

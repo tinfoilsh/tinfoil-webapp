@@ -4,7 +4,6 @@ import type {
   TimelineWebSearchBlock,
 } from '@/components/chat/types'
 import { memo, useId, useMemo, useState, type ReactNode } from 'react'
-import { formatDurationLabel } from './format-duration'
 import { ThinkingLabel, ThoughtProcess } from './ThoughtProcess'
 import {
   getURLFetchHeaderLabel,
@@ -25,28 +24,33 @@ interface WorkProcessProps {
   isDarkMode: boolean
 }
 
-/**
- * Wall-clock span of the run from the stamps recorded while streaming.
- * Falls back to summed thinking durations for messages saved before
- * stamps existed; undefined when neither is available.
- */
-export function getWorkDurationSeconds(
-  blocks: WorkBlock[],
-): number | undefined {
-  let start = Infinity
-  let end = -Infinity
-  for (const block of blocks) {
-    if (block.startedAt === undefined) continue
-    start = Math.min(start, block.startedAt)
-    end = Math.max(end, block.endedAt ?? block.startedAt)
-  }
-  if (start !== Infinity) return (end - start) / 1000
+const ACTION_LIST = new Intl.ListFormat('en', {
+  style: 'long',
+  type: 'conjunction',
+})
 
-  let thinking = 0
+// What the steps did, in the order each kind first appears, as "Thought,
+// searched the web, and read 3 pages". Pages read count across the steps.
+function describeWork(blocks: WorkBlock[]): string {
+  const pagesRead = blocks
+    .flatMap((block) => (block.type === 'url_fetches' ? block.fetches : []))
+    .filter((fetch) => fetch.status === 'completed').length
+  const actions = new Map<WorkBlock['type'], string>()
   for (const block of blocks) {
-    if (block.type === 'thinking' && block.duration) thinking += block.duration
+    if (actions.has(block.type)) continue
+    actions.set(
+      block.type,
+      block.type === 'thinking'
+        ? 'thought'
+        : block.type === 'web_search'
+          ? 'searched the web'
+          : pagesRead === 1
+            ? 'read a page'
+            : `read ${pagesRead} pages`,
+    )
   }
-  return thinking > 0 ? thinking : undefined
+  const description = ACTION_LIST.format(actions.values())
+  return description.charAt(0).toUpperCase() + description.slice(1)
 }
 
 type LiveActivity =
@@ -96,12 +100,7 @@ export const WorkProcess = memo(function WorkProcess({
   const activeThinking = activity?.kind === 'thinking' ? activity.block : null
   const summary = activeThinking?.summary ?? ''
 
-  const duration = useMemo(
-    () => (isActive ? undefined : getWorkDurationSeconds(blocks)),
-    [blocks, isActive],
-  )
-
-  const stepsNoun = `${blocks.length} step${blocks.length === 1 ? '' : 's'}`
+  const description = useMemo(() => describeWork(blocks), [blocks])
 
   return (
     <div>
@@ -114,14 +113,7 @@ export const WorkProcess = memo(function WorkProcess({
           ) : activity?.kind === 'idle' ? (
             <span className="font-medium">Working</span>
           ) : (
-            <span>
-              <span className="font-medium">Worked</span>
-              <span className="font-normal">
-                {duration !== undefined
-                  ? ` for ${formatDurationLabel(duration)}`
-                  : ` through ${stepsNoun}`}
-              </span>
-            </span>
+            <span className="font-medium">{description}</span>
           )
         }
         isRunning={isActive}

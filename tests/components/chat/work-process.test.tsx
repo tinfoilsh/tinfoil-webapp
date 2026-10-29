@@ -1,8 +1,8 @@
 import {
   WorkProcess,
-  getWorkDurationSeconds,
   type WorkBlock,
 } from '@/components/chat/renderers/components/WorkProcess'
+import type { URLFetchState } from '@/components/chat/types'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { client } from '../../harness-fixture'
@@ -33,6 +33,21 @@ const search = (
   ...overrides,
 })
 
+const read = (
+  id: string,
+  statuses: URLFetchState['status'][],
+  overrides: Partial<Extract<WorkBlock, { type: 'url_fetches' }>> = {},
+): WorkBlock => ({
+  type: 'url_fetches',
+  id,
+  fetches: statuses.map((status, index) => ({
+    id: `${id}-${index}`,
+    url: `https://${id}-${index}.example/`,
+    status,
+  })),
+  ...overrides,
+})
+
 const longThought = Array.from({ length: 30 }, (_, i) => `word${i}`).join(' ')
 
 const renderWork = (blocks: WorkBlock[], isActive = false) =>
@@ -55,48 +70,8 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('getWorkDurationSeconds', () => {
-  it('spans the run wall-clock rather than summing overlapping steps', () => {
-    expect(
-      getWorkDurationSeconds([
-        thinking('t', { startedAt: 1_000, endedAt: 5_000, duration: 4 }),
-        search('a', { startedAt: 5_000, endedAt: 20_000 }),
-        search('b', { startedAt: 5_000, endedAt: 25_000 }),
-      ]),
-    ).toBe(24)
-  })
-
-  it('uses startedAt for a step that never settled', () => {
-    expect(
-      getWorkDurationSeconds([
-        search('a', { startedAt: 0, endedAt: 3_000 }),
-        search('b', { startedAt: 4_000 }),
-      ]),
-    ).toBe(4)
-  })
-
-  it('falls back to summed thinking durations for unstamped messages', () => {
-    expect(
-      getWorkDurationSeconds([
-        thinking('t1', { duration: 4.7 }),
-        search('a'),
-        thinking('t2', { duration: 10.3 }),
-      ]),
-    ).toBe(15)
-  })
-
-  it('is undefined when nothing carries timing', () => {
-    expect(
-      getWorkDurationSeconds([
-        thinking('t', { duration: undefined }),
-        search('a'),
-      ]),
-    ).toBeUndefined()
-  })
-})
-
 describe('WorkProcess once the run has finished', () => {
-  it('collapses the steps behind a "Worked for" row and expands on click', () => {
+  it('collapses the steps behind a row naming them and expands on click', () => {
     renderWork([
       thinking('t0', { startedAt: 0, endedAt: 4_700 }),
       search('s1', { startedAt: 4_700, endedAt: 30_000 }),
@@ -104,7 +79,7 @@ describe('WorkProcess once the run has finished', () => {
     ])
 
     const header = screen.getByRole('button', {
-      name: 'Worked for 1.5 minutes',
+      name: 'Thought and searched the web',
     })
     expect(header).toHaveAttribute('aria-expanded', 'false')
     const steps = header.nextElementSibling as HTMLElement
@@ -175,13 +150,35 @@ describe('WorkProcess once the run has finished', () => {
     expect(searched).toHaveAttribute('aria-expanded', 'true')
   })
 
-  it('describes the step count when no timing is available', () => {
-    renderWork([
-      thinking('t0', { duration: undefined }),
-      search('s1'),
-      search('s2'),
-    ])
-    expect(getHeader()).toHaveTextContent('Worked through 3 steps')
+  it.each<{ blocks: WorkBlock[]; label: string }>([
+    {
+      blocks: [
+        thinking('t0'),
+        search('s1'),
+        read('r2', ['completed', 'completed', 'completed']),
+      ],
+      label: 'Thought, searched the web, and read 3 pages',
+    },
+    {
+      blocks: [search('s0'), read('r1', ['completed', 'failed'])],
+      label: 'Searched the web and read a page',
+    },
+    {
+      blocks: [thinking('t0'), search('s1'), thinking('t2'), search('s3')],
+      label: 'Thought and searched the web',
+    },
+    {
+      blocks: [
+        read('r0', ['completed', 'completed']),
+        thinking('t1'),
+        read('r2', ['completed']),
+      ],
+      label: 'Read 3 pages and thought',
+    },
+    { blocks: [search('s0'), search('s1')], label: 'Searched the web' },
+  ])('names what its steps did: $label', ({ blocks, label }) => {
+    renderWork(blocks)
+    expect(getHeader()).toHaveTextContent(new RegExp(`^${label}$`))
   })
 })
 
@@ -241,7 +238,7 @@ describe('WorkProcess while the run is active', () => {
     expect(screen.getAllByText('Weighing the tradeoffs')).toHaveLength(2)
   })
 
-  it('settles into "Worked for" once the run completes', () => {
+  it('settles into naming its steps once the run completes', () => {
     const { rerender } = renderWork(
       [
         thinking('t0', { startedAt: 0, endedAt: 2_000 }),
@@ -264,6 +261,6 @@ describe('WorkProcess while the run is active', () => {
         isDarkMode={false}
       />,
     )
-    expect(getHeader()).toHaveTextContent('Worked for 12.5 seconds')
+    expect(getHeader()).toHaveTextContent(/^Thought and searched the web$/)
   })
 })
