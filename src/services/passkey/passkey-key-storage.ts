@@ -69,8 +69,8 @@ export interface KeyBundle {
   primary: string
   /**
    * Decryption-only history retained for legacy v0/v1 rows. Registered
-   * bundles wrap only the current primary CEK; the harness reseals the
-   * rows older keys sealed when the key is registered.
+   * bundles wrap only the current primary CEK; authorizing the key sends
+   * these to keysMigrateAll, which reseals the rows older keys sealed.
    */
   alternatives: string[]
   authorizationMode?: CloudKeyAuthorizationMode
