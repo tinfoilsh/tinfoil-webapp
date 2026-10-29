@@ -147,10 +147,9 @@ export async function removeBundle(
 
 /**
  * Fetch the current key id and the full set of passkey bundles
- * registered for the authenticated user. Returns `{ key_id: null,
- * bundles: {} }` when the user has no key yet (HTTP 404 from the
- * enclave is mapped to this empty shape so callers can treat it as a
- * normal "first-time user" state without special-casing exceptions).
+ * registered for the authenticated user. The harness answers with
+ * `key_id: null` while the user has no key yet; any refusal, including
+ * a 404, throws.
  */
 export async function keyCurrent(
   signal?: AbortSignal,
