@@ -159,17 +159,15 @@ describe('RateLimitUsage', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('shows no quota of a kind this client does not know', async () => {
-    render(<RateLimitUsage isPremium />)
+  it('shows no quota once one of a kind this client does not know is reported', async () => {
+    const { container } = render(<RateLimitUsage isPremium />)
     await refreshSession(hourly(500_000))
     expect(screen.getByText('500K / 2M')).toBeInTheDocument()
 
     await refreshSession({ ...hourly(1_500_000), kind: 'monthly' })
 
-    expect(getView().rateLimit).toEqual(hourly(500_000))
-    expect(screen.getByText('Hourly usage')).toBeInTheDocument()
-    expect(screen.getByText('500K / 2M')).toBeInTheDocument()
-    expect(screen.queryByText('1.5M / 2M')).not.toBeInTheDocument()
+    expect(getView().rateLimit).toBeUndefined()
+    expect(container).toBeEmptyDOMElement()
   })
 })
 

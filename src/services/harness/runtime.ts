@@ -319,16 +319,13 @@ export class HarnessAPI {
   // Shows the quota a session, a run, a refusal or the account's chat access
   // reported, for this account only. The harness reports none for a
   // subscriber, whose quota came with its chat access. A quota of a kind this
-  // client does not know is not shown.
+  // client does not know replaces the one shown with none.
   reportRateLimit(rateLimit: RateLimit | undefined) {
-    if (
-      active !== this ||
-      this.lifetime.signal.aborted ||
-      !RATE_LIMIT_KINDS.has(rateLimit?.kind)
-    )
+    if (active !== this || this.lifetime.signal.aborted || !rateLimit?.kind)
       return
-    if (JSON.stringify(rateLimit) !== JSON.stringify(view.rateLimit))
-      publish({ rateLimit })
+    const shown = RATE_LIMIT_KINDS.has(rateLimit.kind) ? rateLimit : undefined
+    if (JSON.stringify(shown) !== JSON.stringify(view.rateLimit))
+      publish({ rateLimit: shown })
   }
 
   // A run's spend comes off the hourly budget the account's chat access
