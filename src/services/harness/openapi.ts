@@ -471,7 +471,10 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Change the profile */
+    /**
+     * Change the profile
+     * @description Sets the fields a patch names, then applies the saved prompt and favorite edits to the profile as stored when they apply. A client changes saved prompts and favorites by these edits while the session's features.promptPresetEdits is true, rather than sending whole lists it read earlier.
+     */
     post: operations['profileUpdate']
     delete?: never
     options?: never
@@ -1918,7 +1921,7 @@ export interface components {
     ProfileInput: {
       [key: string]: unknown
     }
-    /** @description A prompt the user saved. Its timestamps are kept as the client wrote them. */
+    /** @description A prompt the user saved. Its timestamps are kept as the client wrote them. A stored prompt always has a description and systemPrompt, empty when unset, and numeric timestamps, set when it is stored without them, as the apps' own profile sync requires. */
     CustomPreset: {
       id: string
       name: string
@@ -2799,7 +2802,7 @@ export interface operations {
           /** @description The account's content key, base64. Absent for device chats and signed-out callers. */
           key?: string
           /** @description The fields to set. A field the profile does not have is refused. A null defaultPromptPresetId clears the default prompt. */
-          patch: {
+          patch?: {
             /** @enum {string} */
             themeMode?: 'light' | 'dark' | 'system'
             /** @enum {string} */
@@ -2832,6 +2835,14 @@ export interface operations {
               [key: string]: boolean
             }
           }
+          /** @description Saved prompts to add, each replacing the stored one with its id where it stands. */
+          savePromptPresets?: components['schemas']['CustomPreset'][]
+          /** @description Saved prompts to remove. A removed prompt is no longer a favorite, and the default prompt it was is cleared. */
+          deletePromptPresetIds?: string[]
+          /** @description Prompts to add to the end of the favorites, unless they already are favorites. */
+          addFavoritePromptPresetIds?: string[]
+          /** @description Prompts to remove from the favorites. */
+          removeFavoritePromptPresetIds?: string[]
         }
       }
     }

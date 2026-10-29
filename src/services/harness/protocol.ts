@@ -121,6 +121,9 @@ export const ERROR_CODES = {
   credentialRequired: 'CREDENTIAL_REQUIRED',
   // Set by this client, not the harness: a reply this device could not store.
   localSaveFailed: 'LOCAL_SAVE_FAILED',
+  // Set by this client, not the harness: a change that needs the account's
+  // settings before they have loaded.
+  profileLoading: 'PROFILE_LOADING',
 } as const satisfies Record<string, ErrorCode | ClientErrorCode>
 
 // What this client does about an error it has no handling of its own for.

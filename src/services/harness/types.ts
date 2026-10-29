@@ -1,8 +1,10 @@
-import type { components } from './openapi'
+import type { components, operations } from './openapi'
 
 // The harness's wire types, as harness-protocol/openapi.yaml describes them,
 // under the names this client uses.
 type Schemas = components['schemas']
+type ProfileUpdate =
+  operations['profileUpdate']['requestBody']['content']['application/json']
 
 export type Json =
   null | boolean | number | string | Json[] | { [key: string]: Json }
@@ -20,6 +22,7 @@ export type ClientErrorCode =
   | 'INVALID_RESPONSE'
   | 'STREAM_INTERRUPTED'
   | 'LOCAL_SAVE_FAILED'
+  | 'PROFILE_LOADING'
 
 // Why a request or run failed: as the harness reports it, or as this client
 // met it on its own.
@@ -62,6 +65,16 @@ export type ThreadMessage = Schemas['MessageRecord']
 export type StoredThread = Omit<Schemas['ThreadRecord'], 'recordVersion'> & {
   recordVersion?: number
 }
+
+// Changes to saved prompts and favorites by id, which the harness applies to
+// the profile as it stores it.
+export type PromptEdits = Pick<
+  ProfileUpdate,
+  | 'savePromptPresets'
+  | 'deletePromptPresetIds'
+  | 'addFavoritePromptPresetIds'
+  | 'removeFavoritePromptPresetIds'
+>
 
 export type TokenBudget = Schemas['TokenBudget']
 export type RateLimit = Schemas['RateLimit']

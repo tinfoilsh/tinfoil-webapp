@@ -1,4 +1,5 @@
 import { reportProfileError, useHarness } from '@/services/harness/provider'
+import type { PromptEdits } from '@/services/harness/types'
 import {
   TfLightbulb,
   TfLightning,
@@ -72,14 +73,8 @@ export function usePromptLibrary() {
     profile.defaultPromptPresetId
       ? profile.defaultPromptPresetId
       : null
-  const save = (
-    change: (presets: UserPromptPreset[]) => UserPromptPreset[],
-  ) => {
-    void api
-      .updateProfile((current) => ({
-        customPromptPresets: change(current.customPromptPresets ?? []),
-      }))
-      .catch(reportProfileError)
+  const edit = (edits: PromptEdits) => {
+    void api.editPrompts(edits).catch(reportProfileError)
   }
   const createUserPreset = (
     input: Pick<UserPromptPreset, 'name' | 'description' | 'systemPrompt'> &
@@ -96,7 +91,7 @@ export function usePromptLibrary() {
       },
       input,
     )
-    save((presets) => [...presets, p])
+    edit({ savePromptPresets: [p] })
     return { ...p, Icon: TfWritingAnimated, isBuiltIn: false }
   }
   return {
@@ -110,30 +105,17 @@ export function usePromptLibrary() {
       id: string,
       patch: Partial<Omit<UserPromptPreset, keyof PromptPresetSettings>> &
         PromptPresetSettings,
-    ) =>
-      save((presets) =>
-        presets.map((p) =>
-          p.id === id
-            ? withSettings({ ...p, ...patch, updatedAt: Date.now() }, patch)
-            : p,
-        ),
-      ),
-    // A deleted preset is no longer a favorite or the default.
-    deleteUserPreset: (id: string) => {
-      void api
-        .updateProfile((current) => ({
-          customPromptPresets: (
-            (current.customPromptPresets ?? []) as UserPromptPreset[]
-          ).filter((p) => p.id !== id),
-          favoritePromptPresetIds: (
-            (current.favoritePromptPresetIds ?? []) as string[]
-          ).filter((favorite) => favorite !== id),
-          ...(current.defaultPromptPresetId === id
-            ? { defaultPromptPresetId: '' }
-            : {}),
-        }))
-        .catch(reportProfileError)
+    ) => {
+      const current = raw.find((p) => p.id === id)
+      if (!current) return
+      edit({
+        savePromptPresets: [
+          withSettings({ ...current, ...patch, updatedAt: Date.now() }, patch),
+        ],
+      })
     },
+    // A deleted preset is no longer a favorite or the default.
+    deleteUserPreset: (id: string) => edit({ deletePromptPresetIds: [id] }),
     duplicatePreset: (id: string) => {
       const p = allPresets.find((p) => p.id === id)
       return p ? createUserPreset({ ...p, name: `${p.name} (copy)` }) : null
@@ -143,19 +125,11 @@ export function usePromptLibrary() {
     // Only favorites that are still prompts take a slot, so one deleted on
     // another device does not block adding another.
     canAddFavorite: favoritePresets.length < MAX_FAVORITE_PRESETS,
-    // Each toggle applies to the profile as the previous change left it.
     toggleFavorite: (id: string) => {
-      void api
-        .updateProfile((current) => {
-          const ids: string[] = current.favoritePromptPresetIds ?? []
-          if (ids.includes(id))
-            return { favoritePromptPresetIds: ids.filter((p) => p !== id) }
-          const kept = ids.filter((p) => allPresets.some((q) => q.id === p))
-          return kept.length < MAX_FAVORITE_PRESETS
-            ? { favoritePromptPresetIds: [...ids, id] }
-            : {}
-        })
-        .catch(reportProfileError)
+      if (favoritePresetIds.includes(id))
+        edit({ removeFavoritePromptPresetIds: [id] })
+      else if (favoritePresets.length < MAX_FAVORITE_PRESETS)
+        edit({ addFavoritePromptPresetIds: [id] })
     },
     defaultPresetId,
     defaultPreset: getPresetById(defaultPresetId),

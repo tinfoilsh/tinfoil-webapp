@@ -41,7 +41,10 @@ info:
       refuses any other with RECORD_UNSUPPORTED. A member of a stored row it
       does not name is read past, since other clients of the same rows write
       members of their own; the harness leaves such members out when it
-      writes the row back.
+      writes the row back, except in the profile row. There it keeps them,
+      and for each field it changes it advances the edit clock the apps'
+      own profile sync keeps in fieldClocks, marking the clocks current
+      with clockVersion, so those apps can still merge the row.
     - The harness ignores request members it does not know, except in a
       profile patch, which refuses them.
     - Optional behavior is announced in the session's `features`. A client
@@ -635,13 +638,13 @@ paths:
       operationId: profileUpdate
       summary: Change the profile
       tags: [profile]
+      description: Sets the fields a patch names, then applies the saved prompt and favorite edits to the profile as stored when they apply. A client changes saved prompts and favorites by these edits while the session's features.promptPresetEdits is true, rather than sending whole lists it read earlier.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [patch]
               properties:
                 key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
                 patch:
@@ -675,6 +678,10 @@ paths:
                     hasSeenOnboarding: {type: boolean}
                     hasSeenWebSearchIntro: {type: boolean}
                     dismissed: {type: object, additionalProperties: {type: boolean}}
+                savePromptPresets: {type: array, items: {$ref: "#/components/schemas/CustomPreset"}, description: "Saved prompts to add, each replacing the stored one with its id where it stands."}
+                deletePromptPresetIds: {type: array, items: {type: string}, description: "Saved prompts to remove. A removed prompt is no longer a favorite, and the default prompt it was is cleared."}
+                addFavoritePromptPresetIds: {type: array, items: {type: string}, description: "Prompts to add to the end of the favorites, unless they already are favorites."}
+                removeFavoritePromptPresetIds: {type: array, items: {type: string}, description: "Prompts to remove from the favorites."}
       responses:
         "200": {$ref: "#/components/responses/Profile"}
         default: {$ref: "#/components/responses/Error"}
@@ -2505,7 +2512,7 @@ components:
       additionalProperties: true
 
     CustomPreset:
-      description: A prompt the user saved. Its timestamps are kept as the client wrote them.
+      description: A prompt the user saved. Its timestamps are kept as the client wrote them. A stored prompt always has a description and systemPrompt, empty when unset, and numeric timestamps, set when it is stored without them, as the apps' own profile sync requires.
       type: object
       required: [id, name]
       properties:
