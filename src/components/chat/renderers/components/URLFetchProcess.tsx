@@ -1,10 +1,13 @@
 import type { URLFetchState } from '@/components/chat/types'
 import { Favicon } from '@/components/ui/favicon'
-import { memo, useMemo, useState } from 'react'
+import { memo, useId, useMemo, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
+import { StepDetails, StepHeader } from './WorkStep'
 
 interface URLFetchProcessProps {
   urlFetches: URLFetchState[]
+  // A step of a group lists its pages in the group's box.
+  inGroup?: boolean
 }
 
 // Max favicons shown inline next to the "Read N links" label before
@@ -100,62 +103,38 @@ export function getURLFetchHeaderLabel(urlFetches: URLFetchState[]): string {
 
 export const URLFetchProcess = memo(function URLFetchProcess({
   urlFetches,
+  inGroup = false,
 }: URLFetchProcessProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const detailsId = useId()
   const anyFetching = useMemo(() => isAnyURLFetching(urlFetches), [urlFetches])
   const label = useMemo(() => getURLFetchHeaderLabel(urlFetches), [urlFetches])
   if (urlFetches.length === 0) return null
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setIsExpanded((v) => !v)}
-        aria-expanded={isExpanded}
-        className="hover:bg-surface-secondary/50 group -mx-1 flex w-full cursor-pointer items-center gap-1.5 rounded-md px-1 py-1 text-left transition-colors"
-      >
-        <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
-          {anyFetching ? (
-            <PiSpinner
-              className="h-3.5 w-3.5 animate-spin text-content-primary/50"
-              aria-hidden="true"
-            />
-          ) : (
-            <svg
-              className={`h-3.5 w-3.5 transform text-content-primary/40 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
-          )}
-        </span>
-        <span className="min-w-0 truncate text-base font-medium text-content-primary/50">
-          {label}
-        </span>
-        <InlineFavicons urlFetches={urlFetches} />
-      </button>
+      <StepHeader
+        label={<span className="font-medium">{label}</span>}
+        extra={<InlineFavicons urlFetches={urlFetches} />}
+        isRunning={anyFetching}
+        isExpanded={isExpanded}
+        onToggle={() => setIsExpanded((v) => !v)}
+        detailsId={detailsId}
+        truncate
+      />
 
-      <div
-        inert={!isExpanded}
-        className="grid overflow-hidden transition-[grid-template-rows] duration-300 ease-out"
-        style={{ gridTemplateRows: isExpanded ? '1fr' : '0fr' }}
+      <StepDetails
+        id={detailsId}
+        isExpanded={isExpanded}
+        inGroup={inGroup}
+        boxClassName="px-3 py-1.5"
       >
-        <div className="min-h-0 overflow-hidden">
-          <div className="ml-2 flex flex-col gap-0.5 border-l-2 border-border-subtle py-2 pl-3 pr-1">
-            {urlFetches.map((fetch) => (
-              <URLFetchRow key={fetch.id} fetch={fetch} />
-            ))}
-          </div>
+        <div className="flex flex-col gap-0.5">
+          {urlFetches.map((fetch) => (
+            <URLFetchRow key={fetch.id} fetch={fetch} />
+          ))}
         </div>
-      </div>
+      </StepDetails>
     </div>
   )
 })

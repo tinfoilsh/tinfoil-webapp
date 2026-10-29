@@ -3,7 +3,7 @@ import {
   getWorkDurationSeconds,
   type WorkBlock,
 } from '@/components/chat/renderers/components/WorkProcess'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { client } from '../../harness-fixture'
 
@@ -119,6 +119,62 @@ describe('WorkProcess once the run has finished', () => {
     expect(steps).not.toHaveAttribute('inert')
   })
 
+  it('expands each step in place, on its own', () => {
+    renderWork([
+      thinking('t0', { content: 'Plan the search.' }),
+      search('s1'),
+      {
+        type: 'url_fetches',
+        id: 'u2',
+        fetches: [
+          { id: 'f1', url: 'https://a.example/page', status: 'completed' },
+          { id: 'f2', url: 'https://b.example/gone', status: 'failed' },
+        ],
+      },
+    ])
+    const detailsOf = (button: HTMLElement) => {
+      const details = document.getElementById(
+        button.getAttribute('aria-controls') ?? '',
+      )
+      expect(details).not.toBeNull()
+      return details as HTMLElement
+    }
+    const header = getHeader()
+    fireEvent.click(header)
+    expect(detailsOf(header)).not.toHaveAttribute('inert')
+    const steps = within(detailsOf(header)).getAllByRole('button')
+    expect(steps.map((step) => step.textContent)).toEqual([
+      'Thought for 4.7 seconds',
+      'Searched the web for "query s1"',
+      'Read 1 link',
+    ])
+    const [thought, searched, read] = steps
+    for (const step of steps) expect(detailsOf(step)).toHaveAttribute('inert')
+
+    fireEvent.click(searched)
+
+    expect(searched).toHaveAttribute('aria-expanded', 'true')
+    expect(detailsOf(searched)).not.toHaveAttribute('inert')
+    expect(
+      within(detailsOf(searched)).getByText('Source').closest('a'),
+    ).toHaveAttribute('href', 'https://example.com/s1')
+    expect(thought).toHaveAttribute('aria-expanded', 'false')
+    expect(detailsOf(thought)).toHaveAttribute('inert')
+    expect(detailsOf(read)).toHaveAttribute('inert')
+
+    fireEvent.click(thought)
+    fireEvent.click(read)
+
+    expect(
+      within(detailsOf(thought)).getByText('Plan the search.'),
+    ).toBeInTheDocument()
+    expect(detailsOf(read)).not.toHaveAttribute('inert')
+    expect(
+      within(detailsOf(read)).getByText('b.example/gone'),
+    ).toBeInTheDocument()
+    expect(searched).toHaveAttribute('aria-expanded', 'true')
+  })
+
   it('describes the step count when no timing is available', () => {
     renderWork([
       thinking('t0', { duration: undefined }),
@@ -130,7 +186,7 @@ describe('WorkProcess once the run has finished', () => {
 })
 
 describe('WorkProcess while the run is active', () => {
-  it('shows the in-flight search with a spinner instead of a duration', () => {
+  it('shows the in-flight search instead of a duration', () => {
     const { container } = renderWork(
       [
         thinking('t0'),
@@ -142,7 +198,6 @@ describe('WorkProcess while the run is active', () => {
     )
     const header = getHeader()
     expect(header).toHaveTextContent('Searching the web for "latest news"')
-    expect(header.querySelector('.animate-spin')).not.toBeNull()
     expect(container).not.toHaveTextContent(/Worked/)
   })
 

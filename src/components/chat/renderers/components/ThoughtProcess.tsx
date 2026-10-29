@@ -1,4 +1,4 @@
-import { LoadingDots } from '@/components/loading-dots'
+import { cn } from '@/components/ui/utils'
 import {
   processLatexTags,
   sanitizeUnsupportedMathBlocks,
@@ -17,6 +17,7 @@ import {
 import ReactMarkdown from 'react-markdown'
 import { formatDurationLabel } from './format-duration'
 import { useMathPlugins } from './use-math-plugins'
+import { STEP_BOX_CLASS_NAME, StepHeader } from './WorkStep'
 
 interface ThoughtProcessProps {
   thoughts: string
@@ -26,6 +27,33 @@ interface ThoughtProcessProps {
   thinkingDuration?: number
   // The chat service's live summary of the thinking while it goes on.
   summary?: string
+  // A step of a group shows its thoughts in the group's box.
+  inGroup?: boolean
+}
+
+// What a reply thinking shows: the chat service's summary of the thinking,
+// shimmering, once it has one.
+export function ThinkingLabel({
+  summary,
+  isDarkMode,
+}: {
+  summary: string
+  isDarkMode: boolean
+}) {
+  if (!summary) return <span className="font-medium">Thinking</span>
+  return (
+    <span
+      className="block animate-shimmer truncate bg-clip-text font-medium text-transparent motion-reduce:animate-none"
+      style={{
+        backgroundImage: isDarkMode
+          ? 'linear-gradient(90deg, #9ca3af 0%, #e5e7eb 25%, #f9fafb 50%, #e5e7eb 75%, #9ca3af 100%)'
+          : 'linear-gradient(90deg, #4b5563 0%, #6b7280 25%, #9ca3af 50%, #6b7280 75%, #4b5563 100%)',
+        backgroundSize: '200% 100%',
+      }}
+    >
+      {summary}
+    </span>
+  )
 }
 
 export const ThoughtProcess = memo(function ThoughtProcess({
@@ -35,6 +63,7 @@ export const ThoughtProcess = memo(function ThoughtProcess({
   shouldDiscard = false,
   thinkingDuration,
   summary,
+  inGroup = false,
 }: ThoughtProcessProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [renderContent, setRenderContent] = useState(false)
@@ -144,15 +173,16 @@ export const ThoughtProcess = memo(function ThoughtProcess({
   useEffect(() => {
     const content = contentRef.current
     if (!isThinking && content) {
-      setContentHeight(content.scrollHeight)
+      setContentHeight(content.offsetHeight)
     }
   }, [isThinking])
 
   // Measure content height for smooth animation
+  // (offsetHeight, unlike scrollHeight, counts the border of the thoughts' box)
   useLayoutEffect(() => {
     const content = contentRef.current
     if (content) {
-      const measuredHeight = content.scrollHeight
+      const measuredHeight = content.offsetHeight
       setContentHeight((prevHeight) =>
         // Same never-shrink guard as the ResizeObserver below: this effect
         // re-runs on every streaming chunk, and shrinking mid-stream causes
@@ -163,7 +193,7 @@ export const ThoughtProcess = memo(function ThoughtProcess({
         const currentContent = contentRef.current
         if (!currentContent) return
 
-        const newHeight = currentContent.scrollHeight
+        const newHeight = currentContent.offsetHeight
         setContentHeight((prevHeight) => {
           // During streaming (isThinking), only allow height to grow, never shrink
           // This prevents scroll resets when content temporarily contracts
@@ -192,55 +222,12 @@ export const ThoughtProcess = memo(function ThoughtProcess({
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={handleToggle}
-        aria-expanded={isExpanded}
-        aria-controls={contentId}
-        className="hover:bg-surface-secondary/50 group -mx-1 flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1 py-1 text-left transition-colors"
-      >
-        <svg
-          className={`h-3.5 w-3.5 shrink-0 transform text-content-primary/40 transition-transform motion-reduce:transition-none ${isExpanded ? 'rotate-90' : ''}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 5l7 7-7 7"
-          />
-        </svg>
-        <div className="flex min-w-0 items-center gap-2">
-          {isThinking ? (
-            <div className="min-w-0">
-              {thoughtSummary ? (
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <span
-                    className="block animate-shimmer truncate bg-clip-text text-base font-medium text-transparent motion-reduce:animate-none"
-                    style={{
-                      backgroundImage: isDarkMode
-                        ? 'linear-gradient(90deg, #9ca3af 0%, #e5e7eb 25%, #f9fafb 50%, #e5e7eb 75%, #9ca3af 100%)'
-                        : 'linear-gradient(90deg, #4b5563 0%, #6b7280 25%, #9ca3af 50%, #6b7280 75%, #4b5563 100%)',
-                      backgroundSize: '200% 100%',
-                    }}
-                  >
-                    {thoughtSummary}
-                  </span>
-                  <LoadingDots size="small" />
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5 text-content-primary/50">
-                  <span className="text-base font-medium">Thinking</span>
-                  <LoadingDots size="small" />
-                </div>
-              )}
-            </div>
+      <StepHeader
+        label={
+          isThinking ? (
+            <ThinkingLabel summary={thoughtSummary} isDarkMode={isDarkMode} />
           ) : (
-            <span className="text-base text-content-primary/50">
+            <>
               <span className="font-medium">Thought</span>
               {thinkingDuration && (
                 <span className="font-normal">
@@ -248,10 +235,14 @@ export const ThoughtProcess = memo(function ThoughtProcess({
                   for {formatDurationLabel(thinkingDuration)}
                 </span>
               )}
-            </span>
-          )}
-        </div>
-      </button>
+            </>
+          )
+        }
+        isRunning={isThinking}
+        isExpanded={isExpanded}
+        onToggle={handleToggle}
+        detailsId={contentId}
+      />
 
       <div
         ref={scrollContainerRef}
@@ -270,7 +261,10 @@ export const ThoughtProcess = memo(function ThoughtProcess({
         {renderContent && (
           <div
             ref={contentRef}
-            className="ml-2 border-l-2 border-border-subtle py-2 pl-3 pr-1 text-sm text-content-primary/70"
+            className={cn(
+              'text-sm text-content-primary/70',
+              inGroup ? 'pb-2' : cn(STEP_BOX_CLASS_NAME, 'px-3 py-2'),
+            )}
             translate="no"
           >
             <ReactMarkdown

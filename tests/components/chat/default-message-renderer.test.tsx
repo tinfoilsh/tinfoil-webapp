@@ -724,9 +724,11 @@ describe('DefaultMessageRenderer work traces', () => {
         isStreaming
       />,
     )
-    expect(
-      screen.getByText('Searching the web for "second"').closest('button'),
-    ).toHaveAttribute('aria-expanded', 'false')
+    // The steps keep their own (inert) buttons in the DOM, so the group's
+    // header is the first button.
+    const header = screen.getAllByRole('button')[0]
+    expect(header).toHaveTextContent('Searching the web for "second"')
+    expect(header).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText(/Worked/)).not.toBeInTheDocument()
   })
 
@@ -781,7 +783,7 @@ describe('DefaultMessageRenderer work traces', () => {
     {
       display: { query: 'tinfoil', status: 'running', sources: [] },
       isStreaming: true,
-      label: 'Searching the web...',
+      label: 'Searching the web for "tinfoil"',
     },
     {
       display: { query: 'tinfoil', status: 'running', sources: [] },
@@ -793,7 +795,7 @@ describe('DefaultMessageRenderer work traces', () => {
       isStreaming: false,
       label: 'Search failed for "tinfoil"',
     },
-    { isStreaming: true, label: 'Searching the web...' },
+    { isStreaming: true, label: 'Searching the web' },
     { isStreaming: false, label: 'Search failed' },
   ])(
     'shows a search as the harness reports it: $label',

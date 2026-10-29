@@ -3,17 +3,16 @@ import type {
   TimelineURLFetchBlock,
   TimelineWebSearchBlock,
 } from '@/components/chat/types'
-import { LoadingDots } from '@/components/loading-dots'
-import { memo, useMemo, useState } from 'react'
-import { PiSpinner } from 'react-icons/pi'
+import { memo, useId, useMemo, useState, type ReactNode } from 'react'
 import { formatDurationLabel } from './format-duration'
-import { ThoughtProcess } from './ThoughtProcess'
+import { ThinkingLabel, ThoughtProcess } from './ThoughtProcess'
 import {
   getURLFetchHeaderLabel,
   isAnyURLFetching,
   URLFetchProcess,
 } from './URLFetchProcess'
-import { WebSearchProcess } from './WebSearchProcess'
+import { WebSearchLabel, WebSearchProcess } from './WebSearchProcess'
+import { StepDetails, StepHeader } from './WorkStep'
 
 export type WorkBlock =
   TimelineThinkingBlock | TimelineWebSearchBlock | TimelineURLFetchBlock
@@ -52,7 +51,7 @@ export function getWorkDurationSeconds(
 
 type LiveActivity =
   | { kind: 'thinking'; block: TimelineThinkingBlock }
-  | { kind: 'action'; label: string }
+  | { kind: 'action'; label: ReactNode }
   | { kind: 'idle' }
 
 function getLiveActivity(blocks: WorkBlock[]): LiveActivity {
@@ -67,34 +66,19 @@ function getLiveActivity(blocks: WorkBlock[]): LiveActivity {
       if (last.state.status !== 'searching') return { kind: 'idle' }
       return {
         kind: 'action',
-        label: last.state.query
-          ? `Searching the web for "${last.state.query}"`
-          : 'Searching the web',
+        label: <WebSearchLabel webSearch={last.state} />,
       }
     case 'url_fetches':
       if (!isAnyURLFetching(last.fetches)) return { kind: 'idle' }
-      return { kind: 'action', label: getURLFetchHeaderLabel(last.fetches) }
+      return {
+        kind: 'action',
+        label: (
+          <span className="font-medium">
+            {getURLFetchHeaderLabel(last.fetches)}
+          </span>
+        ),
+      }
   }
-}
-
-function Chevron({ isExpanded }: { isExpanded: boolean }) {
-  return (
-    <svg
-      className={`h-3.5 w-3.5 transform text-content-primary/40 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M9 5l7 7-7 7"
-      />
-    </svg>
-  )
 }
 
 export const WorkProcess = memo(function WorkProcess({
@@ -103,6 +87,7 @@ export const WorkProcess = memo(function WorkProcess({
   isDarkMode,
 }: WorkProcessProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const detailsId = useId()
 
   const activity = useMemo(
     () => (isActive ? getLiveActivity(blocks) : null),
@@ -120,53 +105,14 @@ export const WorkProcess = memo(function WorkProcess({
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setIsExpanded((v) => !v)}
-        aria-expanded={isExpanded}
-        className="hover:bg-surface-secondary/50 group -mx-1 flex min-w-0 max-w-full cursor-pointer items-start gap-1.5 rounded-md px-1 py-1 text-left transition-colors"
-      >
-        <span className="mt-[5px] h-3.5 w-3.5 shrink-0" aria-hidden="true">
-          {activity?.kind === 'action' ? (
-            <PiSpinner
-              className="h-3.5 w-3.5 animate-spin text-content-primary/50"
-              aria-hidden="true"
-              focusable="false"
-            />
-          ) : (
-            <Chevron isExpanded={isExpanded} />
-          )}
-        </span>
-        <span className="min-w-0 text-base text-content-primary/50">
-          {activity?.kind === 'thinking' ? (
-            summary ? (
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span
-                  className="block animate-shimmer truncate bg-clip-text font-medium text-transparent motion-reduce:animate-none"
-                  style={{
-                    backgroundImage: isDarkMode
-                      ? 'linear-gradient(90deg, #9ca3af 0%, #e5e7eb 25%, #f9fafb 50%, #e5e7eb 75%, #9ca3af 100%)'
-                      : 'linear-gradient(90deg, #4b5563 0%, #6b7280 25%, #9ca3af 50%, #6b7280 75%, #4b5563 100%)',
-                    backgroundSize: '200% 100%',
-                  }}
-                >
-                  {summary}
-                </span>
-                <LoadingDots size="small" />
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5">
-                <span className="font-medium">Thinking</span>
-                <LoadingDots size="small" />
-              </span>
-            )
+      <StepHeader
+        label={
+          activity?.kind === 'thinking' ? (
+            <ThinkingLabel summary={summary} isDarkMode={isDarkMode} />
           ) : activity?.kind === 'action' ? (
-            <span className="font-medium">{activity.label}</span>
+            activity.label
           ) : activity?.kind === 'idle' ? (
-            <span className="flex items-center gap-1.5">
-              <span className="font-medium">Working</span>
-              <LoadingDots size="small" />
-            </span>
+            <span className="font-medium">Working</span>
           ) : (
             <span>
               <span className="font-medium">Worked</span>
@@ -176,46 +122,38 @@ export const WorkProcess = memo(function WorkProcess({
                   : ` through ${stepsNoun}`}
               </span>
             </span>
-          )}
-        </span>
-      </button>
+          )
+        }
+        isRunning={isActive}
+        isExpanded={isExpanded}
+        onToggle={() => setIsExpanded((v) => !v)}
+        detailsId={detailsId}
+      />
 
-      <div
-        inert={!isExpanded}
-        className="grid overflow-hidden transition-[grid-template-rows] duration-300 ease-out"
-        style={{ gridTemplateRows: isExpanded ? '1fr' : '0fr' }}
+      <StepDetails
+        id={detailsId}
+        isExpanded={isExpanded}
+        boxClassName="divide-y divide-border-subtle"
       >
-        <div className="min-h-0 overflow-hidden">
-          <div className="ml-2 flex flex-col border-l-2 border-border-subtle py-1 pl-3 pr-1">
-            {blocks.map((block) => {
-              switch (block.type) {
-                case 'thinking':
-                  return (
-                    <ThoughtProcess
-                      key={block.id}
-                      thoughts={block.content}
-                      isDarkMode={isDarkMode}
-                      isThinking={block.isThinking}
-                      thinkingDuration={block.duration}
-                      summary={block === activeThinking ? summary : ''}
-                    />
-                  )
-                case 'web_search':
-                  return (
-                    <WebSearchProcess key={block.id} webSearch={block.state} />
-                  )
-                case 'url_fetches':
-                  return (
-                    <URLFetchProcess
-                      key={block.id}
-                      urlFetches={block.fetches}
-                    />
-                  )
-              }
-            })}
+        {blocks.map((block) => (
+          <div key={block.id} className="px-3 py-1">
+            {block.type === 'thinking' ? (
+              <ThoughtProcess
+                thoughts={block.content}
+                isDarkMode={isDarkMode}
+                isThinking={block.isThinking}
+                thinkingDuration={block.duration}
+                summary={block === activeThinking ? summary : ''}
+                inGroup
+              />
+            ) : block.type === 'web_search' ? (
+              <WebSearchProcess webSearch={block.state} inGroup />
+            ) : (
+              <URLFetchProcess urlFetches={block.fetches} inGroup />
+            )}
           </div>
-        </div>
-      </div>
+        ))}
+      </StepDetails>
     </div>
   )
 })
