@@ -1,4 +1,5 @@
 import type { TimelineBlock } from '@/components/chat/types'
+import { isAnyURLFetching } from '../components/URLFetchProcess'
 import type { WorkBlock } from '../components/WorkProcess'
 
 export type TimelineSegment =
@@ -25,6 +26,20 @@ export function isInvisibleBlock(block: TimelineBlock): boolean {
       return !block.content.trim() && !block.isThinking
     case 'url_fetches':
       return block.fetches.length === 0
+    default:
+      return false
+  }
+}
+
+// Whether a block is a step that still runs.
+export function isRunningStep(block: TimelineBlock): boolean {
+  switch (block.type) {
+    case 'thinking':
+      return block.isThinking
+    case 'web_search':
+      return block.state.status === 'searching'
+    case 'url_fetches':
+      return isAnyURLFetching(block.fetches)
     default:
       return false
   }

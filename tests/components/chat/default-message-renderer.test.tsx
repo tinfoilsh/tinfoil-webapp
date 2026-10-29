@@ -673,6 +673,103 @@ describe('DefaultMessageRenderer read aloud', () => {
   )
 })
 
+describe('DefaultMessageRenderer reply indicator', () => {
+  const settledThought: TimelineBlock = {
+    type: 'thinking',
+    id: 'thought',
+    content: 'Plan it.',
+    isThinking: false,
+    duration: 2,
+  }
+  const searched: TimelineBlock = {
+    type: 'web_search',
+    id: 'search',
+    state: { query: 'plan', status: 'completed', sources: [] },
+  }
+
+  it.each<{ name: string; timeline: TimelineBlock[]; shown: boolean }>([
+    { name: 'shows before anything arrives', timeline: [], shown: true },
+    {
+      name: 'shows while the answer streams',
+      timeline: [settledThought, { type: 'content', id: 'c', content: 'Go' }],
+      shown: true,
+    },
+    {
+      name: 'shows after a widget',
+      timeline: [
+        {
+          type: 'tool_call',
+          id: 'w',
+          toolCallId: 'w',
+          name: 'render_message_compose',
+          arguments: '',
+        },
+      ],
+      shown: true,
+    },
+    {
+      name: 'shows once a lone step settled',
+      timeline: [searched],
+      shown: true,
+    },
+    {
+      name: 'hides while it thinks',
+      timeline: [{ ...settledThought, isThinking: true }],
+      shown: false,
+    },
+    {
+      name: 'hides while it searches',
+      timeline: [
+        { ...searched, state: { query: 'plan', status: 'searching' } },
+      ],
+      shown: false,
+    },
+    {
+      name: 'hides while it reads a page',
+      timeline: [
+        {
+          type: 'url_fetches',
+          id: 'read',
+          fetches: [
+            { id: 'f', url: 'https://plan.example/', status: 'fetching' },
+          ],
+        },
+      ],
+      shown: false,
+    },
+    {
+      name: 'hides while its steps work, up to the first answer text',
+      timeline: [
+        settledThought,
+        searched,
+        { type: 'content', id: 'c', content: '\n\n' },
+      ],
+      shown: false,
+    },
+  ])('$name', ({ timeline, shown }) => {
+    render(
+      <Renderer
+        message={{
+          role: 'assistant',
+          content: '',
+          timestamp: new Date('2026-08-07T00:00:01.000Z'),
+          timeline,
+        }}
+        messageIndex={0}
+        model={model}
+        isDarkMode={false}
+        isLastMessage
+        isStreaming
+      />,
+    )
+    const indicator = screen.queryByRole('status', {
+      name: 'Streaming response',
+    })
+    if (shown) expect(indicator).toBeInTheDocument()
+    else expect(indicator).not.toBeInTheDocument()
+  })
+})
+
 describe('DefaultMessageRenderer work traces', () => {
   const traceTimeline: TimelineBlock[] = [
     {

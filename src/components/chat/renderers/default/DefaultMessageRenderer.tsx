@@ -38,7 +38,11 @@ import { URLFetchProcess } from '../components/URLFetchProcess'
 import { WebSearchProcess } from '../components/WebSearchProcess'
 import { WorkProcess } from '../components/WorkProcess'
 import type { MessageRenderer, MessageRenderProps } from '../types'
-import { isInvisibleBlock, segmentTimeline } from './timeline-segments'
+import {
+  isInvisibleBlock,
+  isRunningStep,
+  segmentTimeline,
+} from './timeline-segments'
 
 const hasVisibleAssistantMessage = (message: MessageRenderProps['message']) =>
   !!message.content || !!message.timeline?.length
@@ -550,18 +554,24 @@ const DefaultMessageComponent = ({
         isStreaming &&
         isLastMessage &&
         (() => {
-          const lastBlock =
-            message.timeline && message.timeline.length > 0
-              ? message.timeline[message.timeline.length - 1]
-              : undefined
-          if (lastBlock?.type === 'thinking' && lastBlock.isThinking) {
+          const lastSegment = timelineSegments.at(-1)
+          // A group of steps working, or a step running, shows the reply's
+          // progress in its own header.
+          if (
+            lastSegment?.kind === 'work' ||
+            (lastSegment && isRunningStep(lastSegment.block))
+          ) {
             return null
           }
           return (
             <div className="w-full px-4 pb-2 pt-2">
               <span className="flex h-3.5 w-3.5 items-center justify-center">
                 <StreamingTracerDot
-                  tone={lastBlock?.type === 'content' ? 'primary' : 'secondary'}
+                  tone={
+                    lastSegment?.block.type === 'content'
+                      ? 'primary'
+                      : 'secondary'
+                  }
                 />
               </span>
             </div>
