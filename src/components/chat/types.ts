@@ -23,10 +23,6 @@ export type WebSearchState = {
   reason?: string
 }
 
-export type WebSearchInstance = WebSearchState & {
-  id: string
-}
-
 export type URLFetchState = {
   id: string
   url: string
