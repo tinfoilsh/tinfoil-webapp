@@ -29,12 +29,17 @@ const ACTION_LIST = new Intl.ListFormat('en', {
   type: 'conjunction',
 })
 
+const pagesNoun = (count: number) => (count === 1 ? 'a page' : `${count} pages`)
+
 // What the steps did, in the order each kind first appears, as "Thought,
 // searched the web, and read 3 pages". Pages read count across the steps.
 function describeWork(blocks: WorkBlock[]): string {
-  const pagesRead = blocks
-    .flatMap((block) => (block.type === 'url_fetches' ? block.fetches : []))
-    .filter((fetch) => fetch.status === 'completed').length
+  const fetches = blocks.flatMap((block) =>
+    block.type === 'url_fetches' ? block.fetches : [],
+  )
+  const pagesRead = fetches.filter(
+    (fetch) => fetch.status === 'completed',
+  ).length
   const actions = new Map<WorkBlock['type'], string>()
   for (const block of blocks) {
     if (actions.has(block.type)) continue
@@ -44,9 +49,9 @@ function describeWork(blocks: WorkBlock[]): string {
         ? 'thought'
         : block.type === 'web_search'
           ? 'searched the web'
-          : pagesRead === 1
-            ? 'read a page'
-            : `read ${pagesRead} pages`,
+          : pagesRead > 0
+            ? `read ${pagesNoun(pagesRead)}`
+            : `tried to read ${pagesNoun(fetches.length)}`,
     )
   }
   const description = ACTION_LIST.format(actions.values())

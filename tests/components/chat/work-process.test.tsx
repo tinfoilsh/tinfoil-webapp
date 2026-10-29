@@ -175,6 +175,10 @@ describe('WorkProcess once the run has finished', () => {
       ],
       label: 'Read 3 pages and thought',
     },
+    {
+      blocks: [thinking('t0'), read('r1', ['failed', 'failed'])],
+      label: 'Thought and tried to read 2 pages',
+    },
     { blocks: [search('s0'), search('s1')], label: 'Searched the web' },
   ])('names what its steps did: $label', ({ blocks, label }) => {
     renderWork(blocks)
