@@ -197,7 +197,8 @@ describe('moving a stored chat to this device', () => {
   })
 
   // The connection drops after the request was sent, or sync's outcome is
-  // unknown, so the harness may have deleted the cloud copy.
+  // unknown, so the harness may have deleted the cloud copy. One whose
+  // success could not be read did delete it.
   it.each([
     ['a dropped connection', new TypeError('Failed to fetch')],
     [
@@ -209,6 +210,17 @@ describe('moving a stored chat to this device', () => {
           action: 'retry',
         },
         503,
+      ),
+    ],
+    [
+      'an unreadable success',
+      new HarnessError(
+        {
+          code: 'INVALID_RESPONSE',
+          message: 'The chat service sent a response this client cannot read.',
+          action: 'stop',
+        },
+        200,
       ),
     ],
   ])(
