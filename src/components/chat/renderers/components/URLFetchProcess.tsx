@@ -6,6 +6,8 @@ import { StepDetails, StepHeader } from './WorkStep'
 
 interface URLFetchProcessProps {
   urlFetches: URLFetchState[]
+  // When the first page read started, in epoch milliseconds.
+  startedAt?: number
   // A step of a group lists its pages in the group's box.
   inGroup?: boolean
 }
@@ -103,6 +105,7 @@ export function getURLFetchHeaderLabel(urlFetches: URLFetchState[]): string {
 
 export const URLFetchProcess = memo(function URLFetchProcess({
   urlFetches,
+  startedAt,
   inGroup = false,
 }: URLFetchProcessProps) {
   const [isExpanded, setIsExpanded] = useState(false)
@@ -117,6 +120,7 @@ export const URLFetchProcess = memo(function URLFetchProcess({
         label={<span className="font-medium">{label}</span>}
         extra={<InlineFavicons urlFetches={urlFetches} />}
         isRunning={anyFetching}
+        startedAt={startedAt}
         isExpanded={isExpanded}
         onToggle={() => setIsExpanded((v) => !v)}
         detailsId={detailsId}

@@ -1,6 +1,10 @@
 import { DefaultMessageRenderer } from '@/components/chat/renderers/default/DefaultMessageRenderer'
 import { SpeechProvider } from '@/components/chat/speech-context'
-import type { Message, TimelineBlock } from '@/components/chat/types'
+import type {
+  Message,
+  TimelineBlock,
+  TimelineThinkingBlock,
+} from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
 import type {
   Annotation,
@@ -924,7 +928,7 @@ describe('DefaultMessageRenderer work traces', () => {
     })
     const { unmount } = renderReply(stored([thinking, answer]), false)
     expect(screen.getByText('Thought').closest('button')).toHaveTextContent(
-      'Thought for 2.5 seconds',
+      'Thought for 2s',
     )
     unmount()
 
@@ -950,7 +954,7 @@ describe('DefaultMessageRenderer work traces', () => {
       screen.getByRole('button', { name: 'Thought and searched the web' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Thought for 2.5 seconds' }),
+      screen.getByRole('button', { name: 'Thought for 2s' }),
     ).toBeInTheDocument()
   })
 
@@ -1101,6 +1105,81 @@ describe('DefaultMessageRenderer work traces', () => {
     expect(screen.getByText('It is Monday.')).toBeInTheDocument()
   })
 
+  it('times a thought while it thinks, then says how long it thought', () => {
+    vi.useFakeTimers({ now: 20_000 })
+    try {
+      const view = (
+        thought: Partial<TimelineThinkingBlock>,
+        isStreaming: boolean,
+      ) => (
+        <Renderer
+          message={{
+            role: 'assistant',
+            content: '',
+            timestamp: new Date('2026-08-07T00:00:01.000Z'),
+            timeline: [
+              {
+                type: 'thinking',
+                id: 't',
+                content: 'Weighing it.',
+                isThinking: true,
+                startedAt: 8_000,
+                ...thought,
+              },
+            ],
+          }}
+          messageIndex={0}
+          model={model}
+          isDarkMode={false}
+          isLastMessage
+          isStreaming={isStreaming}
+        />
+      )
+      const { rerender } = render(view({}, true))
+      const header = screen.getByRole('button', { name: 'Thinking 12s' })
+      expect(header).toHaveAttribute('aria-expanded', 'false')
+
+      act(() => vi.advanceTimersByTime(2_000))
+      expect(header).toHaveAccessibleName('Thinking 14s')
+
+      rerender(view({ isThinking: false, duration: 14.6 }, false))
+      expect(header).toHaveAccessibleName('Thought for 14s')
+      rerender(view({ isThinking: false, duration: 0.4 }, false))
+      expect(header).toHaveAccessibleName('Thought')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("times back-to-back reads from the first one's start", () => {
+    vi.useFakeTimers({ now: 9_000 })
+    try {
+      const fetch = (id: string, startedAt: number): WireBlock => ({
+        id,
+        type: 'tool_call',
+        toolCallId: id,
+        name: 'web_fetch',
+        arguments: JSON.stringify({ urls: [`https://${id}.example/`] }),
+        startedAt,
+      })
+      renderReply(
+        {
+          id: 'a1',
+          role: 'assistant',
+          createdAt: '2026-08-07T00:00:01.000Z',
+          timeline: [fetch('first', 1_000), fetch('second', 4_000)],
+        },
+        true,
+      )
+
+      expect(
+        screen.getByRole('button', { name: 'Reading 2 links 8s' }),
+      ).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('leaves a lone trace block rendered as itself', () => {
     renderMessage({
       role: 'assistant',
@@ -1112,7 +1191,7 @@ describe('DefaultMessageRenderer work traces', () => {
       ],
     })
     expect(screen.getByText('Thought')).toBeInTheDocument()
-    expect(screen.getByText('for 4.7 seconds')).toBeInTheDocument()
+    expect(screen.getByText('for 4s')).toBeInTheDocument()
     expect(screen.queryByText(/Worked/)).not.toBeInTheDocument()
   })
 })

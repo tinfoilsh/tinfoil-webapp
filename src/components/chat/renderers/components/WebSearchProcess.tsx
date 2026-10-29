@@ -6,6 +6,8 @@ import { StepDetails, StepHeader } from './WorkStep'
 
 interface WebSearchProcessProps {
   webSearch: WebSearchState
+  // When the search started, in epoch milliseconds.
+  startedAt?: number
   // A step of a group shows its results in the group's box.
   inGroup?: boolean
 }
@@ -81,6 +83,7 @@ export function WebSearchLabel({ webSearch }: { webSearch: WebSearchState }) {
 
 export const WebSearchProcess = memo(function WebSearchProcess({
   webSearch,
+  startedAt,
   inGroup = false,
 }: WebSearchProcessProps) {
   const [isExpanded, setIsExpanded] = useState(false)
@@ -119,6 +122,7 @@ export const WebSearchProcess = memo(function WebSearchProcess({
           hasSources && <InlineSourceFavicons sources={sourcesToShow} />
         }
         isRunning={isSearching}
+        startedAt={startedAt}
         isExpanded={isExpanded}
         onToggle={handleToggle}
         detailsId={hasSources ? detailsId : undefined}

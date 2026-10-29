@@ -15,7 +15,7 @@ import {
   useState,
 } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { formatDurationLabel } from './format-duration'
+import { formatElapsed } from './format-duration'
 import { useMathPlugins } from './use-math-plugins'
 import { STEP_BOX_CLASS_NAME, StepHeader } from './WorkStep'
 
@@ -25,6 +25,8 @@ interface ThoughtProcessProps {
   isThinking?: boolean
   shouldDiscard?: boolean
   thinkingDuration?: number
+  // When the thinking started, in epoch milliseconds.
+  startedAt?: number
   // The chat service's live summary of the thinking while it goes on.
   summary?: string
   // A step of a group shows its thoughts in the group's box.
@@ -62,6 +64,7 @@ export const ThoughtProcess = memo(function ThoughtProcess({
   isThinking = false,
   shouldDiscard = false,
   thinkingDuration,
+  startedAt,
   summary,
   inGroup = false,
 }: ThoughtProcessProps) {
@@ -75,6 +78,8 @@ export const ThoughtProcess = memo(function ThoughtProcess({
   const lastScrollPositionRef = useRef<number>(0)
   const isUserScrollingRef = useRef<boolean>(false)
   const thoughtSummary = summary ?? ''
+  // A thought shorter than a second says no duration.
+  const thoughtSeconds = Math.floor(thinkingDuration ?? 0)
   const wasExpandedRef = useRef<boolean>(isExpanded)
 
   const handleToggle = () => {
@@ -229,16 +234,17 @@ export const ThoughtProcess = memo(function ThoughtProcess({
           ) : (
             <>
               <span className="font-medium">Thought</span>
-              {thinkingDuration && (
+              {thoughtSeconds > 0 && (
                 <span className="font-normal">
                   {' '}
-                  for {formatDurationLabel(thinkingDuration)}
+                  for {formatElapsed(thoughtSeconds)}
                 </span>
               )}
             </>
           )
         }
         isRunning={isThinking}
+        startedAt={startedAt}
         isExpanded={isExpanded}
         onToggle={handleToggle}
         detailsId={contentId}

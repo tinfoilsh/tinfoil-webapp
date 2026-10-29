@@ -454,6 +454,7 @@ const DefaultMessageComponent = ({
                     isDarkMode={isDarkMode}
                     isThinking={block.isThinking}
                     thinkingDuration={block.duration}
+                    startedAt={block.startedAt}
                     summary={block.summary}
                   />
                 </div>
@@ -461,13 +462,19 @@ const DefaultMessageComponent = ({
             case 'web_search':
               return (
                 <div key={block.id} className="no-scroll-anchoring w-full px-4">
-                  <WebSearchProcess webSearch={block.state} />
+                  <WebSearchProcess
+                    webSearch={block.state}
+                    startedAt={block.startedAt}
+                  />
                 </div>
               )
             case 'url_fetches':
               return (
                 <div key={block.id} className="no-scroll-anchoring w-full px-4">
-                  <URLFetchProcess urlFetches={block.fetches} />
+                  <URLFetchProcess
+                    urlFetches={block.fetches}
+                    startedAt={block.startedAt}
+                  />
                 </div>
               )
             case 'tool_call': {

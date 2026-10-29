@@ -101,6 +101,12 @@ export const WorkProcess = memo(function WorkProcess({
   const summary = activeThinking?.summary ?? ''
 
   const description = useMemo(() => describeWork(blocks), [blocks])
+  const startedAt = useMemo(() => {
+    const starts = blocks.flatMap((block) =>
+      block.startedAt === undefined ? [] : [block.startedAt],
+    )
+    return starts.length > 0 ? Math.min(...starts) : undefined
+  }, [blocks])
 
   return (
     <div>
@@ -117,6 +123,7 @@ export const WorkProcess = memo(function WorkProcess({
           )
         }
         isRunning={isActive}
+        startedAt={startedAt}
         isExpanded={isExpanded}
         onToggle={() => setIsExpanded((v) => !v)}
         detailsId={detailsId}
@@ -135,13 +142,22 @@ export const WorkProcess = memo(function WorkProcess({
                 isDarkMode={isDarkMode}
                 isThinking={block.isThinking}
                 thinkingDuration={block.duration}
+                startedAt={block.startedAt}
                 summary={block === activeThinking ? summary : ''}
                 inGroup
               />
             ) : block.type === 'web_search' ? (
-              <WebSearchProcess webSearch={block.state} inGroup />
+              <WebSearchProcess
+                webSearch={block.state}
+                startedAt={block.startedAt}
+                inGroup
+              />
             ) : (
-              <URLFetchProcess urlFetches={block.fetches} inGroup />
+              <URLFetchProcess
+                urlFetches={block.fetches}
+                startedAt={block.startedAt}
+                inGroup
+              />
             )}
           </div>
         ))}

@@ -126,7 +126,7 @@ describe('a streamed reply', () => {
 
     expect(screen.getByText('Because.')).toBeInTheDocument()
     expect(screen.getByText('Thought').closest('button')).toHaveTextContent(
-      'Thought for 2.5 seconds',
+      'Thought for 2s',
     )
   })
 
@@ -173,7 +173,7 @@ describe('a streamed reply', () => {
       screen.getByRole('button', { name: 'Thought and searched the web' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Thought for 1.0 seconds' }),
+      screen.getByRole('button', { name: 'Thought for 1s' }),
     ).toBeInTheDocument()
   })
 

@@ -30,9 +30,9 @@ export type URLFetchState = {
   sources?: WebSearchSource[]
 }
 
-// Wall-clock stamps (epoch ms) recorded while streaming so consecutive
-// trace blocks can be summarized as "Worked for N seconds". Absent on
-// legacy messages and on builders constructed without a clock.
+// Wall-clock stamps (epoch ms) recorded while streaming so a running step
+// can show how long it has run. Absent on legacy messages and on builders
+// constructed without a clock.
 export type TimelineTiming = {
   startedAt?: number
   endedAt?: number

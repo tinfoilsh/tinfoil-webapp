@@ -3,7 +3,7 @@ import {
   type WorkBlock,
 } from '@/components/chat/renderers/components/WorkProcess'
 import type { URLFetchState } from '@/components/chat/types'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { client } from '../../harness-fixture'
 
@@ -119,7 +119,7 @@ describe('WorkProcess once the run has finished', () => {
     expect(detailsOf(header)).not.toHaveAttribute('inert')
     const steps = within(detailsOf(header)).getAllByRole('button')
     expect(steps.map((step) => step.textContent)).toEqual([
-      'Thought for 4.7 seconds',
+      'Thought for 4s',
       'Searched the web for "query s1"',
       'Read 1 link',
     ])
@@ -216,9 +216,14 @@ describe('WorkProcess while the run is active', () => {
     expect(getHeader()).toHaveTextContent('Reading 2 links')
   })
 
-  it('shows "Working" between steps when the last one has settled', () => {
+  it('shows "Working" between steps, timed from when it first showed without a start', () => {
+    vi.useFakeTimers()
     renderWork([thinking('t0'), search('s1')], true)
-    expect(getHeader()).toHaveTextContent(/^Working$/)
+    expect(getHeader()).toHaveAccessibleName('Working 0s')
+
+    act(() => vi.advanceTimersByTime(3_000))
+
+    expect(getHeader()).toHaveAccessibleName('Working 3s')
   })
 
   it("shows the active thought's summary in the header and in its step", () => {
@@ -238,29 +243,42 @@ describe('WorkProcess while the run is active', () => {
     expect(screen.getAllByText('Weighing the tradeoffs')).toHaveLength(2)
   })
 
-  it('settles into naming its steps once the run completes', () => {
+  it('times the run from its first start and each step from its own, until they end', () => {
+    vi.useFakeTimers({ now: 10_000 })
     const { rerender } = renderWork(
       [
-        thinking('t0', { startedAt: 0, endedAt: 2_000 }),
+        thinking('t0', { startedAt: 2_000, endedAt: 4_000 }),
         search('s1', {
-          startedAt: 2_000,
+          startedAt: 4_000,
           state: { query: 'q', status: 'searching' },
         }),
       ],
       true,
     )
-    expect(getHeader()).toHaveTextContent('Searching the web for "q"')
+    const header = getHeader()
+    const step = screen.getByRole('button', {
+      name: 'Searching the web for "q" 6s',
+    })
+    expect(header).toHaveAccessibleName('Searching the web for "q" 8s')
+
+    act(() => vi.advanceTimersByTime(53_000))
+
+    expect(header).toHaveAccessibleName('Searching the web for "q" 1m 1s')
+    expect(step).toHaveAccessibleName('Searching the web for "q" 59s')
 
     rerender(
       <WorkProcess
         blocks={[
-          thinking('t0', { startedAt: 0, endedAt: 2_000 }),
-          search('s1', { startedAt: 2_000, endedAt: 12_500 }),
+          thinking('t0', { startedAt: 2_000, endedAt: 4_000 }),
+          search('s1', { startedAt: 4_000, endedAt: 63_000 }),
         ]}
         isActive={false}
         isDarkMode={false}
       />,
     )
-    expect(getHeader()).toHaveTextContent(/^Thought and searched the web$/)
+
+    expect(header).toHaveAccessibleName('Thought and searched the web')
+    expect(step).toHaveAccessibleName('Searched the web for "query s1"')
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

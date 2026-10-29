@@ -1,9 +1,28 @@
 import { LoadingDots } from '@/components/loading-dots'
 import { cn } from '@/components/ui/utils'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { formatElapsed } from './format-duration'
 
 // The box a step's details show in, below its header.
 export const STEP_BOX_CLASS_NAME = 'rounded-lg border border-border-subtle'
+
+const MS_PER_SECOND = 1000
+
+// How long a running step has run, counted once a second from when it
+// started, or from when it first showed running if it has no start.
+function ElapsedTime({ startedAt }: { startedAt?: number }) {
+  const [shownAt] = useState(() => Date.now())
+  const [now, setNow] = useState(shownAt)
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), MS_PER_SECOND)
+    return () => clearInterval(tick)
+  }, [])
+  return (
+    <span className="flex h-6 shrink-0 items-center tabular-nums text-content-muted">
+      {formatElapsed((now - (startedAt ?? shownAt)) / MS_PER_SECOND)}
+    </span>
+  )
+}
 
 function Chevron({ isExpanded }: { isExpanded: boolean }) {
   return (
@@ -32,8 +51,11 @@ interface StepHeaderProps {
   label: ReactNode
   // Shown after the label, as the favicons of the pages a step found.
   extra?: ReactNode
-  // A running step leads with a progress indicator.
+  // A running step leads with a progress indicator and counts how long it
+  // has run.
   isRunning: boolean
+  // When the step started, in epoch milliseconds.
+  startedAt?: number
   isExpanded: boolean
   onToggle: () => void
   // The details the header shows and hides; a step without details has none.
@@ -43,11 +65,13 @@ interface StepHeaderProps {
 }
 
 // The row naming a step: its progress indicator while it runs, what it
-// does, and a chevron right after the text when it has details to show.
+// does, how long it has run, and a chevron right after the text when it has
+// details to show.
 export function StepHeader({
   label,
   extra,
   isRunning,
+  startedAt,
   isExpanded,
   onToggle,
   detailsId,
@@ -78,6 +102,13 @@ export function StepHeader({
         {label}
       </span>
       {extra && <span className="flex h-6 shrink-0 items-center">{extra}</span>}
+      {/* The space keeps the label and the time apart in the header's name. */}
+      {isRunning && (
+        <>
+          {' '}
+          <ElapsedTime startedAt={startedAt} />
+        </>
+      )}
       {canExpand && (
         <span className="flex h-6 shrink-0 items-center">
           <Chevron isExpanded={isExpanded} />
