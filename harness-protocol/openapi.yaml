@@ -1233,7 +1233,7 @@ paths:
             schema: {$ref: "#/components/schemas/PageRequest"}
       responses:
         "200":
-          description: The site's favicon, as the metadata enclave reports it.
+          description: The site's favicon, which the harness reads from DuckDuckGo by the site's host.
           content:
             application/json:
               schema:

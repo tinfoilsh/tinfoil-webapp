@@ -3463,7 +3463,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description The site's favicon, as the metadata enclave reports it. */
+      /** @description The site's favicon, which the harness reads from DuckDuckGo by the site's host. */
       200: {
         headers: {
           [name: string]: unknown
