@@ -56,13 +56,18 @@ function serveStatic(req, res) {
     return
   }
 
-  if (!fs.existsSync(filePath)) {
+  // Section roots are directories in out/ now; only a regular file is servable.
+  const isFile = (p) => fs.statSync(p, { throwIfNoEntry: false })?.isFile()
+  if (!isFile(filePath)) {
     const withHtml = filePath + '.html'
-    if (fs.existsSync(withHtml)) {
+    if (isFile(withHtml)) {
       filePath = withHtml
     } else {
-      const fallback = path.join(OUT_DIR, '[...slug].html')
-      if (fs.existsSync(fallback)) {
+      // Mirrors vercel.json: each section has its own exported shell.
+      const section = urlPath.split('/')[1]
+      const fallback = path.join(OUT_DIR, section, '[[...slug]].html')
+      // Like vercel.json, file-looking paths get a real 404 rather than a shell.
+      if (!/\.[^/]+$/.test(urlPath) && isFile(fallback)) {
         filePath = fallback
       } else {
         res.writeHead(404, { 'Content-Type': 'text/plain' })
