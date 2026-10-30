@@ -1,6 +1,5 @@
 'use client'
 
-import SharePage from '@/components/share/share-page'
 import { LogoLoading } from '@/components/ui/logo-loading'
 import NotFound from '@/pages/404'
 import {
@@ -10,10 +9,8 @@ import {
 import { useRouter } from 'next/router'
 import { ChatRoute } from './chat-route'
 
-// The single exported shell for every dynamic route (/chat/*, /project/*,
-// /share/*). The host rewrites all unknown paths to this one file, so there
-// is exactly one fallback document, which is what WEBCAT's default_fallback
-// requires.
+// The page of the /chat/* and /project/* section shells, which the host
+// serves for any path in their section.
 // The static chat entry points export this same component so assigning a
 // new chat's URL keeps its conversation and stream mounted.
 export default function ChatPage() {
@@ -23,7 +20,9 @@ export default function ChatPage() {
   if (!router.isReady) return <LogoLoading />
 
   const slug = router.query.slug
-  const [section, ...rest] = Array.isArray(slug) ? slug : slug ? [slug] : []
+  const rest = Array.isArray(slug) ? slug : slug ? [slug] : []
+  // A section's shell is its /<section>/[[...slug]] page.
+  const section = router.pathname.split('/')[1]
 
   const newChat = router.pathname === '/newchat'
   switch (router.pathname === '/' || newChat ? 'chat' : section) {
@@ -57,8 +56,6 @@ export default function ChatPage() {
           />
         </div>
       )
-    case 'share':
-      return <SharePage chatId={rest[0]} />
     default:
       return <NotFound />
   }

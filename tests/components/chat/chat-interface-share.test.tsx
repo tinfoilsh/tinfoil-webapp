@@ -78,7 +78,7 @@ beforeEach(() => {
   vi.stubGlobal('innerWidth', 1440)
   chatPage.auth = { isLoaded: true, isSignedIn: false, userId: null }
   chatPage.premium = false
-  chatPage.router.pathname = '/[...slug]'
+  chatPage.router.pathname = '/chat/[[...slug]]'
   chatPage.router.query = {}
   refuseFetch()
   writeText = vi.fn(async () => {})
