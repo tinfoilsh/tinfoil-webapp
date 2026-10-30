@@ -10,6 +10,10 @@ import {
   TINFOIL_PASSKEY_PROFILE,
   tinfoilPasskeyStorage,
 } from '@/services/passkey/kit'
+import {
+  getRoamingPasskeyCredentialIds,
+  getThisDevicePasskeyCredentialIds,
+} from '@/services/passkey/local-passkey-credential'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const CREDENTIAL_ID = 'AQID'
@@ -133,6 +137,39 @@ describe('Tinfoil passkey manager configuration', () => {
     await expect(
       evaluateTinfoilCredential([CREDENTIAL_ID]),
     ).rejects.toMatchObject({ cause: failure })
+  })
+
+  it('counts security keys and phones that worked here as this device', async () => {
+    const credential = (rawId: number, authenticatorAttachment: string) => ({
+      rawId: new Uint8Array([rawId]).buffer,
+      authenticatorAttachment,
+      getClientExtensionResults: () => ({
+        prf: { enabled: true, results: { first: PRF_OUTPUT.slice().buffer } },
+      }),
+    })
+    const user = { id: new Uint8Array([1]), name: 'person@example.com' }
+
+    installCredentials(async () => credential(1, 'platform'))
+    const platform = await createAndWrapTinfoilKey({ user, key: EXPECTED_KEY })
+    installCredentials(async () => credential(2, 'cross-platform'))
+    const securityKey = await createAndWrapTinfoilKey({
+      user,
+      key: EXPECTED_KEY,
+    })
+    installCredentialEvaluation(async () => credential(3, 'cross-platform'))
+    const phone = await evaluateTinfoilCredential(['Aw'])
+    installCredentialEvaluation(async () => credential(2, 'cross-platform'))
+    await evaluateTinfoilCredential(['Ag'])
+
+    expect(getRoamingPasskeyCredentialIds()).toEqual([
+      securityKey!.credentialId,
+      phone!.credentialId,
+    ])
+    expect(getThisDevicePasskeyCredentialIds()).toEqual([
+      platform!.credentialId,
+      securityKey!.credentialId,
+      phone!.credentialId,
+    ])
   })
 
   it('maps unsupported and timeout categories to existing UI errors', async () => {

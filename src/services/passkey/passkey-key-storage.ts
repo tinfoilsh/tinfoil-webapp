@@ -460,18 +460,16 @@ export async function getPasskeyCredentialState(): Promise<PasskeyCredentialStat
  * own bundle?". A user with an Apple passkey on a Mac and Windows
  * Hello on a PC should see "active" on each device and a
  * "set up passkey on this device" prompt when signing in on a new
- * machine.
+ * machine. A security key or phone counts on every browser it has
+ * unlocked, since the user carries it with them.
  */
 export async function getPasskeyDeviceState(
-  localCredentialId: string | null,
+  thisDeviceCredentialIds: string[],
 ): Promise<PasskeyDeviceState> {
   try {
     const entries = await loadPasskeyCredentials()
     if (entries.length === 0) return 'empty'
-    if (
-      localCredentialId &&
-      entries.some((entry) => entry.id === localCredentialId)
-    ) {
+    if (entries.some((entry) => thisDeviceCredentialIds.includes(entry.id))) {
       return 'this-device'
     }
     return 'other-device-only'
