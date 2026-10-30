@@ -1,6 +1,5 @@
 import {
   LEGACY_ENCRYPTION_KEY,
-  LEGACY_ENCRYPTION_KEY_HISTORY,
   USER_ENCRYPTION_KEY,
   USER_ENCRYPTION_KEY_HISTORY,
 } from '@/constants/storage-keys'
@@ -145,16 +144,13 @@ describe('EncryptionService', () => {
       const key2 = await service.generateKey()
       await service.setKey(key1)
       await service.setKey(key2)
-
-      localStorage.setItem(
-        LEGACY_ENCRYPTION_KEY_HISTORY,
-        JSON.stringify([key1]),
-      )
+      expect(
+        JSON.parse(localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY)!),
+      ).toEqual([key1])
 
       service.clearKey()
 
       expect(localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY)).toBeNull()
-      expect(localStorage.getItem(LEGACY_ENCRYPTION_KEY_HISTORY)).toBeNull()
       expect(service.getAllKeys()).toEqual({ primary: null, alternatives: [] })
     })
 
@@ -190,7 +186,7 @@ describe('EncryptionService', () => {
 
     it.each([
       [USER_ENCRYPTION_KEY, USER_ENCRYPTION_KEY_HISTORY],
-      [LEGACY_ENCRYPTION_KEY, LEGACY_ENCRYPTION_KEY_HISTORY],
+      [LEGACY_ENCRYPTION_KEY, USER_ENCRYPTION_KEY_HISTORY],
     ])(
       'should restore key and history from %s',
       async (primaryStorage, historyStorage) => {

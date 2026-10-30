@@ -2,7 +2,6 @@
 
 import {
   LEGACY_ENCRYPTION_KEY,
-  LEGACY_ENCRYPTION_KEY_HISTORY,
   USER_ENCRYPTION_KEY,
   USER_ENCRYPTION_KEY_HISTORY,
 } from '@/constants/storage-keys'
@@ -98,9 +97,7 @@ export class EncryptionService {
   }
 
   private loadKeyHistoryFromStorage(): string[] {
-    const rawHistory =
-      localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY) ??
-      localStorage.getItem(LEGACY_ENCRYPTION_KEY_HISTORY)
+    const rawHistory = localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY)
 
     if (!rawHistory) {
       return []
@@ -347,7 +344,6 @@ export class EncryptionService {
         localStorage.removeItem(USER_ENCRYPTION_KEY)
         localStorage.removeItem(USER_ENCRYPTION_KEY_HISTORY)
         localStorage.removeItem(LEGACY_ENCRYPTION_KEY)
-        localStorage.removeItem(LEGACY_ENCRYPTION_KEY_HISTORY)
       } catch (error) {
         logInfo('Failed to remove encryption keys from storage', {
           component: 'EncryptionService',
