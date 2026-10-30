@@ -1,4 +1,5 @@
 import {
+  exportArchive,
   ImportSequenceError,
   runImports,
   type ImportStatusResponse,
@@ -90,6 +91,33 @@ beforeEach(() => {
 })
 
 describe('runImports', () => {
+  it.each(['device', 'cloud'] as const)(
+    'refuses a signed-out %s import before uploading its archive',
+    async (target) => {
+      signIn({ userId: null })
+      client.multipart.mockResolvedValue(
+        importResponse([], { jobId: 'unexpected-job', warnings: [] }),
+      )
+      await expect(
+        runImports(target, [namedFile('private.json')], { wait: noWait }),
+      ).rejects.toMatchObject({ cause: { code: 'UNAUTHENTICATED' } })
+      expect(client.multipart).not.toHaveBeenCalled()
+    },
+  )
+
+  it('refuses signed-out exports before reading account chats', async () => {
+    const privateChat = storedThread('account-chat', { title: 'Account data' })
+    await localThreadStore('device').add(privateChat)
+    signIn({ userId: null })
+    await expect(
+      exportArchive('conversations', { cloud: false }),
+    ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' })
+    expect(client.multipart).not.toHaveBeenCalled()
+    expect(await localThreadStore('device').get(privateChat.id)).toEqual(
+      privateChat,
+    )
+  })
+
   it('finishes each file before uploading the next and leaves the last running', async () => {
     statuses = {
       'job-1': [job('running'), job('running', 1), job('completed', 4)],

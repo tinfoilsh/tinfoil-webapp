@@ -2,7 +2,7 @@ import type { Frame, Message, Thread, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { client, signIn, testSession } from './harness-fixture'
+import { CACHE_SECRET, client, signIn, testSession } from './harness-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({
   GENUI_WIDGETS: [{ name: 'render_chart' }],
@@ -89,7 +89,11 @@ it('runs a signed-out first turn as a new device chat with its preset and keeps 
     threadId: expect.stringMatching(/^\d{13}_[0-9a-f-]{36}$/),
     kind: 'send',
     widgets: ['render_chart'],
-    options: { model: 'test-model', timezone: expect.any(String) },
+    options: {
+      model: 'test-model',
+      timezone: expect.any(String),
+      cacheSecret: CACHE_SECRET,
+    },
     content: 'private question',
     presetId: 'builtin:tutor',
     local: true,

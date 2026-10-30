@@ -95,16 +95,18 @@ describe('a turn the harness refuses', () => {
       },
     })
     api.reportRateLimit({ kind: 'free_daily', maxRequests: 5, remaining: 0 })
+    // The browser mints the subscriber's chat access, whose quota the control
+    // plane reports; the harness reports none for it.
+    client.renewCredential.mockImplementation(async () =>
+      client.onRateLimit?.({
+        kind: 'hourly',
+        inputTokens: { max: 10000, used: 0, remaining: 10000 },
+      }),
+    )
     client.post.mockImplementation(async (path, input) => {
       if (path === '/v1/session') {
-        expect(input).toEqual({ refreshCredentials: true })
-        return {
-          ...testSession,
-          rateLimit: {
-            kind: 'hourly',
-            inputTokens: { max: 10000, used: 0, remaining: 10000 },
-          },
-        }
+        expect(input).toEqual({})
+        return testSession
       }
       if (path === '/v1/profile/get') return {}
       if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
@@ -112,11 +114,17 @@ describe('a turn the harness refuses', () => {
     })
     const { rerender } = render(<ChatInterface />)
     expect(getView().rateLimit?.kind).toBe('free_daily')
+    const refresh = vi.spyOn(api, 'refresh')
     await act(async () => {
       chatPage.premium = true
       rerender(<ChatInterface />)
     })
-    await waitFor(() => expect(getView().rateLimit?.kind).toBe('hourly'))
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+    await act(async () => {
+      await refresh.mock.results[0].value
+    })
+    expect(getView().rateLimit?.kind).toBe('hourly')
+    expect(client.renewCredential).toHaveBeenCalledTimes(1)
   })
   it('keeps a failed recheck after a subscription change out of the reply error banner', async () => {
     client.post.mockImplementation(async (path) => {
@@ -139,7 +147,7 @@ describe('a turn the harness refuses', () => {
     )
     expect(client.post).toHaveBeenCalledWith(
       '/v1/session',
-      { refreshCredentials: true },
+      {},
       expect.any(AbortSignal),
     )
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
