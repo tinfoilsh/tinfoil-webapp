@@ -1,11 +1,11 @@
-import {
-  localThreadStore,
-  type LocalAttachment,
-  type LocalMessage,
-  type LocalThread,
-} from '@/services/harness/local-threads'
+import { localThreadStore } from '@/services/harness/local-threads'
 import { harnessAPI } from '@/services/harness/runtime'
-import type { TimelineBlock } from '@/services/harness/types'
+import type {
+  AttachmentDescriptor,
+  StoredThread,
+  ThreadMessage,
+  TimelineBlock,
+} from '@/services/harness/types'
 import { base64ToUint8Array } from '@/utils/binary-codec'
 import { z } from 'zod'
 import { NATIVE_BACKUP_LIMITS } from './constants'
@@ -40,12 +40,12 @@ export class NativeBackupCollectionError extends Error {
 export interface NativeBackupCollectionDependencies {
   downloadCloudBackup(signal: AbortSignal): Promise<Blob>
   readBackup(file: File, signal: AbortSignal): Promise<NativeBackupContents>
-  localThreads(): Promise<LocalThread[]>
+  localThreads(): Promise<StoredThread[]>
 }
 
-async function localThreads(): Promise<LocalThread[]> {
+async function localThreads(): Promise<StoredThread[]> {
   const store = localThreadStore('device')
-  const threads: LocalThread[] = []
+  const threads: StoredThread[] = []
   for (const summary of await store.list()) {
     const thread = await store.get(summary.id)
     if (thread) threads.push(thread)
@@ -55,7 +55,11 @@ async function localThreads(): Promise<LocalThread[]> {
 
 const defaults: NativeBackupCollectionDependencies = {
   downloadCloudBackup: (signal) =>
-    harnessAPI().download('/v1/export', { format: 'tinfoil-backup' }, signal),
+    harnessAPI().download(
+      '/v1/export',
+      { format: 'tinfoil-backup' },
+      { signal },
+    ),
   readBackup: (file, signal) => readNativeBackup(file, { signal }),
   localThreads,
 }
@@ -85,13 +89,6 @@ const textOf = (timeline: TimelineBlock[] | undefined, type: string) =>
     .filter((block) => block.type === type)
     .map((block) => block.content ?? '')
     .join('')
-
-function millis(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value !== 'string') return undefined
-  const date = Date.parse(value)
-  return Number.isNaN(date) ? undefined : date
-}
 
 function parsedArguments(text: string | undefined): Record<string, unknown> {
   try {
@@ -151,15 +148,12 @@ function backupTimeline(timeline: TimelineBlock[] | undefined) {
         })
         continue
       }
-      const resolvedAt = millis(block.resolvedAt)
       blocks.push({
         type: 'tool_call',
         id: block.id,
         toolCallId: block.toolCallId || block.id,
         name,
         arguments: block.arguments ?? '',
-        ...(block.resolution ? { resolution: block.resolution } : {}),
-        ...(resolvedAt !== undefined ? { resolvedAt } : {}),
       })
     }
   }
@@ -175,13 +169,13 @@ interface ChatCollection {
 // A local chat in the backup's format, with its images. An image that cannot
 // be included is left out of its message and listed as omitted, as main's
 // backup did.
-function collectLocalChat(thread: LocalThread): ChatCollection {
+function collectLocalChat(thread: StoredThread): ChatCollection {
   const images: NativeBackupImageInput[] = []
   const omissions: NativeBackupOmission[] = []
   const image = (
     messageIndex: number,
     attachmentIndex: number,
-    attachment: LocalAttachment,
+    attachment: AttachmentDescriptor,
     base64: string | undefined,
     page?: number,
   ): string => {
@@ -251,12 +245,12 @@ function collectLocalChat(thread: LocalThread): ChatCollection {
     })
   }
   const attachments = (
-    message: LocalMessage,
+    message: ThreadMessage,
     messageIndex: number,
   ): Record<string, unknown>[] =>
     (message.attachments ?? []).flatMap<Record<string, unknown>>(
       (attachment, attachmentIndex) => {
-        if (attachment.type !== 'image')
+        if (attachment.kind !== 'image')
           return [
             {
               type: 'document',
@@ -269,9 +263,8 @@ function collectLocalChat(thread: LocalThread): ChatCollection {
               ...(attachment.description
                 ? { description: attachment.description }
                 : {}),
-              ...(Number.isInteger(attachment.fileSize) &&
-              attachment.fileSize! >= 0
-                ? { fileSize: attachment.fileSize }
+              ...(Number.isInteger(attachment.size) && attachment.size >= 0
+                ? { fileSize: attachment.size }
                 : {}),
               ...(attachment.pages
                 ? {
@@ -327,7 +320,7 @@ function collectLocalChat(thread: LocalThread): ChatCollection {
     updatedAt: iso(thread.updatedAt, thread.createdAt),
     ...(thread.presetId ? { presetId: thread.presetId } : {}),
     ...(thread.model ? { model: thread.model } : {}),
-    ...(thread.webSearchEnabled !== undefined
+    ...(typeof thread.webSearchEnabled === 'boolean'
       ? { webSearchEnabled: thread.webSearchEnabled }
       : {}),
     messages: thread.messages.map((message, messageIndex) => {
@@ -341,7 +334,7 @@ function collectLocalChat(thread: LocalThread): ChatCollection {
         content:
           message.role === 'assistant'
             ? message.content || textOf(message.timeline, 'content')
-            : message.content,
+            : (message.content ?? ''),
         timestamp: iso(message.createdAt, thread.createdAt),
         ...(message.modelDisplayName
           ? { modelDisplayName: message.modelDisplayName }
@@ -368,7 +361,7 @@ interface LocalCollection {
 }
 
 function collectLocalChats(
-  threads: LocalThread[],
+  threads: StoredThread[],
   cloudChatIds: ReadonlySet<string>,
 ): LocalCollection {
   const collection: LocalCollection = { chats: [], images: [], omissions: [] }
@@ -404,7 +397,7 @@ function collectLocalChats(
 
 // The local chats change as replies stream in; a backup taken while they do
 // is retried, and then marked as a partial snapshot, as main's was.
-const snapshot = (threads: LocalThread[]) => JSON.stringify(threads)
+const snapshot = (threads: StoredThread[]) => JSON.stringify(threads)
 
 export async function collectNativeBackupV2(
   signal: AbortSignal,

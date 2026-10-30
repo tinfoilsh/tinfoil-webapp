@@ -36,7 +36,7 @@ export const optionToWebSearch = (
 export const isPresetModelAvailable = (
   modelName: string,
   models: BaseModel[],
-): boolean => models.some((model) => model.modelName === modelName)
+): boolean => models.some((model) => model.id === modelName)
 
 /**
  * Models offered in the preset editor: Auto followed by the same chat models
@@ -51,11 +51,6 @@ export const getPresetModelOptions = (
   return auto ? [auto, ...chatModels] : chatModels
 }
 
-export const getPresetModelLabel = (
-  modelName: string,
-  models: BaseModel[],
-): string => findSelectableModel(modelName, models)?.name ?? modelName
-
 export const PRESET_SETTING_UNSET_LABEL = 'No override set'
 
 export type PresetSettingsSummary = {
@@ -66,16 +61,17 @@ export type PresetSettingsSummary = {
 /**
  * Human-readable values for a preset's chat settings in the detail pane.
  * Unset settings read as PRESET_SETTING_UNSET_LABEL so the pane always shows
- * both rows.
+ * both rows. A model the catalog no longer offers is not applied, so it
+ * reads as unset too.
  */
 export const describePresetSettings = (
   settings: PromptPresetSettings,
   models: BaseModel[],
 ): PresetSettingsSummary => ({
   model:
-    settings.model === undefined
-      ? PRESET_SETTING_UNSET_LABEL
-      : getPresetModelLabel(settings.model, models),
+    (settings.model !== undefined &&
+      findSelectableModel(settings.model, models)?.label) ||
+    PRESET_SETTING_UNSET_LABEL,
   webSearch:
     settings.webSearchEnabled === undefined
       ? PRESET_SETTING_UNSET_LABEL

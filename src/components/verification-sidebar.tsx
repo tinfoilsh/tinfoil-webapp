@@ -1,4 +1,4 @@
-import { harnessAPI } from '@/services/harness/runtime'
+import { verificationDocument as readVerificationDocument } from '@/services/harness/attestation'
 import { logError } from '@/utils/error-handling'
 import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -11,7 +11,6 @@ type VerifierSidebarProps = {
   isOpen: boolean
   setIsOpen: (isOpen: boolean) => void
   onVerificationComplete: (success: boolean) => void
-  onVerificationUpdate?: (state: any) => void
   isDarkMode: boolean
   isClient: boolean
 }
@@ -20,7 +19,6 @@ export function VerifierSidebar({
   isOpen,
   setIsOpen,
   onVerificationComplete,
-  onVerificationUpdate,
   isDarkMode,
   isClient,
 }: VerifierSidebarProps) {
@@ -28,22 +26,16 @@ export function VerifierSidebar({
   const [isReady, setIsReady] = useState(false)
   const [verificationDocument, setVerificationDocument] = useState<any>(null)
 
-  // Keep the latest callbacks in refs so `fetchVerificationDocument` can stay
-  // referentially stable. The parent passes these as inline functions, so
-  // depending on them directly would recreate the callback every render and
+  // Keep the latest callback in a ref so `fetchVerificationDocument` can stay
+  // referentially stable. The parent passes it as an inline function, so
+  // depending on it directly would recreate the callback every render and
   // re-fire the effects that trigger verification — an unbounded fetch loop.
-  const onVerificationUpdateRef = useRef(onVerificationUpdate)
   const onVerificationCompleteRef = useRef(onVerificationComplete)
-  onVerificationUpdateRef.current = onVerificationUpdate
   onVerificationCompleteRef.current = onVerificationComplete
 
   const fetchVerificationDocument = useCallback(async () => {
     try {
-      const api = harnessAPI()
-      await api.client.ready()
-      const doc = await api.client.verification
-      setVerificationDocument(doc)
-      onVerificationUpdateRef.current?.(doc)
+      setVerificationDocument(await readVerificationDocument())
       onVerificationCompleteRef.current(true)
     } catch (cause) {
       onVerificationCompleteRef.current(false)

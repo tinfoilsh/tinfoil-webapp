@@ -81,7 +81,7 @@ class RendererRegistry {
     for (const provider of providersArray) {
       // Reset lastIndex to prevent issues with global/sticky regex flags
       provider.modelPattern.lastIndex = 0
-      if (provider.modelPattern.test(model.modelName)) {
+      if (provider.modelPattern.test(model.id)) {
         return provider
       }
     }

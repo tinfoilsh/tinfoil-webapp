@@ -7,7 +7,7 @@ npm install
 cp .env.example .env.local
 ```
 
-In `.env.local`, add the Clerk keys, the controlplane URL, and `NEXT_PUBLIC_HARNESS_ENCLAVE_URL`. The harness URL must be a deployed, attested HTTPS origin.
+In `.env.local`, add the Clerk keys, the Tinfoil API URL (`NEXT_PUBLIC_API_BASE_URL`), and `NEXT_PUBLIC_HARNESS_ENCLAVE_URL` (default `https://chat-api.tinfoil.sh`). The harness URL must be a deployed, attested HTTPS origin.
 
 ## Running locally
 
@@ -27,9 +27,9 @@ npm run lint
 npm run build
 ```
 
-With the harness repository checked out next to this one, also check the widget schemas against the harness's tool declarations: `node ../confidential-tinfoil-harness/scripts/check-widgets.cjs .`
+`npm test` also checks the widget argument types against the harness's tool declarations, read from `HARNESS_WIDGETS_JSON` (CI downloads the harness's `widgets.json` from its main branch) or from the harness repository checked out next to this one; `npm run generate:widgets` regenerates them.
 
-Reproduce a shuffled failure with the seed Vitest prints: `npm run test:shuffle -- --sequence.seed=42`. `npm run test:unit` runs Vitest in watch mode. `npm run check:clerk-privacy` checks the live Clerk environment and runs on a schedule in CI. See [HARNESS.md](./HARNESS.md) for ownership and cutover details.
+Reproduce a shuffled failure with the seed Vitest prints: `npm run test:shuffle -- --sequence.seed=42`. `npm run test:unit` runs Vitest in watch mode. `npm run check:clerk-privacy` checks the live Clerk environment and runs on a schedule in CI.
 
 ## Releases
 

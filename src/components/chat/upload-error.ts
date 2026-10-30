@@ -1,4 +1,5 @@
 import { DAILY_RATE_LIMIT_MESSAGE } from '@/constants/rate-limits'
+import { ERROR_CODES } from '@/services/harness/protocol'
 import { HarnessError } from '@/services/harness/sse'
 
 // What an upload refusal tells the user. A document the harness could not
@@ -9,7 +10,7 @@ export function uploadErrorMessage(
 ): string {
   if (error instanceof HarnessError) {
     const { code, kind, retryAfter, upstreamCode } = error.detail
-    if (code === 'RATE_LIMITED') {
+    if (code === ERROR_CODES.rateLimited) {
       const subject = upstreamCode?.startsWith('document_')
         ? 'The document service is busy.'
         : 'Too many requests right now.'
@@ -18,7 +19,7 @@ export function uploadErrorMessage(
         : 'in a moment'
       return `${subject} Try again ${wait}.`
     }
-    if (code === 'QUOTA_EXHAUSTED')
+    if (code === ERROR_CODES.quotaExhausted)
       return kind === 'hourly'
         ? "You've reached your hourly usage limit."
         : DAILY_RATE_LIMIT_MESSAGE

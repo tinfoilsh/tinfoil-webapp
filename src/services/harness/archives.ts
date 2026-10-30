@@ -1,3 +1,4 @@
+import { ROUTES } from './protocol'
 import { harnessAPI } from './runtime'
 import { HarnessError } from './sse'
 export type ImportFailureReason =
@@ -32,9 +33,9 @@ function saveDownload(blob: Blob, filename: string) {
 // built in services/native-backup, which adds the chats on this device.
 export async function exportClaudeProjects(signal?: AbortSignal) {
   const blob = await harnessAPI().download(
-    '/v1/export',
+    ROUTES.export,
     { format: 'claude-projects' },
-    signal,
+    { signal },
   )
   signal?.throwIfAborted()
   saveDownload(blob, 'projects.json')
@@ -46,25 +47,23 @@ export async function startImport(
 ): Promise<ImportStatusResponse> {
   const api = harnessAPI()
   const { jobId } = await api.upload<{ jobId: string }>(
-    '/v1/import',
+    ROUTES.import,
     file,
     { source },
-    signal,
+    { signal },
   )
   const status = await api.post<ImportStatusResponse>(
-    '/v1/import/status',
+    ROUTES.importStatus,
     { jobId },
-    signal,
-    false,
+    { signal, keyless: true },
   )
   return { ...status, jobId }
 }
 export async function importStatus(jobId: string, signal?: AbortSignal) {
   const status = await harnessAPI().post<ImportStatusResponse>(
-    '/v1/import/status',
+    ROUTES.importStatus,
     { jobId },
-    signal,
-    false,
+    { signal, keyless: true },
   )
   return { ...status, jobId }
 }

@@ -1,20 +1,14 @@
 export const SPEECH = {
-  // The harness asks for Qwen's raw audio stream: mono, signed 16-bit
-  // little-endian PCM.
+  // The harness streams a reply's audio as raw PCM: mono, signed 16-bit
+  // little-endian.
   SAMPLE_RATE: 24000,
   CHANNELS: 1,
-  BYTES_PER_SAMPLE: 2,
   PCM_SCALE: 32768,
   BLOCK_SAMPLES: 6000,
-  TARGET_CHUNK_CHARACTERS: 300,
-  // The longest text the harness reads aloud in one request.
-  MAX_CHUNK_CHARACTERS: 600,
-  MAX_TEXT_CHARACTERS: 100000,
-  CONCURRENT_REQUESTS: 2,
-  LOOKAHEAD_CHUNKS: 4,
   START_BUFFER_SECONDS: 12,
-  HIGH_WATER_SECONDS: 60,
-  MAX_CHUNK_AUDIO_SECONDS: 120,
   SCHEDULE_LEAD_SECONDS: 0.05,
-  REQUEST_TIMEOUT_MS: 120000,
+  // The stream is not read further while this much audio waits to play.
+  MAX_BUFFERED_SECONDS: 30,
+  // A response that sends nothing for this long has stalled.
+  IDLE_TIMEOUT_MS: 30_000,
 } as const

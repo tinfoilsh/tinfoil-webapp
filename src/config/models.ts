@@ -1,92 +1,16 @@
 import { getView } from '@/services/harness/runtime'
-import type { Session } from '@/services/harness/types'
+import type { SessionModel } from '@/services/harness/types'
 
-// Display fields only. The harness selects models and builds inference parameters.
-export type BaseModel = {
-  modelName: string
-  name: string
-  nameShort: string
-  description: string
-  image: string
-  type: 'chat'
-  chat: boolean
-  multimodal?: boolean
-  paid?: boolean
-  deprecated?: boolean
-  experimental?: boolean
-  deprecationDate?: string
-  isAuto?: boolean
-  chatConfig?: {
-    attributes?: string[]
-    descriptionShort?: string
-    reasoningConfig?: {
-      supportsEffort?: boolean
-      supportsToggle?: boolean
-      defaultEnabled?: boolean
-    }
-  }
-}
+// A model as the harness's session offers it, ready to display. The harness
+// selects models and builds inference parameters.
+export type BaseModel = SessionModel
 export type AutoIntelligenceLevelId = string
-export type AutoIntelligenceLevel = { id: string; label: string; value: number }
-export const AUTO_MODEL_ID = 'auto'
-// The two Auto tiers of the previous design, which settings and chats kept
-// on the device can still name. The harness reads them as Auto.
-const LEGACY_AUTO_MODEL_IDS = ['auto-smart', 'auto-fast']
-export const isAutoModelId = (id: string) =>
-  id === AUTO_MODEL_ID || LEGACY_AUTO_MODEL_IDS.includes(id)
-export const getAutoIntelligenceLevels = (): AutoIntelligenceLevel[] =>
-  (getView().session?.auto?.levels ?? []).map((level, value) => ({
-    ...level,
-    value,
-  }))
+export const getAutoIntelligenceLevels = () =>
+  getView().session?.auto?.levels ?? []
 export const getAutoIntelligenceLevel = (id: string) =>
-  getAutoIntelligenceLevels().find((level) => level.id === id) ?? {
-    id,
-    label: id,
-    value: 0,
-  }
-export const getAutoDisplayName = (id: string) =>
-  `Auto · ${getAutoIntelligenceLevel(id).label}`
-export function displayModels(session?: Session): BaseModel[] {
-  if (!session) return []
-  // Free chat models serve free-tier keys server-side and are never offered.
-  const offered = session.models.filter((m) => m.paid !== false)
-  const models: BaseModel[] = offered.map((m) => ({
-    ...m,
-    modelName: m.id,
-    nameShort: m.nameShort ?? m.name,
-    description: m.description ?? '',
-    image: m.image ?? '',
-    type: 'chat',
-    chat: true,
-    chatConfig: {
-      attributes: m.attributes ?? [],
-      descriptionShort: m.descriptionShort ?? '',
-      reasoningConfig: m.reasoning
-        ? {
-            supportsEffort: m.reasoning.effort,
-            supportsToggle: m.reasoning.toggle,
-            defaultEnabled: m.reasoning.defaultEnabled,
-          }
-        : undefined,
-    },
-  }))
-  if (session.auto)
-    models.unshift({
-      modelName: 'auto',
-      name: 'Auto',
-      nameShort: 'Auto',
-      image: '',
-      description: '',
-      type: 'chat',
-      chat: true,
-      isAuto: true,
-      multimodal: session.auto.multimodal,
-    })
-  return models
-}
+  getAutoIntelligenceLevels().find((level) => level.id === id)
 export const getAutoModel = (models: BaseModel[]) =>
-  models.find((m) => m.isAuto)
+  models.find((m) => m.auto === true)
 /**
  * Real chat models a picker offers below the Auto entry. A deprecated model
  * stays listed only while it is the current selection so the menu agrees with
@@ -98,21 +22,18 @@ export const getSelectableChatModels = (
 ): BaseModel[] =>
   models.filter(
     (model) =>
-      model.chat === true &&
-      !model.isAuto &&
-      (model.deprecated !== true || model.modelName === selectedModel),
+      model.auto !== true &&
+      (model.deprecated !== true || model.id === selectedModel),
   )
 export const findSelectableModel = (id: string, models: BaseModel[]) =>
-  isAutoModelId(id)
-    ? getAutoModel(models)
-    : models.find((m) => m.modelName === id)
+  models.find((m) => m.id === id)
 export const getSelectedModelLabel = (
   id: string,
   models: BaseModel[],
   level: string,
-) =>
-  isAutoModelId(id)
-    ? getAutoDisplayName(level)
-    : findSelectableModel(id, models)?.name
-export const getKnownModelDisplayName = (id: string) =>
-  findSelectableModel(id, displayModels(getView().session))?.name
+) => {
+  const model = findSelectableModel(id, models)
+  return model?.auto
+    ? (getAutoIntelligenceLevel(level)?.displayLabel ?? model.label)
+    : model?.label
+}

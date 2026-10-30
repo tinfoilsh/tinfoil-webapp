@@ -4,8 +4,8 @@ import { sanitizeUrl } from '@braintree/sanitize-url'
 import { TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
 import { Check, Clock, Flame, Printer, Users } from 'lucide-react'
 import { useState, type Dispatch, type SetStateAction } from 'react'
-import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
+import type { RenderRecipeCardArgs } from '../widget-args'
 
 const RECIPE_SCALE_OPTIONS = [1, 2, 3] as const
 const DEFAULT_RECIPE_SCALE = 1
@@ -44,34 +44,7 @@ const QUANTITY_TOKEN_PATTERN =
 const FRACTION_MATCH_TOLERANCE = 0.02
 const DECIMAL_PLACES = 2
 
-const ingredientSchema = z.object({
-  quantity: z.string().optional(),
-  item: z.string(),
-  note: z.string().optional(),
-})
-
-const stepSchema = z.object({
-  title: z.string().optional(),
-  content: z.string(),
-})
-
-const schema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional(),
-  image: z.string().optional(),
-  cuisine: z.string().optional(),
-  difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
-  servings: z.union([z.string(), z.number()]).optional(),
-  prepTime: z.string().optional(),
-  cookTime: z.string().optional(),
-  totalTime: z.string().optional(),
-  ingredients: z.array(ingredientSchema).optional(),
-  steps: z.array(stepSchema).optional(),
-  sourceUrl: z.string().optional(),
-  source: z.string().optional(),
-})
-
-type RecipeProps = z.infer<typeof schema>
+type RecipeProps = RenderRecipeCardArgs
 
 function difficultyLabel(value: RecipeProps['difficulty']): string | null {
   if (!value) return null
@@ -639,6 +612,5 @@ function buildPrintableRecipeHtml(args: PrintableRecipeArgs): string {
 
 export const widget = defineGenUIWidget({
   name: 'render_recipe_card',
-  schema,
   render: (args) => <Recipe {...args} />,
 })

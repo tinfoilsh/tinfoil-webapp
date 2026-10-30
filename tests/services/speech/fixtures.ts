@@ -1,5 +1,5 @@
 import { SPEECH } from '@/services/speech/constants'
-import type { SpeechStream } from '@/services/speech/stream'
+import type { SpeechSource } from '@/services/speech/stream'
 import { vi } from 'vitest'
 
 export class FakeAudioContext {
@@ -58,7 +58,6 @@ class FakeAudioSource {
 }
 
 export interface ControlledRequest {
-  text: string
   signal: AbortSignal
   consumed: number
   finished: boolean
@@ -69,7 +68,7 @@ export interface ControlledRequest {
 
 export function controlledSpeech() {
   const requests: ControlledRequest[] = []
-  const stream: SpeechStream = async function* (text, signal) {
+  const stream: SpeechSource = async function* (signal) {
     const queue: (Float32Array | Error | null)[] = []
     let wake: (() => void) | undefined
     const enqueue = (item: Float32Array | Error | null) => {
@@ -79,7 +78,6 @@ export function controlledSpeech() {
     const abort = () => wake?.()
     signal.addEventListener('abort', abort, { once: true })
     const request: ControlledRequest = {
-      text,
       signal,
       consumed: 0,
       finished: false,
@@ -116,9 +114,35 @@ export function controlledSpeech() {
   return { requests, stream }
 }
 
-export function speechParagraphs(count: number): string {
-  return Array.from(
-    { length: count },
-    (_, i) => `${i}: ${'A'.repeat(SPEECH.TARGET_CHUNK_CHARACTERS)}.`,
-  ).join(' ')
+export interface ControlledResponse {
+  messageId: string
+  signal: AbortSignal
+  push: (seconds: number) => void
+  finish: () => void
+  fail: (error: Error) => void
+}
+
+// Read-aloud requests the harness answers with PCM audio a test feeds.
+export function controlledSpeak() {
+  const responses: ControlledResponse[] = []
+  const speak = vi.fn(async (messageId: string, signal: AbortSignal) => {
+    let source!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        source = controller
+      },
+    })
+    responses.push({
+      messageId,
+      signal,
+      push: (seconds) =>
+        source.enqueue(
+          new Uint8Array(Math.round(seconds * SPEECH.SAMPLE_RATE) * 2),
+        ),
+      finish: () => source.close(),
+      fail: (error) => source.error(error),
+    })
+    return new Response(body, { headers: { 'Content-Type': 'audio/pcm' } })
+  })
+  return { responses, speak }
 }

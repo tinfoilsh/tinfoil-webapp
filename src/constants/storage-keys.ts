@@ -19,17 +19,11 @@ export const SECRET_PASSKEY_BACKED_UP = 'tinfoil-secret-passkey-backed-up'
 export const LOCAL_PASSKEY_CREDENTIAL_ID = 'tinfoil-local-passkey-credential-id'
 export const PASSKEY_SYNC_VERSION = 'tinfoil-passkey-sync-version'
 export const PASSKEY_BUNDLE_VERSION = 'tinfoil-passkey-bundle-version'
-export const SECRET_CLOUD_KEY_AUTHORIZATION_PREFIX =
-  'tinfoil-secret-cloud-key-authorization-'
 
 // --- localStorage: Auth ----------------------------------------------------
 export const AUTH_ACTIVE_USER_ID = 'tinfoil-auth-active-user-id'
 export const AUTH_ACCOUNT_RESET_SIGNAL = 'tinfoil-auth-account-reset-signal'
 export const AUTH_SIGNOUT_REQUESTED_AT = 'tinfoil-auth-signout-requested-at'
-
-// --- localStorage: Public app configuration -------------------------------
-export const CONFIG_CACHED_MODELS = 'tinfoil-config-cached-models'
-export const CONFIG_CACHED_SYSTEM_PROMPT = 'tinfoil-config-cached-system-prompt'
 
 // --- localStorage: App settings --------------------------------------------
 export const SETTINGS_CLOUD_SYNC_ENABLED = 'tinfoil-settings-cloud-sync-enabled'
@@ -42,10 +36,6 @@ export const SETTINGS_AUTO_INTELLIGENCE = 'tinfoil-settings-auto-intelligence'
 export const SETTINGS_REASONING_EFFORT = 'tinfoil-settings-reasoning-effort'
 export const SETTINGS_THINKING_ENABLED = 'tinfoil-settings-thinking-enabled'
 export const SETTINGS_WEB_SEARCH_ENABLED = 'tinfoil-settings-web-search-enabled'
-export const SETTINGS_WEB_SEARCH_AVAILABLE =
-  'tinfoil-settings-web-search-available'
-export const SETTINGS_CODE_EXECUTION_ENABLED =
-  'tinfoil-settings-code-execution-enabled'
 export const SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED =
   'tinfoil-settings-pixelate-sidebar-chat-titles-enabled'
 // When disabled, the browser tab shows only the base app title instead of
@@ -131,48 +121,16 @@ export const USER_PREFS_FAVORITE_PROMPT_PRESETS =
   'tinfoil-user-prefs-favorite-prompt-presets'
 export const USER_PREFS_DEFAULT_PROMPT_PRESET_ID =
   'tinfoil-user-prefs-default-prompt-preset-id'
-export const USER_PREFS_PINNED_CHAT_IDS = 'tinfoil-user-prefs-pinned-chat-ids'
 // Settings of an account without cloud sync and of a signed-out visitor, in
 // the chat service's profile format.
 export const USER_PREFS_LOCAL_PROFILE = 'tinfoil-user-prefs-local-profile'
+// Set once the local profile needs no upgrade from what older clients
+// stored: the chat service upgraded it, it was empty, or it is the cloud
+// profile kept on this device when cloud sync was turned off.
+export const USER_PREFS_LOCAL_PROFILE_UPGRADED =
+  'tinfoil-user-prefs-local-profile-upgraded'
 export const USER_PREFS_NATIVE_APP_DISMISSED =
   'tinfoil-user-prefs-native-app-dismissed'
-
-// --- localStorage: Sync/data state -----------------------------------------
-export const SYNC_CHATS = 'tinfoil-sync-chats'
-// Legacy chat sync keys removed during revision-v2 bootstrap.
-export const SYNC_CHAT_STATUS = 'tinfoil-sync-chat-status'
-export const SYNC_CHAT_DELETES_WATERMARK = 'tinfoil-sync-chat-deletes-watermark'
-export const SYNC_CHAT_DELETION_REVISION = 'tinfoil-sync-chat-deletion-revision'
-export const SYNC_ALL_CHATS_STATUS = 'tinfoil-sync-all-chats-status'
-export const SYNC_PROJECT_CHAT_STATUS_PREFIX =
-  'tinfoil-sync-project-chat-status-'
-export const SYNC_PROFILE_STATUS = 'tinfoil-sync-profile-status'
-export const SYNC_PROFILE_DIRTY = 'tinfoil-sync-profile-dirty'
-export const SYNC_PROFILE_BASELINE = 'tinfoil-sync-profile-baseline'
-export const SYNC_PROFILE_LOCAL_METADATA = 'tinfoil-sync-profile-local-metadata'
-export const SYNC_PROFILE_UNKNOWN_FIELDS = 'tinfoil-sync-profile-unknown-fields'
-export const SYNC_PROFILE_GENERATION = 'tinfoil-sync-profile-generation'
-export const SYNC_PROJECTS_INVALIDATED = 'tinfoil-sync-projects-invalidated'
-// Content modification time of the pending local profile edit, used to
-// arbitrate last-write-wins against a concurrently-updated remote.
-export const SYNC_PROFILE_CHANGED_AT = 'tinfoil-sync-profile-changed-at'
-
-// --- localStorage: Migration flags -----------------------------------------
-// Set the first time a build evicts locally-cached cloud chats that the
-// legacy v0/v1 client decrypt path used to handle. The enclave rewraps any
-// orphan rows server-side; the next sync repopulates fresh plaintext.
-export const MIGRATION_LEGACY_CLOUD_CHATS_EVICTED =
-  'tinfoil-migration-legacy-cloud-chats-evicted'
-// Per-user fingerprint (suffixed with the clerk user id) of the
-// migration candidate key set whose last completed migrate-all sweep
-// left rows blocked under every key this client holds. While the
-// fingerprint matches the current key set the client skips re-kicking a
-// doomed sweep on each page load; a changed key set (a newly recovered
-// key) no longer matches, so the sweep runs again. Cleared once a sweep
-// reports everything migrated.
-export const MIGRATION_EXHAUSTED_KEYSET_PREFIX =
-  'tinfoil-migration-exhausted-keyset-'
 
 // --- localStorage: Development ---------------------------------------------
 export const DEV_ENABLE_DEBUG_LOGS = 'tinfoil-dev-enable-debug-logs'
@@ -192,8 +150,4 @@ export const UI_EXPAND_PROJECT_DOCUMENTS = 'tinfoil-ui-expand-project-documents'
 
 // --- sessionStorage: Sync --------------------------------------------------
 export const SYNC_SESSION_CHATS = 'tinfoil-sync-session-chats'
-export const SYNC_SESSION_CHAT_DRAFT_PREFIX = 'tinfoil-sync-session-chat-draft:'
 export const SYNC_DELETED_CHATS = 'tinfoil-sync-deleted-chats'
-
-// --- sessionStorage: Message queue -----------------------------------------
-export const MESSAGE_QUEUE_PREFIX = 'tinfoil-message-queue:'

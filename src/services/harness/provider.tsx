@@ -1,23 +1,17 @@
 import { LogoLoading } from '@/components/ui/logo-loading'
 import { AUTH_ACTIVE_USER_CHANGED_EVENT } from '@/constants/auth-events'
-import {
-  SETTINGS_CLOUD_SYNC_ENABLED,
-  USER_PREFS_LOCAL_PROFILE,
-} from '@/constants/storage-keys'
 import { authTokenManager, AuthTokenUnavailableError } from '@/services/auth'
 import {
   ENCRYPTION_KEY_CHANGED_EVENT,
   encryptionService,
 } from '@/services/encryption/encryption-service'
-import {
-  CLOUD_SYNC_SETTING_CHANGED_EVENT,
-  enableCloudSyncForExistingKey,
-} from '@/utils/cloud-sync-settings'
+import { enableCloudSyncForExistingKey } from '@/utils/cloud-sync-settings'
 import { useAuth } from '@clerk/react'
 import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -80,27 +74,12 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
         api.invalidateKey()
         void api.refreshProfile().catch(reportHarnessError)
       }
-      const modeChanged = () => {
-        void api.storageModeChanged().catch(reportHarnessError)
-      }
-      const storageChanged = (event: StorageEvent) => {
-        if (event.key === SETTINGS_CLOUD_SYNC_ENABLED) modeChanged()
-        else if (event.key === USER_PREFS_LOCAL_PROFILE && !api.cloud)
-          void api.refreshProfile().catch(reportHarnessError)
-      }
       window.addEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, unlock)
       refresh()
       window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, keyChanged)
-      window.addEventListener(CLOUD_SYNC_SETTING_CHANGED_EVENT, modeChanged)
-      window.addEventListener('storage', storageChanged)
       setAccount(userId ?? 'anonymous')
       return () => {
         window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, keyChanged)
-        window.removeEventListener(
-          CLOUD_SYNC_SETTING_CHANGED_EVENT,
-          modeChanged,
-        )
-        window.removeEventListener('storage', storageChanged)
         window.removeEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, unlock)
         release?.()
         authTokenManager.reset()
@@ -133,10 +112,17 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
     </HarnessContext.Provider>
   )
 }
+// The harness's view, with the profile's unset fields shown at the
+// defaults the session names.
 export function useHarness() {
   const view = useSyncExternalStore(subscribe, getView, getServerView)
   const api = useContext(HarnessContext)
-  return { ...view, api: api ?? harnessAPI() }
+  const defaults = view.session?.profileDefaults
+  const profile = useMemo(
+    () => (defaults ? { ...defaults, ...view.profile } : view.profile),
+    [defaults, view.profile],
+  )
+  return { ...view, profile, api: api ?? harnessAPI() }
 }
 // Whether the harness's session offers a feature. Features are off until the
 // session loads, and while the harness cannot reach the service behind them.

@@ -2,8 +2,8 @@ import { Card } from '@/components/ui/card'
 import { TfCopy } from '@tinfoilsh/tinfoil-icons'
 import { Send } from 'lucide-react'
 import { useCallback, useState } from 'react'
-import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
+import type { RenderMessageComposeArgs as Props } from '../widget-args'
 
 const COPIED_FEEDBACK_DURATION_MS = 2000
 
@@ -30,21 +30,7 @@ function useCopyToClipboard(): {
   return { copied, copy }
 }
 
-const variantSchema = z.object({
-  label: z.string(),
-  subject: z.string().optional(),
-  body: z.string(),
-})
-
-const schema = z.object({
-  channel: z.enum(['email', 'message']).optional(),
-  to: z.string().optional(),
-  title: z.string().optional(),
-  variants: z.array(variantSchema).min(1),
-})
-
-type Variant = z.infer<typeof variantSchema>
-type Props = z.infer<typeof schema>
+type Variant = Props['variants'][number]
 
 function buildMailto(to: string | undefined, v: Variant): string {
   // RFC 6068: the mailto query string must use percent-encoding (`%20` for
@@ -235,6 +221,5 @@ function MessageComposeCard(props: Props) {
 
 export const widget = defineGenUIWidget({
   name: 'render_message_compose',
-  schema,
   render: (args) => <MessageComposeCard {...args} />,
 })

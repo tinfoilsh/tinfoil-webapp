@@ -1,10 +1,7 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import type { ChatSidebar } from '@/components/chat/chat-sidebar'
 import { authTokenManager } from '@/services/auth'
-import {
-  localThreadStore,
-  type LocalThread,
-} from '@/services/harness/local-threads'
+import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
 import type { ThreadSummary } from '@/services/harness/types'
 import { resetSafeguards } from '@/services/safeguards'
@@ -12,8 +9,11 @@ import { act, render, waitFor } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
-import { stubSafeguardFlags } from './chat-interface-fixture'
+import {
+  resetChatStoresAroundEachTest,
+  storedThread,
+} from '../../services/harness/thread-fixture'
+import { refuseFetch } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
 type SidebarProps = ComponentProps<typeof ChatSidebar>
@@ -62,14 +62,11 @@ vi.mock('@/hooks/use-toast', () => ({
 }))
 
 const CHAT_ID = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
-const deviceChat: LocalThread = {
-  id: CHAT_ID,
+const deviceChat = storedThread(CHAT_ID, {
   title: 'Garden plans',
   titleState: 'manual',
   createdAt: '2026-04-01T09:00:00Z',
   updatedAt: '2026-04-01T09:05:00Z',
-  model: 'test-model',
-  codeExecutionAccessToken: 'c'.repeat(64),
   messages: [
     {
       id: 'u1',
@@ -79,15 +76,16 @@ const deviceChat: LocalThread = {
       attachments: [
         {
           id: 'photo',
-          type: 'image',
+          kind: 'image',
           fileName: 'bed.png',
           mimeType: 'image/png',
+          size: 5,
           base64: 'aW1hZ2U=',
         },
       ],
     },
   ],
-}
+})
 const imported: ThreadSummary = {
   id: CHAT_ID,
   title: 'Garden plans',
@@ -134,7 +132,7 @@ beforeEach(async () => {
   page.toast.mockReset()
   chatPage.premium = false
   authTokenManager.initialize(async () => 'clerk-jwt')
-  stubSafeguardFlags()
+  refuseFetch()
   await localThreadStore('device').update(CHAT_ID, () => deviceChat)
 })
 
@@ -334,13 +332,7 @@ describe('moving chats from the chat page', () => {
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/transcript')
         return {
-          thread: {
-            ...deviceChat,
-            id: undefined,
-            updatedAt: '2026-04-02T09:00:00Z',
-            presetId: null,
-            pinned: false,
-          },
+          thread: { ...deviceChat, updatedAt: '2026-04-02T09:00:00Z' },
         }
       if (path === '/v1/threads/delete') {
         cloud = []

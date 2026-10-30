@@ -8,6 +8,7 @@ import {
 } from '@/components/chat/renderers/registry'
 import type { MessageRenderer } from '@/components/chat/renderers/types'
 import type { BaseModel } from '@/config/models'
+import { speechPlayer } from '@/services/speech/player'
 import {
   act,
   cleanup,
@@ -18,42 +19,31 @@ import {
 } from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  controlledSpeech,
-  FakeAudioContext,
-} from '../../services/speech/fixtures'
+import { client, signIn } from '../../harness-fixture'
+import { FakeAudioContext } from '../../services/speech/fixtures'
 
-const audioMocks = vi.hoisted(() => ({ stream: vi.fn(), context: vi.fn() }))
-vi.mock('@/services/speech/player', async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import('@/services/speech/player')>()
-  return {
-    ...original,
-    speechPlayer: new original.SpeechPlayer(
-      audioMocks.stream,
-      audioMocks.context,
-    ),
-  }
-})
-let generation: ReturnType<typeof controlledSpeech>
-let audio: FakeAudioContext
+const audio = vi.hoisted(() => ({ context: vi.fn() }))
+vi.mock('@/utils/audio-context', () => ({
+  getAudioContextClass: () => audio.context,
+}))
 
 const frames = new Map<number, FrameRequestCallback>()
 let nextFrame = 0
 
 const model: BaseModel = {
-  modelName: 'gpt-oss-120b',
-  name: 'GPT-OSS 120B',
-  nameShort: 'GPT-OSS',
-  image: '',
+  id: 'gpt-oss-120b',
+  label: 'GPT-OSS 120B',
+  shortLabel: 'GPT-OSS',
+  icon: '',
   description: '',
-  type: 'chat',
-  chat: true,
+  badges: [],
+  reasoning: null,
+  deprecated: false,
 }
 
 const customRenderer: MessageRenderer = {
   id: 'selection-test',
-  canRender: (_message, candidate) => candidate.modelName === model.modelName,
+  canRender: (_message, candidate) => candidate.id === model.id,
   render: ({ message, messageIndex }) => (
     <>
       <section>
@@ -94,7 +84,7 @@ function Harness({
           chatId="selection-test"
           isDarkMode={false}
           models={[model]}
-          selectedModel={model.modelName}
+          selectedModel={model.id}
           autoIntelligence="high"
           setAutoIntelligence={() => {}}
         />
@@ -136,10 +126,6 @@ beforeEach(() => {
   resetRendererRegistry()
   getRendererRegistry().setDefaultMessageRenderer(DefaultMessageRenderer)
   getRendererRegistry().registerMessageRenderer(customRenderer)
-  generation = controlledSpeech()
-  audio = new FakeAudioContext()
-  audioMocks.stream.mockReset().mockImplementation(generation.stream)
-  audioMocks.context.mockReset().mockReturnValue(audio)
   frames.clear()
   nextFrame = 0
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
@@ -152,6 +138,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  speechPlayer.stop()
   cleanup()
   resetRendererRegistry()
   window.getSelection()?.removeAllRanges()
@@ -212,36 +199,38 @@ describe('QuoteSelectionPopover', () => {
     expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
   })
 
-  it('reads only the highlighted portion and keeps a stop control in the menu', async () => {
-    render(<Harness enabled />)
-    selectText('Selected text', 9)
+  it('asks the harness to read only the highlighted text, without a key', async () => {
+    signIn({ cloud: true })
+    const context = new FakeAudioContext()
+    audio.context.mockImplementation(function () {
+      return context
+    })
+    // Two samples at half scale.
+    client.stream.mockResolvedValue(
+      new Response(new Uint8Array([0, 64, 0, 192]), {
+        headers: { 'Content-Type': 'audio/pcm' },
+      }),
+    )
+    render(<Harness enabled text="Selected **text**" />)
+    selectText('Selected **text**', 9)
     flushFrames()
+
     const button = screen.getByRole('button', { name: 'Read' })
-    expect(button).toHaveTextContent('Read')
     fireEvent.mouseDown(button)
     fireEvent.click(button)
-    await waitFor(() => expect(generation.requests).toHaveLength(1))
-    expect(generation.requests[0].text).toBe('text')
-    expect(window.getSelection()?.toString()).toBe('text')
-    expect(screen.getByRole('toolbar')).toBeInTheDocument()
-    await act(async () => {
-      generation.requests[0].push(2)
-      generation.requests[0].finish()
-    })
-    const stop = screen.getByRole('button', { name: 'Stop reading aloud' })
-    expect(stop).toHaveClass('animate-pulse', 'text-red-600')
-    fireEvent.click(stop)
-    expect(audio.close).toHaveBeenCalledOnce()
-  })
 
-  it('does not reinterpret selected text as Markdown', async () => {
-    const text = '**literal** [1](source)'
-    render(<Harness enabled text={text} />)
-    selectText(text)
-    flushFrames()
-    fireEvent.click(screen.getByRole('button', { name: 'Read' }))
-    await waitFor(() => expect(generation.requests).toHaveLength(1))
-    expect(generation.requests[0].text).toBe(text)
+    await waitFor(() => expect(context.scheduled).toHaveLength(1))
+    expect(Array.from(context.scheduled[0].buffer!.getChannelData())).toEqual([
+      0.5, -0.5,
+    ])
+    expect(client.stream).toHaveBeenCalledExactlyOnceWith(
+      '/v1/speech',
+      { text: '**text**' },
+      expect.any(AbortSignal),
+    )
+    expect(window.getSelection()?.toString()).toBe('**text**')
+    fireEvent.click(screen.getByRole('button', { name: 'Stop reading aloud' }))
+    expect(context.close).toHaveBeenCalledOnce()
   })
 
   it('keeps the wider toolbar inside the viewport near either edge', () => {
@@ -381,13 +370,12 @@ describe.each(['custom', 'default'])(
               ],
               quote: null,
               loadingState: 'idle',
-              isThinking: false,
               isWaitingForResponse: false,
               isStreaming: false,
               retryInfo: null,
             }}
             models={[model]}
-            selectedModel={model.modelName}
+            selectedModel={model.id}
             isDarkMode={false}
           />,
         )

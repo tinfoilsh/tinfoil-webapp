@@ -1,17 +1,25 @@
 import { DefaultMessageRenderer } from '@/components/chat/renderers/default/DefaultMessageRenderer'
+import { SpeechProvider } from '@/components/chat/speech-context'
 import type { Message, TimelineBlock } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import type {
+  Annotation,
+  ToolDisplay,
+  Message as WireMessage,
+} from '@/services/harness/types'
+import { messageView } from '@/services/harness/view-model'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 
 const model = {
-  modelName: 'current-model',
-  name: 'Current Model',
-  nameShort: 'Current',
-  image: '',
+  id: 'current-model',
+  label: 'Current Model',
+  shortLabel: 'Current',
+  icon: '',
   description: '',
-  type: 'chat',
-  chat: true,
+  badges: [],
+  reasoning: null,
+  deprecated: false,
 } satisfies BaseModel
 
 const Renderer = DefaultMessageRenderer.render
@@ -192,16 +200,6 @@ describe('DefaultMessageRenderer message actions', () => {
             base64: 'aW1hZ2U=',
           },
         ],
-      },
-    },
-    {
-      name: 'legacy document',
-      attachmentFields: { documents: [{ name: 'notes.txt' }] },
-    },
-    {
-      name: 'legacy image',
-      attachmentFields: {
-        imageData: [{ base64: 'aW1hZ2U=', mimeType: 'image/png' }],
       },
     },
   ])('$name-only messages', ({ attachmentFields }) => {
@@ -506,37 +504,6 @@ describe('DefaultMessageRenderer message actions', () => {
     fireEvent.keyDown(document, { key: 'Tab' })
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
-
-  it('does not offer edit or continue on rate limit errors', () => {
-    render(
-      <Renderer
-        message={{
-          role: 'assistant',
-          content: 'Error: limit',
-          isError: true,
-          isRateLimitError: true,
-          timestamp: new Date('2026-08-07T00:00:01.000Z'),
-        }}
-        messageIndex={1}
-        model={model}
-        isDarkMode={false}
-        onEditAssistantMessage={vi.fn()}
-        onContinueAssistantMessage={vi.fn()}
-        onDeleteMessage={vi.fn()}
-      />,
-    )
-
-    openMoreActions()
-    expect(
-      screen.queryByRole('menuitem', { name: 'Edit response' }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('menuitem', { name: 'Continue response' }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.getByRole('menuitem', { name: 'Delete message' }),
-    ).toBeInTheDocument()
-  })
 })
 
 describe('DefaultMessageRenderer edit keyboard shortcuts', () => {
@@ -645,8 +612,25 @@ describe('DefaultMessageRenderer edit keyboard shortcuts', () => {
 })
 
 describe('DefaultMessageRenderer read aloud', () => {
+  // A message of a chat the harness can read aloud.
+  const renderSpoken = (
+    message: Message,
+    props: { isLastMessage?: boolean; isStreaming?: boolean } = {},
+  ) =>
+    render(
+      <SpeechProvider speak={vi.fn()}>
+        <Renderer
+          message={{ id: 'reply-1', ...message }}
+          messageIndex={0}
+          model={model}
+          isDarkMode={false}
+          {...props}
+        />
+      </SpeechProvider>,
+    )
+
   it('offers read aloud only on completed assistant responses', () => {
-    renderMessage({
+    renderSpoken({
       role: 'assistant',
       content: 'Hello.',
       timestamp: new Date(),
@@ -662,7 +646,7 @@ describe('DefaultMessageRenderer read aloud', () => {
     { role: 'assistant' as const, content: 'Error.', isError: true },
     { role: 'assistant' as const, content: 'Thinking.', isThinking: true },
   ])('does not offer read aloud for $role / $content', (message) => {
-    renderMessage({ ...message, timestamp: new Date() })
+    renderSpoken({ ...message, timestamp: new Date() })
     expect(
       screen.queryByRole('button', { name: 'Read aloud' }),
     ).not.toBeInTheDocument()
@@ -671,19 +655,9 @@ describe('DefaultMessageRenderer read aloud', () => {
   it.each([true, false])(
     'does not offer speech while a response is streaming (last=%s)',
     (isLastMessage) => {
-      render(
-        <Renderer
-          message={{
-            role: 'assistant',
-            content: 'Partial.',
-            timestamp: new Date(),
-          }}
-          messageIndex={0}
-          model={model}
-          isDarkMode={false}
-          isLastMessage={isLastMessage}
-          isStreaming
-        />,
+      renderSpoken(
+        { role: 'assistant', content: 'Partial.', timestamp: new Date() },
+        { isLastMessage, isStreaming: true },
       )
       expect(
         screen.queryByRole('button', { name: 'Read aloud' }),
@@ -753,66 +727,143 @@ describe('DefaultMessageRenderer work traces', () => {
     expect(screen.queryByText(/Worked/)).not.toBeInTheDocument()
   })
 
-  it.each([
-    { isStreaming: true, label: 'Searching the web...' },
-    { isStreaming: false, label: 'Search failed for "tinfoil"' },
-  ])(
-    'shows a search without a result while streaming=$isStreaming as $label',
-    ({ isStreaming, label }) => {
-      const { container } = render(
-        <Renderer
-          message={{
-            role: 'assistant',
-            content: '',
-            timestamp: new Date('2026-08-07T00:00:01.000Z'),
-            timeline: [
-              {
-                type: 'tool_call',
-                id: 'call-1',
-                toolCallId: 'call-1',
-                name: 'web_search',
-                arguments: '{"query":"tinfoil"}',
-              },
-            ],
-          }}
-          messageIndex={0}
-          model={model}
-          isDarkMode={false}
-          isLastMessage
-          isStreaming={isStreaming}
-        />,
-      )
-      expect(container).toHaveTextContent(label)
-      expect(container).not.toHaveTextContent('Searched the web')
-    },
-  )
-
-  it('shows a search the model called with null arguments as failed', () => {
-    const { container } = render(
+  // A reply that searched the web, as the harness streams and stores it.
+  const searchReply = (
+    display?: ToolDisplay,
+    annotations?: Annotation[],
+  ): WireMessage => ({
+    id: 'a1',
+    role: 'assistant',
+    createdAt: '2026-08-07T00:00:01.000Z',
+    timeline: [
+      {
+        id: 'call-1',
+        type: 'tool_call',
+        toolCallId: 'call-1',
+        name: 'web_search',
+        arguments: '{"query":"ignored"}',
+        ...(display ? { display } : {}),
+      },
+      {
+        id: 'c',
+        type: 'content',
+        content: 'See [Tinfoil](https://tinfoil.sh).',
+      },
+    ],
+    ...(annotations ? { annotations } : {}),
+  })
+  const renderReply = (message: WireMessage, isStreaming: boolean) =>
+    render(
       <Renderer
-        message={{
-          role: 'assistant',
-          content: '',
-          timestamp: new Date('2026-08-07T00:00:01.000Z'),
-          timeline: [
-            {
-              type: 'tool_call',
-              id: 'call-1',
-              toolCallId: 'call-1',
-              name: 'web_search',
-              arguments: 'null',
-              result: { error: 'A search query is required' },
-            },
-          ],
-        }}
+        message={messageView(message, isStreaming)}
         messageIndex={0}
         model={model}
         isDarkMode={false}
         isLastMessage
+        isStreaming={isStreaming}
       />,
     )
-    expect(container).toHaveTextContent('Search failed')
-    expect(container).not.toHaveTextContent('Search failed for')
+  const source = { url: 'https://tinfoil.sh', title: 'Tinfoil' }
+
+  it.each<{
+    display?: ToolDisplay
+    isStreaming: boolean
+    label: string
+  }>([
+    {
+      display: { query: 'tinfoil', status: 'completed', sources: [source] },
+      isStreaming: false,
+      label: 'Searched the web for "tinfoil"',
+    },
+    {
+      display: { query: 'tinfoil', status: 'running', sources: [] },
+      isStreaming: true,
+      label: 'Searching the web...',
+    },
+    {
+      display: { query: 'tinfoil', status: 'running', sources: [] },
+      isStreaming: false,
+      label: 'Search failed for "tinfoil"',
+    },
+    {
+      display: { query: 'tinfoil', status: 'failed', sources: [] },
+      isStreaming: false,
+      label: 'Search failed for "tinfoil"',
+    },
+    { isStreaming: true, label: 'Searching the web...' },
+    { isStreaming: false, label: 'Search failed' },
+  ])(
+    'shows a search as the harness reports it: $label',
+    ({ display, isStreaming, label }) => {
+      const { container } = renderReply(searchReply(display), isStreaming)
+      expect(container).toHaveTextContent(label)
+      expect(container).not.toHaveTextContent('ignored')
+    },
+  )
+
+  it('offers to retry a widget whose stored arguments no longer match it', async () => {
+    const onRetryToolCall = vi.fn(async () => true)
+    const widgetReply = (invalidArguments?: boolean): WireMessage => ({
+      id: 'a1',
+      role: 'assistant',
+      createdAt: '2026-08-07T00:00:01.000Z',
+      timeline: [
+        {
+          id: 'call-1',
+          type: 'tool_call',
+          toolCallId: 'call-1',
+          name: 'render_message_compose',
+          arguments: JSON.stringify({
+            channel: 'message',
+            title: 'Reply draft',
+            variants: [{ label: 'Concise', body: 'Thanks.' }],
+          }),
+          complete: true,
+          ...(invalidArguments ? { invalidArguments } : {}),
+        },
+      ],
+    })
+    const view = (message: WireMessage) => (
+      <Renderer
+        message={messageView(message)}
+        messageIndex={1}
+        model={model}
+        isDarkMode={false}
+        isLastMessage
+        onRetryToolCall={onRetryToolCall}
+      />
+    )
+    const { rerender } = render(view(widgetReply()))
+    expect(screen.getByText('Reply draft')).toBeInTheDocument()
+
+    rerender(view(widgetReply(true)))
+
+    expect(screen.queryByText('Reply draft')).not.toBeInTheDocument()
+    expect(
+      screen.getByText("Couldn't display message compose"),
+    ).toBeInTheDocument()
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Retry widget' })),
+    )
+    expect(onRetryToolCall).toHaveBeenCalledExactlyOnceWith(1, 'call-1')
+  })
+
+  it('shows a link the reply cites as a citation', () => {
+    renderReply(
+      searchReply(
+        { query: 'tinfoil', status: 'completed', sources: [source] },
+        [{ type: 'url_citation', url_citation: source }],
+      ),
+      false,
+    )
+
+    expect(screen.getByRole('link', { name: 'tinfoil' })).toHaveAttribute(
+      'href',
+      'https://tinfoil.sh/',
+    )
+    expect(
+      screen.queryByRole('link', { name: 'Tinfoil' }),
+    ).not.toBeInTheDocument()
   })
 
   it('does not treat an earlier run as active when answer text follows it', () => {

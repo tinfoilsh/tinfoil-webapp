@@ -1,7 +1,5 @@
 export const CONSTANTS = {
-  LOADING_TIMEOUT: 500,
   MOBILE_BREAKPOINT: 768,
-  INPUT_MIN_HEIGHT: '28px',
   // Welcome-screen composer: one comfortable line of text before it grows.
   WELCOME_INPUT_MIN_HEIGHT: '36px',
   // Maximum height of the chat input textarea before it scrolls internally
@@ -16,19 +14,6 @@ export const CONSTANTS = {
   CHAT_INPUT_FADE_HEIGHT_PX: 80,
   CHAT_INPUT_FADE_SOLID_AT_PX: 72,
   SINGLE_SIDEBAR_BREAKPOINT: 1024, // Below this width, only one sidebar can be open at a time
-  MAX_MESSAGES: 100,
-  MAX_MESSAGE_LENGTH: 4000,
-  MAX_DOCUMENT_SIZE_MB: 32, // Display value for error messages
-  MAX_DOCUMENT_SIZE_BYTES: 33 * 1024 * 1024, // Actual limit: 33MB to tolerate ~32.5MB files
-  // Generous safety cap for plain-text files, which are validated against the
-  // model's context window by token estimate rather than by byte size
-  MAX_TEXT_DOCUMENT_SIZE_MB: 50,
-  MAX_TEXT_DOCUMENT_SIZE_BYTES: 50 * 1024 * 1024,
-  MAX_IMAGE_DIMENSION_PX: 1536,
-  // Voice recording timeout in milliseconds (10 minutes)
-  RECORDING_TIMEOUT_MS: 600000,
-  // Default audio model for voice transcription
-  DEFAULT_AUDIO_MODEL: 'voxtral-small-24b',
   // Live recording waveform: a new amplitude bar is appended at this rate
   // and the strip scrolls left by one bar each time.
   RECORDING_WAVEFORM_SAMPLE_INTERVAL_MS: 50,
@@ -50,8 +35,6 @@ export const CONSTANTS = {
   OVERFLOW_MENU_VIEWPORT_MARGIN_PX: 8,
   // Maximum width for table columns in pixels
   TABLE_COLUMN_MAX_WIDTH_PX: 300,
-  // State update delay for async operations
-  ASYNC_STATE_DELAY_MS: 50,
   // Sidebar widths
   CHAT_SIDEBAR_WIDTH_PX: 300,
   CHAT_SIDEBAR_COLLAPSED_WIDTH_PX: 48,
@@ -62,11 +45,6 @@ export const CONSTANTS = {
   // How long the dimmed "forking" overlay stays up after the fork lands
   // so a fast fork still reads as an action instead of a flicker.
   FORK_OVERLAY_MIN_VISIBLE_MS: 600,
-  SIDEBAR_SYNC_MIN_SPINNER_MS: 1000,
-  SIDEBAR_SYNC_SUCCESS_FEEDBACK_MS: 1500,
-  SIDEBAR_SYNC_FEEDBACK_EXIT_S: 0.14,
-  SIDEBAR_SYNC_FEEDBACK_ENTER_S: 0.22,
-  SIDEBAR_SYNC_FEEDBACK_ENTER_DELAY_S: 0.06,
   // Grace period before a hover-opened account menu closes once the pointer
   // leaves it, so brushing past the gap between trigger and panel doesn't
   // dismiss it.
@@ -97,18 +75,6 @@ export const CONSTANTS = {
   ARTIFACT_SIDEBAR_MIN_WIDTH_PX: 360,
   ARTIFACT_SIDEBAR_MAX_WIDTH_PX: 840,
   ARTIFACT_SIDEBAR_RESIZE_STEP_PX: 40,
-  // Long text paste threshold (characters) - texts longer than this will be converted to .txt file
-  LONG_PASTE_THRESHOLD: 3000,
-  // Title generation settings
-  TITLE_GENERATION_WORD_THRESHOLD: 100, // Words needed to trigger early title generation during streaming
-  // Document processing timeout in milliseconds (10 minutes), counted from
-  // when the file's conversion starts rather than while it waits its turn
-  DOCUMENT_PROCESSING_TIMEOUT_MS: 600000,
-  // Retry settings
-  VERIFICATION_MAX_RETRIES: 5,
-  VERIFICATION_RETRY_DELAY_MS: 2000, // Base delay between retries (exponential backoff)
-  MESSAGE_SEND_MAX_RETRIES: 6,
-  MESSAGE_SEND_RETRY_DELAY_MS: 1000, // Base delay between retries (exponential backoff)
   // Placeholder for the input before a conversation has started
   INPUT_PLACEHOLDER: 'How can I help you today?',
   // Placeholder once a conversation has started
@@ -118,8 +84,4 @@ export const CONSTANTS = {
   // Row bounds for the in-place message edit textarea
   EDIT_TEXTAREA_MIN_ROWS: 3,
   EDIT_TEXTAREA_MAX_ROWS: 10,
-  // Request-only instruction appended after a partial assistant response so
-  // the model resumes it. Never stored or rendered.
-  CONTINUE_RESPONSE_INSTRUCTION:
-    'Continue your previous response exactly where it left off. Do not repeat, summarize, or restate anything you already wrote, and do not add any preamble.',
 } as const

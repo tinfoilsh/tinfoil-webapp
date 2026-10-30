@@ -15,7 +15,6 @@ import {
   isAnyURLFetching,
   URLFetchProcess,
 } from './URLFetchProcess'
-import { useThoughtSummary } from './use-thought-summary'
 import { WebSearchProcess } from './WebSearchProcess'
 
 export type WorkBlock =
@@ -119,12 +118,7 @@ export const WorkProcess = memo(function WorkProcess({
     [blocks, isActive],
   )
   const activeThinking = activity?.kind === 'thinking' ? activity.block : null
-  const summary = useThoughtSummary(
-    activeThinking?.content ?? '',
-    activeThinking !== null,
-    true,
-    activeThinking?.id,
-  )
+  const summary = activeThinking?.summary ?? ''
 
   const duration = useMemo(
     () => (isActive ? undefined : getWorkDurationSeconds(blocks)),

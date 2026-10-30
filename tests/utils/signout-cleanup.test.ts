@@ -1,12 +1,10 @@
 import { resetRendererRegistry } from '@/components/chat/renderers'
-import { PINNED_CHAT_IDS_CHANGED_EVENT } from '@/constants/settings-events'
 import {
   AUTH_ACCOUNT_RESET_FAILED,
   AUTH_ACCOUNT_RESET_SIGNAL,
   AUTH_ACTIVE_USER_ID,
   SETTINGS_HAS_SEEN_ONBOARDING,
   USER_ENCRYPTION_KEY,
-  USER_PREFS_PINNED_CHAT_IDS,
 } from '@/constants/storage-keys'
 import { authTokenManager } from '@/services/auth'
 import { encryptionService } from '@/services/encryption/encryption-service'
@@ -28,11 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { controlledSpeech, FakeAudioContext } from '../services/speech/fixtures'
 
 const speechMocks = vi.hoisted(() => ({
-  stream: vi.fn(),
   AudioContext: vi.fn(),
-}))
-vi.mock('@/services/speech/stream', () => ({
-  streamSpeech: speechMocks.stream,
 }))
 vi.mock('@/utils/audio-context', () => ({
   getAudioContextClass: () => speechMocks.AudioContext,
@@ -84,26 +78,6 @@ function holdStorageReset() {
   return { reset, finish, fail }
 }
 
-async function withPinnedChatChanges(
-  action: () => Promise<void>,
-  assertion: (handlePinnedChatsChanged: ReturnType<typeof vi.fn>) => void,
-): Promise<void> {
-  const handlePinnedChatsChanged = vi.fn()
-  window.addEventListener(
-    PINNED_CHAT_IDS_CHANGED_EVENT,
-    handlePinnedChatsChanged,
-  )
-  try {
-    await action()
-    assertion(handlePinnedChatsChanged)
-  } finally {
-    window.removeEventListener(
-      PINNED_CHAT_IDS_CHANGED_EVENT,
-      handlePinnedChatsChanged,
-    )
-  }
-}
-
 beforeEach(() => {
   vi.mocked(resetRendererRegistry).mockReset()
   vi.stubGlobal('indexedDB', new IDBFactory())
@@ -149,7 +123,7 @@ describe('performSignoutCleanup', () => {
     expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBeNull()
     expect(() => encryptionService.getKeyBytesOrThrow()).toThrow()
     expect(resetRendererRegistry).toHaveBeenCalledOnce()
-    expect(deletedChatsTracker.getDeletedIds()).toEqual([])
+    expect(deletedChatsTracker.isDeleted('deleted-1')).toBe(false)
     expect(await storedChatIds()).toEqual([])
   })
 
@@ -187,16 +161,6 @@ describe('performSignoutCleanup', () => {
     expect(localStorage.getItem('user-specific-data')).toBeNull()
   })
 
-  it('clears pinned chats from storage and active UI state', async () => {
-    localStorage.setItem(USER_PREFS_PINNED_CHAT_IDS, '["chat-a"]')
-
-    await withPinnedChatChanges(performSignoutCleanup, (handle) => {
-      expect(localStorage.getItem(USER_PREFS_PINNED_CHAT_IDS)).toBeNull()
-      expect(handle).toHaveBeenCalledTimes(1)
-      expect(handle.mock.calls[0][0].detail).toEqual({ pinnedChatIds: [] })
-    })
-  })
-
   it('keeps the active-user marker until browser data is cleared', async () => {
     const storage = holdStorageReset()
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
@@ -218,15 +182,10 @@ describe('performSignoutCleanup', () => {
     const failure = new Error('Failed to reset IndexedDB for account change')
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
 
-    await withPinnedChatChanges(
-      async () => {
-        const cleanup = performSignoutCleanup()
-        await vi.waitFor(() => expect(storage.reset).toHaveBeenCalledOnce())
-        storage.fail(failure)
-        await expect(cleanup).rejects.toBe(failure)
-      },
-      (handle) => expect(handle).toHaveBeenCalledTimes(1),
-    )
+    const cleanup = performSignoutCleanup()
+    await vi.waitFor(() => expect(storage.reset).toHaveBeenCalledOnce())
+    storage.fail(failure)
+    await expect(cleanup).rejects.toBe(failure)
 
     expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('user_123')
   })
@@ -248,8 +207,7 @@ describe('speech during cleanup', () => {
       speechMocks.AudioContext.mockImplementation(function () {
         return audio
       })
-      speechMocks.stream.mockImplementation(generation.stream)
-      speechPlayer.read(Symbol('private response'), 'Private response.')
+      speechPlayer.read(Symbol('private response'), generation.stream)
       await vi.waitFor(() => expect(generation.requests).toHaveLength(1))
       generation.requests[0].push(SPEECH.START_BUFFER_SECONDS)
       await vi.waitFor(() =>

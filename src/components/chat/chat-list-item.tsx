@@ -10,7 +10,6 @@ import {
   TfFlagFilled,
   TfFloppyDisk,
   TfFolder,
-  TfLockLocked,
   TfThumbtack,
   TfTrash,
   TfVerticalEllipsis,
@@ -26,15 +25,14 @@ import { getBlankQueueId } from './message-queue-identity'
 import { TypingAnimation } from './typing-animation'
 
 export interface ChatItemData {
-  activeRun?: { runId: string; lastEventId: number } | null
+  activeRun?: { runId: string } | null
+  flagged?: boolean
   id: string
   title: string
   isBlankChat?: boolean
   messageCount?: number
   messages?: { length: number }
   isMetadataOnly?: boolean
-  decryptionFailed?: boolean
-  dataCorrupted?: boolean
   isLocalOnly?: boolean
   isTemporary?: boolean
   projectId?: string
@@ -78,7 +76,6 @@ interface ChatListItemProps {
   editingTitle: string
   isDarkMode: boolean
   pixelateSidebarChatTitles: boolean
-  showEncryptionStatus?: boolean
   /**
    * True while this chat's assistant response is actively streaming.
    * Drives the live "streaming" indicator.
@@ -167,7 +164,6 @@ export function ChatListItem({
   editingTitle,
   isDarkMode,
   pixelateSidebarChatTitles,
-  showEncryptionStatus = false,
   isStreaming = false,
   isFlagged = false,
   enableTitleAnimation = false,
@@ -214,8 +210,8 @@ export function ChatListItem({
   const messageCount = chat.isMetadataOnly
     ? (chat.messageCount ?? 0)
     : (chat.messages?.length ?? chat.messageCount ?? 0)
-  const isNewChat = messageCount === 0 && !chat.decryptionFailed
-  const hasRealTitle = !chat.isBlankChat && !chat.decryptionFailed
+  const isNewChat = messageCount === 0
+  const hasRealTitle = !chat.isBlankChat
   const shouldRedactTitle =
     pixelateSidebarChatTitles && hasRealTitle && !isNewChat && !isSelected
 
@@ -345,15 +341,13 @@ export function ChatListItem({
         'group flex w-full items-center justify-between rounded-lg border border-transparent px-3 py-2 text-left text-sm transition-colors hover:border-border-subtle',
         isDraggable && 'cursor-grab',
         isDragging && 'opacity-50',
-        chat.decryptionFailed
-          ? 'text-content-muted hover:bg-surface-chat'
-          : isSelected
-            ? isDarkMode
-              ? 'bg-surface-chat text-white'
-              : 'bg-gray-200 text-content-primary'
-            : isDarkMode
-              ? 'text-content-secondary hover:bg-surface-chat'
-              : 'text-content-secondary hover:bg-surface-sidebar',
+        isSelected
+          ? isDarkMode
+            ? 'bg-surface-chat text-white'
+            : 'bg-gray-200 text-content-primary'
+          : isDarkMode
+            ? 'text-content-secondary hover:bg-surface-chat'
+            : 'text-content-secondary hover:bg-surface-sidebar',
       )}
     >
       {isEditing ? (
@@ -402,25 +396,11 @@ export function ChatListItem({
         >
           <>
             <span className="flex items-center gap-1.5">
-              {showEncryptionStatus && chat.decryptionFailed && (
-                <TfLockLocked
-                  className="h-3.5 w-3.5 flex-shrink-0 !text-orange-500"
-                  title="Encrypted chat"
-                  aria-hidden="true"
-                />
-              )}
               <RedactedText
                 active={shouldRedactTitle}
-                className={cn(
-                  'truncate font-aeonik-fono text-sm font-medium',
-                  chat.decryptionFailed
-                    ? 'text-orange-500'
-                    : 'text-content-primary',
-                )}
+                className="truncate font-aeonik-fono text-sm font-medium text-content-primary"
               >
-                {chat.decryptionFailed ? (
-                  'Encrypted'
-                ) : isAnimating ? (
+                {isAnimating ? (
                   <TypingAnimation
                     fromText={animationFromTitle}
                     toText={animationToTitle}
@@ -470,13 +450,6 @@ export function ChatListItem({
                 />
               )}
             </span>
-            {chat.decryptionFailed && (
-              <span className="mt-1 block text-xs text-red-500">
-                {chat.dataCorrupted
-                  ? 'Failed to decrypt: corrupted data'
-                  : 'Failed to decrypt: wrong key'}
-              </span>
-            )}
           </>
         </ChatSelectionControl>
       )}
@@ -600,27 +573,25 @@ export function ChatListItem({
                     {mobileMenuView === 'main' ? (
                       <>
                         {/* Rename */}
-                        {!chat.decryptionFailed && (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            className={cn(
-                              'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
-                              isDarkMode
-                                ? 'text-content-secondary hover:bg-surface-sidebar'
-                                : 'text-content-secondary hover:bg-gray-100',
-                            )}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setIsMobileMenuOpen(false)
-                              setMobileMenuView('main')
-                              onStartEdit()
-                            }}
-                          >
-                            <TfWriting className="h-4 w-4" aria-hidden="true" />
-                            Rename
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={cn(
+                            'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
+                            isDarkMode
+                              ? 'text-content-secondary hover:bg-surface-sidebar'
+                              : 'text-content-secondary hover:bg-gray-100',
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setIsMobileMenuOpen(false)
+                            setMobileMenuView('main')
+                            onStartEdit()
+                          }}
+                        >
+                          <TfWriting className="h-4 w-4" aria-hidden="true" />
+                          Rename
+                        </button>
 
                         {canTogglePin && onTogglePin && (
                           <button
@@ -652,7 +623,6 @@ export function ChatListItem({
                         {/* Move to project - opens submenu */}
                         {showMoveToProject &&
                           onMoveToProject &&
-                          !chat.decryptionFailed &&
                           projects.length > 0 && (
                             <button
                               type="button"
@@ -694,7 +664,7 @@ export function ChatListItem({
                           )}
 
                         {/* Move out of project */}
-                        {onRemoveFromProject && !chat.decryptionFailed && (
+                        {onRemoveFromProject && (
                           <button
                             type="button"
                             role="menuitem"
@@ -717,57 +687,53 @@ export function ChatListItem({
                         )}
 
                         {/* Move to cloud (if local) */}
-                        {chat.isLocalOnly &&
-                          onConvertToCloud &&
-                          !chat.decryptionFailed && (
-                            <button
-                              type="button"
-                              role="menuitem"
-                              className={cn(
-                                'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
-                                isDarkMode
-                                  ? 'text-content-secondary hover:bg-surface-sidebar'
-                                  : 'text-content-secondary hover:bg-gray-100',
-                              )}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setIsMobileMenuOpen(false)
-                                setMobileMenuView('main')
-                                onConvertToCloud()
-                              }}
-                            >
-                              <TfCloud className="h-4 w-4" aria-hidden="true" />
-                              Move to cloud
-                            </button>
-                          )}
+                        {chat.isLocalOnly && onConvertToCloud && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className={cn(
+                              'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
+                              isDarkMode
+                                ? 'text-content-secondary hover:bg-surface-sidebar'
+                                : 'text-content-secondary hover:bg-gray-100',
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setIsMobileMenuOpen(false)
+                              setMobileMenuView('main')
+                              onConvertToCloud()
+                            }}
+                          >
+                            <TfCloud className="h-4 w-4" aria-hidden="true" />
+                            Move to cloud
+                          </button>
+                        )}
 
                         {/* Move to local (if cloud) */}
-                        {!chat.isLocalOnly &&
-                          onConvertToLocal &&
-                          !chat.decryptionFailed && (
-                            <button
-                              type="button"
-                              role="menuitem"
-                              className={cn(
-                                'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
-                                isDarkMode
-                                  ? 'text-content-secondary hover:bg-surface-sidebar'
-                                  : 'text-content-secondary hover:bg-gray-100',
-                              )}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setIsMobileMenuOpen(false)
-                                setMobileMenuView('main')
-                                onConvertToLocal()
-                              }}
-                            >
-                              <TfFloppyDisk
-                                className="h-4 w-4"
-                                aria-hidden="true"
-                              />
-                              Move to local
-                            </button>
-                          )}
+                        {!chat.isLocalOnly && onConvertToLocal && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className={cn(
+                              'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
+                              isDarkMode
+                                ? 'text-content-secondary hover:bg-surface-sidebar'
+                                : 'text-content-secondary hover:bg-gray-100',
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setIsMobileMenuOpen(false)
+                              setMobileMenuView('main')
+                              onConvertToLocal()
+                            }}
+                          >
+                            <TfFloppyDisk
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
+                            Move to local
+                          </button>
+                        )}
 
                         {/* Delete */}
                         <button
