@@ -31,10 +31,10 @@ vi.mock('@/services/passkey/legacy-passkey-credentials', () => ({
 
 const mockKeyCurrent = vi.fn()
 
-vi.mock('@/services/sync-enclave/sync-api', async () => {
-  const real = await vi.importActual<
-    typeof import('@/services/sync-enclave/sync-api')
-  >('@/services/sync-enclave/sync-api')
+vi.mock('@/services/harness/keys', async () => {
+  const real = await vi.importActual<typeof import('@/services/harness/keys')>(
+    '@/services/harness/keys',
+  )
   return {
     ...real,
     keyCurrent: (...args: unknown[]) => mockKeyCurrent(...args),

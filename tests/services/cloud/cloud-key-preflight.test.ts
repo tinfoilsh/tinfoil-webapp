@@ -29,10 +29,10 @@ vi.mock('@/services/encryption/encryption-service', () => ({
   },
 }))
 
-vi.mock('@/services/sync-enclave/sync-api', async () => {
-  const real = await vi.importActual<
-    typeof import('@/services/sync-enclave/sync-api')
-  >('@/services/sync-enclave/sync-api')
+vi.mock('@/services/harness/keys', async () => {
+  const real = await vi.importActual<typeof import('@/services/harness/keys')>(
+    '@/services/harness/keys',
+  )
   return {
     ...real,
     keyCurrent: (...args: unknown[]) => mockKeyCurrent(...args),
@@ -42,8 +42,8 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
 import {
   inspectRemoteEncryptedState,
   validateCurrentPrimaryKey,
-} from '@/services/cloud/cloud-key-preflight'
-import { deriveTinfoilKeyIdHex } from '@/services/sync-enclave/tinfoil-key-id'
+} from '@/services/keys/cloud-key-preflight'
+import { deriveTinfoilKeyIdHex } from '@/services/keys/tinfoil-key-id'
 
 function makeDeterministicCek(offset = 1): { cek: Uint8Array; b64: string } {
   const cek = new Uint8Array(32)

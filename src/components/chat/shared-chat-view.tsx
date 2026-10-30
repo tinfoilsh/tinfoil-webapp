@@ -1,169 +1,105 @@
-import { type BaseModel } from '@/config/models'
-import {
-  decodeDocumentPayload,
-  isOffloadedDocument,
-} from '@/services/cloud/document-payload'
-import { attachmentGetPublic } from '@/services/sync-enclave/sync-api'
+import type { BaseModel } from '@/config/models'
+import { useHarness } from '@/services/harness/provider'
+import { HarnessError } from '@/services/harness/sse'
+import type { SharedThread } from '@/services/harness/types'
+import { messageView } from '@/services/harness/view-model'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
-import type { ShareableChatData } from '@/utils/share-payload'
-import 'katex/dist/katex.min.css'
-import { memo, useEffect, useMemo, useState } from 'react'
-import { ensureTimeline } from './ensure-timeline'
+import { useCallback, useEffect, useState } from 'react'
+import { DocumentTextProvider } from './document-text-context'
+import { ImageGalleryProvider } from './image-gallery-context'
 import { MessageRendererHost } from './message-renderer-host'
-import type { Attachment, Message } from './types'
-
-type SharedChatViewProps = {
-  chatData: ShareableChatData
-  isDarkMode: boolean
-  model: BaseModel
-}
-
-const SharedChatMessage = memo(function SharedChatMessage({
-  message,
-  messageIndex,
-  model,
-  isDarkMode,
-}: {
-  message: Message
-  messageIndex: number
-  model: BaseModel
-  isDarkMode: boolean
-}) {
-  const normalized = ensureTimeline(message)
-
-  return (
-    <MessageRendererHost
-      message={normalized}
-      messageIndex={messageIndex}
-      model={model}
-      isDarkMode={isDarkMode}
-      isLastMessage={false}
-      isStreaming={false}
-      onEditMessage={undefined}
-      onRegenerateMessage={undefined}
-    />
-  )
-})
-
-const getMessageKey = (message: Message, index: number): string => {
-  const timestamp =
-    message.timestamp instanceof Date
-      ? message.timestamp.getTime()
-      : message.timestamp
-  return `shared-${message.role}-${timestamp}-${index}`
-}
-
+import type { Attachment } from './types'
 export function SharedChatView({
   chatData,
   isDarkMode,
   model,
-}: SharedChatViewProps) {
-  // Build initial messages with thumbnail placeholders for images
-  const initialMessages: Message[] = useMemo(
-    () =>
-      chatData.messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-        modelDisplayName: m.modelDisplayName,
-        documentContent: m.documentContent,
-        documents: m.documents,
-        timestamp: new Date(m.timestamp),
-        thoughts: m.thoughts,
-        thinkingDuration: m.thinkingDuration,
-        isError: m.isError,
-        attachments: m.attachments?.map((a): Attachment => ({
-          ...a,
-          // Use thumbnail as initial display image until full-res loads
-          base64: a.thumbnailBase64,
-        })),
-        timeline: m.timeline,
-        annotations: m.annotations,
-        webSearch: m.webSearch,
-        webSearchBeforeThinking: m.webSearchBeforeThinking,
-        urlFetches: m.urlFetches,
-      })),
-    [chatData],
+}: {
+  chatData: SharedThread
+  isDarkMode: boolean
+  model: BaseModel
+}) {
+  const { api } = useHarness()
+  const [messages, setMessages] = useState(() =>
+    chatData.messages.map((m) => messageView(m)),
   )
-
-  const [messages, setMessages] = useState<Message[]>(initialMessages)
-
-  // Lazy-load full-resolution images and offloaded document content
-  // from the public attachment endpoint.
   useEffect(() => {
-    let cancelled = false
-
-    async function loadAttachmentContent() {
-      const updated = [...initialMessages.map((m) => ({ ...m }))]
-      let anyUpdated = false
-
-      const tasks: Promise<void>[] = []
-
-      for (let mi = 0; mi < updated.length; mi++) {
-        const atts = updated[mi].attachments
-        if (!atts) continue
-
-        for (let ai = 0; ai < atts.length; ai++) {
-          const att = atts[ai]
-          const wantsImage = att.type === 'image' && !!att.encryptionKey
-          const wantsDocument = isOffloadedDocument(att)
-          if (!wantsImage && !wantsDocument) continue
-
-          const msgIdx = mi
-          const attIdx = ai
-          tasks.push(
-            (async () => {
-              const apply = (patch: Partial<Attachment>) => {
-                if (cancelled) return
-                updated[msgIdx] = { ...updated[msgIdx] }
-                updated[msgIdx].attachments = [...updated[msgIdx].attachments!]
-                updated[msgIdx].attachments![attIdx] = {
-                  ...updated[msgIdx].attachments![attIdx],
-                  ...patch,
-                }
-                anyUpdated = true
-              }
-
-              try {
-                const plaintext = await attachmentGetPublic({
-                  id: att.id,
-                  attKeyB64: att.encryptionKey!,
-                })
-                apply(
-                  wantsDocument
-                    ? decodeDocumentPayload(att.id, plaintext)
-                    : { base64: uint8ArrayToBase64(plaintext) },
-                )
-              } catch {
-                // Silently skip — thumbnail is still visible
-              }
-            })(),
+    const abort = new AbortController()
+    setMessages(chatData.messages.map((m) => messageView(m)))
+    for (const message of chatData.messages)
+      for (const attachment of message.attachments ?? []) {
+        if (attachment.kind !== 'image' || !attachment.attKey) continue
+        void api.client
+          .download(
+            '/v1/attachments/get-public',
+            { id: attachment.id, attKey: attachment.attKey },
+            api.signal(abort.signal, false),
           )
-        }
+          .then((blob) => blob.arrayBuffer())
+          .then((bytes) => {
+            if (!abort.signal.aborted)
+              setMessages((previous) =>
+                previous.map((m) =>
+                  m.id !== message.id
+                    ? m
+                    : {
+                        ...m,
+                        attachments: m.attachments?.map((a) =>
+                          a.id !== attachment.id
+                            ? a
+                            : {
+                                ...a,
+                                base64: uint8ArrayToBase64(
+                                  new Uint8Array(bytes),
+                                ),
+                              },
+                        ),
+                      },
+                ),
+              )
+          })
+          .catch(() => {
+            /* retain the thumbnail when the full image is unavailable */
+          })
       }
-
-      await Promise.all(tasks)
-      if (!cancelled && anyUpdated) {
-        setMessages(updated)
-      }
-    }
-
-    loadAttachmentContent()
-    return () => {
-      cancelled = true
-    }
-  }, [initialMessages])
-
+    return () => abort.abort()
+  }, [api, chatData])
+  // A shared stored document holds its text in its blob, which the harness
+  // reads as text with the share's attachment key.
+  const loadDocumentText = useCallback(
+    async (attachment: Attachment) => {
+      const attKey = chatData.messages
+        .flatMap((message) => message.attachments ?? [])
+        .find((candidate) => candidate.id === attachment.id)?.attKey
+      if (!attKey)
+        throw new HarnessError({
+          code: 'THREAD_NOT_FOUND',
+          message: 'This document is not part of the share.',
+        })
+      const blob = await api.client.download(
+        '/v1/attachments/get-public',
+        { id: attachment.id, attKey },
+        api.signal(undefined, false),
+      )
+      return blob.text()
+    },
+    [api, chatData],
+  )
   return (
-    <div className="mx-auto w-full min-w-0 max-w-3xl px-4 pb-6 pt-8">
-      {messages.map((message, index) => (
-        <SharedChatMessage
-          key={getMessageKey(message, index)}
-          message={message}
-          messageIndex={index}
-          model={model}
-          isDarkMode={isDarkMode}
-        />
-      ))}
-    </div>
+    <ImageGalleryProvider messages={messages}>
+      <DocumentTextProvider load={loadDocumentText}>
+        <div className="mx-auto w-full min-w-0 max-w-3xl px-4 pb-6 pt-8">
+          {messages.map((message, index) => (
+            <MessageRendererHost
+              key={message.id}
+              message={message}
+              messageIndex={index}
+              model={model}
+              isDarkMode={isDarkMode}
+              hideActions
+            />
+          ))}
+        </div>
+      </DocumentTextProvider>
+    </ImageGalleryProvider>
   )
 }

@@ -2,7 +2,6 @@ import type {
   Attachment,
   Chat as ChatType,
   Message,
-  PendingRecoveryEnvelope,
 } from '@/components/chat/types'
 import { ACCOUNT_RESET_FAILED_EVENT } from '@/constants/auth-events'
 import {
@@ -11,8 +10,8 @@ import {
   AUTH_ACTIVE_USER_ID,
 } from '@/constants/storage-keys'
 import { nextClock } from '@/services/cloud/edit-clock'
+import type { PendingRecoveryEnvelope } from '@/types/chat-recovery'
 import type { Project } from '@/types/project'
-import { chatActivityTime } from '@/utils/chat-timestamps'
 import { logError, logWarning } from '@/utils/error-handling'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
@@ -22,6 +21,7 @@ export interface Chat extends Omit<ChatType, 'createdAt'> {
   createdAt: string
   updatedAt: string
   model?: string
+  pendingRecoveries?: PendingRecoveryEnvelope[]
 }
 
 export interface StoredChat extends Chat {
@@ -181,9 +181,7 @@ const ATTACHMENT_PAYLOADS_STORE = 'attachmentPayloads'
 const ATTACHMENT_PAYLOADS_CHAT_INDEX = 'chatId'
 const GENERATED_ATTACHMENT_PAYLOAD_PREFIX = 'attachment-payload:'
 const CHAT_SUMMARIES_STORE = 'chatSummaries'
-// Changing this id rebuilds every summary row from its full chat on the
-// next read, so bump it whenever summaries gain a derived field.
-const CHAT_SUMMARIES_MIGRATION_ID = 'chat-summaries-v7'
+const CHAT_SUMMARIES_MIGRATION_ID = 'chat-summaries-v6'
 const SYNC_STATE_STORE = 'sync_state'
 const REMOTE_CHAT_STATE_STORE = 'remote_chat_state'
 const SYNC_OUTBOX_STORE = 'sync_outbox'
@@ -218,7 +216,7 @@ function deserializeStoredChat(chat: StoredChat): StoredChat {
   // Full rows always carry their real messages; drop summary markers that
   // an earlier write may have leaked so readers never mistake a hydrated
   // chat for a summary.
-  const { isMetadataOnly, messageCount, activityAt, ...fullChat } = chat
+  const { isMetadataOnly, messageCount, ...fullChat } = chat
 
   return {
     ...fullChat,
@@ -413,14 +411,10 @@ function updateSyncPending(chat: StoredChat): StoredChat {
 }
 
 function toStoredChatSummary(chat: StoredChat): StoredChat {
-  const messages = Array.isArray(chat.messages) ? chat.messages : []
   return {
     ...chat,
     messages: [],
-    messageCount: messages.length,
-    activityAt: new Date(
-      chatActivityTime({ createdAt: chat.createdAt, messages }),
-    ).toISOString(),
+    messageCount: Array.isArray(chat.messages) ? chat.messages.length : 0,
     isMetadataOnly: true,
   }
 }
@@ -432,10 +426,9 @@ function putStoredChat(
 ): IDBRequest<IDBValidKey> {
   const prepared = updateSyncPending(chat)
   summaryStore.put(toStoredChatSummary(prepared))
-  // isMetadataOnly/messageCount/activityAt describe summary rows only;
-  // persisting them on the full row would make hydrated reads look like
-  // summaries.
-  const { isMetadataOnly, messageCount, activityAt, ...fullRow } = prepared
+  // isMetadataOnly/messageCount describe summary rows only; persisting
+  // them on the full row would make hydrated reads look like summaries.
+  const { isMetadataOnly, messageCount, ...fullRow } = prepared
   return chatStore.put(fullRow)
 }
 
@@ -3202,6 +3195,40 @@ export class IndexedDBStorage {
         request.onerror = () =>
           reject(new Error('Failed to iterate chats for sync reset'))
       })
+    })
+  }
+
+  async resetChatTimestamps(chatId: string): Promise<void> {
+    return this.enqueueSave('resetChatTimestamps', async () => {
+      const db = await this.ensureDB()
+      const chat = await this.getStoredChatInternal(chatId)
+
+      if (chat) {
+        return new Promise<void>((resolve, reject) => {
+          const transaction = db.transaction(
+            [CHATS_STORE, CHAT_SUMMARIES_STORE],
+            'readwrite',
+          )
+          const store = transaction.objectStore(CHATS_STORE)
+          const summaryStore = transaction.objectStore(CHAT_SUMMARIES_STORE)
+
+          transaction.oncomplete = () => resolve()
+          transaction.onerror = () =>
+            reject(new Error('Failed to reset chat timestamps'))
+
+          const now = new Date().toISOString()
+          chat.createdAt = now
+          chat.updatedAt = now
+          chat.locallyModified = true
+          chat.pendingUpload = derivePendingUpload(chat)
+          chat.syncedAt = undefined
+
+          const request = putStoredChat(store, summaryStore, chat)
+
+          request.onerror = () =>
+            reject(new Error('Failed to reset chat timestamps'))
+        })
+      }
     })
   }
 

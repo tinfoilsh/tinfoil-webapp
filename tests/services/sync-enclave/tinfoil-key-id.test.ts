@@ -1,4 +1,4 @@
-import { deriveTinfoilKeyIdHex } from '@/services/sync-enclave/tinfoil-key-id'
+import { deriveTinfoilKeyIdHex } from '@/services/keys/tinfoil-key-id'
 import { describe, expect, it } from 'vitest'
 
 describe('deriveTinfoilKeyIdHex', () => {

@@ -35,19 +35,18 @@ const mocks = vi.hoisted(() => ({
   generateKey: vi.fn(),
   promoteRecoveredCekToEnclave: vi.fn(),
   keyCurrent: vi.fn(),
-  setCloudSyncEnabled: vi.fn(),
   passkeyEventsOn: vi.fn(),
   passkeyEventsEmit: vi.fn(),
   logError: vi.fn(),
   logInfo: vi.fn(),
 }))
 
-vi.mock('@/services/cloud/cloud-key-preflight', () => ({
+vi.mock('@/services/keys/cloud-key-preflight', () => ({
   inspectRemoteEncryptedState: mocks.inspectRemoteEncryptedState,
   validateCurrentPrimaryKey: mocks.validateCurrentPrimaryKey,
 }))
 
-vi.mock('@/services/cloud/cloud-key-authorization', () => ({
+vi.mock('@/services/keys/cloud-key-authorization', () => ({
   authorizeCurrentPrimaryKeyOrThrow: mocks.authorizeCurrentPrimaryKeyOrThrow,
   getCurrentCloudKeyAuthorizationMode:
     mocks.getCurrentCloudKeyAuthorizationMode,
@@ -110,19 +109,15 @@ vi.mock('@/services/encryption/encryption-service', () => ({
   },
 }))
 
-vi.mock('@/services/sync-enclave/passkey-events', () => ({
+vi.mock('@/services/keys/passkey-events', () => ({
   passkeyEvents: {
     on: mocks.passkeyEventsOn,
     emit: mocks.passkeyEventsEmit,
   },
 }))
 
-vi.mock('@/services/sync-enclave/sync-api', () => ({
+vi.mock('@/services/harness/keys', () => ({
   keyCurrent: mocks.keyCurrent,
-}))
-
-vi.mock('@/utils/cloud-sync-settings', () => ({
-  setCloudSyncEnabled: mocks.setCloudSyncEnabled,
 }))
 
 vi.mock('@/utils/error-handling', () => ({
