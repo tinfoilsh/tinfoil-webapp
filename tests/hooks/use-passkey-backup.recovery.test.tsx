@@ -10,7 +10,7 @@ import { MIGRATION_STARTED } from '../harness-fixture'
 const mocks = vi.hoisted(() => ({
   keyCurrent: vi.fn(),
   registerKey: vi.fn(),
-  loadRecoveryCandidates: vi.fn(),
+  loadPasskeyCredentials: vi.fn(),
   recoverPasskeyKeyBundle: vi.fn(),
 }))
 vi.mock('@/services/harness/keys', async (importOriginal) => ({
@@ -20,7 +20,7 @@ vi.mock('@/services/harness/keys', async (importOriginal) => ({
 }))
 vi.mock('@/services/passkey', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/passkey')>()),
-  loadRecoveryCandidates: mocks.loadRecoveryCandidates,
+  loadPasskeyCredentials: mocks.loadPasskeyCredentials,
   recoverPasskeyKeyBundle: mocks.recoverPasskeyKeyBundle,
 }))
 vi.mock('@/utils/error-handling', () => ({
@@ -37,9 +37,7 @@ const BACKUP_KEY = encryptionService.encodeKeyFromBytes(bytes(2))
 beforeEach(async () => {
   mocks.keyCurrent.mockReset()
   mocks.registerKey.mockReset().mockResolvedValue({})
-  mocks.loadRecoveryCandidates
-    .mockReset()
-    .mockResolvedValue([{ id: 'cred-1', source: 'enclave' }])
+  mocks.loadPasskeyCredentials.mockReset().mockResolvedValue([{ id: 'cred-1' }])
   mocks.recoverPasskeyKeyBundle.mockReset().mockResolvedValue({
     credentialId: 'cred-1',
     keyBundle: {
@@ -49,7 +47,6 @@ beforeEach(async () => {
     },
     syncVersion: 1,
     bundleVersion: 1,
-    source: 'enclave',
   })
   await encryptionService.setKey(DEVICE_KEY)
 })

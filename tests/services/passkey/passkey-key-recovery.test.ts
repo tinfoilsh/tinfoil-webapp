@@ -1,14 +1,8 @@
 import { SECRET_PASSKEY_PRF_OUTPUT } from '@/constants/storage-keys'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { hexToB64 } from '@/services/harness/keys'
-import { HarnessError } from '@/services/harness/sse'
-import { deriveTinfoilKeyIdHex } from '@/services/keys/tinfoil-key-id'
+import { passkeyKeyManager } from '@/services/passkey/kit'
 import {
-  passkeyKeyManager,
-  TINFOIL_PASSKEY_PROFILE,
-} from '@/services/passkey/kit'
-import {
-  promoteRecoveredCekToEnclave,
   recoverPasskeyKeyBundle,
   wrapTinfoilKeyBundle,
   type KeyBundle,
@@ -25,22 +19,6 @@ vi.mock('@/utils/error-handling', () => ({
   logInfo: vi.fn(),
 }))
 
-const mockKeyCurrent = vi.fn()
-const mockAddBundle = vi.fn()
-const mockRegisterKey = vi.fn()
-
-vi.mock('@/services/harness/keys', async () => {
-  const actual = await vi.importActual<
-    typeof import('@/services/harness/keys')
-  >('@/services/harness/keys')
-  return {
-    ...actual,
-    addBundle: (...args: unknown[]) => mockAddBundle(...args),
-    keyCurrent: (...args: unknown[]) => mockKeyCurrent(...args),
-    registerKey: (...args: unknown[]) => mockRegisterKey(...args),
-  }
-})
-
 const CREDENTIAL_ID = 'AQID'
 const PRF_OUTPUT = new Uint8Array(32).map((_, index) => index)
 const EXPECTED_PRIMARY_BYTES = new Uint8Array(32).map(
@@ -50,8 +28,6 @@ const originalCredentials = Object.getOwnPropertyDescriptor(
   navigator,
   'credentials',
 )
-const LEGACY_PRIMARY = `key_${'ar'.repeat(32)}`
-const LEGACY_ALTERNATIVE = `key_${'as'.repeat(32)}`
 
 function decodeEnvelope(candidate: PasskeyCredentialEntry) {
   return JSON.parse(
@@ -80,21 +56,7 @@ function undecryptableEnclaveEntry(): PasskeyCredentialEntry {
     id: 'BAUG',
     iv: Buffer.from(new Uint8Array(12)).toString('base64'),
     encrypted_keys: Buffer.from(new Uint8Array(48)).toString('base64'),
-    source: 'enclave',
   })
-}
-
-async function encryptLegacyFixture(kek: CryptoKey, keys: KeyBundle) {
-  const iv = crypto.getRandomValues(new Uint8Array(12))
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    kek,
-    new TextEncoder().encode(JSON.stringify(keys)),
-  )
-  return {
-    iv: Buffer.from(iv).toString('base64'),
-    data: Buffer.from(ciphertext).toString('base64'),
-  }
 }
 
 async function genericEnvelopeEntry(
@@ -123,7 +85,6 @@ async function genericEnvelopeEntry(
     id: credentialId,
     iv: hexToB64(wrappedKeys.primary.kekIvHex),
     encrypted_keys: Buffer.from(envelope, 'utf8').toString('base64'),
-    source: 'enclave',
   })
 }
 
@@ -137,28 +98,6 @@ function cachePrf(): void {
   )
 }
 
-async function legacyKek(): Promise<CryptoKey> {
-  const input = await crypto.subtle.importKey(
-    'raw',
-    PRF_OUTPUT,
-    'HKDF',
-    false,
-    ['deriveKey'],
-  )
-  return crypto.subtle.deriveKey(
-    {
-      name: 'HKDF',
-      hash: 'SHA-256',
-      salt: new Uint8Array(),
-      info: TINFOIL_PASSKEY_PROFILE.hkdfInfo as BufferSource,
-    },
-    input,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  )
-}
-
 function entry(
   values: Partial<PasskeyCredentialEntry>,
 ): PasskeyCredentialEntry {
@@ -167,7 +106,6 @@ function entry(
     encrypted_keys: '',
     iv: '',
     created_at: '2024-01-01T00:00:00.000Z',
-    version: 1,
     sync_version: 1,
     ...values,
   }
@@ -177,13 +115,6 @@ describe('recoverPasskeyKeyBundle', () => {
   beforeEach(() => {
     encryptionService.clearKey()
     cachePrf()
-    mockKeyCurrent.mockReset().mockResolvedValue({ key_id: null, bundles: {} })
-    mockAddBundle
-      .mockReset()
-      .mockRejectedValue(new Error('Unexpected bundle addition'))
-    mockRegisterKey
-      .mockReset()
-      .mockRejectedValue(new Error('Unexpected registration'))
   })
 
   afterEach(() => {
@@ -210,7 +141,6 @@ describe('recoverPasskeyKeyBundle', () => {
               ),
             ),
           ),
-          source: 'enclave',
         }),
       ],
       { cachedOnly: true },
@@ -246,7 +176,6 @@ describe('recoverPasskeyKeyBundle', () => {
             ),
           ),
         ),
-        source: 'enclave',
       }),
     ])
 
@@ -268,7 +197,6 @@ describe('recoverPasskeyKeyBundle', () => {
           id: 'BAUG',
           iv: btoa(String.fromCharCode(...new Uint8Array(12))),
           encrypted_keys: btoa(String.fromCharCode(...malformed)),
-          source: 'enclave',
         }),
         entry({
           iv: btoa(
@@ -285,7 +213,6 @@ describe('recoverPasskeyKeyBundle', () => {
               ),
             ),
           ),
-          source: 'enclave',
         }),
       ],
       { cachedOnly: true },
@@ -354,75 +281,6 @@ describe('recoverPasskeyKeyBundle', () => {
     },
   )
 
-  it.each(['matching', 'rotated', 'unavailable', 'empty'] as const)(
-    'checks the registered key when recovering legacy candidates: %s',
-    async (remoteState) => {
-      const original = {
-        primary: LEGACY_PRIMARY,
-        alternatives: [LEGACY_ALTERNATIVE],
-      }
-      const encrypted = await encryptLegacyFixture(await legacyKek(), original)
-      const keyId = await deriveTinfoilKeyIdHex(new Uint8Array(32).fill(0x11))
-      if (remoteState === 'unavailable') {
-        mockKeyCurrent.mockRejectedValue(
-          new HarnessError(
-            { code: 'UPSTREAM_REFUSED', message: 'opaque', action: 'retry' },
-            503,
-          ),
-        )
-      } else {
-        mockKeyCurrent.mockResolvedValue({
-          key_id:
-            remoteState === 'matching'
-              ? keyId
-              : remoteState === 'rotated'
-                ? 'ff'.repeat(16)
-                : null,
-          bundles: {},
-        })
-      }
-      const generic = await genericEnvelopeEntry(
-        {
-          primary: encryptionService.encodeKeyFromBytes(
-            new Uint8Array(32).fill(0x71),
-          ),
-          alternatives: [],
-        },
-        'BwgJ',
-      )
-      const get = installCredentialGet()
-      const candidates = [
-        undecryptableEnclaveEntry(),
-        generic,
-        entry({
-          id: 'CgsM',
-          iv: btoa(String.fromCharCode(...new Uint8Array(12))),
-          encrypted_keys: 'not base64!',
-          source: 'enclave',
-        }),
-        entry({
-          iv: encrypted.iv,
-          encrypted_keys: encrypted.data,
-          source: 'legacy',
-        }),
-      ]
-      for (const cachedOnly of [false, true]) {
-        cachePrf()
-        const recovered = await recoverPasskeyKeyBundle(candidates, {
-          cachedOnly,
-        })
-        if (remoteState === 'rotated' || remoteState === 'unavailable')
-          expect(recovered).toBeNull()
-        else {
-          expect(recovered?.keyBundle).toEqual(original)
-          expect(recovered?.source).toBe('legacy')
-        }
-      }
-      expect(get).toHaveBeenCalledOnce()
-      expect(get.mock.calls[0][0]?.publicKey?.allowCredentials).toHaveLength(3)
-    },
-  )
-
   it('recovers Start Fresh authorization on another device among mixed credentials', async () => {
     const keyBundle = {
       primary: encryptionService.encodeKeyFromBytes(
@@ -433,120 +291,15 @@ describe('recoverPasskeyKeyBundle', () => {
       ],
       authorizationMode: 'explicit_start_fresh' as const,
     }
-    const legacy = await encryptLegacyFixture(await legacyKek(), {
-      primary: LEGACY_PRIMARY,
-      alternatives: [],
-    })
     const get = installCredentialGet(new Uint8Array([7, 8, 9]))
 
     const recovered = await recoverPasskeyKeyBundle([
       undecryptableEnclaveEntry(),
       await genericEnvelopeEntry(keyBundle, 'BwgJ'),
-      entry({
-        iv: legacy.iv,
-        encrypted_keys: legacy.data,
-        source: 'legacy',
-      }),
     ])
 
     expect(recovered?.credentialId).toBe('BwgJ')
     expect(recovered?.keyBundle).toEqual(keyBundle)
-    expect(get.mock.calls[0][0]?.publicKey?.allowCredentials).toHaveLength(3)
-  })
-
-  it('persists the primary CEK when promoting a recovered legacy bundle', async () => {
-    const cek = new Uint8Array(32).fill(0x81)
-    const keyBundle = {
-      primary: encryptionService.encodeKeyFromBytes(cek),
-      alternatives: [
-        encryptionService.encodeKeyFromBytes(new Uint8Array(32).fill(0x82)),
-        encryptionService.encodeKeyFromBytes(new Uint8Array(32).fill(0x83)),
-      ],
-    }
-    mockRegisterKey.mockResolvedValue({ ok: true })
-
-    await expect(
-      promoteRecoveredCekToEnclave({
-        cek,
-        keyBundle,
-        credentialId: CREDENTIAL_ID,
-        prfResult: { output: PRF_OUTPUT },
-      }),
-    ).resolves.toBe(true)
-    expect(mockRegisterKey).toHaveBeenCalledOnce()
-    const initialBundle = mockRegisterKey.mock.calls[0][0].initialBundle
-    expect(mockRegisterKey).toHaveBeenCalledWith({
-      keyB64: Buffer.from(cek).toString('base64'),
-      ifMatch: '*',
-      createdVia: 'recovery',
-      idempotencyKey: expect.stringMatching(/^[0-9a-f]{32}$/),
-      initialBundle: {
-        credentialId: CREDENTIAL_ID,
-        kekIvHex: expect.stringMatching(/^[0-9a-f]{24}$/),
-        encryptedKeysHex: expect.stringMatching(/^[0-9a-f]{96}$/),
-      },
-    })
-    const recovered = await recoverPasskeyKeyBundle(
-      [
-        entry({
-          iv: hexToB64(initialBundle.kekIvHex),
-          encrypted_keys: hexToB64(initialBundle.encryptedKeysHex),
-          source: 'enclave',
-        }),
-      ],
-      { cachedOnly: true },
-    )
-    expect(recovered?.keyBundle).toEqual({
-      primary: keyBundle.primary,
-      alternatives: [],
-    })
-  })
-
-  it('returns false when legacy promotion registration fails', async () => {
-    const cek = new Uint8Array(32).map((_, index) => 0xff - index)
-    const keyBundle = {
-      primary: encryptionService.encodeKeyFromBytes(cek),
-      alternatives: [
-        encryptionService.encodeKeyFromBytes(new Uint8Array(32).fill(0x31)),
-      ],
-    }
-    localStorage.clear()
-    mockRegisterKey.mockRejectedValue(new Error('register unavailable'))
-
-    await expect(
-      promoteRecoveredCekToEnclave({
-        cek,
-        keyBundle,
-        credentialId: CREDENTIAL_ID,
-        prfResult: { output: PRF_OUTPUT },
-      }),
-    ).resolves.toBe(false)
-    expect(mockRegisterKey).toHaveBeenCalledOnce()
-  })
-
-  it('returns false when legacy promotion add-bundle fails', async () => {
-    const cek = new Uint8Array(32).map((_, index) => 0xff - index)
-    const keyBundle = {
-      primary: encryptionService.encodeKeyFromBytes(cek),
-      alternatives: [
-        encryptionService.encodeKeyFromBytes(new Uint8Array(32).fill(0x32)),
-      ],
-    }
-    localStorage.clear()
-    mockKeyCurrent.mockResolvedValue({
-      key_id: await deriveTinfoilKeyIdHex(cek),
-      bundles: {},
-    })
-    mockAddBundle.mockRejectedValue(new Error('add unavailable'))
-
-    await expect(
-      promoteRecoveredCekToEnclave({
-        cek,
-        keyBundle,
-        credentialId: CREDENTIAL_ID,
-        prfResult: { output: PRF_OUTPUT },
-      }),
-    ).resolves.toBe(false)
-    expect(mockAddBundle).toHaveBeenCalledOnce()
+    expect(get.mock.calls[0][0]?.publicKey?.allowCredentials).toHaveLength(2)
   })
 })

@@ -27,12 +27,10 @@ import {
   getPasskeyCredentialState,
   getPasskeyDeviceState,
   loadPasskeyCredentials,
-  loadRecoveryCandidates,
   PasskeyCredentialConflictError,
   passkeyKeyManager,
   PasskeyTimeoutError,
   PrfNotSupportedError,
-  promoteRecoveredCekToEnclave,
   recoverPasskeyKeyBundle,
   storeEncryptedKeys,
   wrapTinfoilKeyBundle,
@@ -41,7 +39,6 @@ import { isPrfSupported } from '@/services/passkey/prf-support'
 import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
 import type { useUser } from '@clerk/react'
-import type { PRFResult } from '@tinfoilsh/passkey-kit'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 type UserResource = NonNullable<ReturnType<typeof useUser>['user']>
@@ -425,16 +422,9 @@ export function usePasskeyBackup({
 
   /**
    * Core passkey recovery: load credentials, evaluate one credential, and
-   * recover either the generic envelope or the app-owned legacy JSON bundle.
+   * recover its wrapped key bundle.
    * Returns the recovered KeyBundle on success, null on failure/cancellation.
    * Throws on unexpected errors (callers decide how to handle).
-   *
-   * When the matched credential came from the legacy
-   * `/api/passkey-credentials/` JSONB (rather than the enclave's
-   * `user_key_bundles`), the evaluated PRF result is returned so the
-   * caller can promote the complete key bundle to a real `user_keys`
-   * row via `promoteRecoveredCekToEnclave`. Without that promotion
-   * the next session would fall back to the legacy endpoint again.
    */
   const performPasskeyRecovery = async (): Promise<{
     keyBundle: {
@@ -445,10 +435,8 @@ export function usePasskeyBackup({
     credentialId: string
     syncVersion: number | null
     bundleVersion: number
-    source?: 'enclave' | 'legacy'
-    prfResult?: PRFResult
   } | null> => {
-    const entries = await loadRecoveryCandidates()
+    const entries = await loadPasskeyCredentials()
     return recoverPasskeyKeyBundle(entries)
   }
 
@@ -481,54 +469,6 @@ export function usePasskeyBackup({
         manualRecoveryNeeded: false,
         passkeyRecoveryFailure: null,
       }))
-    }
-  }
-
-  /**
-   * If the recovered bundle came from the legacy
-   * `/api/passkey-credentials/` JSONB (no `user_keys` row on the
-   * enclave yet), promote the recovered CEK by writing a real
-   * `user_keys` row + initial bundle through the enclave wire.
-   * Subsequent sessions will then find the user via the new wire
-   * and the legacy fallback won't trigger again.
-   *
-   * Failure is non-fatal — the user is already unlocked locally and
-   * will simply hit the legacy fallback on the next session. The
-   * structured log line surfaces the failure so we can investigate.
-   */
-  const maybePromoteLegacyKey = async (recovery: {
-    keyBundle: { primary: string; alternatives: string[] }
-    credentialId: string
-    source?: 'enclave' | 'legacy'
-    prfResult?: PRFResult
-  }): Promise<void> => {
-    if (recovery.source !== 'legacy' || !recovery.prfResult) return
-    const cekBytes = encryptionService.getAlternativeKeyBytes(
-      recovery.keyBundle.primary,
-    )
-    if (!cekBytes) {
-      logError(
-        'cannot promote legacy passkey CEK: primary key bytes unavailable',
-        new Error('missing cek bytes'),
-        { component: 'usePasskeyBackup', action: 'maybePromoteLegacyKey' },
-      )
-      return
-    }
-    const promoted = await promoteRecoveredCekToEnclave({
-      cek: cekBytes,
-      keyBundle: recovery.keyBundle,
-      credentialId: recovery.credentialId,
-      prfResult: recovery.prfResult,
-    })
-    if (!promoted) {
-      logError(
-        'failed to promote legacy passkey credential to enclave',
-        new Error('legacy passkey promotion failed'),
-        {
-          component: 'usePasskeyBackup',
-          action: 'maybePromoteLegacyKey',
-        },
-      )
     }
   }
 
@@ -912,7 +852,6 @@ export function usePasskeyBackup({
       }
 
       applyRecoveredKeys(recovery)
-      await maybePromoteLegacyKey(recovery)
       passkeyRecoveryDismissedFlag.clear()
 
       logInfo('Recovered encryption keys via passkey retry', {
@@ -1692,60 +1631,12 @@ export function usePasskeyBackup({
   }, [encryptionKey])
 
   /**
-   * Re-authenticate the user's legacy `/api/passkey-credentials/`
-   * passkey and use the resulting PRF to write a v2 initial bundle
-   * via `promoteRecoveredCekToEnclave`. Used when the user has a
-   * local CEK and a legacy passkey credential, but no v2
-   * `user_keys` row yet — the historical promotion only fires
-   * during a recovery flow (which never happens for users whose
-   * local CEK is still valid). Returns true on a successful
-   * register-key.
-   */
-  const promoteLegacyPasskeyForCurrentDevice = useCallback(
-    async (keyBundle: {
-      primary: string
-      alternatives: string[]
-    }): Promise<boolean> => {
-      const legacyEntries = (await loadRecoveryCandidates()).filter(
-        (entry) => entry.source === 'legacy',
-      )
-      if (legacyEntries.length === 0) return false
-
-      const recovered = await recoverPasskeyKeyBundle(legacyEntries)
-      if (!recovered?.prfResult) return false
-      const cek = encryptionService.getAlternativeKeyBytes(keyBundle.primary)
-      if (!cek) return false
-      const promoted = await promoteRecoveredCekToEnclave({
-        cek,
-        keyBundle,
-        credentialId: recovered.credentialId,
-        prfResult: recovered.prfResult,
-      })
-      if (!promoted) {
-        logInfo('legacy promotion via add-device button failed', {
-          component: 'usePasskeyBackup',
-          action: 'promoteLegacyPasskeyForCurrentDevice',
-        })
-        return false
-      }
-      return true
-    },
-    [],
-  )
-
-  /**
    * Add a passkey bundle for *this device* against the existing key.
    * Used when `passkeyAddDeviceAvailable === true` (another device
    * already has a bundle but this one doesn't). Wraps the local CEK
    * in a generic envelope using a new WebAuthn PRF ceremony and pushes
    * it as an additional bundle via `add-bundle`. Returns true
    * on success.
-   *
-   * Also handles the legacy v1 case: if the enclave has no
-   * `user_keys` row yet but the user has a credential in
-   * `/api/passkey-credentials/`, this re-authenticates that
-   * credential and uses the legacy promotion path so they keep
-   * their original passkey on the v2 wire.
    */
   const addPasskeyToThisDevice = useCallback(async (): Promise<boolean> => {
     const userInfo = getPasskeyUserInfo()
@@ -1756,7 +1647,7 @@ export function usePasskeyBackup({
     const cekBytes = encryptionService.getAlternativeKeyBytes(keys.primary)
     if (!cekBytes) return false
 
-    let keyIdHex: string | null
+    let keyIdHex: string
     let authorizationMode: CloudKeyAuthorizationMode
     try {
       const currentAuthorizationMode =
@@ -1764,7 +1655,8 @@ export function usePasskeyBackup({
       if (!currentAuthorizationMode) return false
       authorizationMode = currentAuthorizationMode
       const resp = await enclaveKeyCurrent()
-      keyIdHex = resp.key_id ?? null
+      if (!resp.key_id) return false
+      keyIdHex = resp.key_id
     } catch (error) {
       logError('Failed to read key state for add-bundle', error, {
         component: 'usePasskeyBackup',
@@ -1780,37 +1672,25 @@ export function usePasskeyBackup({
 
     passkeyFlowInProgressRef.current = true
     try {
-      if (keyIdHex) {
-        const created = await createAndWrapTinfoilKey({
-          user: {
-            id: new TextEncoder().encode(userInfo.userId),
-            name: userInfo.userName,
-            displayName: userInfo.displayName,
-          },
-          key: cekBytes,
-        })
-        if (!created) return false
-        const wrappedKeys = await wrapTinfoilKeyBundle(
-          created.wrappedKey,
-          keyBundle,
-        )
-        if (!wrappedKeys) return false
-        await addWrappedKeyForCurrentKey({
-          wrappedKeys,
-          cek: cekBytes,
-          keyIdHex,
-        })
-      } else {
-        // Legacy v1 user: local CEK already exists, the enclave has
-        // no `user_keys` row yet, but `/api/passkey-credentials/`
-        // still holds the original PRF credential. Re-authenticate
-        // that credential, evaluate its PRF, and call the legacy
-        // promotion path so the user lands on the v2 wire reusing
-        // their existing passkey instead of being asked to enroll
-        // a brand-new one.
-        const promoted = await promoteLegacyPasskeyForCurrentDevice(keyBundle)
-        if (!promoted) return false
-      }
+      const created = await createAndWrapTinfoilKey({
+        user: {
+          id: new TextEncoder().encode(userInfo.userId),
+          name: userInfo.userName,
+          displayName: userInfo.displayName,
+        },
+        key: cekBytes,
+      })
+      if (!created) return false
+      const wrappedKeys = await wrapTinfoilKeyBundle(
+        created.wrappedKey,
+        keyBundle,
+      )
+      if (!wrappedKeys) return false
+      await addWrappedKeyForCurrentKey({
+        wrappedKeys,
+        cek: cekBytes,
+        keyIdHex,
+      })
 
       localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
       if (isMountedRef.current) {
@@ -1835,7 +1715,7 @@ export function usePasskeyBackup({
     } finally {
       passkeyFlowInProgressRef.current = false
     }
-  }, [promoteLegacyPasskeyForCurrentDevice, refreshBundleState])
+  }, [refreshBundleState])
 
   return {
     ...state,

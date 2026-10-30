@@ -11,13 +11,10 @@ export {
 export {
   PasskeyCredentialConflictError,
   addWrappedKeyForCurrentKey,
-  decryptKeyBundle,
   deletePasskeyCredential,
   getPasskeyCredentialState,
   getPasskeyDeviceState,
   loadPasskeyCredentials,
-  loadRecoveryCandidates,
-  promoteRecoveredCekToEnclave,
   recoverPasskeyKeyBundle,
   storeEncryptedKeys,
   tinfoilWrappedKeyBundleToEnclave,

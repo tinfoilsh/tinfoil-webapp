@@ -18,10 +18,6 @@ vi.mock('@/utils/error-handling', () => ({
   logInfo: vi.fn(),
 }))
 
-vi.mock('@/services/passkey/legacy-passkey-credentials', () => ({
-  fetchLegacyPasskeyCredentials: vi.fn().mockResolvedValue([]),
-}))
-
 const mockKeyCurrent = vi.fn()
 
 vi.mock('@/services/harness/keys', async () => {
