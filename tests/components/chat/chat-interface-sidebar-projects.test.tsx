@@ -118,7 +118,7 @@ beforeEach(() => {
   sessionStorage.setItem(UI_SIDEBAR_OPEN, 'true')
   sessionStorage.setItem(UI_SIDEBAR_PROJECTS_EXPANDED, 'true')
   chatPage.premium = true
-  chatPage.router.pathname = '/[...slug]'
+  chatPage.router.pathname = '/project/[[...slug]]'
   chatPage.router.query = {}
   chatPage.router.push.mockReset().mockResolvedValue(true)
   chatPage.router.replace.mockReset().mockResolvedValue(true)

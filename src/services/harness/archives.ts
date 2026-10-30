@@ -46,8 +46,8 @@ const EXPORT_FILENAMES: Record<ExportFormat, string> = {
   conversations: 'tinfoil-chats.zip',
 }
 
-// The chats the account keeps on this device. Archives are for subscribers,
-// so a signed-out visitor's tab has none to send or receive.
+// The chats the account keeps on this device. Archives are for signed-in
+// accounts, so a signed-out visitor's tab has none to send or receive.
 const deviceStore = (api: HarnessAPI) => {
   if (!api.userId)
     throw new HarnessError({

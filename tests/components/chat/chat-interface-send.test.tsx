@@ -4,9 +4,10 @@ import {
   UI_SIDEBAR_OPEN,
   UI_SIDEBAR_PROJECTS_EXPANDED,
 } from '@/constants/storage-keys'
-import ChatPage from '@/pages/[...slug]'
+import ChatPage from '@/pages/chat/[[...slug]]'
 import HomePage from '@/pages/index'
 import NewChatPage from '@/pages/newchat'
+import ProjectPage from '@/pages/project/[[...slug]]'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
 import type { Frame, Turn } from '@/services/harness/types'
@@ -140,8 +141,8 @@ it.each(['/', '/newchat'])(
     await act(async () => accepted.resolve())
     await waitFor(() => expect(chatPage.router.replace).toHaveBeenCalled())
     const input = client.events.mock.calls[0][1] as Turn
-    chatPage.router.pathname = '/[...slug]'
-    chatPage.router.query = { slug: ['chat', input.threadId!] }
+    chatPage.router.pathname = '/chat/[[...slug]]'
+    chatPage.router.query = { slug: [input.threadId!] }
     rerender(<ChatPage />)
     expect(screen.getByRole('log', { name: 'Conversation' })).toBe(conversation)
     expect(screen.getByRole('main', { name: 'Conversation' })).toBe(
@@ -312,9 +313,9 @@ it('keeps the shell and loaded project when its URL changes, and exits it when t
       { shallow: true },
     ),
   )
-  chatPage.router.pathname = '/[...slug]'
-  chatPage.router.query = { slug: ['project', project.id] }
-  rerender(<ChatPage />)
+  chatPage.router.pathname = '/project/[[...slug]]'
+  chatPage.router.query = { slug: [project.id] }
+  rerender(<ProjectPage />)
   expect(screen.getByRole('main', { name: 'Conversation' })).toBe(main)
   expect(
     await screen.findByRole('heading', { name: project.name }),

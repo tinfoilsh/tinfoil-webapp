@@ -80,7 +80,7 @@ describe('settings opening', () => {
     signOut.mockReset().mockResolvedValue(undefined)
   })
 
-  it("offers a signed-out visitor this browser's chats but no account data", () => {
+  it("lets a signed-out visitor delete this browser's chats but not move or reach account data", () => {
     render(
       <Harness
         initialTab="data"
@@ -106,9 +106,6 @@ describe('settings opening', () => {
       'Import from Claude',
       'Import from Tinfoil',
       'Export Chats',
-    ])
-      expect(screen.getByRole('button', { name })).toBeEnabled()
-    for (const name of [
       'Cloud Sync',
       'Delete all projects',
       'Export Projects for Claude',
@@ -183,7 +180,7 @@ describe('settings opening', () => {
   )
 
   it.each([false, true])(
-    'offers imports, exports and project transfers to subscribers (premium: %s)',
+    'offers imports and exports to every account and project transfers to subscribers (premium: %s)',
     (isPremium) => {
       authState.isSignedIn = true
       signIn({ cloud: true })
@@ -201,14 +198,18 @@ describe('settings opening', () => {
       expect(
         screen.getByRole('button', { name: 'Delete all projects' }),
       ).toBeInTheDocument()
+      for (const name of [
+        'Import from ChatGPT',
+        'Import from Tinfoil',
+        'Export Chats',
+      ])
+        expect(screen.getByRole('button', { name })).toBeEnabled()
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Import from Claude' }),
+      )
       expect(
-        Boolean(screen.queryByRole('button', { name: 'Export Chats' })),
-      ).toBe(isPremium)
-      const claudeImport = screen.queryByRole('button', {
-        name: 'Import from Claude',
-      })
-      expect(Boolean(claudeImport)).toBe(isPremium)
-      if (claudeImport) fireEvent.click(claudeImport)
+        screen.getByRole('button', { name: 'Conversations' }),
+      ).toBeEnabled()
       expect(Boolean(screen.queryByRole('button', { name: 'Projects' }))).toBe(
         isPremium,
       )
