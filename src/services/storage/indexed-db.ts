@@ -81,7 +81,9 @@ const ATTACHMENT_ORIGINALS_STORE = 'attachmentOriginals'
 const ATTACHMENT_PAYLOADS_CHAT_INDEX = 'chatId'
 const GENERATED_ATTACHMENT_PAYLOAD_PREFIX = 'attachment-payload:'
 const CHAT_SUMMARIES_STORE = 'chatSummaries'
-const CHAT_SUMMARIES_MIGRATION_ID = 'chat-summaries-v6'
+// Changing this id rebuilds every summary row from its full chat on the
+// next read, so bump it whenever summaries gain a derived field.
+const CHAT_SUMMARIES_MIGRATION_ID = 'chat-summaries-v8'
 // Stores and chat indexes earlier versions kept for cloud sync, which
 // nothing reads anymore.
 const REMOVED_STORES = [
