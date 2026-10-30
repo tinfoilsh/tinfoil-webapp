@@ -870,13 +870,11 @@ export function ChatInput({
                     <FilePreview
                       filename={doc.name}
                       imageSrc={
-                        doc.attachment?.type === 'image' || doc.imageData
+                        doc.attachment?.type === 'image'
                           ? imageDataUrl(
-                              doc.attachment?.thumbnailBase64 ??
-                                doc.attachment?.base64 ??
-                                doc.imageData?.base64,
-                              doc.attachment?.mimeType ??
-                                doc.imageData?.mimeType,
+                              doc.attachment.thumbnailBase64 ??
+                                doc.attachment.base64,
+                              doc.attachment.mimeType,
                             )
                           : null
                       }
@@ -905,8 +903,7 @@ export function ChatInput({
                           <span className="text-xs text-content-muted">
                             {doc.isGeneratingDescription
                               ? 'Generating text description...'
-                              : doc.attachment?.type === 'image' ||
-                                  doc.imageData
+                              : doc.attachment?.type === 'image'
                                 ? 'Image'
                                 : 'Document'}
                           </span>

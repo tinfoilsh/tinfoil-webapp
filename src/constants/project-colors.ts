@@ -51,9 +51,6 @@ const PROJECT_COLOR_MAP: Record<string, ProjectColor> = PROJECT_COLORS.reduce(
 // Opacity applied when tinting the sidebar background with a project color.
 export const PROJECT_COLOR_SIDEBAR_TINT_OPACITY = 0.1
 
-// Opacity applied to the background of project labels (banner and input tab).
-export const PROJECT_COLOR_LABEL_TINT_OPACITY = 0.18
-
 export function getProjectColor(id?: string | null): ProjectColor | undefined {
   if (!id) return undefined
   return PROJECT_COLOR_MAP[id]

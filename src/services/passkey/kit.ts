@@ -115,14 +115,6 @@ export function resetPasskeyCapabilityCache(): void {
   capabilityPromise = null
 }
 
-export function getCachedCredentialId(): string | null {
-  return readCachedPrfResult()?.credentialId ?? null
-}
-
-export function getCachedPrfOutputForLegacyBundle(): Uint8Array | null {
-  return readCachedPrfResult()?.prfOutput ?? null
-}
-
 export function getLocalCredentialId(): string | null {
   return tinfoilPasskeyStorage.loadLocalCredentialId()
 }

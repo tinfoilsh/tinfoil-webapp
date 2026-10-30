@@ -2,7 +2,6 @@
 
 import {
   LEGACY_ENCRYPTION_KEY,
-  LEGACY_ENCRYPTION_KEY_HISTORY,
   USER_ENCRYPTION_KEY,
   USER_ENCRYPTION_KEY_HISTORY,
 } from '@/constants/storage-keys'
@@ -98,9 +97,7 @@ export class EncryptionService {
   }
 
   private loadKeyHistoryFromStorage(): string[] {
-    const rawHistory =
-      localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY) ??
-      localStorage.getItem(LEGACY_ENCRYPTION_KEY_HISTORY)
+    const rawHistory = localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY)
 
     if (!rawHistory) {
       return []
@@ -152,9 +149,7 @@ export class EncryptionService {
 
   // Initialize with existing key - does NOT generate a new key automatically
   async initialize(): Promise<string | null> {
-    const storedKey =
-      localStorage.getItem(USER_ENCRYPTION_KEY) ??
-      localStorage.getItem(LEGACY_ENCRYPTION_KEY)
+    const storedKey = localStorage.getItem(USER_ENCRYPTION_KEY)
     this.fallbackKeyStrings = this.loadKeyHistoryFromStorage()
 
     if (storedKey) {
@@ -173,9 +168,7 @@ export class EncryptionService {
     const { persist = true } = options
     try {
       const previousKey =
-        this.currentKeyString ??
-        localStorage.getItem(USER_ENCRYPTION_KEY) ??
-        localStorage.getItem(LEGACY_ENCRYPTION_KEY)
+        this.currentKeyString ?? localStorage.getItem(USER_ENCRYPTION_KEY)
 
       const previousHistory = this.loadKeyHistoryFromStorage()
 
@@ -197,12 +190,10 @@ export class EncryptionService {
           {
             primaryKey: keyString,
             history,
-            includeLegacyKey: false,
           },
           {
             previousKey,
             previousHistory,
-            includeLegacyKey: false,
           },
           {
             failurePrefix: 'Failed to persist encryption key',
@@ -240,20 +231,16 @@ export class EncryptionService {
    */
   persistCurrentKeyState(): void {
     if (!this.currentKeyString) return
-    const previousKey =
-      localStorage.getItem(USER_ENCRYPTION_KEY) ??
-      localStorage.getItem(LEGACY_ENCRYPTION_KEY)
+    const previousKey = localStorage.getItem(USER_ENCRYPTION_KEY)
     const previousHistory = this.loadKeyHistoryFromStorage()
     this.persistKeyState(
       {
         primaryKey: this.currentKeyString,
         history: this.fallbackKeyStrings,
-        includeLegacyKey: false,
       },
       {
         previousKey,
         previousHistory,
-        includeLegacyKey: false,
       },
       {
         failurePrefix: 'Failed to persist encryption key',
@@ -265,10 +252,7 @@ export class EncryptionService {
 
   // Get current encryption key as alphanumeric string
   getKey(): string | null {
-    return (
-      localStorage.getItem(USER_ENCRYPTION_KEY) ??
-      localStorage.getItem(LEGACY_ENCRYPTION_KEY)
-    )
+    return localStorage.getItem(USER_ENCRYPTION_KEY)
   }
 
   // Get current encryption key as raw bytes, or null if no key is set.
@@ -346,8 +330,8 @@ export class EncryptionService {
       try {
         localStorage.removeItem(USER_ENCRYPTION_KEY)
         localStorage.removeItem(USER_ENCRYPTION_KEY_HISTORY)
+        // Earlier clients also kept a copy of the key under its old name.
         localStorage.removeItem(LEGACY_ENCRYPTION_KEY)
-        localStorage.removeItem(LEGACY_ENCRYPTION_KEY_HISTORY)
       } catch (error) {
         logInfo('Failed to remove encryption keys from storage', {
           component: 'EncryptionService',
@@ -411,9 +395,7 @@ export class EncryptionService {
 
     this.getKeyBytes(primary)
     const previousKey =
-      this.currentKeyString ??
-      localStorage.getItem(USER_ENCRYPTION_KEY) ??
-      localStorage.getItem(LEGACY_ENCRYPTION_KEY)
+      this.currentKeyString ?? localStorage.getItem(USER_ENCRYPTION_KEY)
     const previousHistory = this.loadKeyHistoryFromStorage()
 
     const validAlternatives = Array.from(
@@ -434,12 +416,10 @@ export class EncryptionService {
       {
         primaryKey: primary,
         history: validAlternatives,
-        includeLegacyKey: true,
       },
       {
         previousKey,
         previousHistory,
-        includeLegacyKey: true,
       },
       {
         failurePrefix: 'Failed to persist encryption key bundle',
@@ -456,12 +436,10 @@ export class EncryptionService {
     nextState: {
       primaryKey: string
       history: string[]
-      includeLegacyKey: boolean
     },
     previousState: {
       previousKey: string | null
       previousHistory: string[]
-      includeLegacyKey: boolean
     },
     options: {
       failurePrefix: string
@@ -470,25 +448,13 @@ export class EncryptionService {
   ): void {
     try {
       localStorage.setItem(USER_ENCRYPTION_KEY, nextState.primaryKey)
-      if (nextState.includeLegacyKey) {
-        localStorage.setItem(LEGACY_ENCRYPTION_KEY, nextState.primaryKey)
-      }
       this.saveKeyHistoryToStorage(nextState.history)
     } catch (persistError) {
       try {
         if (previousState.previousKey) {
           localStorage.setItem(USER_ENCRYPTION_KEY, previousState.previousKey)
-          if (previousState.includeLegacyKey) {
-            localStorage.setItem(
-              LEGACY_ENCRYPTION_KEY,
-              previousState.previousKey,
-            )
-          }
         } else {
           localStorage.removeItem(USER_ENCRYPTION_KEY)
-          if (previousState.includeLegacyKey) {
-            localStorage.removeItem(LEGACY_ENCRYPTION_KEY)
-          }
         }
         this.saveKeyHistoryToStorage(previousState.previousHistory)
       } catch (rollbackError) {

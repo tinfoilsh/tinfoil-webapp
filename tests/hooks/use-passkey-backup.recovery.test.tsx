@@ -10,7 +10,7 @@ import { MIGRATION_STARTED } from '../harness-fixture'
 const mocks = vi.hoisted(() => ({
   keyCurrent: vi.fn(),
   registerKey: vi.fn(),
-  loadRecoveryCandidates: vi.fn(),
+  loadPasskeyCredentials: vi.fn(),
   recoverPasskeyKeyBundle: vi.fn(),
 }))
 vi.mock('@/services/harness/keys', async (importOriginal) => ({
@@ -20,7 +20,7 @@ vi.mock('@/services/harness/keys', async (importOriginal) => ({
 }))
 vi.mock('@/services/passkey', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/passkey')>()),
-  loadRecoveryCandidates: mocks.loadRecoveryCandidates,
+  loadPasskeyCredentials: mocks.loadPasskeyCredentials,
   recoverPasskeyKeyBundle: mocks.recoverPasskeyKeyBundle,
 }))
 vi.mock('@/utils/error-handling', () => ({
@@ -37,19 +37,15 @@ const BACKUP_KEY = encryptionService.encodeKeyFromBytes(bytes(2))
 beforeEach(async () => {
   mocks.keyCurrent.mockReset()
   mocks.registerKey.mockReset().mockResolvedValue({})
-  mocks.loadRecoveryCandidates
-    .mockReset()
-    .mockResolvedValue([{ id: 'cred-1', source: 'enclave' }])
+  mocks.loadPasskeyCredentials.mockReset().mockResolvedValue([{ id: 'cred-1' }])
   mocks.recoverPasskeyKeyBundle.mockReset().mockResolvedValue({
     credentialId: 'cred-1',
     keyBundle: {
       primary: BACKUP_KEY,
       alternatives: [],
-      authorizationMode: 'explicit_start_fresh',
     },
     syncVersion: 1,
     bundleVersion: 1,
-    source: 'enclave',
   })
   await encryptionService.setKey(DEVICE_KEY)
 })
@@ -58,7 +54,7 @@ afterEach(() => {
   encryptionService.clearKey()
 })
 
-async function recoverStartFreshBackup() {
+async function recoverBackup() {
   const { result } = renderHook(() =>
     usePasskeyBackup({
       encryptionKey: DEVICE_KEY,
@@ -74,7 +70,7 @@ async function recoverStartFreshBackup() {
   return { result, recovered }
 }
 
-it('refuses a Start Fresh backup of another key without replacing the registered key', async () => {
+it('refuses a backup of another key without replacing the registered key', async () => {
   mocks.keyCurrent.mockResolvedValue({
     key_id: 'kid-of-the-current-key',
     etag: 'revision',
@@ -82,7 +78,7 @@ it('refuses a Start Fresh backup of another key without replacing the registered
     bundles: {},
   })
 
-  const { result, recovered } = await recoverStartFreshBackup()
+  const { result, recovered } = await recoverBackup()
 
   expect(recovered).toBeNull()
   expect(result.current.passkeyRecoveryFailure).toBe('stale_backup')
@@ -93,7 +89,7 @@ it('refuses a Start Fresh backup of another key without replacing the registered
   })
 })
 
-it('moves legacy data to a recovered Start Fresh key instead of dropping it', async () => {
+it('moves legacy data to a recovered key instead of dropping it', async () => {
   mocks.keyCurrent.mockResolvedValue({
     key_id: null,
     etag: '',
@@ -106,7 +102,7 @@ it('moves legacy data to a recovered Start Fresh key instead of dropping it', as
     return MIGRATION_STARTED
   })
 
-  const { result, recovered } = await recoverStartFreshBackup()
+  const { result, recovered } = await recoverBackup()
 
   expect(recovered).toBe(BACKUP_KEY)
   expect(result.current.passkeyRecoveryFailure).toBeNull()

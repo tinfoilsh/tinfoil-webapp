@@ -4,16 +4,12 @@
 
 try {
   ;(function () {
-    var themeMode =
-      localStorage.getItem('tinfoil-settings-theme-mode') ||
-      localStorage.getItem('themeMode')
+    var themeMode = localStorage.getItem('tinfoil-settings-theme-mode')
     var theme
 
-    // If no themeMode, check 'tinfoil-settings-theme' / pre-migration 'theme' key
+    // If no themeMode, check 'tinfoil-settings-theme'
     if (!themeMode) {
-      var legacyTheme =
-        localStorage.getItem('tinfoil-settings-theme') ||
-        localStorage.getItem('theme')
+      var legacyTheme = localStorage.getItem('tinfoil-settings-theme')
       if (legacyTheme === 'dark' || legacyTheme === 'light') {
         themeMode = legacyTheme
       }
@@ -38,9 +34,7 @@ try {
 
 try {
   ;(function () {
-    var font =
-      localStorage.getItem('tinfoil-settings-chat-font') ||
-      localStorage.getItem('chatFont')
+    var font = localStorage.getItem('tinfoil-settings-chat-font')
     if (font === 'serif' || font === 'mono' || font === 'dyslexic') {
       document.documentElement.setAttribute('data-chat-font', font)
     }

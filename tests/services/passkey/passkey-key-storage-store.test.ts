@@ -1,10 +1,8 @@
 /**
  * passkey-key-storage.storeEncryptedKeys — enclave-wire contract.
  *
- * The legacy implementation talked to /api/passkey-credentials/ and
- * ran an optimistic client-side concurrency loop. The new module
- * routes through the enclave's register-key / add-bundle wire and
- * leaves concurrency to the enclave, so these tests assert the
+ * The module routes through the enclave's register-key / add-bundle
+ * wire and leaves concurrency to the enclave, so these tests assert the
  * branching contract (first-time register vs add-bundle vs
  * conflict) rather than version counters.
  */
