@@ -1,11 +1,13 @@
 import { LogoLoading } from '@/components/ui/logo-loading'
 import { AUTH_ACTIVE_USER_CHANGED_EVENT } from '@/constants/auth-events'
+import { toast } from '@/hooks/use-toast'
 import { authTokenManager, AuthTokenUnavailableError } from '@/services/auth'
 import {
   ENCRYPTION_KEY_CHANGED_EVENT,
   encryptionService,
 } from '@/services/encryption/encryption-service'
 import { enableCloudSyncForExistingKey } from '@/utils/cloud-sync-settings'
+import { logError } from '@/utils/error-handling'
 import { useAuth } from '@clerk/react'
 import {
   createContext,
@@ -29,9 +31,26 @@ import {
 } from './runtime'
 
 const HarnessContext = createContext<HarnessAPI | null>(null)
+// Whose session the harness serves: an account, a signed-out account, or a
+// visitor whose account is not asked for. A visitor's session shares nothing
+// with a signed-out account's.
+const SIGNED_OUT_ACCOUNT = 'anonymous'
+const VISITOR_ACCOUNT = 'visitor'
 
-export function HarnessProvider({ children }: { children: ReactNode }) {
-  const { isLoaded, userId, getToken } = useAuth()
+export function HarnessProvider({
+  children,
+  anonymous = false,
+}: {
+  children: ReactNode
+  // The page opens as a visitor without waiting for the account to load, as
+  // a shared chat does: every request it makes is anonymous.
+  anonymous?: boolean
+}) {
+  const auth = useAuth()
+  const isLoaded = anonymous || auth.isLoaded
+  const userId = anonymous ? null : auth.userId
+  const getToken = auth.getToken
+  const owner = anonymous ? VISITOR_ACCOUNT : (userId ?? SIGNED_OUT_ACCOUNT)
   const identity = useRef(userId)
   identity.current = userId
   const token = useRef(getToken)
@@ -55,8 +74,9 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
         if (userId && !jwt) throw new AuthTokenUnavailableError('unavailable')
         return jwt
       }
-      // A null getter records a confirmed signed-out session for account APIs.
-      authTokenManager.initialize(userId ? getter : null)
+      // A null getter records a confirmed signed-out session for account
+      // APIs, which a visitor's page does not know.
+      if (!anonymous) authTokenManager.initialize(userId ? getter : null)
       const api = new HarnessAPI(new HarnessClient(url, getter), userId ?? null)
       release = activateAPI(api)
       setSessionAPI(api)
@@ -64,7 +84,9 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
         const initialization = userId
           ? encryptionService.initialize().then(enableCloudSyncForExistingKey)
           : Promise.resolve()
-        void initialization.then(() => api.refresh()).catch(reportHarnessError)
+        void initialization
+          .then(() => api.refresh({ credentials: true }))
+          .catch(reportHarnessError)
       }
       const unlock = () => {
         api.invalidateKey()
@@ -74,11 +96,13 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
         api.invalidateKey()
         void api.refreshProfile().catch(reportHarnessError)
       }
+      const stopChanges = api.watchChanges()
       window.addEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, unlock)
       refresh()
       window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, keyChanged)
-      setAccount(userId ?? 'anonymous')
+      setAccount(owner)
       return () => {
+        stopChanges()
         window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, keyChanged)
         window.removeEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, unlock)
         release?.()
@@ -90,7 +114,7 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
       )
       release?.()
     }
-  }, [isLoaded, userId])
+  }, [isLoaded, userId, anonymous, owner])
   if (error)
     return (
       <main
@@ -100,7 +124,7 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
         {error}
       </main>
     )
-  if (!isLoaded || account !== (userId ?? 'anonymous'))
+  if (!isLoaded || account !== owner)
     return (
       <div role="status" aria-label="Loading your session">
         <LogoLoading />
@@ -124,14 +148,38 @@ export function useHarness() {
   )
   return { ...view, profile, api: api ?? harnessAPI() }
 }
-// Whether the harness's session offers a feature. Features are off until the
-// session loads, and while the harness cannot reach the service behind them.
-export function useSessionFeature(feature: string): boolean {
+// Whether the harness's session offers a feature. Features are off while
+// the harness cannot reach the service behind them, and until the session
+// loads unless `whileLoading` says otherwise.
+export function useSessionFeature(
+  feature: string,
+  whileLoading = false,
+): boolean {
   return useSyncExternalStore(
     subscribe,
-    () => getView().session?.features[feature] === true,
-    () => false,
+    () => {
+      const { session, error } = getView()
+      // A session that failed to load offers nothing.
+      return session
+        ? session.features[feature] === true
+        : whileLoading && !error
+    },
+    () => whileLoading,
   )
+}
+// A setting the harness did not save returns to its saved value, and the
+// user is told.
+export function reportProfileError(cause: unknown) {
+  if (cause instanceof DOMException && cause.name === 'AbortError') return
+  logError('Failed to save settings', cause, {
+    component: 'HarnessProvider',
+    action: 'updateProfile',
+  })
+  toast({
+    title: 'Failed to save settings',
+    description: 'Please try again.',
+    variant: 'destructive',
+  })
 }
 export function useProfileSetting<T>(
   field: string,
@@ -141,7 +189,7 @@ export function useProfileSetting<T>(
   return [
     profile[field] ?? fallback,
     (value) => {
-      void api.updateProfile({ [field]: value }).catch(reportHarnessError)
+      void api.updateProfile({ [field]: value }).catch(reportProfileError)
     },
   ]
 }

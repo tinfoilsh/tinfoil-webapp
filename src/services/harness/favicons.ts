@@ -1,10 +1,10 @@
 import { ROUTES } from './protocol'
 import { harnessAPI } from './runtime'
 
-const FAVICON_TYPE = /^image\/(?:png|jpeg|webp|gif|x-icon|vnd.microsoft.icon)$/
+const FAVICON_TYPE = /^image\//i
 
 // A site's favicon as a data URL, which the harness fetches inside the
-// enclave; null when the site has none in an image type the page shows.
+// enclave; null when the site has none, or its icon is not an image.
 export async function lookupFavicon(url: string): Promise<string | null> {
   const data = await harnessAPI().post<{
     status: string

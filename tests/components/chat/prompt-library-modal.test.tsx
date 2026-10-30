@@ -173,6 +173,28 @@ describe('PromptLibraryModal default prompt', () => {
     ).toHaveTextContent('ModelNo override setWeb searchOn')
   })
 
+  it('duplicates a saved prompt as an editable copy', async () => {
+    withDefaults({ customPromptPresets: [SAVED] })
+    renderModal()
+    fireEvent.click(screen.getByRole('button', { name: /Research/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Duplicate/ }))
+
+    await screen.findByDisplayValue('Research (copy)')
+    expect(getView().profile.customPromptPresets).toEqual([
+      SAVED,
+      {
+        id: expect.stringMatching(/^user:/),
+        name: 'Research (copy)',
+        description: SAVED.description,
+        systemPrompt: SAVED.systemPrompt,
+        createdAt: expect.any(Number),
+        updatedAt: expect.any(Number),
+        model: SAVED.model,
+        webSearchEnabled: SAVED.webSearchEnabled,
+      },
+    ])
+  })
+
   it('shows a saved model the catalog no longer offers as unset', () => {
     withDefaults({
       customPromptPresets: [{ ...SAVED, model: 'retired-model' }],

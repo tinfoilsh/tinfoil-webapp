@@ -68,7 +68,7 @@ import {
   getNewChatPath,
   isPlainPrimaryClick,
 } from '@/utils/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link } from '../link'
 import { Logo } from '../logo'
 import { SIDEBAR_PANEL_ID, SidebarPanel, SidebarRail } from './sidebar-layout'
@@ -95,6 +95,11 @@ function isIOSDevice() {
 
 type ChatSidebarProps = {
   hasMore?: boolean
+  isLoadingChats?: boolean
+  chatListError?: string | null
+  onRetryChats?: () => void
+  // Unlocks the content key, which the synced chats wait for.
+  onUnlockChats?: () => void
   onLoadMore?: () => Promise<void>
   isOpen: boolean
   setIsOpen: (isOpen: boolean) => void
@@ -159,6 +164,10 @@ function usePreventZoom() {
 
 export function ChatSidebar({
   hasMore: hasMoreRemote = false,
+  isLoadingChats = false,
+  chatListError,
+  onRetryChats,
+  onUnlockChats,
   onLoadMore,
   isOpen,
   setIsOpen,
@@ -263,7 +272,8 @@ export function ChatSidebar({
   } = useUpgradeToPro()
   // Without cloud sync every chat stays on this device. With it, "Enable
   // local chats" adds a Local tab whose new chats stay on this device.
-  const { keyReady, cloud: cloudSyncEnabled } = useHarness()
+  const { keyLocked, cloud: cloudSyncEnabled } = useHarness()
+  const settingsAttentionId = useId()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const localOnlyModeEnabled = useLocalChatsSetting()
   const showStorageTabs = cloudSyncEnabled && localOnlyModeEnabled
@@ -328,7 +338,7 @@ export function ChatSidebar({
     loading: projectsLoading,
     refresh: refreshProjects,
   } = useProjects({
-    autoLoad: cloudSyncEnabled && keyReady && isPremium,
+    autoLoad: cloudSyncEnabled && isPremium && !keyLocked,
   })
 
   const { activeProject } = useProject()
@@ -569,6 +579,9 @@ export function ChatSidebar({
           (chat) => chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
         )
       }
+      // Cached cloud chats cannot be opened with a refused key, so the tab
+      // offers to unlock instead.
+      if (keyLocked) return []
       return chats.filter(
         (chat) => !chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
       )
@@ -576,7 +589,7 @@ export function ChatSidebar({
     return chats.filter(
       (chat) => chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
     )
-  }, [chats, cloudSyncEnabled, showLocalTab])
+  }, [chats, cloudSyncEnabled, keyLocked, showLocalTab])
 
   const favoriteChats = useMemo(() => {
     const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
@@ -813,8 +826,21 @@ export function ChatSidebar({
                   'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
                 )}
                 aria-label="Settings"
+                aria-describedby={keyLocked ? settingsAttentionId : undefined}
               >
                 <TfSetting className="h-5 w-5" aria-hidden="true" />
+                {keyLocked && (
+                  <>
+                    <span
+                      className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
+                      title="Cloud sync needs attention"
+                      aria-hidden="true"
+                    />
+                    <span id={settingsAttentionId} className="sr-only">
+                      Cloud sync needs attention
+                    </span>
+                  </>
+                )}
               </button>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 Settings
@@ -1314,7 +1340,7 @@ export function ChatSidebar({
                       ) : (
                         <>
                           {/* Create new project button */}
-                          {onCreateProject && (
+                          {onCreateProject && !keyLocked && (
                             <button
                               onClick={async () => {
                                 setIsCreatingProject(true)
@@ -1355,7 +1381,11 @@ export function ChatSidebar({
                           )}
 
                           {/* Projects list */}
-                          {projectsLoading && projects.length === 0 ? (
+                          {keyLocked ? (
+                            <div className="px-3 py-2 text-xs text-content-muted">
+                              Your projects are locked
+                            </div>
+                          ) : projectsLoading && projects.length === 0 ? (
                             <div className="flex justify-center px-3 py-2">
                               <PiSpinner className="h-4 w-4 animate-spin text-content-muted" />
                             </div>
@@ -2044,6 +2074,13 @@ export function ChatSidebar({
                     {isClient && (
                       <ChatList
                         chats={sortedChats as ChatItemData[]}
+                        isLoading={
+                          paginatesCloudChats &&
+                          isLoadingChats &&
+                          sortedChats.length === 0
+                        }
+                        error={paginatesCloudChats ? chatListError : null}
+                        onRetry={onRetryChats}
                         currentChatId={currentChat?.id}
                         currentChatIsBlank={currentChat?.isBlankChat}
                         currentChatIsLocalOnly={currentChat?.isLocalOnly}
@@ -2109,6 +2146,23 @@ export function ChatSidebar({
                                 Disable cloud sync in settings to create
                                 local-only chats
                               </p>
+                            </div>
+                          ) : onUnlockChats ? (
+                            <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
+                              <p className="text-sm text-content-muted">
+                                Your chats are locked
+                              </p>
+                              <p className="mt-1 text-xs text-content-muted">
+                                Unlock your encryption key to see your synced
+                                chats
+                              </p>
+                              <button
+                                type="button"
+                                onClick={onUnlockChats}
+                                className="mt-3 rounded-md bg-tinfoil-accent-blue px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-tinfoil-accent-blue-hover"
+                              >
+                                Unlock
+                              </button>
                             </div>
                           ) : undefined
                         }
@@ -2225,6 +2279,7 @@ export function ChatSidebar({
             isSignedIn={Boolean(isSignedIn)}
             isPremium={Boolean(isPremium)}
             isDarkMode={isDarkMode}
+            syncNeedsAttention={keyLocked}
             onOpenSettings={(tab) => onSettingsClick?.(tab)}
             onReportBug={() => onReportBugClick?.()}
           />

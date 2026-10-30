@@ -1,7 +1,8 @@
 'use client'
 
 import { cn } from '@/components/ui/utils'
-import { useChatSearch } from '@/hooks/use-chat-search'
+import { useChatSearch, useChatsOutsideProjects } from '@/hooks/use-chat-search'
+import { chatTitle, threadView } from '@/services/harness/view-model'
 import type { Project } from '@/types/project'
 import { isSearchableChat } from '@/utils/chat-search-visibility'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
@@ -33,6 +34,7 @@ export interface SearchableChat {
   id: string
   title: string
   updatedAt?: Date | string
+  activityAt?: Date | string
   projectId?: string
   isBlankChat?: boolean
   isTemporary?: boolean
@@ -46,6 +48,9 @@ interface ChatSearchModalProps {
   projects: Pick<Project, 'id' | 'name'>[]
   /** Server-side search is only possible for signed-in users with cloud sync. */
   searchEnabled: boolean
+  // The chats given are a project's, so recent chats outside projects are
+  // read apart.
+  projectScoped?: boolean
   isPremium: boolean
   onOpenChat: (chat: Pick<Chat, 'id' | 'projectId'>) => void | Promise<void>
   onOpenProject: (
@@ -70,6 +75,7 @@ export function ChatSearchModal({
   chats,
   projects,
   searchEnabled,
+  projectScoped = false,
   isPremium,
   onOpenChat,
   onOpenProject,
@@ -97,14 +103,27 @@ export function ChatSearchModal({
   )
 
   const savedChats = useMemo(() => chats.filter(isSearchableChat), [chats])
+  const outsideProjects = useChatsOutsideProjects(
+    isOpen && searchEnabled && projectScoped,
+    CONSTANTS.SEARCH_RECENT_CHAT_COUNT,
+  )
 
   const recentChats = useMemo(
     () =>
-      [...savedChats]
+      [
+        ...savedChats,
+        ...outsideProjects
+          .filter((thread) => !savedChats.some((chat) => chat.id === thread.id))
+          .map((thread) => threadView(thread)),
+      ]
         .filter((chat) => !chat.projectId)
-        .sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt))
+        .sort(
+          (a, b) =>
+            toTime(b.activityAt ?? b.updatedAt) -
+            toTime(a.activityAt ?? a.updatedAt),
+        )
         .slice(0, CONSTANTS.SEARCH_RECENT_CHAT_COUNT),
-    [savedChats],
+    [savedChats, outsideProjects],
   )
 
   const matchingChats = useMemo(() => {
@@ -118,8 +137,9 @@ export function ChatSearchModal({
         ? []
         : search.results.map((result) => ({
             id: result.id,
-            title: result.title,
+            title: chatTitle(result),
             updatedAt: result.updatedAt,
+            activityAt: result.activityAt,
             projectId: result.projectId ?? undefined,
           }))
       const remoteIds = new Set(remoteMatches.map((chat) => chat.id))

@@ -1,4 +1,5 @@
 import { PROJECTS_CHANGED, useProjects } from '@/hooks/use-projects'
+import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi, type Mock } from 'vitest'
@@ -30,31 +31,35 @@ beforeEach(() => {
   post = client.post
 })
 
-it('keeps the list read after a change when an earlier read finishes last', async () => {
-  let finishStale!: (page: unknown) => void
-  post
-    .mockReturnValueOnce(
-      new Promise((resolve) => {
-        finishStale = resolve
-      }),
-    )
-    .mockResolvedValueOnce({ projects: [ALPHA, BETA], nextCursor: null })
-  const { result } = renderHook(() => useProjects())
-  await waitFor(() => expect(post).toHaveBeenCalledOnce())
+it.each(['local', 'remote'])(
+  'keeps the list read after a %s change when an earlier read finishes last',
+  async (source) => {
+    let finishStale!: (page: unknown) => void
+    post
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishStale = resolve
+        }),
+      )
+      .mockResolvedValueOnce({ projects: [ALPHA, BETA], nextCursor: null })
+    const { result } = renderHook(() => useProjects())
+    await waitFor(() => expect(post).toHaveBeenCalledOnce())
 
-  act(() => {
-    window.dispatchEvent(new Event(PROJECTS_CHANGED))
-  })
-  await waitFor(() => expect(result.current.projects).toEqual([ALPHA, BETA]))
-  await act(async () => finishStale({ projects: [ALPHA], nextCursor: null }))
+    act(() => {
+      if (source === 'local') window.dispatchEvent(new Event(PROJECTS_CHANGED))
+      else publish({ projectRevision: 'remote-change' })
+    })
+    await waitFor(() => expect(result.current.projects).toEqual([ALPHA, BETA]))
+    await act(async () => finishStale({ projects: [ALPHA], nextCursor: null }))
 
-  expect(result.current.projects).toEqual([ALPHA, BETA])
-  expect(result.current.loading).toBe(false)
-  expect(post.mock.calls.map(([path]) => path)).toEqual([
-    '/v1/projects/list',
-    '/v1/projects/list',
-  ])
-})
+    expect(result.current.projects).toEqual([ALPHA, BETA])
+    expect(result.current.loading).toBe(false)
+    expect(post.mock.calls.map(([path]) => path)).toEqual([
+      '/v1/projects/list',
+      '/v1/projects/list',
+    ])
+  },
+)
 
 it('lists the projects once for the hooks that load them together', async () => {
   post.mockResolvedValue({ projects: [ALPHA], nextCursor: null })
@@ -105,4 +110,30 @@ it('resolves a failed refresh and keeps its error', async () => {
   expect(result.current.error).toBe('Projects are unavailable')
   expect(result.current.loading).toBe(false)
   expect(result.current.projects).toEqual([])
+})
+
+it("loads until the account's projects are first listed, after its key arrives", async () => {
+  publish({ keyReady: false })
+  let finish!: (page: unknown) => void
+  post.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve
+    }),
+  )
+  const { result } = renderHook(() => useProjects())
+  expect(result.current).toMatchObject({ projects: [], loading: true })
+  expect(post).not.toHaveBeenCalled()
+
+  act(() => publish({ keyReady: true }))
+  await waitFor(() => expect(post).toHaveBeenCalledOnce())
+  expect(result.current).toMatchObject({ projects: [], loading: true })
+
+  await act(async () => finish({ projects: [], nextCursor: null }))
+  expect(result.current).toMatchObject({ projects: [], loading: false })
+})
+
+it('does not report loading to a caller that does not list projects', () => {
+  const { result } = renderHook(() => useProjects({ autoLoad: false }))
+  expect(result.current).toMatchObject({ projects: [], loading: false })
+  expect(post).not.toHaveBeenCalled()
 })

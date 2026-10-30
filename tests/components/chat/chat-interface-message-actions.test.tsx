@@ -3,6 +3,7 @@ import { authTokenManager } from '@/services/auth'
 import type { Thread } from '@/services/harness/types'
 import { resetSafeguards } from '@/services/safeguards'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -110,11 +111,156 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  window.getSelection()?.removeAllRanges()
   resetSafeguards()
   authTokenManager.reset()
 })
 
 describe('message actions on the chat page', () => {
+  it.each([390, 900, 1440])(
+    'keeps the chat layout visible while another chat loads at %ipx',
+    async (width) => {
+      vi.stubGlobal('innerWidth', width)
+      signIn({ cloud: true })
+      const nextThread: Thread = {
+        ...structuredClone(thread),
+        id: 'next-thread',
+        title: 'Another chat',
+        messages: [
+          {
+            id: 'next-user',
+            role: 'user',
+            createdAt: thread.createdAt,
+            content: 'A different conversation',
+          },
+        ],
+        messageCount: 1,
+      }
+      let finishLoading!: (thread: Thread) => void
+      const loading = new Promise<Thread>((resolve) => {
+        finishLoading = resolve
+      })
+      client.post.mockImplementation(async (path, input) => {
+        if (path === '/v1/threads/list')
+          return { threads: [], nextCursor: null }
+        if (path === '/v1/threads/get') {
+          return (input as { id: string }).id === THREAD_ID
+            ? structuredClone(thread)
+            : loading
+        }
+        throw new Error(`Unexpected ${path}`)
+      })
+      client.events.mockImplementation(async function* (_path, input) {
+        yield {
+          id: 0,
+          event: {
+            type: 'RUN_STARTED',
+            threadId: input.threadId!,
+            runId: 'loaded-chat-run',
+          },
+        }
+        yield {
+          id: 1,
+          event: {
+            type: 'RUN_FINISHED',
+            threadId: input.threadId!,
+            runId: 'loaded-chat-run',
+          },
+        }
+      })
+      const { rerender } = render(
+        <ChatInterface initialChatId={THREAD_ID} suppressIntroModals />,
+      )
+      await screen.findByText('Hello there')
+      const header = screen
+        .getByRole('heading', { level: 1, name: 'A chat' })
+        .closest('header')
+      const input = screen.getByRole('textbox', { name: /message/i })
+      const inputArea = input.closest('[data-chat-input-area]')
+      fireEvent.change(input, { target: { value: 'My next question' } })
+
+      rerender(
+        <ChatInterface initialChatId={nextThread.id} suppressIntroModals />,
+      )
+      await screen.findByRole('status', { name: 'Loading chat history' })
+      expect(
+        screen
+          .getByRole('heading', { level: 1, name: 'Loading chat' })
+          .closest('header'),
+      ).toBe(header)
+      const loadingInput = screen.getByRole('textbox', { name: /message/i })
+      expect(loadingInput.closest('[data-chat-input-area]')).toBe(inputArea)
+      expect(loadingInput).toHaveValue('My next question')
+      expect(loadingInput).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+      expect(screen.queryByText('Hello there')).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Temporary chat' }),
+      ).not.toBeInTheDocument()
+      fireEvent.submit(loadingInput.closest('form')!)
+      expect(client.events).not.toHaveBeenCalled()
+
+      await act(async () => {
+        finishLoading(nextThread)
+      })
+      expect(
+        screen.queryByRole('status', { name: 'Loading chat history' }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen
+          .getByRole('heading', { level: 1, name: nextThread.title })
+          .closest('header'),
+      ).toBe(header)
+      expect(screen.getByText('A different conversation')).toBeInTheDocument()
+      expect(screen.getByRole('textbox', { name: /message/i })).toBeEnabled()
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+      await waitFor(() => expect(client.events).toHaveBeenCalledTimes(1))
+      expect(client.events.mock.calls[0][1]).toMatchObject({
+        threadId: nextThread.id,
+        content: 'My next question',
+      })
+    },
+  )
+
+  it('sends a selected quote without requiring extra text', async () => {
+    open()
+    const message = await screen.findByText('Hello there')
+    const range = document.createRange()
+    range.selectNodeContents(message)
+    vi.spyOn(range, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(100, 100, 120, 20),
+    )
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Quote' }))
+    client.events.mockImplementation(async function* (_path, input) {
+      yield {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          threadId: input.threadId!,
+          runId: 'quoted',
+        },
+      }
+      yield {
+        id: 1,
+        event: {
+          type: 'RUN_FINISHED',
+          threadId: input.threadId!,
+          runId: 'quoted',
+        },
+      }
+    })
+    const input = screen.getByRole('textbox', { name: /message/i })
+    fireEvent.submit(input.closest('form')!)
+    await waitFor(() => expect(client.events).toHaveBeenCalledTimes(1))
+    expect(client.events.mock.calls[0][1]).toMatchObject({
+      kind: 'send',
+      content: '',
+      quote: 'Hello there',
+    })
+  })
   it("offers a stored chat's message actions", async () => {
     open()
 
@@ -183,6 +329,64 @@ describe('message actions on the chat page', () => {
       { key: KEY, threadId: THREAD_ID, messageId: 'a1' },
       expect.any(AbortSignal),
     )
+  })
+
+  it('keeps the draft, its attachment and quote in the fork', async () => {
+    open()
+    const message = await screen.findByText('Hello there')
+    fireEvent.change(screen.getByRole('textbox', { name: /message/i }), {
+      target: { value: 'My unfinished draft' },
+    })
+    client.upload.mockResolvedValueOnce({
+      attachment: {
+        id: 'att_notes',
+        kind: 'document',
+        fileName: 'notes.txt',
+        mimeType: 'text/plain',
+        size: 4,
+      },
+    })
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: { files: [new File(['note'], 'notes.txt')] },
+    })
+    await screen.findByRole('button', { name: 'Remove notes.txt' })
+    const range = document.createRange()
+    range.setStart(message.firstChild!, 0)
+    range.setEnd(message.firstChild!, 'Hello'.length)
+    vi.spyOn(range, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(100, 100, 120, 20),
+    )
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Quote' }))
+    window.getSelection()!.removeAllRanges()
+    expect(screen.getByText('Hello')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    fireEvent.click(
+      screen.getByRole('menuitem', { name: 'Fork conversation from here' }),
+    )
+    await waitFor(() =>
+      expect(chatPage.router.replace).toHaveBeenCalledWith(
+        '/chat/fork-1',
+        undefined,
+        { shallow: true },
+      ),
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('status', { name: 'Forking conversation' }),
+      ).not.toBeInTheDocument(),
+    )
+
+    expect(screen.getByRole('textbox', { name: /message/i })).toHaveValue(
+      'My unfinished draft',
+    )
+    expect(
+      screen.getByRole('button', { name: 'Remove notes.txt' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Hello')).toBeInTheDocument()
   })
 })
 

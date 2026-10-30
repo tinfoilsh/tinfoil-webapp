@@ -9,8 +9,7 @@ function isWorkBlock(block: TimelineBlock): block is WorkBlock {
   return (
     block.type === 'thinking' ||
     block.type === 'web_search' ||
-    block.type === 'url_fetches' ||
-    block.type === 'code_exec'
+    block.type === 'url_fetches'
   )
 }
 
@@ -26,17 +25,14 @@ export function isInvisibleBlock(block: TimelineBlock): boolean {
       return !block.content.trim() && !block.isThinking
     case 'url_fetches':
       return block.fetches.length === 0
-    case 'code_exec':
-      return block.calls.length === 0
     default:
       return false
   }
 }
 
 /**
- * Groups consecutive trace blocks (thinking, web search, URL fetches, code
- * exec) into a single "work" segment so the renderer can collapse them
- * behind one row. Runs of a single block are left as plain blocks; answer
+ * Groups consecutive trace blocks (thinking, web search, URL fetches) into
+ * a single "work" segment so the renderer can collapse them behind one row. Runs of a single block are left as plain blocks; answer
  * text and GenUI widgets end a run.
  */
 export function segmentTimeline(timeline: TimelineBlock[]): TimelineSegment[] {

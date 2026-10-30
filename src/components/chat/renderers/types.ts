@@ -34,8 +34,14 @@ export interface MessageRenderProps {
   onRegenerateMessage?: (messageIndex: number) => void
   /** Remove this message from the conversation. */
   onDeleteMessage?: (messageIndex: number) => void
-  /** Rewrite an assistant response's text in place. */
-  onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
+  /**
+   * Rewrite an assistant response's text in place. Rejects when the chat
+   * could not keep the rewrite.
+   */
+  onEditAssistantMessage?: (
+    messageIndex: number,
+    newContent: string,
+  ) => void | Promise<void>
   /** Ask the model to resume an assistant response. */
   onContinueAssistantMessage?: (messageIndex: number) => void
   /** Start a new conversation containing every message up to this one. */

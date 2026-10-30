@@ -20,7 +20,6 @@ import { ConfirmDialog } from '../../components/confirm-dialog'
 import { CONSTANTS } from '../../constants'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
 import { isImeComposition, isSubmitShortcut } from '../../keyboard-utils'
-import { CodeExecProcess } from '../components/CodeExecProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
 import {
@@ -28,6 +27,7 @@ import {
   type MessageOverflowMenuItem,
 } from '../components/MessageOverflowMenu'
 import { ReadAloudButton } from '../components/ReadAloudButton'
+import { SourcesButton } from '../components/SourcesButton'
 import { StreamingChunkedText } from '../components/StreamingChunkedText'
 import { StreamingContentWrapper } from '../components/StreamingContentWrapper'
 import { StreamingTracerDot } from '../components/StreamingTracerDot'
@@ -101,16 +101,6 @@ const DefaultMessageComponent = ({
   const modelDisplayName = message.modelDisplayName?.trim()
   const showMetadata = hasVisibleAssistantMessage(message)
 
-  const citationUrlTitles = React.useMemo(() => {
-    if (!message.annotations || message.annotations.length === 0)
-      return undefined
-    const map = new Map<string, string>()
-    for (const annotation of message.annotations) {
-      const { url, title } = annotation.url_citation
-      if (url) map.set(url, title || '')
-    }
-    return map.size > 0 ? map : undefined
-  }, [message.annotations])
   const displayTimeline = React.useMemo(
     () => (isUser ? [] : (message.timeline ?? [])),
     [isUser, message.timeline],
@@ -119,6 +109,45 @@ const DefaultMessageComponent = ({
     () => segmentTimeline(displayTimeline),
     [displayTimeline],
   )
+  // A reply that searched lists its last search's results and what it
+  // cites; earlier searches and read pages list theirs in their own rows.
+  const sources = React.useMemo(() => {
+    const lastSearch = displayTimeline.findLast(
+      (block) => block.type === 'web_search',
+    )
+    if (lastSearch?.type !== 'web_search') return []
+    return [
+      ...(lastSearch.state.sources ?? []),
+      ...(message.annotations ?? []).map(
+        (annotation) => annotation.url_citation,
+      ),
+    ]
+  }, [displayTimeline, message.annotations])
+  // A link to a page the reply's searches or reads found shows as a
+  // citation while the reply streams, before the harness names what it
+  // cites. The lookup changes only when its pages do, not with each chunk.
+  const citationEntries = React.useMemo(() => {
+    const titles = new Map<string, string>()
+    for (const { url, title } of [
+      ...(message.annotations ?? []).map(
+        (annotation) => annotation.url_citation,
+      ),
+      ...displayTimeline.flatMap((block) =>
+        block.type === 'web_search' ? (block.state.sources ?? []) : [],
+      ),
+      ...displayTimeline.flatMap((block) =>
+        block.type === 'url_fetches'
+          ? block.fetches.flatMap((fetch) => fetch.sources ?? [])
+          : [],
+      ),
+    ])
+      if (url && !titles.get(url)) titles.set(url, title || '')
+    return JSON.stringify([...titles])
+  }, [displayTimeline, message.annotations])
+  const citationUrlTitles = React.useMemo(() => {
+    const entries: [string, string][] = JSON.parse(citationEntries)
+    return entries.length > 0 ? new Map(entries) : undefined
+  }, [citationEntries])
   const [showActions, setShowActions] = React.useState(false)
   const lastContentRef = React.useRef(message.content)
   const showActionsTimeoutRef = React.useRef<ReturnType<
@@ -226,10 +255,16 @@ const DefaultMessageComponent = ({
   }, [editContent, messageIndex, onEditMessage])
 
   const handleSubmitAssistantEdit = React.useCallback(() => {
-    if (editContent.trim() && onEditAssistantMessage) {
-      onEditAssistantMessage(messageIndex, editContent.trim())
-      setIsEditing(false)
-    }
+    const content = editContent.trim()
+    if (!content || !onEditAssistantMessage) return
+    setIsEditing(false)
+    // A rewrite the chat could not keep opens again with the text typed.
+    void Promise.resolve(onEditAssistantMessage(messageIndex, content)).catch(
+      () => {
+        setEditContent(content)
+        setIsEditing(true)
+      },
+    )
   }, [editContent, messageIndex, onEditAssistantMessage])
 
   const handleContinue = React.useCallback(() => {
@@ -464,12 +499,6 @@ const DefaultMessageComponent = ({
                 </div>
               )
             }
-            case 'code_exec':
-              return (
-                <div key={block.id} className="no-scroll-anchoring w-full px-4">
-                  <CodeExecProcess calls={block.calls} />
-                </div>
-              )
             case 'content': {
               const isLastContent =
                 displayTimeline.findLastIndex(
@@ -876,13 +905,18 @@ const DefaultMessageComponent = ({
             }`}
           >
             {!hideActions && !isEditing && message.content && (
-              <MessageActions
-                content={message.content}
-                isDarkMode={isDarkMode}
-              />
+              <>
+                {!(isStreaming && isLastMessage) && (
+                  <SourcesButton sources={sources} />
+                )}
+                <MessageActions
+                  content={message.content}
+                  isDarkMode={isDarkMode}
+                />
+              </>
             )}
-            {/* A chat that hides its actions may still be read aloud, as a
-                shared chat is. */}
+            {/* Whether a reply can be read aloud depends on its chat's
+                speech provider, not on whether its other actions show. */}
             {!isEditing &&
               message.content &&
               !isStreaming &&

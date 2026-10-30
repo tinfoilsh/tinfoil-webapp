@@ -1,17 +1,21 @@
 import { isPresetModelAvailable } from '@/components/chat/prompts/preset-settings'
 import type {
   Chat,
+  Message,
   QueuedMessage,
   Attachment as UIAttachment,
 } from '@/components/chat/types'
-import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
+import { DEFAULT_CHAT_TITLE, TEMPORARY_CHAT_TITLE } from '@/constants/chat'
+import {
+  ENCRYPTION_KEY_CHANGED_EVENT,
+  encryptionService,
+} from '@/services/encryption/encryption-service'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { chatActions } from './chat-actions'
 import { useChatList } from './chat-list'
 import { chatTurns } from './chat-turns'
-import { checkUpload } from './composer'
 import { deviceThreads, storeRun } from './device-threads'
 import { localThreadStore, memoryThreadStore } from './local-threads'
 import { OpenAttachments } from './open-attachments'
@@ -19,18 +23,23 @@ import {
   onDevice,
   presetIdOf,
   type OpenChat,
+  type OpenChatResult,
   type PresetChoice,
 } from './open-chat'
 import { ERROR_CODES, ROUTES } from './protocol'
 import { useHarness } from './provider'
-import { initialChat } from './reducer'
+import { initialChat, type ChatState } from './reducer'
 import { RunController } from './run-controller'
-import { getView } from './runtime'
+import { getView, reportHarnessError } from './runtime'
 import { HarnessError } from './sse'
 import { createStore, useStore } from './store'
 import { cloudThreads, type AskContext, type ThreadStore } from './thread-store'
-import type { AttachmentDescriptor } from './types'
-import { messageView, threadView } from './view-model'
+import type {
+  AttachmentDescriptor,
+  Turn,
+  Message as WireMessage,
+} from './types'
+import { attachmentView, messageView, threadView } from './view-model'
 
 export interface ThreadRoute {
   // The route names a chat stored on this device (/chat/local/:id).
@@ -44,7 +53,17 @@ export function useThread(
   projectId?: string | null,
   route: ThreadRoute = {},
 ) {
-  const { api, session, profile, profileReady, keyReady, cloud } = useHarness()
+  const {
+    api,
+    session,
+    profile,
+    profileReady,
+    keyReady,
+    keyLocked,
+    error: sessionError,
+    cloud,
+    chatRevision,
+  } = useHarness()
   const [{ open, controller, attachments, moving, temporaryChats }] = useState(
     () => ({
       open: createStore<OpenChat>({
@@ -52,7 +71,8 @@ export function useThread(
         temporary: false,
         local: !cloud || !!route.local || !!route.newChatLocal,
         unsaved: null,
-        loading: false,
+        loadingId: null,
+        failedId: null,
         notFound: false,
         model: '',
         failure: null,
@@ -70,6 +90,20 @@ export function useThread(
       // A temporary chat, kept in page memory; each new chat starts another.
       temporaryChats: { store: memoryThreadStore() },
     }),
+  )
+  // The view of each message, kept until the message, whether it streams or
+  // the reasoning summaries change, so a message that did not change keeps
+  // its view.
+  const [views] = useState(
+    () =>
+      new WeakMap<
+        WireMessage,
+        {
+          streaming: boolean
+          summaries: ChatState['summaries']
+          view: Message
+        }
+      >(),
   )
   const patch = useCallback(
     (fields: Partial<OpenChat>) => open.update((o) => ({ ...o, ...fields })),
@@ -108,7 +142,14 @@ export function useThread(
     () => localThreadStore(api.userId ? 'device' : 'tab'),
     [api.userId],
   )
-  const list = useChatList({ api, cloud, keyReady, projectId, device, report })
+  const list = useChatList({
+    api,
+    cloud,
+    keyReady,
+    projectId,
+    device,
+    revision: chatRevision,
+  })
   const { clearCloud } = list
   const cloudStore = useMemo(
     () => cloudThreads(api, list.cloud, attachments),
@@ -152,9 +193,12 @@ export function useThread(
     open.update((o) => ({
       ...o,
       id: null,
+      loadingId: null,
+      failedId: null,
       failure: null,
       notFound: false,
       unsaved: null,
+      model: '',
       presetChosen: false,
       chosenPresetId: null,
       modelChosen: false,
@@ -204,6 +248,12 @@ export function useThread(
   }
   controller.hooks = {
     accepted: markSaved,
+    // The chat list shows a stored chat as its run reports it.
+    summary(thread) {
+      const current = open.get()
+      if (!onDevice(current) && current.id === thread.id)
+        list.cloud.reported(thread)
+    },
     async saved(run, event, attached) {
       try {
         const saved = await storeRun(
@@ -236,31 +286,35 @@ export function useThread(
           component: 'useThread',
           action: 'saveRun',
         })
-        if (attached)
+        if (attached) {
+          const message = 'This chat could not be saved on this device.'
           patch({
             failure: {
-              message: 'This chat could not be saved on this device.',
+              message,
+              detail: { code: ERROR_CODES.localSaveFailed, message },
             },
           })
+        }
       }
     },
-    ended: () => {
-      void list.refresh().catch(report)
-    },
+    ended: list.reload,
     gone: (threadId) => showStored(threadId).catch(report),
   }
-  async function openChat(threadId: string, options: { local?: boolean } = {}) {
+  async function openChat(
+    threadId: string,
+    options: { local?: boolean } = {},
+  ): Promise<OpenChatResult> {
     const local = options.local ?? (!api.cloud || list.isOnDevice(threadId))
     reset()
     const shown = controller.track()
-    patch({ loading: true })
+    patch({ loadingId: threadId, temporary: false, local })
     try {
       const store = local ? deviceStore : cloudStore
       const thread = await store.get(threadId)
-      if (!shown()) return
+      if (!shown()) return { status: 'superseded' }
       if (!thread) {
-        patch({ temporary: false, local, notFound: true })
-        return
+        patch({ temporary: false, local, notFound: true, failedId: threadId })
+        return { status: 'not-found' }
       }
       controller.view.set(initialChat(thread))
       patch({
@@ -275,12 +329,24 @@ export function useThread(
       // A run of the chat may still be live: one this page started, one a
       // reloaded page left behind, or one the harness names.
       const runId = store.liveRun(thread)
-      if (!runId) return
+      if (!runId) return { status: 'opened', thread }
       const { input, device: run } = await store.follow(threadId, runId)
-      if (!shown()) return
+      if (!shown()) return { status: 'superseded' }
       void controller.run(ROUTES.follow, input, { device: run, quiet: !!run })
+      return { status: 'opened', thread }
+    } catch (cause) {
+      if (!shown()) return { status: 'superseded' }
+      patch({ failedId: threadId })
+      if (
+        cause instanceof HarnessError &&
+        cause.code === ERROR_CODES.threadNotFound
+      ) {
+        patch({ notFound: true })
+        return { status: 'not-found' }
+      }
+      throw cause
     } finally {
-      if (shown()) patch({ loading: false })
+      if (shown()) patch({ loadingId: null })
     }
   }
   const actions = chatActions({
@@ -289,6 +355,7 @@ export function useThread(
     open,
     list,
     device,
+    temporary: () => temporaryChats.store,
     storeOf,
     moving,
     reset,
@@ -318,10 +385,78 @@ export function useThread(
   const openState = useStore(open)
   const state = useStore(controller.view)
   const deviceRuns = useStore(controller.deviceRuns)
+  const refreshedChat = useRef<{ id: string; revision: string } | null>(null)
   useEffect(() => {
-    if (session && !openState.model)
-      patch({ model: profile.selectedModel || session.defaultModel })
-  }, [session, profile.selectedModel, openState.model, patch])
+    if (
+      !chatRevision ||
+      !keyReady ||
+      onDevice(open.get()) ||
+      !open.get().id ||
+      open.get().loadingId ||
+      open.get().unsaved === open.get().id ||
+      state.status !== 'idle'
+    )
+      return
+    const id = open.get().id!
+    if (
+      refreshedChat.current?.id === id &&
+      refreshedChat.current.revision === chatRevision
+    )
+      return
+    const shown = controller.track()
+    let cancelled = false
+    void (async () => {
+      const thread = await cloudStore.get(id)
+      if (!thread) return
+      const wanted = controller.view.get().messages.length
+      while (thread.hasOlder && thread.messages.length < wanted) {
+        const older = await cloudStore.older(id, thread.messages[0]?.id)
+        if (!older.messages.length) break
+        thread.messages.unshift(...older.messages)
+        thread.hasOlder = older.hasOlder
+      }
+      if (cancelled || !shown() || controller.view.get().status !== 'idle')
+        return
+      controller.view.set(initialChat(thread))
+      refreshedChat.current = { id, revision: chatRevision }
+      patch({
+        model: thread.model,
+        chosenPresetId: thread.presetId ?? null,
+        presetChosen: true,
+        webSearch: undefined,
+      })
+    })().catch((cause) => {
+      if (cancelled || !shown()) return
+      if (
+        cause instanceof HarnessError &&
+        cause.code === ERROR_CODES.threadNotFound
+      ) {
+        reset()
+        patch({ notFound: true })
+      } else report(cause)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    chatRevision,
+    keyReady,
+    cloudStore,
+    controller,
+    open,
+    patch,
+    report,
+    reset,
+    state.status,
+  ])
+  // A new chat follows the model the user picked last, as the profile
+  // loads, until the user chooses one in it or sends its first message. A
+  // chat stored without a model continues on that pick.
+  const pickedModel = profile.selectedModel || session?.defaultModel || ''
+  useEffect(() => {
+    if (pickedModel && openState.id && !openState.model)
+      patch({ model: pickedModel })
+  }, [pickedModel, openState.id, openState.model, patch])
   const previousCloud = useRef(cloud)
   useEffect(() => {
     if (previousCloud.current === cloud) return
@@ -336,21 +471,41 @@ export function useThread(
       patch({ local: true })
     }
   }, [cloud, reset, route.newChatLocal, clearCloud, open, patch])
+  const previousRoute = useRef(initialId)
+  const previousNewChatLocal = useRef(!!route.newChatLocal)
+  const previousProject = useRef(projectId)
+  const leavingChat = !!previousRoute.current && !initialId
   useEffect(() => {
-    if (
-      !initialId ||
-      opened.current === initialId ||
-      open.get().id === initialId
-    )
+    previousRoute.current = initialId
+    const changedStorage = previousNewChatLocal.current !== !!route.newChatLocal
+    previousNewChatLocal.current = !!route.newChatLocal
+    const changedProject = previousProject.current !== projectId
+    previousProject.current = projectId
+    if (leavingChat || (!initialId && (changedStorage || changedProject))) {
+      newChat({ local: !!route.newChatLocal })
       return
+    }
+    if (!initialId) return
+    // A route that names the open chat, as once a selection's address
+    // lands, is the one opened last; a later route back to the chat
+    // opened before it opens that chat again.
+    if (open.get().id === initialId) {
+      opened.current = initialId
+      return
+    }
+    if (opened.current === initialId) return
     if (!route.local && !keyReady) return
     opened.current = initialId
     void openChat(initialId, { local: !!route.local }).catch(report)
     // Opening a route must not run again when its stream updates the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialId, keyReady, route.local])
+  }, [initialId, keyReady, route.local, route.newChatLocal, projectId])
   useEffect(() => {
+    let currentKey = encryptionService.getKey()
     const clear = () => {
+      const nextKey = encryptionService.getKey()
+      if (nextKey === currentKey) return
+      currentKey = nextKey
       clearCloud()
       if (onDevice(open.get())) return
       reset()
@@ -367,7 +522,6 @@ export function useThread(
   // image's descriptor carries the copy the harness gives models; the file
   // itself is kept apart, to show and download.
   async function upload(file: File): Promise<AttachmentDescriptor> {
-    if (session) checkUpload(file, session.composer.attachments)
     const { attachment } = await api.upload<{
       attachment: AttachmentDescriptor
     }>(ROUTES.attachmentUpload, file, {}, { keyless: true })
@@ -400,24 +554,31 @@ export function useThread(
   function newChat(options: { local?: boolean } = {}) {
     opened.current = null
     reset()
-    patch({ local: !api.cloud || !!options.local })
+    patch({ local: !api.cloud || !!options.local, temporary: false })
     temporaryChats.store = memoryThreadStore()
     controller.clearReceipt()
   }
   // The open chat's view.
   const { id, temporary, local, unsaved, failure } = openState
   const choice = presetChoice()
-  const model = choice.model ?? openState.model
+  const model = choice.model ?? (openState.model || pickedModel)
   const webSearch = openState.webSearch ?? choice.webSearchEnabled
   const presetId = presetIdOf(openState, profile)
-  const running = state.status === 'streaming' || state.status === 'queued'
+  const running =
+    state.status === 'submitting' ||
+    state.status === 'streaming' ||
+    state.status === 'queued'
   const isLocalChat = local && !temporary
+  const viewOf = (message: WireMessage, streaming: boolean) => {
+    const kept = views.get(message)
+    if (kept?.streaming === streaming && kept.summaries === state.summaries)
+      return kept.view
+    const view = messageView(message, streaming, state.summaries)
+    views.set(message, { streaming, summaries: state.summaries, view })
+    return view
+  }
   const messages = state.messages.map((m, index) => {
-    const view = messageView(
-      m,
-      running && index === state.messages.length - 1,
-      state.summaries,
-    )
+    const view = viewOf(m, running && index === state.messages.length - 1)
     if (!onDevice(openState) || !view.attachments?.length) return view
     // An image the previous client stored without a thumbnail shows its
     // bytes; others load them when opened in the gallery.
@@ -431,19 +592,92 @@ export function useThread(
       }),
     }
   })
-  // A run this tab streams is active in the chat list before the list next
-  // reports it, which it never does for a chat kept on the device.
-  const liveRun = (listed: Chat): Chat => {
-    if (listed.activeRun) return listed
-    const runId =
-      deviceRuns.get(listed.id)?.runId ??
-      (listed.id === id && running ? state.runId : undefined)
-    return runId ? { ...listed, activeRun: { runId } } : listed
+  // The open chat is as recent as the latest message it shows, as one just
+  // sent, before the list reports it.
+  let shownActivity = 0
+  for (const message of state.messages) {
+    const at = Date.parse(message.createdAt)
+    if (at > shownActivity) shownActivity = at
   }
-  const summary = state.snapshot.thread
+  const shownRun = running ? state.runId : undefined
+  const { cloudListed, pinnedListed, deviceListed } = list
+  // Stored chats a refused key cannot open are left out, cached or not.
+  const listsCloud = cloud && !keyLocked
+  // The same list while nothing it shows changes, so a title the user just
+  // typed is not animated in again.
+  const chats = useMemo(() => {
+    // A run this tab streams is active in the chat list before the list
+    // next reports it, which it never does for a chat kept on the device.
+    const liveRun = (listed: Chat): Chat => {
+      if (listed.activeRun) return listed
+      const runId =
+        deviceRuns.get(listed.id)?.runId ??
+        (listed.id === id ? shownRun : undefined)
+      return runId ? { ...listed, activeRun: { runId } } : listed
+    }
+    const recent = (listed: Chat): Chat =>
+      listed.id === id &&
+      shownActivity > new Date(listed.activityAt ?? listed.createdAt).getTime()
+        ? { ...listed, activityAt: new Date(shownActivity).toISOString() }
+        : listed
+    return [
+      ...(listsCloud
+        ? [
+            ...cloudListed,
+            ...pinnedListed.filter(
+              (pin) => !cloudListed.some((chat) => chat.id === pin.id),
+            ),
+          ].map((t) => threadView(t))
+        : []),
+      ...deviceListed.map((t) => ({
+        ...threadView(t),
+        isLocalOnly: true,
+      })),
+    ]
+      .map((listed) => recent(liveRun(listed)))
+      .sort(
+        (a, b) =>
+          new Date(b.activityAt ?? b.createdAt).getTime() -
+          new Date(a.activityAt ?? a.createdAt).getTime(),
+      )
+  }, [
+    listsCloud,
+    cloudListed,
+    pinnedListed,
+    deviceListed,
+    deviceRuns,
+    id,
+    shownRun,
+    shownActivity,
+  ])
+  // The favorites, the most recently pinned first.
+  const favoriteIds = useMemo(
+    () => (listsCloud ? pinnedListed.map((thread) => thread.id).reverse() : []),
+    [listsCloud, pinnedListed],
+  )
+  const summary =
+    state.snapshot.thread ??
+    (openState.loadingId
+      ? (isLocalChat
+          ? list.deviceListed
+          : [...list.cloudListed, ...list.pinnedListed]
+        ).find((thread) => thread.id === openState.loadingId)
+      : undefined)
+  const loading =
+    leavingChat ||
+    openState.loadingId !== null ||
+    (!!initialId && opened.current !== initialId && id !== initialId)
+  const selectedId =
+    openState.loadingId ??
+    openState.failedId ??
+    id ??
+    (loading ? initialId : null)
+  // A temporary chat is titled as one, whatever the harness names it, and a
+  // new chat is untitled until its run reports it.
   const chat: Chat = summary
     ? {
         ...threadView(summary, messages),
+        ...(temporary ? { title: TEMPORARY_CHAT_TITLE } : {}),
         ...(state.flagged ? { flagged: true } : {}),
         ...(webSearch !== undefined ? { webSearchEnabled: webSearch } : {}),
         isTemporary: temporary,
@@ -452,11 +686,16 @@ export function useThread(
         presetId: presetId ?? undefined,
       }
     : {
-        id: id ?? '',
-        title: 'New Chat',
+        id: selectedId ?? '',
+        title: temporary
+          ? TEMPORARY_CHAT_TITLE
+          : loading
+            ? 'Loading chat…'
+            : DEFAULT_CHAT_TITLE,
+        titleState: 'placeholder',
         messages,
         createdAt: new Date(),
-        isBlankChat: !id,
+        isBlankChat: !selectedId,
         isTemporary: temporary,
         isLocalOnly: isLocalChat,
         pendingSave: !!id && unsaved === id,
@@ -466,19 +705,19 @@ export function useThread(
         webSearchEnabled: webSearch,
         ...(state.flagged ? { flagged: true } : {}),
       }
+  const profileFailed = cloud && !profileReady && !keyLocked && !!sessionError
   const queue: QueuedMessage[] = state.snapshot.queue.map((item) => ({
     id: item.queueId,
-    text: item.content,
+    text: item.content ?? '',
+    ...(item.quote ? { quote: item.quote } : {}),
+    ...(item.attachments?.length
+      ? { attachments: item.attachments.map(attachmentView) }
+      : {}),
   }))
   return {
     chat,
-    chats: [
-      ...(cloud ? list.cloudListed.map((t) => threadView(t)) : []),
-      ...list.deviceListed.map((t) => ({
-        ...threadView(t),
-        isLocalOnly: true,
-      })),
-    ].map(liveRun),
+    chats,
+    favoriteIds,
     model,
     setModel: (next: string) => patch({ model: next, modelChosen: true }),
     presetId,
@@ -488,14 +727,23 @@ export function useThread(
     setTemporary: (next: boolean) => patch({ temporary: next }),
     local: isLocalChat,
     cloud,
-    loading: openState.loading,
+    loading,
     notFound: openState.notFound,
+    loadFailed: !!openState.failedId,
+    retryOpen: () =>
+      openState.failedId
+        ? openChat(openState.failedId, { local: openState.local })
+        : undefined,
     status: state.status,
     running,
     // The open chat takes turns once its settings load and, for a chat the
     // harness stores, once the content key is unlocked.
-    canSend: profileReady && (onDevice(openState) || keyReady),
-    canChangeMessages: !!chat.id,
+    canSend:
+      !loading &&
+      !openState.failedId &&
+      profileReady &&
+      (onDevice(openState) || keyReady),
+    canChangeMessages: !loading && !openState.failedId && !!chat.id,
     queue,
     contextUsage: summary?.contextUsage ?? undefined,
     error: failure?.message || state.error?.message || '',
@@ -503,10 +751,50 @@ export function useThread(
     errorAt: controller.errorAt,
     hasOlder: state.hasOlder,
     hasMoreChats: !!list.nextCursor,
+    // The synced chats wait for the content key: a locked one for the user
+    // to unlock it, and a profile that failed to load for another try.
+    loadingChats: list.loading && !keyLocked && !profileFailed,
+    chatListError: profileFailed ? sessionError : list.error,
+    retryChatList: profileFailed
+      ? () => void api.refresh().catch(reportHarnessError)
+      : list.retry,
     report,
     open: openChat,
     ...turns,
+    send(fields?: Partial<Turn>) {
+      const current = open.get()
+      if (!current.id && !current.model) patch({ model: pickedModel })
+      return turns.send(fields)
+    },
     ...actions,
+    // A temporary chat saved while its reply streams is kept once no run of
+    // it is left, so the reply is stored with it, unless it was left first.
+    async saveTemporary() {
+      const { id: threadId, temporary: isTemporary } = open.get()
+      if (!threadId || !isTemporary) return
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          const { status } = controller.view.get()
+          if (
+            controller.deviceRuns.get().has(threadId) ||
+            (open.get().id === threadId &&
+              (status === 'submitting' ||
+                status === 'streaming' ||
+                status === 'queued'))
+          )
+            return
+          stops.forEach((stop) => stop())
+          resolve()
+        }
+        const stops = [
+          open.subscribe(check),
+          controller.view.subscribe(check),
+          controller.deviceRuns.subscribe(check),
+        ]
+        check()
+      })
+      if (open.get().id === threadId) return actions.saveTemporary()
+    },
     upload,
     loadImage: (attachment: UIAttachment, signal?: AbortSignal) =>
       openStore().image(open.get().id, attachment, signal),

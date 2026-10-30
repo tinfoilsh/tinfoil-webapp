@@ -1,5 +1,10 @@
 import type { Profile } from './runtime'
-import type { HarnessErrorBody } from './types'
+import type { HarnessErrorBody, Thread } from './types'
+
+export type OpenChatResult =
+  | { status: 'opened'; thread: Thread }
+  | { status: 'not-found' }
+  | { status: 'superseded' }
 
 // The open chat, apart from what its runs show.
 export interface OpenChat {
@@ -12,7 +17,8 @@ export interface OpenChat {
   // first stores it. Its route waits, since opening the route before then
   // would find nothing.
   unsaved: string | null
-  loading: boolean
+  loadingId: string | null
+  failedId: string | null
   notFound: boolean
   model: string
   // An action that failed. The open chat's run reports how it ended in the

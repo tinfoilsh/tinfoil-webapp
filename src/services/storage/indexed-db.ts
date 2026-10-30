@@ -163,7 +163,6 @@ function snapshotChatForStorage(chat: Chat): Chat {
         ...annotation,
         url_citation: { ...annotation.url_citation },
       })),
-      codeExecCalls: message.codeExecCalls?.map((call) => ({ ...call })),
       documents: message.documents?.map((document) => ({ ...document })),
       imageData: message.imageData?.map((image) => ({ ...image })),
       timeline: message.timeline

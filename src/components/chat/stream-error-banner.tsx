@@ -29,6 +29,8 @@ interface StreamErrorBannerProps {
   error: StreamErrorInfo
   onDismiss: () => void
   onRetry?: () => void
+  // Opens the key recovery for a turn the locked content key refused.
+  onUnlock?: () => void
   isDarkMode: boolean
 }
 
@@ -38,6 +40,7 @@ interface StreamErrorBannerProps {
 type ErrorKind =
   | 'connection'
   | 'auth'
+  | 'key'
   | 'rate-limit'
   | 'busy'
   | 'queue-full'
@@ -46,6 +49,7 @@ type ErrorKind =
   | 'model'
   | 'document'
   | 'server'
+  | 'storage'
 
 type ErrorClassification = {
   kind: ErrorKind
@@ -78,11 +82,17 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
     suggestion:
       'Sign in again, then resend your message. Your message was not lost.',
   },
+  key: {
+    kind: 'key',
+    title: 'Your encryption key is locked',
+    suggestion:
+      'Unlock it to keep chatting with cloud sync. Your message was not lost.',
+  },
   connection: {
     kind: 'connection',
     title: 'Connection problem',
     suggestion:
-      'Check your internet connection, then reconnect to the conversation.',
+      'Check your internet connection, then resend your message. Your message was not lost.',
   },
   'rate-limit': {
     kind: 'rate-limit',
@@ -123,6 +133,12 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
     suggestion:
       'Remove an attachment, shorten your message, or switch to a model with a larger context window.',
   },
+  storage: {
+    kind: 'storage',
+    title: 'This chat could not be saved on this device',
+    suggestion:
+      'The reply arrived, but this browser could not store it, so it may be missing when the chat is opened again.',
+  },
   server: {
     kind: 'server',
     title: 'The service is having trouble right now',
@@ -131,13 +147,7 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
   },
 }
 
-// Map a run failure to a behavioral kind plus human-readable copy using the
-// chat service's structured error code. Only a failure without a response (a
-// transport error, an interrupted stream, a connection that could not be
-// verified) is a connection problem; any other code came from the service.
-// Both the copy and the retry affordance derive from the same result so they
-// can never disagree. The raw message stays available in the expandable
-// details section.
+// The time the error says a limit resets, formatted in local time.
 function formatResetTime(error: StreamErrorInfo): string | null {
   const at = error.resetsAt
     ? Date.parse(error.resetsAt)
@@ -170,6 +180,13 @@ function quotaClassification(error: StreamErrorInfo): ErrorClassification {
   return CLASSIFICATIONS['rate-limit']
 }
 
+// Map a run failure to a behavioral kind plus human-readable copy using the
+// chat service's structured error code. Only a failure without a response (a
+// transport error, an interrupted stream, a connection that could not be
+// verified) is a connection problem; any other code came from the service.
+// Both the copy and the retry affordance derive from the same result so they
+// can never disagree. The raw message stays available in the expandable
+// details section.
 function classifyError(error: StreamErrorInfo): ErrorClassification {
   // A document conversion failure carries the document service's fixed
   // explanation, which describes nothing in the file.
@@ -183,6 +200,16 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
   switch (error.code) {
     case ERROR_CODES.unauthenticated:
       return CLASSIFICATIONS.auth
+    case ERROR_CODES.keyRequired:
+      return CLASSIFICATIONS.key
+    // The chats are sealed with another key than this device holds.
+    case ERROR_CODES.keyMismatch:
+      return {
+        ...CLASSIFICATIONS.key,
+        title: 'Your encryption key is out of date',
+        suggestion:
+          'Recover your current key to keep chatting with cloud sync. Your message was not lost.',
+      }
     case ERROR_CODES.quotaExhausted:
       return quotaClassification(error)
     case ERROR_CODES.rateLimited:
@@ -195,6 +222,8 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
       return CLASSIFICATIONS['too-large']
     case ERROR_CODES.modelUnavailable:
       return CLASSIFICATIONS.model
+    case ERROR_CODES.localSaveFailed:
+      return CLASSIFICATIONS.storage
     case undefined:
     case ERROR_CODES.streamInterrupted:
     case ERROR_CODES.connection:
@@ -225,6 +254,7 @@ export function StreamErrorBanner({
   error,
   onDismiss,
   onRetry,
+  onUnlock,
   isDarkMode,
 }: StreamErrorBannerProps) {
   const [isExpanded, setIsExpanded] = useState(false)
@@ -245,10 +275,15 @@ export function StreamErrorBanner({
   // it would only burn the automatic in-request retries and fail again.
   const isConnectionError = kind === 'connection'
   const isResend = isConnectionError || kind === 'busy' || kind === 'queue-full'
-  // A request refused for an exhausted quota or the chat's size fails
-  // identically until that changes, so a retry button is just an invitation
-  // to frustration.
-  const showRetry = !!onRetry && kind !== 'rate-limit' && kind !== 'too-large'
+  // A request refused for an exhausted quota, the chat's size or a locked
+  // key fails identically until that changes, so a retry button is just an
+  // invitation to frustration.
+  const showRetry =
+    !!onRetry &&
+    kind !== 'rate-limit' &&
+    kind !== 'too-large' &&
+    kind !== 'key' &&
+    kind !== 'storage'
   const isOffline = isResend && !isOnline
   const retryDisabled = isOffline || waitSeconds > 0
   const retryLabel = isOffline
@@ -259,6 +294,7 @@ export function StreamErrorBanner({
         ? 'Resend message'
         : 'Try again'
   const showUpgrade = kind === 'rate-limit' && error.kind === 'free_daily'
+  const showUnlock = kind === 'key' && !!onUnlock
 
   const handleDismiss = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -267,7 +303,6 @@ export function StreamErrorBanner({
 
   return (
     <div
-      role="alert"
       className={cn(
         'mb-2 overflow-hidden rounded-2xl border shadow-sm transition-colors',
         isDarkMode
@@ -277,7 +312,8 @@ export function StreamErrorBanner({
     >
       <div className="flex gap-2 px-3 py-2.5">
         <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1">
+          {/* Only the explanation is announced, not the retry countdown. */}
+          <div role="alert" className="min-w-0 flex-1">
             <p className="text-sm font-semibold">{title}</p>
             <p
               className={cn(
@@ -325,6 +361,23 @@ export function StreamErrorBanner({
               )}
             >
               Upgrade to Premium
+            </button>
+          )}
+          {showUnlock && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onUnlock?.()
+              }}
+              className={cn(
+                'flex h-9 shrink-0 items-center gap-1 self-start whitespace-nowrap rounded-site-control border px-3 text-xs font-medium transition-colors sm:self-center',
+                isDarkMode
+                  ? 'border-red-500/40 hover:bg-red-500/20'
+                  : 'border-red-300 hover:bg-red-500/10',
+              )}
+            >
+              Unlock
             </button>
           )}
         </div>

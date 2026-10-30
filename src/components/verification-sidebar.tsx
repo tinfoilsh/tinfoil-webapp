@@ -33,15 +33,50 @@ export function VerifierSidebar({
   const onVerificationCompleteRef = useRef(onVerificationComplete)
   onVerificationCompleteRef.current = onVerificationComplete
 
+  const isFetchingRef = useRef(false)
+  const isMountedRef = useRef(true)
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
+  // A failed verification, as from a dropped connection, is retried with
+  // backoff before it is reported.
   const fetchVerificationDocument = useCallback(async () => {
+    if (isFetchingRef.current) return
+    isFetchingRef.current = true
     try {
-      setVerificationDocument(await readVerificationDocument())
-      onVerificationCompleteRef.current(true)
-    } catch (cause) {
-      onVerificationCompleteRef.current(false)
-      logError('Unable to verify chat service', cause, {
-        component: 'VerifierSidebar',
-      })
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const doc = await readVerificationDocument()
+          if (!isMountedRef.current) return
+          setVerificationDocument(doc)
+          onVerificationCompleteRef.current(true)
+          return
+        } catch (cause) {
+          if (!isMountedRef.current) return
+          logError('Unable to verify chat service', cause, {
+            component: 'VerifierSidebar',
+            metadata: { attempt: attempt + 1 },
+          })
+          if (attempt >= CONSTANTS.VERIFICATION_MAX_RETRIES) {
+            onVerificationCompleteRef.current(false)
+            return
+          }
+        }
+        await new Promise((resolve) =>
+          setTimeout(
+            resolve,
+            CONSTANTS.VERIFICATION_RETRY_DELAY_MS *
+              CONSTANTS.VERIFICATION_RETRY_BACKOFF_FACTOR ** attempt,
+          ),
+        )
+        if (!isMountedRef.current) return
+      }
+    } finally {
+      isFetchingRef.current = false
     }
   }, [])
 

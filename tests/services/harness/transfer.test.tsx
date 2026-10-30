@@ -1,5 +1,6 @@
 import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
+import type { DeviceChatCopy } from '@/services/harness/transfer'
 import type { StoredThread, ThreadSummary } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
@@ -90,7 +91,10 @@ const deviceCopy: StoredThread = storedThread(CHAT_ID, {
     },
   ],
 })
-const transcript = () => structuredClone(deviceCopy)
+const transcript = () => ({
+  thread: structuredClone(deviceCopy),
+  revision: 'transfer-revision',
+})
 
 const stored = (id: string) => localThreadStore('device').get(id)
 const posted = () =>
@@ -118,7 +122,7 @@ describe('moving a stored chat to this device', () => {
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
-      if (path === '/v1/threads/transcript') return { thread: transcript() }
+      if (path === '/v1/threads/transcript') return transcript()
       if (path === '/v1/threads/delete') {
         // The device copy is stored before the cloud copy is deleted.
         expect(await stored(CHAT_ID)).toEqual(deviceCopy)
@@ -132,7 +136,10 @@ describe('moving a stored chat to this device', () => {
 
     expect(transfers()).toEqual([
       ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
-      ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
+      [
+        '/v1/threads/delete',
+        { key: KEY, id: CHAT_ID, revision: 'transfer-revision' },
+      ],
     ])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
     expect(
@@ -143,8 +150,8 @@ describe('moving a stored chat to this device', () => {
     expect(
       result.current.chats.map((chat) => [chat.id, chat.isLocalOnly ?? false]),
     ).toEqual([
-      [OTHER_ID, false],
       [CHAT_ID, true],
+      [OTHER_ID, false],
     ])
   })
 
@@ -159,7 +166,7 @@ describe('moving a stored chat to this device', () => {
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
-      if (path === '/v1/threads/transcript') return { thread: transcript() }
+      if (path === '/v1/threads/transcript') return transcript()
       if (path === '/v1/threads/delete') {
         copied = await stored(CHAT_ID)
         throw refusal
@@ -202,7 +209,7 @@ describe('moving a stored chat to this device', () => {
       client.post.mockImplementation(async (path: string) => {
         if (path === '/v1/threads/list')
           return { threads: cloud, nextCursor: null }
-        if (path === '/v1/threads/transcript') return { thread: transcript() }
+        if (path === '/v1/threads/transcript') return transcript()
         if (path === '/v1/threads/delete') throw failure
         throw new Error(`Unexpected ${path}`)
       })
@@ -214,7 +221,10 @@ describe('moving a stored chat to this device', () => {
 
       expect(transfers()).toEqual([
         ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
-        ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
+        [
+          '/v1/threads/delete',
+          { key: KEY, id: CHAT_ID, revision: 'transfer-revision' },
+        ],
       ])
       expect(await stored(CHAT_ID)).toEqual(deviceCopy)
     },
@@ -272,7 +282,7 @@ describe('moving a stored chat to this device', () => {
             },
           ],
         }
-      if (path === '/v1/threads/transcript') return { thread: transcript() }
+      if (path === '/v1/threads/transcript') return transcript()
       if (path === '/v1/threads/delete') return {}
       throw new Error(`Unexpected ${path}`)
     })
@@ -325,7 +335,7 @@ describe('moving a stored chat to this device', () => {
         }
       if (path === '/v1/threads/transcript') {
         await reading
-        return { thread: transcript() }
+        return transcript()
       }
       if (path === '/v1/threads/delete') return {}
       throw new Error(`Unexpected ${path}`)
@@ -356,7 +366,10 @@ describe('moving a stored chat to this device', () => {
     expect(transfers()).toEqual([
       ['/v1/threads/get', { key: KEY, id: CHAT_ID }],
       ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
-      ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
+      [
+        '/v1/threads/delete',
+        { key: KEY, id: CHAT_ID, revision: 'transfer-revision' },
+      ],
     ])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
     expect(result.current.chat).toMatchObject({
@@ -386,7 +399,7 @@ describe('moving a chat from this device to the cloud', () => {
       expect(result.current.chats.map((chat) => chat.id)).toEqual([CHAT_ID]),
     )
 
-    let original: StoredThread | undefined
+    let original: DeviceChatCopy | undefined
     await act(async () => {
       original = await result.current.moveToCloud(CHAT_ID)
     })
@@ -401,7 +414,7 @@ describe('moving a chat from this device to the cloud', () => {
         },
       ],
     ])
-    expect(original).toEqual(deviceCopy)
+    expect(original?.thread).toEqual(deviceCopy)
     expect(await stored(CHAT_ID)).toBeNull()
     expect(
       result.current.chats
@@ -595,7 +608,7 @@ describe('moving a chat from this device to the cloud', () => {
       act(() => {
         replied = result.current.send({ content: 'More?' })
       })
-      await waitFor(() => expect(result.current.running).toBe(true))
+      await waitFor(() => expect(result.current.status).toBe('streaming'))
       let queuedTurn: Promise<unknown> | undefined
       act(() => {
         queuedTurn = result.current.send({ content: 'And then?' })
@@ -798,12 +811,21 @@ describe('moving a chat from this device to the cloud', () => {
       expect(served).toEqual(['/v1/threads/import', '/v1/threads/delete-all'])
       expect(await stored(CHAT_ID)).toBeNull()
       expect(result.current.chats).toEqual([])
+      expect(result.current.loadingChats).toBe(false)
     })
   })
 
   it('puts the device copy back under the same id after a move is undone', async () => {
     signIn({ cloud: true })
-    await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
+    const imageId = deviceCopy.messages[0].attachments![0].id
+    const originals = new Map([
+      [imageId, { base64: 'b3JpZ2luYWw=', mimeType: 'image/png' }],
+    ])
+    await localThreadStore('device').update(
+      CHAT_ID,
+      () => deviceCopy,
+      originals,
+    )
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
       if (path === '/v1/threads/import') return imported
@@ -811,7 +833,7 @@ describe('moving a chat from this device to the cloud', () => {
       throw new Error(`Unexpected ${path}`)
     })
     const { result } = await renderThreads([])
-    let original: StoredThread | undefined
+    let original: DeviceChatCopy | undefined
     await act(async () => {
       original = await result.current.moveToCloud(CHAT_ID)
     })
@@ -825,6 +847,9 @@ describe('moving a chat from this device to the cloud', () => {
       ['/v1/threads/delete', CHAT_ID],
     ])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
+    expect(
+      await localThreadStore('device').originals(CHAT_ID, [imageId]),
+    ).toEqual(originals)
     expect(result.current.chats.filter((chat) => !chat.isLocalOnly)).toEqual([])
     expect(result.current.chats.map((chat) => chat.id)).toEqual([CHAT_ID])
   })
