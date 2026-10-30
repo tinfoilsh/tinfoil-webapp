@@ -584,6 +584,7 @@ describe('settings prompts', () => {
             name: 'Tutor',
             description: 'Teaches',
             systemPrompt: 'Teach.',
+            icon: 'book',
             builtIn: true,
           },
         ],
@@ -685,7 +686,11 @@ describe('settings personalization', () => {
       if (path !== '/v1/profile/update')
         throw new Error(`Unexpected harness request: ${path}`)
       throw new HarnessError(
-        { code: 'UPSTREAM_ERROR', message: 'Storage unavailable' },
+        {
+          code: 'UPSTREAM_REFUSED',
+          message: 'Storage unavailable',
+          action: 'retry',
+        },
         502,
       )
     })

@@ -2,16 +2,16 @@
  * Canonical TypeScript mirror of the Go wire contract defined in
  * github.com/tinfoilsh/controlplane/pkg/contract (sentinels.go), limited to
  * the values the key registration flow sends, plus the error code the harness
- * returns when the sync enclave refuses a key.
+ * returns when the key registry refuses a key.
  *
- * The harness forwards key requests to the sync enclave verbatim, so the
- * sentinels are a cross-repo wire contract; renaming any of them is a wire
- * break. Error codes are not forwarded verbatim: the harness translates them
- * (downstreamError in confidential-tinfoil-harness/api.go).
+ * The harness passes the sentinels to the controlplane as sent, so they are
+ * a cross-repo wire contract; renaming any of them is a wire break. Error
+ * codes are the harness's own (DownstreamError in
+ * confidential-tinfoil-harness/internal/api/errors.go).
  *
  * Source of truth (do not edit independently):
  *   - controlplane/pkg/contract/sentinels.go
- *   - confidential-tinfoil-harness/api.go
+ *   - confidential-tinfoil-harness/internal/api/errors.go
  */
 
 /** Sentinel If-Match values; see controlplane/pkg/contract/sentinels.go. */

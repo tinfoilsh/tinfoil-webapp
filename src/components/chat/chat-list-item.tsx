@@ -6,15 +6,17 @@ import { isPlainPrimaryClick } from '@/utils/navigation'
 import {
   TfBoxCheckmark,
   TfBoxX,
-  TfCloud,
   TfFlagFilled,
   TfFloppyDisk,
   TfFolder,
-  TfThumbtack,
   TfTrash,
   TfVerticalEllipsis,
-  TfWriting,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfCloudFaceAnimated,
+  TfThumbtackAnimated,
+  TfWritingAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import Link from 'next/link'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -479,7 +481,7 @@ export function ChatListItem({
                 aria-pressed={isPinned}
                 title={isPinned ? 'Remove from Favorites' : 'Pin to Favorites'}
               >
-                <TfThumbtack className="h-4 w-4" aria-hidden="true" />
+                <TfThumbtackAnimated className="h-4 w-4" aria-hidden="true" />
               </button>
             )}
             {hasRealTitle && (
@@ -495,7 +497,7 @@ export function ChatListItem({
                 aria-label="Rename chat"
                 title="Rename"
               >
-                <TfWriting className="h-4 w-4" aria-hidden="true" />
+                <TfWritingAnimated className="h-4 w-4" aria-hidden="true" />
               </button>
             )}
             {!chat.isBlankChat && (
@@ -589,7 +591,10 @@ export function ChatListItem({
                             onStartEdit()
                           }}
                         >
-                          <TfWriting className="h-4 w-4" aria-hidden="true" />
+                          <TfWritingAnimated
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          />
                           Rename
                         </button>
 
@@ -610,7 +615,7 @@ export function ChatListItem({
                               void onTogglePin()
                             }}
                           >
-                            <TfThumbtack
+                            <TfThumbtackAnimated
                               className="h-4 w-4"
                               aria-hidden="true"
                             />
@@ -704,7 +709,10 @@ export function ChatListItem({
                               onConvertToCloud()
                             }}
                           >
-                            <TfCloud className="h-4 w-4" aria-hidden="true" />
+                            <TfCloudFaceAnimated
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
                             Move to cloud
                           </button>
                         )}

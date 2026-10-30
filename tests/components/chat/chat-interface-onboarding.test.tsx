@@ -191,7 +191,11 @@ it('starts passkey recovery for an account whose key is refused', async () => {
     if (path === '/v1/session') return structuredClone(testSession)
     if (path === '/v1/profile/get')
       throw new HarnessError(
-        { code: 'KEY_REQUIRED', message: 'A content key is required' },
+        {
+          code: 'KEY_REQUIRED',
+          message: 'A content key is required',
+          action: 'unlock',
+        },
         401,
       )
     if (path === '/v1/threads/list') return { threads: [], nextCursor: null }

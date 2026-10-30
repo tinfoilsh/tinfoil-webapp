@@ -1,3 +1,4 @@
+import type { FollowRequest } from '@/services/harness/client'
 import type { Frame, Message, Thread, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { act, renderHook } from '@testing-library/react'
@@ -13,36 +14,44 @@ const thread: Thread = {
   titleState: 'generated',
   model: 'test-model',
   projectId: null,
+  presetId: null,
   pinned: false,
   webSearchEnabled: true,
+  contextUsage: null,
   messageCount: 2,
   activeRun: null,
   createdAt: '2026-09-14T10:00:00Z',
   updatedAt: '2026-09-14T10:00:00Z',
+  activityAt: '2026-09-14T10:00:00Z',
   hasOlder: false,
   messages: [],
 }
 const started: Frame = {
   id: 0,
-  event: { type: 'RUN_STARTED', threadId: thread.id, runId: 'run-1' },
+  event: {
+    type: 'RUN_STARTED',
+    threadId: thread.id,
+    runId: 'run-1',
+    instance: 'instance-1',
+  },
 }
 const answered: Message[] = [
   {
     id: 'u',
     role: 'user',
     content: 'private question',
-    createdAt: thread.createdAt,
+    createdAt: '2026-09-14T10:00:00Z',
   },
   {
     id: 'a',
     role: 'assistant',
-    createdAt: thread.createdAt,
+    createdAt: '2026-09-14T10:00:00Z',
     timeline: [{ id: 'text', type: 'content', content: 'private answer' }],
   },
 ]
 const messages: Frame = {
   id: 1,
-  event: { type: 'MESSAGES_SNAPSHOT', messages: answered },
+  event: { type: 'MESSAGES_SNAPSHOT', messages: answered, hasOlder: false },
 }
 const finished = {
   id: 2,
@@ -50,6 +59,7 @@ const finished = {
     type: 'RUN_FINISHED',
     threadId: thread.id,
     runId: 'run-1',
+    metadata: {},
   },
 } satisfies Frame
 beforeEach(() => {
@@ -137,7 +147,12 @@ it('retries an ambiguous initial request with its original nonce and input', asy
 it('rejoins an accepted turn by its run when its stream drops', async () => {
   const chunk = (id: number, delta: string): Frame => ({
     id,
-    event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a', delta },
+    event: {
+      type: 'TEXT_MESSAGE_CHUNK',
+      messageId: 'a',
+      role: 'assistant',
+      delta,
+    },
   })
   client.events
     .mockImplementationOnce(async function* (_path, input: Turn) {
@@ -149,12 +164,16 @@ it('rejoins an accepted turn by its run when its stream drops', async () => {
       yield chunk(2, ', and more')
       throw new TypeError('connection closed')
     })
-    .mockImplementationOnce(async function* () {
-      yield started
-      yield messages
-      yield chunk(2, ', and more')
-      yield chunk(3, ', and the end')
-      yield { ...finished, id: 4 }
+    // The harness resumes the run after the frame the client applied last.
+    .mockImplementationOnce(async function* (_path, input: FollowRequest) {
+      const run = [
+        started,
+        messages,
+        chunk(2, ', and more'),
+        chunk(3, ', and the end'),
+        { ...finished, id: 4 },
+      ]
+      yield* run.filter((frame) => frame.id! > (input.lastEventId ?? -1))
     })
   const { result } = renderHook(() => useThread())
   await act(() => result.current.send({ content: 'private question' }))
@@ -163,6 +182,7 @@ it('rejoins an accepted turn by its run when its stream drops', async () => {
     {
       threadId: (client.events.mock.calls[0][1] as Turn).threadId,
       runId: 'run-1',
+      lastEventId: 2,
     },
     expect.any(AbortSignal),
   ])

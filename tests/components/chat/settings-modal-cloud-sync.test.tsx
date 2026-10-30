@@ -74,7 +74,11 @@ it('asks to recover the key only after the chat service refuses it', async () =>
       }),
     async () => {
       throw new HarnessError(
-        { code: 'KEY_MISMATCH', message: 'Another key is required' },
+        {
+          code: 'KEY_MISMATCH',
+          message: 'Another key is required',
+          action: 'unlock',
+        },
         409,
       )
     },

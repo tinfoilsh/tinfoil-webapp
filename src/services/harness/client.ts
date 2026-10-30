@@ -3,9 +3,16 @@ import { SecureClient } from 'tinfoil'
 import { AnonymousCredentialCache } from './anonymous-credential'
 import { ChatCredentialCache } from './chat-credential'
 import {
+  actionOf,
+  ERROR_ACTIONS,
   ERROR_CODES,
+  HARNESS_INSTANCE_HEADER,
   INFERENCE_KEY_HEADER,
+  invalidResponse,
+  LAST_EVENT_ID_HEADER,
+  RESPONSE_NONCE_HEADER,
   ROUTES,
+  unsealedRefusal,
   type HarnessRoute,
   type RunRoute,
 } from './protocol'
@@ -31,6 +38,24 @@ type Transport = Pick<
   'ready' | 'fetch' | 'getVerificationDocument'
 >
 
+// A follow as this client makes it: the body the protocol names, and the
+// last event of the run it applied, which it sends as Last-Event-ID.
+export type FollowRequest = FollowInput & { lastEventId?: number }
+
+// What a request says in its headers beyond who is asking.
+interface RouteHeaders {
+  instance?: string
+  lastEventId?: number
+}
+
+// The routes about a chat's run, which go to the instance holding it.
+const RUN_ROUTES: ReadonlySet<HarnessRoute> = new Set([
+  ROUTES.follow,
+  ROUTES.cancel,
+  ROUTES.queueSend,
+  ROUTES.queueRemove,
+])
+
 export class HarnessClient {
   private readonly origin: string
   private readonly anonymous = new AnonymousCredentialCache()
@@ -46,6 +71,9 @@ export class HarnessClient {
   // Told the quota the control plane reports as this account's chat access
   // is minted or refused.
   onRateLimit?: (rateLimit: RateLimit) => void
+  // The instance holding each chat's latest run, by chat, which requests
+  // about the chat's runs are routed to.
+  private readonly instances = new Map<string, string>()
 
   dispose() {
     this.lifetime.abort()
@@ -71,6 +99,7 @@ export class HarnessClient {
     ) {
       throw new HarnessError({
         code: ERROR_CODES.configuration,
+        action: ERROR_ACTIONS.stop,
         message: 'Configure an HTTPS origin for the chat service.',
       })
     }
@@ -90,6 +119,7 @@ export class HarnessClient {
             reject(
               new HarnessError({
                 code: ERROR_CODES.connection,
+                action: ERROR_ACTIONS.retry,
                 message:
                   'The chat service could not be verified in time. Check your connection and try again.',
               }),
@@ -156,10 +186,12 @@ export class HarnessClient {
     path: HarnessRoute,
     body: string | FormData,
     signal?: AbortSignal,
+    { instance, lastEventId }: RouteHeaders = {},
   ): Promise<Response> {
     if (!/^\/v1\/(?:[a-z-]+\/)*[a-z-]+$/.test(path)) {
       throw new HarnessError({
         code: ERROR_CODES.badRequest,
+        action: ERROR_ACTIONS.stop,
         message: 'Invalid chat service path.',
       })
     }
@@ -201,6 +233,9 @@ export class HarnessClient {
         headers.set('Content-Type', 'application/json')
       if (token) headers.set('Authorization', `Bearer ${token}`)
       if (credential) headers.set(INFERENCE_KEY_HEADER, credential)
+      if (instance) headers.set(HARNESS_INSTANCE_HEADER, instance)
+      if (lastEventId !== undefined)
+        headers.set(LAST_EVENT_ID_HEADER, String(lastEventId))
       const response = await this.secure.fetch(this.origin + path, {
         method: 'POST',
         headers,
@@ -211,10 +246,11 @@ export class HarnessClient {
         credentials: 'omit',
       })
       if (response.ok) return response
-      let detail: HarnessErrorBody = {
-        code: ERROR_CODES.upstreamRefused,
-        message: 'The chat service could not complete the request.',
-      }
+      if (!response.headers.has(RESPONSE_NONCE_HEADER))
+        throw new HarnessError(unsealedRefusal())
+      // A refusal without the harness's error envelope, or one that names
+      // no action, is not one the protocol allows.
+      let detail = invalidResponse()
       const value: unknown = await response.json().catch(() => null)
       if (
         value &&
@@ -225,11 +261,20 @@ export class HarnessClient {
         'code' in value.error &&
         typeof value.error.code === 'string' &&
         'message' in value.error &&
-        typeof value.error.message === 'string'
+        typeof value.error.message === 'string' &&
+        'action' in value.error &&
+        typeof value.error.action === 'string'
       )
-        detail = value.error as HarnessErrorBody
+        detail = {
+          ...(value.error as HarnessErrorBody),
+          action: actionOf(value.error.action),
+        }
       const needsCredential = detail.code === ERROR_CODES.credentialRequired
-      if (response.status === 401 && token && attempt === 0) {
+      if (
+        detail.action === ERROR_ACTIONS.reauthenticate &&
+        token &&
+        attempt === 0
+      ) {
         if (anonymous) {
           this.anonymous.reject(token)
           token = await this.anonymous.get(signal)
@@ -248,6 +293,7 @@ export class HarnessClient {
           throw new HarnessError(
             {
               code: ERROR_CODES.unauthenticated,
+              action: ERROR_ACTIONS.reauthenticate,
               message: 'Sign in again to continue.',
             },
             401,
@@ -260,6 +306,7 @@ export class HarnessClient {
     throw new HarnessError(
       {
         code: ERROR_CODES.unauthenticated,
+        action: ERROR_ACTIONS.reauthenticate,
         message: 'Sign in again to continue.',
       },
       401,
@@ -271,9 +318,32 @@ export class HarnessClient {
     input: unknown,
     signal?: AbortSignal,
   ): Promise<T> {
-    return (
-      await this.request(path, JSON.stringify(input), signal)
-    ).json() as Promise<T>
+    const response = await this.request(path, JSON.stringify(input), signal, {
+      instance: this.instanceFor(path, input),
+    })
+    try {
+      return (await response.json()) as T
+    } catch (cause) {
+      // An answer that is not JSON is not one the protocol allows. One that
+      // stopped arriving is a lost connection, and fails as it is.
+      if (cause instanceof SyntaxError)
+        throw new HarnessError(invalidResponse(), response.status)
+      throw cause
+    }
+  }
+  // Routes requests about a chat's run to the instance a hint names, for a
+  // run this client did not see start.
+  locate(threadId: string, instance: string) {
+    this.instances.set(threadId, instance)
+  }
+  // The instance a request about a chat's run goes to, once the chat's run
+  // named it.
+  private instanceFor(path: HarnessRoute, input: unknown): string | undefined {
+    if (!RUN_ROUTES.has(path) || !input || typeof input !== 'object') return
+    const { threadId } = input as { threadId?: unknown }
+    return typeof threadId === 'string'
+      ? this.instances.get(threadId)
+      : undefined
   }
   async upload<T>(
     path: HarnessRoute,
@@ -315,10 +385,16 @@ export class HarnessClient {
   // A run's events. Following a run replays it from its first frame.
   async *events(
     path: RunRoute,
-    input: Turn | FollowInput,
+    input: Turn | FollowRequest,
     signal?: AbortSignal,
   ): AsyncGenerator<Frame> {
-    const response = await this.request(path, JSON.stringify(input), signal)
+    let body: Turn | FollowInput = input
+    let lastEventId: number | undefined
+    if ('lastEventId' in input) ({ lastEventId, ...body } = input)
+    const response = await this.request(path, JSON.stringify(body), signal, {
+      instance: this.instanceFor(path, input),
+      lastEventId,
+    })
     if (
       !response.headers
         .get('Content-Type')
@@ -328,12 +404,17 @@ export class HarnessClient {
     ) {
       throw new HarnessError({
         code: ERROR_CODES.invalidStream,
+        action: ERROR_ACTIONS.stop,
         message: 'The chat service did not return an event stream.',
       })
     }
     if (++this.openRuns === 1) this.scheduleRunRenewal()
     try {
-      yield* readEvents(response.body)
+      for await (const frame of readEvents(response.body)) {
+        if (frame.event.type === 'RUN_STARTED')
+          this.instances.set(frame.event.threadId, frame.event.instance)
+        yield frame
+      }
     } finally {
       if (--this.openRuns === 0) this.scheduleRunRenewal()
     }

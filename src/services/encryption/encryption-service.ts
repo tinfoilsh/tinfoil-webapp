@@ -233,10 +233,10 @@ export class EncryptionService {
   /**
    * Commit the in-memory key bundle to storage. Pairs with
    * `setKey(key, { persist: false })`: a caller stages the key in
-   * memory, runs an external confirmation (e.g. the sync enclave
+   * memory, runs an external confirmation (e.g. the key registry
    * accepting it), and only then persists it. Until this runs an
    * interrupted activation leaves storage untouched, so it can never
-   * strand a local-only key the enclave would later reject.
+   * strand a local-only key the registry would later reject.
    */
   persistCurrentKeyState(): void {
     if (!this.currentKeyString) return

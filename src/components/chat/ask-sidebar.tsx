@@ -1,7 +1,8 @@
 import { cn } from '@/components/ui/utils'
 import { findSelectableModel, type BaseModel } from '@/config/models'
 import { speakText } from '@/services/harness/speech'
-import { TfBoxX, TfChat2 } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
+import { TfChat2Animated } from '@tinfoilsh/tinfoil-icons/animated'
 import { memo, useCallback, useRef } from 'react'
 import { LoadingDots } from '../loading-dots'
 import { CONSTANTS } from './constants'
@@ -94,7 +95,7 @@ export function AskSidebar({
         {/* Header */}
         <div className="flex flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 py-3">
           <div className="flex items-center gap-2 text-content-primary">
-            <TfChat2 className="h-5 w-5" aria-hidden="true" />
+            <TfChat2Animated className="h-5 w-5" aria-hidden="true" />
             <span className="text-sm font-medium">Ask</span>
           </div>
           <button

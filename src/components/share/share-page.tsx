@@ -243,8 +243,12 @@ export default function SharePage({ chatId }: { chatId?: string }) {
             <div>
               <div className="text-sm text-content-secondary">
                 <span>Shared Chat</span>
-                <span className="mx-2">&middot;</span>
-                <span>{formatDate(chatData.createdAt)}</span>
+                {chatData.createdAt && (
+                  <>
+                    <span className="mx-2">&middot;</span>
+                    <span>{formatDate(chatData.createdAt)}</span>
+                  </>
+                )}
               </div>
               <h1 className="mt-1 text-xl font-semibold text-content-primary">
                 {chatData.title}

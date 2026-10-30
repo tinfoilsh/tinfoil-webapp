@@ -8,6 +8,9 @@ import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import type { RateLimit, Session } from '@/services/harness/types'
 import { vi, type Mock } from 'vitest'
 
+// The enclave seals every answer the harness gives, refusals included.
+export const SEALED = { 'Ehbp-Response-Nonce': '00'.repeat(32) }
+
 export const KEY = 'Y29udGVudC1rZXk='
 // The prompt cache secret this browser already holds for the signed-in
 // account, or this tab for a visitor, so a turn's payload can be compared
@@ -15,6 +18,7 @@ export const KEY = 'Y29udGVudC1rZXk='
 export const CACHE_SECRET = '0123456789abcdef'.repeat(4)
 
 export const testSession: Session = {
+  protocol: { version: 1, minimum: 1 },
   user: { id: '', anonymous: true },
   defaultModel: 'test-model',
   models: [
@@ -96,6 +100,7 @@ export interface FakeClient {
   // Mints the account's chat access again; a test reports the quota the
   // control plane answers with through onRateLimit.
   renewCredential: Mock
+  locate: Mock
   onRateLimit?: (rateLimit: RateLimit) => void
 }
 
@@ -159,6 +164,7 @@ export function signIn({
     stream: vi.fn(async (path: string) => unexpected(path)),
     multipart: vi.fn(async (path: string) => unexpected(path)),
     renewCredential: vi.fn(async () => {}),
+    locate: vi.fn(),
   }
   const api = new HarnessAPI(client as unknown as HarnessClient, userId)
   const unlocked = !!userId && !locked

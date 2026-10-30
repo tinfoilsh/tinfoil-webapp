@@ -1,0 +1,2669 @@
+openapi: 3.1.1
+
+info:
+  title: Tinfoil Chat harness
+  version: "1"
+  description: |
+    The protocol between Tinfoil Chat clients and the harness enclave.
+
+    Every request is a POST through an attested, EHBP-sealed transport, so
+    bodies are private to the client and the enclave while headers are
+    visible to the gateway. Headers carry only what is not private:
+    `Authorization` carries the caller's identity (a Clerk session token, or
+    a `free_` key for a signed-out caller), `X-Tinfoil-Inference-Key` the
+    chat access the client minted, and `Accept-Language` the caller's
+    languages. A request about a run names the instance holding it and, when
+    following it, the last event the client applied. Everything else,
+    including the account's content key when a route needs it, is in the
+    body.
+
+    A run's events arrive as server-sent events. Each frame's `data` is one
+    event, described by `x-item-schema` (OpenAPI 3.2's `itemSchema`), and its
+    `id` is the event's cursor in the run, which a client following the run
+    again sends back as `Last-Event-ID`.
+
+    This document changes by these rules, so a client released against it
+    keeps working:
+
+    - Changes are additive. A route, member, event or error code is not
+      removed, and does not change meaning, while a supported client uses it.
+    - A client ignores members and events it does not know. It handles an
+      error code it does not know by the error's action.
+    - A list of values a response holds may gain values: such a list is an
+      anyOf of the values it names and any string. The harness sends only
+      the values named; a client treats one it does not know as the list's
+      description says.
+    - A client keeps a ThreadRecord whole, members it does not know included,
+      and sends it back as it was returned.
+    - A change to what a ThreadRecord or a stored row holds changes its
+      recordVersion. The harness reads a record in its current version as
+      written, reads one without a version as an older client kept it, and
+      refuses any other with RECORD_UNSUPPORTED. A member of a stored row it
+      does not name is read past, since other clients of the same rows write
+      members of their own; the harness leaves such members out when it
+      writes the row back, except in the profile row. There it keeps them,
+      and for each field it changes it advances the edit clock the apps'
+      own profile sync keeps in fieldClocks, marking the clocks current
+      with clockVersion, so those apps can still merge the row.
+    - The harness ignores request members it does not know, except in a
+      profile patch, which refuses them.
+    - Optional behavior is announced in the session's `features`. A client
+      relies on it only while the feature is true.
+
+    Schemas here leave objects open, as clients must tolerate members a newer
+    harness adds. The harness's tests hold everything it sends to the closed
+    form: it sends no member this document does not name.
+
+    The fixtures beside this document are runs the harness recorded, which
+    each client replays in its tests. A fixture's frames are a run's events
+    with their cursors. A client applies them in order, skipping any whose
+    cursor it has already applied for that run, and must then show what
+    expected names: each message's id and role, a question's content, and a
+    reply's timeline steps with their id, type, and whichever of content,
+    toolCallId, name, arguments, complete, result, progress and display they
+    have; the chat's title and titleState; and whether the run ended idle, or
+    with an error: every member of its RUN_ERROR but type, timestamp,
+    threadId, runId and metadata.
+
+servers:
+  - url: https://chat-api.tinfoil.sh
+
+security:
+  - identity: []
+    chatAccess: []
+  - identity: []
+
+tags:
+  - name: session
+    description: What a client opens with.
+  - name: runs
+    description: Turns, their runs' event streams, and the queue behind a running reply.
+  - name: threads
+    description: Stored and device chats.
+  - name: shares
+    description: Share links and opening them.
+  - name: profile
+    description: The account's settings.
+  - name: projects
+    description: Projects and their documents.
+  - name: keys
+    description: The account's content key and its passkey bundles, as the control plane keeps them.
+  - name: attachments
+    description: Uploads and attachment downloads.
+  - name: archives
+    description: Imports and exports.
+  - name: speech
+    description: Transcription and read-aloud.
+  - name: metadata
+    description: Favicons and link previews, fetched inside an enclave.
+
+paths:
+
+  /healthz:
+    get:
+      operationId: health
+      summary: Report that the harness is serving
+      security: []
+      responses:
+        "200":
+          description: The harness is serving.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: {const: true}
+
+  /v1/session:
+    post:
+      operationId: session
+      summary: Open the app
+      tags: [session]
+      description: What a client opens the app with. A signed-out caller is answered too.
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {$ref: "#/components/responses/Session"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/changes:
+    post:
+      operationId: changes
+      summary: Read the revisions of stored data
+      tags: [session]
+      description: Revisions of the account's stored chats, profile and projects, which change when another device writes them.
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200":
+          description: The current revisions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chats, profile, projects]
+                properties:
+                  chats: {type: string}
+                  profile: {type: string}
+                  projects: {type: string}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/turn:
+    post:
+      operationId: turn
+      summary: Run a turn
+      tags: [runs]
+      description: Starts a run that carries out one user action on a chat, and streams it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Turn"}
+      responses:
+        "200": {$ref: "#/components/responses/RunEvents"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/follow:
+    post:
+      operationId: follow
+      summary: Rejoin a live run
+      tags: [runs]
+      parameters:
+        - {$ref: "#/components/parameters/HarnessInstance"}
+        - {$ref: "#/components/parameters/LastEventId"}
+      description: Streams a live run again, for a client that lost its stream, from after the last event it applied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/FollowInput"}
+      responses:
+        "200": {$ref: "#/components/responses/RunEvents"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/cancel:
+    post:
+      operationId: cancel
+      summary: Stop a run
+      description: Stops the chat's running reply. The turns queued behind it end too, each with a cancelled RUN_FINISHED, so the harness keeps nothing of a chat once its reply stops.
+      tags: [runs]
+      parameters: [{$ref: "#/components/parameters/HarnessInstance"}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RunRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Empty"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/queue/send:
+    post:
+      operationId: queueSend
+      summary: Send a queued turn now
+      tags: [runs]
+      parameters: [{$ref: "#/components/parameters/HarnessInstance"}]
+      description: Starts a turn queued behind the running reply now, stopping that reply.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RunRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Empty"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/queue/remove:
+    post:
+      operationId: queueRemove
+      summary: Remove a queued turn
+      tags: [runs]
+      parameters: [{$ref: "#/components/parameters/HarnessInstance"}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RunRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Empty"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/list:
+    post:
+      operationId: list
+      summary: List stored chats
+      tags: [threads]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                cursor: {type: string}
+                projectId: {type: string}
+                limit: {type: integer}
+      responses:
+        "200":
+          description: A page of the account's stored chats, newest first, and its pinned chats.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [threads, nextCursor, pinned]
+                properties:
+                  threads: {type: array, items: {$ref: "#/components/schemas/ThreadSummary"}}
+                  nextCursor: {type: string, description: "Empty on the last page."}
+                  pinned: {type: array, items: {$ref: "#/components/schemas/ThreadSummary"}}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/search:
+    post:
+      operationId: search
+      summary: Search stored chats
+      tags: [threads]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                query: {type: string}
+                limit: {type: integer}
+      responses:
+        "200":
+          description: The stored chats that match, how many more match that the harness could not open, and whether the search index is still being built. A chat the control plane could not serve in time fails the search with UPSTREAM_REFUSED, and a failed rebuild of the search index with SEARCH_INDEX_FAILED.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results, unreadable, indexing]
+                properties:
+                  results: {type: array, items: {$ref: "#/components/schemas/ThreadSummary"}}
+                  unreadable: {type: integer, minimum: 0, description: "Matching chats left out of results because they cannot be opened, such as one sealed with another key or stored in a format this harness cannot read."}
+                  indexing: {type: boolean}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/get:
+    post:
+      operationId: get
+      summary: Open a stored chat
+      tags: [threads]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                id: {$ref: "#/components/schemas/Identifier"}
+                before: {type: string, description: "A message id; the window ends before it."}
+                limit: {type: integer, description: "At most 200; 50 when absent."}
+      responses:
+        "200": {$ref: "#/components/responses/ThreadWindow"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/update:
+    post:
+      operationId: update
+      summary: Change a chat's settings
+      tags: [threads]
+      description: Changes a chat's settings. A cloud chat answers with its summary, a device chat with its new record.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                local: {type: boolean}
+                thread: {$ref: "#/components/schemas/ThreadInput"}
+                profile: {$ref: "#/components/schemas/ProfileInput"}
+                id: {$ref: "#/components/schemas/Identifier"}
+                title: {type: string}
+                model: {type: string}
+                webSearchEnabled: {type: boolean}
+                pinned: {type: boolean, description: "Cloud chats only."}
+                projectId: {type: [string, "null"], description: "Cloud chats only. Null takes the chat out of its project."}
+                presetId: {type: [string, "null"], description: "Choosing another prompt takes the settings it chooses, except those this request sets."}
+      responses:
+        "200":
+          description: The changed chat.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - {$ref: "#/components/schemas/ThreadSummary"}
+                  - {$ref: "#/components/schemas/DeviceThreadReply"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/fork:
+    post:
+      operationId: fork
+      summary: Fork a chat
+      tags: [threads]
+      description: Copies a chat through one of its messages into a new chat.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/MessageRequest"}
+      responses:
+        "200":
+          description: The new chat.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - {$ref: "#/components/schemas/ThreadSummary"}
+                  - {$ref: "#/components/schemas/DeviceThreadReply"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/messages/delete:
+    post:
+      operationId: messageDelete
+      summary: Delete a message
+      tags: [threads]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/MessageRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/ChangedThread"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/messages/update:
+    post:
+      operationId: messageUpdate
+      summary: Edit a reply
+      tags: [threads]
+      description: Edits a reply's text in place.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [threadId, messageId, content]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                local: {type: boolean}
+                thread: {$ref: "#/components/schemas/ThreadInput"}
+                profile: {$ref: "#/components/schemas/ProfileInput"}
+                threadId: {$ref: "#/components/schemas/Identifier"}
+                messageId: {$ref: "#/components/schemas/Identifier"}
+                content: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/ChangedThread"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/delete:
+    post:
+      operationId: delete
+      summary: Delete a stored chat
+      tags: [threads]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                id: {$ref: "#/components/schemas/Identifier"}
+                revision: {type: string, description: "Set when a chat moved to the device is deleted from the cloud; the delete then needs the revision the move read."}
+      responses:
+        "200": {$ref: "#/components/responses/Empty"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/delete-all:
+    post:
+      operationId: deleteAll
+      summary: Delete every stored chat
+      tags: [threads]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                projectId: {type: [string, "null"]}
+      responses:
+        "200": {$ref: "#/components/responses/Deleted"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/transcript:
+    post:
+      operationId: transcript
+      summary: Read a stored chat to move it to the device
+      tags: [threads]
+      description: A stored chat as a device keeps it, for moving it to the device.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [threadId]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                threadId: {$ref: "#/components/schemas/Identifier"}
+      responses:
+        "200":
+          description: The chat and the revision a delete that finishes the move names.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [thread, revision]
+                properties:
+                  thread: {$ref: "#/components/schemas/ThreadRecord"}
+                  revision: {type: string}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/import:
+    post:
+      operationId: threadImport
+      summary: Store a device chat in the cloud
+      tags: [threads]
+      description: Stores a device chat in the cloud under its id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [threadId, thread]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                threadId: {$ref: "#/components/schemas/Identifier"}
+                thread: {$ref: "#/components/schemas/ThreadInput"}
+      responses:
+        "200":
+          description: The stored chat.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ThreadSummary"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/upgrade:
+    post:
+      operationId: upgrade
+      summary: Convert device chats an older client kept
+      tags: [threads]
+      description: Converts device chats an older client kept to the current record.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [threads]
+              properties:
+                threads: {type: array, items: {type: object}}
+      responses:
+        "200":
+          description: The chats, in the order sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [threads]
+                properties:
+                  threads: {type: array, items: {$ref: "#/components/schemas/ThreadRecord"}}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/share:
+    post:
+      operationId: share
+      summary: Share a chat
+      tags: [shares]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [threadId]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                threadId: {$ref: "#/components/schemas/Identifier"}
+                local: {type: boolean}
+                thread: {$ref: "#/components/schemas/ThreadInput"}
+      responses:
+        "200":
+          description: The share link, whose fragment holds the key that opens it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url]
+                properties:
+                  url: {type: string}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/share/status:
+    post:
+      operationId: shareStatus
+      summary: Read whether a chat is shared
+      tags: [shares]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ThreadIdRequest"}
+      responses:
+        "200":
+          description: Whether the chat has a live share.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [shared]
+                properties:
+                  shared: {type: boolean}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/share/revoke:
+    post:
+      operationId: shareRevoke
+      summary: Stop sharing a chat
+      tags: [shares]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ThreadIdRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Empty"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/shares/open:
+    post:
+      operationId: shareOpen
+      summary: Open a shared chat
+      tags: [shares]
+      security: [{}, {identity: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shareId, fragment]
+              properties:
+                shareId: {$ref: "#/components/schemas/Identifier"}
+                fragment: {type: string, description: "The share link's fragment."}
+      responses:
+        "200":
+          description: The shared chat.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SharedThread"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/profile/get:
+    post:
+      operationId: profileGet
+      summary: Read the profile
+      tags: [profile]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Keyed"}
+      responses:
+        "200": {$ref: "#/components/responses/Profile"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/profile/update:
+    post:
+      operationId: profileUpdate
+      summary: Change the profile
+      tags: [profile]
+      description: Sets the fields a patch names, then applies the saved prompt and favorite edits to the profile as stored when they apply. A client changes saved prompts and favorites by these edits while the session's features.promptPresetEdits is true, rather than sending whole lists it read earlier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                patch:
+                  description: The fields to set. A field the profile does not have is refused. A null defaultPromptPresetId clears the default prompt.
+                  type: object
+                  properties:
+                    themeMode: {type: string, enum: [light, dark, system]}
+                    chatFont: {type: string, enum: [system, serif, mono, dyslexic]}
+                    language: {type: string}
+                    nickname: {type: string}
+                    profession: {type: string}
+                    traits: {type: array, items: {type: string}}
+                    additionalContext: {type: string}
+                    isUsingPersonalization: {type: boolean}
+                    isUsingCustomPrompt: {type: boolean}
+                    customSystemPrompt: {type: string}
+                    customPromptPresets: {type: array, items: {$ref: "#/components/schemas/CustomPreset"}}
+                    favoritePromptPresetIds: {type: array, items: {type: string}}
+                    defaultPromptPresetId: {type: [string, "null"]}
+                    selectedModel: {type: string}
+                    autoIntelligence: {type: string}
+                    reasoningEffort: {type: string}
+                    thinkingEnabled: {type: boolean}
+                    webSearchEnabled: {type: boolean}
+                    webSearchAvailable: {type: boolean}
+                    piiCheckEnabled: {type: boolean}
+                    genUIEnabled: {type: boolean}
+                    pixelateSidebarChatTitlesEnabled: {type: boolean}
+                    browserTabChatTitleEnabled: {type: boolean}
+                    enterToNewlineEnabled: {type: boolean}
+                    hasSeenOnboarding: {type: boolean}
+                    hasSeenWebSearchIntro: {type: boolean}
+                    dismissed: {type: object, additionalProperties: {type: boolean}}
+                savePromptPresets: {type: array, items: {$ref: "#/components/schemas/CustomPreset"}, description: "Saved prompts to add, each replacing the stored one with its id where it stands."}
+                deletePromptPresetIds: {type: array, items: {type: string}, description: "Saved prompts to remove. A removed prompt is no longer a favorite, and the default prompt it was is cleared."}
+                addFavoritePromptPresetIds: {type: array, items: {type: string}, description: "Prompts to add to the end of the favorites, unless they already are favorites."}
+                removeFavoritePromptPresetIds: {type: array, items: {type: string}, description: "Prompts to remove from the favorites."}
+      responses:
+        "200": {$ref: "#/components/responses/Profile"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/profile/upgrade:
+    post:
+      operationId: profileUpgrade
+      summary: Convert settings an older client kept
+      tags: [profile]
+      description: Converts settings an older client kept on its device to the current profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profile]
+              properties:
+                profile: {$ref: "#/components/schemas/ProfileInput"}
+      responses:
+        "200":
+          description: The settings as a profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile]
+                properties:
+                  profile: {$ref: "#/components/schemas/Profile"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/profile/merge:
+    post:
+      operationId: profileMerge
+      summary: Merge a device's settings into the profile
+      tags: [profile]
+      description: Merges a device's settings into the account's profile when cloud sync is turned on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profile]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                profile: {$ref: "#/components/schemas/ProfileInput"}
+                changedFields: {type: array, items: {type: string}, description: "The fields the device changed, which win over the account's."}
+      responses:
+        "200": {$ref: "#/components/responses/Profile"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/projects/list:
+    post:
+      operationId: projectsList
+      summary: List projects
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                cursor: {type: string}
+                limit: {type: integer}
+      responses:
+        "200":
+          description: A page of the account's projects.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [projects, nextCursor]
+                properties:
+                  projects: {type: array, items: {$ref: "#/components/schemas/Project"}}
+                  nextCursor: {type: string, description: "Empty on the last page."}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/projects/get:
+    post:
+      operationId: projectsGet
+      summary: Open a project
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/KeyedId"}
+      responses:
+        "200":
+          description: The project and its documents.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, name, description, systemInstructions, color, documents]
+                properties:
+                  id: {type: string}
+                  name: {type: string}
+                  description: {type: string}
+                  systemInstructions: {type: string}
+                  color: {type: [string, "null"]}
+                  createdAt: {$ref: "#/components/schemas/Timestamp"}
+                  updatedAt: {$ref: "#/components/schemas/Timestamp"}
+                  documents: {type: array, items: {$ref: "#/components/schemas/ProjectDocument"}}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/projects/create:
+    post:
+      operationId: projectsCreate
+      summary: Create a project
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                id: {$ref: "#/components/schemas/Identifier"}
+                name: {type: string}
+                description: {type: string}
+                systemInstructions: {type: string}
+                color: {type: [string, "null"]}
+      responses:
+        "200": {$ref: "#/components/responses/Project"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/projects/update:
+    post:
+      operationId: projectsUpdate
+      summary: Change a project
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                id: {$ref: "#/components/schemas/Identifier"}
+                name: {type: string}
+                description: {type: string}
+                systemInstructions: {type: string}
+                color: {type: [string, "null"]}
+      responses:
+        "200": {$ref: "#/components/responses/Project"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/projects/delete:
+    post:
+      operationId: projectsDelete
+      summary: Delete a project
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/KeyedId"}
+      responses:
+        "200": {$ref: "#/components/responses/Empty"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/projects/delete-all:
+    post:
+      operationId: projectsDeleteAll
+      summary: Delete every project
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Keyed"}
+      responses:
+        "200": {$ref: "#/components/responses/Deleted"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/projects/documents/upload:
+    post:
+      operationId: projectDocumentUpload
+      summary: Add a document to a project
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, projectId]
+              properties:
+                file: {type: string, contentMediaType: application/octet-stream}
+                projectId: {type: string}
+                key: {type: string, description: "The account's content key, base64."}
+      responses:
+        "200":
+          description: The stored document.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ProjectDocument"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/projects/documents/delete:
+    post:
+      operationId: projectDocumentDelete
+      summary: Remove a document from a project
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId, documentId]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                projectId: {$ref: "#/components/schemas/Identifier"}
+                documentId: {$ref: "#/components/schemas/Identifier"}
+      responses:
+        "200": {$ref: "#/components/responses/Empty"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/keys/current:
+    post:
+      operationId: keysCurrent
+      summary: Read the current content key
+      tags: [keys]
+      description: The account's current content key id and its passkey bundles.
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200":
+          description: The current key.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/KeyCurrent"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/keys/register:
+    post:
+      operationId: keysRegister
+      summary: Register a content key
+      tags: [keys]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, if_match, created_via, idempotency_key]
+              properties:
+                key: {type: string, description: "The content key, base64."}
+                if_match: {type: string, description: "The current key's etag, or \"*\" while the account has none."}
+                created_via: {$ref: "#/components/schemas/KeyOrigin"}
+                idempotency_key: {type: string}
+                initial_bundle: {$ref: "#/components/schemas/KeyBundleInput"}
+      responses:
+        "200":
+          description: The registered key.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, key_id]
+                properties:
+                  ok: {const: true}
+                  key_id: {type: string}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/keys/add-bundle:
+    post:
+      operationId: keysAddBundle
+      summary: Add a passkey bundle to the content key
+      tags: [keys]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential_id, kek_iv, encrypted_keys, key_id, key, idempotency_key]
+              properties:
+                credential_id: {type: string}
+                kek_iv: {type: string, description: "The AES-GCM IV, hex."}
+                encrypted_keys: {type: string, description: "The wrapped content key, hex."}
+                key_id: {type: string}
+                key: {type: string, description: "The content key, base64."}
+                idempotency_key: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/Ok"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/keys/remove-bundle:
+    post:
+      operationId: keysRemoveBundle
+      summary: Remove a passkey bundle from the content key
+      tags: [keys]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key_id, key, credential_id, idempotency_key]
+              properties:
+                key_id: {type: string}
+                key: {type: string, description: "The content key, base64."}
+                credential_id: {type: string}
+                idempotency_key: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/Ok"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/keys/migrate-all:
+    post:
+      operationId: keysMigrateAll
+      summary: Reseal stored data under the current key
+      tags: [keys]
+      description: |
+        Seals every row an older key sealed under the target key, which must
+        be the account's registered key, in the background. A call while the
+        reseal runs, or shortly after it ends, reports on that reseal rather
+        than starting another.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [keys, target]
+              properties:
+                keys: {type: array, items: {$ref: "#/components/schemas/KeyRef"}}
+                target: {$ref: "#/components/schemas/KeyRef"}
+      responses:
+        "200":
+          description: The harness's report of the reseal when the call returns.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ResealReport"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/attachments/upload:
+    post:
+      operationId: attachmentUpload
+      summary: Convert a file into an attachment
+      tags: [attachments]
+      description: Converts a file into the attachment a turn sends. The harness keeps nothing of it.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, contentMediaType: application/octet-stream}
+      responses:
+        "200":
+          description: The attachment.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [attachment]
+                properties:
+                  attachment: {$ref: "#/components/schemas/Attachment"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/attachments/get:
+    post:
+      operationId: attachmentGet
+      summary: Download an attachment
+      tags: [attachments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AttachmentRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Bytes"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/attachments/get-public:
+    post:
+      operationId: attachmentGetPublic
+      summary: Download a shared chat's attachment
+      tags: [attachments]
+      description: Reads an attachment of a shared chat with the key the share names.
+      security: [{}, {identity: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AttachmentRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Bytes"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/transcriptions:
+    post:
+      operationId: transcriptions
+      summary: Transcribe a recording
+      tags: [speech]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, contentMediaType: application/octet-stream}
+      responses:
+        "200":
+          description: The recording's text.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text]
+                properties:
+                  text: {type: string}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/speech:
+    post:
+      operationId: speech
+      summary: Read text aloud
+      tags: [speech]
+      description: Reads a message, or text a client sends, aloud.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                local: {type: boolean}
+                thread: {$ref: "#/components/schemas/ThreadInput"}
+                profile: {$ref: "#/components/schemas/ProfileInput"}
+                threadId: {$ref: "#/components/schemas/Identifier"}
+                messageId: {$ref: "#/components/schemas/Identifier"}
+                text: {type: string, description: "Text to read when no message is named, such as a selection or a shared chat's message."}
+      responses:
+        "200":
+          description: The audio, streamed as it is made.
+          content:
+            audio/pcm:
+              schema: {type: string, contentMediaType: audio/pcm}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/import:
+    post:
+      operationId: import
+      summary: Import an archive
+      tags: [archives]
+      description: Imports an archive, either as device chats streamed back to the client or into the cloud through an import job.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, contentMediaType: application/octet-stream}
+                options:
+                  type: string
+                  contentMediaType: application/json
+                  contentSchema:
+                    type: object
+                    properties:
+                      key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                      target: {type: string, enum: [device, cloud]}
+      responses:
+        "200":
+          description: One line per device chat, then a line that says the import is done. An import that fails after its first line ends with an error line.
+          content:
+            application/x-ndjson:
+              schema: {type: string}
+              x-item-schema: {$ref: "#/components/schemas/ImportLine"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/import/status:
+    post:
+      operationId: importStatus
+      summary: Read an import job's progress
+      tags: [archives]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jobId]
+              properties:
+                jobId: {$ref: "#/components/schemas/Identifier"}
+      responses:
+        "200":
+          description: The import job's progress.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ImportStatus"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/export:
+    post:
+      operationId: export
+      summary: Export chats as an archive
+      tags: [archives]
+      description: Exports the account's stored chats and the device chats the client sends, as an archive.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                options:
+                  type: string
+                  contentMediaType: application/json
+                  contentSchema:
+                    type: object
+                    properties:
+                      key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                      format: {type: string, enum: [native, conversations]}
+                thread: {type: array, items: {type: string, contentMediaType: application/json}, description: "Device chats, one per part."}
+                file: {type: array, items: {type: string, contentMediaType: application/octet-stream}, description: "The originals of the device chats' images."}
+      responses:
+        "200":
+          description: The archive.
+          content:
+            application/zip:
+              schema: {type: string, contentMediaType: application/zip}
+            application/json:
+              schema: {type: string, contentMediaType: application/json}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/metadata/favicon:
+    post:
+      operationId: favicon
+      summary: Read a site's favicon
+      tags: [metadata]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PageRequest"}
+      responses:
+        "200":
+          description: The site's favicon, which the harness reads from DuckDuckGo by the site's host.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {type: string, description: "found when the site has a favicon."}
+                  favicon_bytes: {type: string, description: "Base64."}
+                  favicon_content_type: {type: string}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/metadata/link:
+    post:
+      operationId: linkMetadata
+      summary: Read a page's link preview
+      tags: [metadata]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PageRequest"}
+      responses:
+        "200":
+          description: A page's link preview.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LinkPreview"}
+        default: {$ref: "#/components/responses/Error"}
+
+components:
+  parameters:
+    LastEventId:
+      name: Last-Event-ID
+      in: header
+      description: The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it. A cursor the run never sent is refused.
+      schema: {type: integer, minimum: 0}
+
+    HarnessInstance:
+      name: X-Tinfoil-Harness-Instance
+      in: header
+      description: The instance a run's RUN_STARTED named. A deployment of several harnesses routes a request about the run to it by this header, which says nothing about the caller.
+      schema: {type: string}
+
+  securitySchemes:
+    identity:
+      type: http
+      scheme: bearer
+      description: A Clerk session token, or a free_ key for a signed-out caller.
+    chatAccess:
+      type: apiKey
+      in: header
+      name: X-Tinfoil-Inference-Key
+      description: The chat access the client minted from the control plane, which the harness checks against the identity before it reads the body.
+  responses:
+
+    Error:
+      description: A refusal.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorResponse"}
+
+    Empty:
+      description: Done.
+      content:
+        application/json:
+          schema: {type: object}
+
+    Ok:
+      description: Done.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok]
+            properties:
+              ok: {type: boolean}
+
+    Deleted:
+      description: How many rows were deleted.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deleted]
+            properties:
+              deleted: {type: integer}
+
+    Bytes:
+      description: The attachment's bytes.
+      content:
+        application/octet-stream:
+          schema: {type: string, contentMediaType: application/octet-stream}
+
+    RunEvents:
+      description: The run's events.
+      content:
+        text/event-stream:
+          schema: {type: string}
+          x-item-schema: {$ref: "#/components/schemas/HarnessEvent"}
+
+    Session:
+      description: The session.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Session"}
+
+    ThreadWindow:
+      description: The chat, from its latest messages back.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ThreadWindow"}
+
+    ChangedThread:
+      description: The changed chat. A cloud chat answers with its latest messages, a device chat with its new record.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - {$ref: "#/components/schemas/ThreadWindow"}
+              - {$ref: "#/components/schemas/DeviceThreadReply"}
+
+    Profile:
+      description: The profile.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ProfileView"}
+
+    Project:
+      description: The project.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Project"}
+  schemas:
+
+    # --- Common ---------------------------------------------------------------
+
+    Json:
+      description: Any JSON value.
+
+    JsonObject:
+      description: A JSON object with any members.
+      type: object
+      additionalProperties: true
+
+    Identifier:
+      description: An id a client names a row with. Printable ASCII without / \ ? or #, and neither "." nor "..".
+      type: string
+      minLength: 1
+      maxLength: 128
+
+    Timestamp:
+      description: An RFC 3339 time in UTC.
+      type: string
+
+    Keyed:
+      type: object
+      properties:
+        key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+
+    KeyedId:
+      type: object
+      required: [id]
+      properties:
+        key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+        id: {$ref: "#/components/schemas/Identifier"}
+
+    ThreadIdRequest:
+      type: object
+      required: [threadId]
+      properties:
+        threadId: {$ref: "#/components/schemas/Identifier"}
+
+    PageRequest:
+      type: object
+      required: [url]
+      properties:
+        url: {type: string}
+
+    # --- Errors ---------------------------------------------------------------
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: {$ref: "#/components/schemas/ErrorBody"}
+
+    ErrorBody:
+      description: |
+        Why a request or a run failed. A client may handle a code it knows in
+        its own way, and handles every other code by its action, so a code
+        added after the client was released is still handled.
+      type: object
+      required: [code, message, action]
+      properties:
+        code: {$ref: "#/components/schemas/ErrorCode"}
+        message: {type: string, description: "A description for logs and developers, in English. Clients choose what to show from the code and action."}
+        action: {$ref: "#/components/schemas/ErrorAction"}
+        kind: {type: string, description: "For QUOTA_EXHAUSTED, the kind of quota: free_daily or hourly."}
+        retryAfter: {type: integer, description: "Seconds to wait before retrying."}
+        resetsAt: {$ref: "#/components/schemas/Timestamp"}
+        status: {type: integer, description: "The status a downstream service answered with."}
+        keyId: {type: string, description: "For KEY_MISMATCH, the id of the key the stored data uses."}
+        upstreamCode: {type: string, description: "For a document that failed to convert, the converter's document_* code."}
+        rateLimit: {$ref: "#/components/schemas/RateLimit"}
+
+    ErrorAction:
+      description: |
+        What a client does about an error it has no handling of its own for.
+        An error with an action the client does not know fails the request:
+        the client shows the error and offers nothing more.
+
+        - reauthenticate: refresh the caller's identity and chat access, and
+          send the request again once, without telling the user. Ask the user
+          to sign in if it is refused again.
+        - reload: the client's copy of the chat or run is out of date. Read it
+          again and show it, without telling the user.
+        - retry: sending the request again, unchanged, may succeed. Wait
+          retryAfter seconds first when it is given. A client may resend a
+          request that starts no run on its own; it offers a failed turn to the
+          user to try again.
+        - wait: a quota is used up until resetsAt. Tell the user when they can
+          continue, and send nothing it limits before then.
+        - unlock: the request needs the account's content key, which this
+          device does not hold or holds an old copy of. Ask the user to unlock
+          or recover it.
+        - revise: the request cannot succeed as sent. Tell the user what to
+          change, such as a smaller file, another file or model, or a shorter
+          chat.
+        - stop: nothing the client or the user does makes the request succeed
+          now. Tell the user, and do not offer to try again.
+      anyOf:
+        - {type: string, enum: [reauthenticate, reload, retry, wait, unlock, revise, stop]}
+        - {type: string}
+
+    ErrorCode:
+      description: A client handles a code it does not know by the error's action.
+      anyOf:
+        - type: string
+          enum:
+            - ALREADY_APPLIED
+            - ARCHIVE_TOO_LARGE
+            - ATTACHMENT_TOO_LARGE
+            - ATTACHMENT_UNSUPPORTED
+            - ATTACHMENTS_UNAVAILABLE
+            - BAD_REQUEST
+            - CHAT_FLAGGED
+            - CONTEXT_TOO_LARGE
+            - CREDENTIAL_REQUIRED
+            - IMPORT_INVALID
+            - IMPORT_TOO_LARGE
+            - KEY_MISMATCH
+            - KEY_REQUIRED
+            - MAX_TURNS
+            - MISSING_ATTACHMENT
+            - MODEL_UNAVAILABLE
+            - PAYLOAD_TOO_LARGE
+            - PROJECTS_REQUIRE_CLOUD
+            - QUEUE_FULL
+            - QUOTA_EXHAUSTED
+            - RATE_LIMITED
+            - RECORD_UNSUPPORTED
+            - REQUEST_TIMEOUT
+            - REVISION_CONFLICT
+            - RUN_IN_FLIGHT
+            - RUN_LOG_FULL
+            - RUN_NOT_FOUND
+            - SEARCH_INDEX_FAILED
+            - SYNC_OUTCOME_UNKNOWN
+            - TEMP_SPACE_BUSY
+            - THREAD_EXISTS
+            - THREAD_NOT_FOUND
+            - THREAD_TOO_LARGE
+            - TOOL_UNAVAILABLE
+            - UNAUTHENTICATED
+            - UPSTREAM_REFUSED
+        - {type: string}
+
+    # --- Session --------------------------------------------------------------
+
+    Session:
+      type: object
+      required: [protocol, user, rateLimit, models, auto, defaultModel, widgets, profileDefaults, composer, presets, features]
+      properties:
+        protocol:
+          description: The versions of this document the harness speaks. A client knows its own as the info.version of the document it was built from.
+          type: object
+          required: [version, minimum]
+          properties:
+            version: {type: integer, description: "The version this harness speaks."}
+            minimum: {type: integer, description: "The oldest version whose clients this harness still serves. A client built from an older one asks the user to update it."}
+        user:
+          type: object
+          required: [id, anonymous]
+          properties:
+            id: {type: string, description: "Empty for a signed-out caller."}
+            anonymous: {type: boolean}
+        rateLimit: {$ref: "#/components/schemas/RateLimit"}
+        models: {type: array, items: {$ref: "#/components/schemas/SessionModel"}}
+        auto:
+          description: How hard Auto works, its default level, and each level's labels.
+          type: object
+          required: [default, levels]
+          properties:
+            default: {type: string}
+            levels:
+              type: array
+              items:
+                type: object
+                required: [id, label, displayLabel]
+                properties:
+                  id: {type: string}
+                  label: {type: string}
+                  displayLabel: {type: string}
+        defaultModel: {type: string}
+        widgets: {type: array, items: {type: string}, description: "The widgets a turn may offer the model."}
+        profileDefaults: {$ref: "#/components/schemas/Profile"}
+        composer: {$ref: "#/components/schemas/Composer"}
+        presets: {type: array, items: {$ref: "#/components/schemas/Preset"}}
+        features:
+          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here.
+          type: object
+          additionalProperties: {type: boolean}
+
+    SessionModel:
+      type: object
+      required: [id, label, shortLabel, icon, description, badges, reasoning, deprecated]
+      properties:
+        id: {type: string}
+        label: {type: string}
+        shortLabel: {type: string}
+        icon: {type: string}
+        description: {type: string}
+        badges:
+          type: array
+          items:
+            type: object
+            required: [kind, label, tooltip]
+            properties:
+              kind:
+                description: A client shows no badge of a kind it does not know.
+                anyOf:
+                  - {type: string, enum: [experimental, deprecated]}
+                  - {type: string}
+              label: {type: string}
+              tooltip: {type: string}
+        reasoning:
+          type: [object, "null"]
+          required: [toggle, effort, defaultEnabled]
+          properties:
+            toggle: {type: boolean}
+            effort: {type: boolean}
+            defaultEnabled: {type: boolean}
+        deprecated: {type: boolean}
+        auto: {type: boolean, description: "The entry that has the router choose a model for each turn."}
+
+    Preset:
+      type: object
+      required: [id, name, description, systemPrompt, icon, builtIn]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+        systemPrompt: {type: string}
+        icon: {type: string}
+        builtIn: {type: boolean}
+
+    Composer:
+      description: What the composer takes.
+      type: object
+      required: [attachments, projectDocuments, pasteAsFileChars, dictationMaxSeconds]
+      properties:
+        attachments: {type: array, items: {$ref: "#/components/schemas/FileGroup"}}
+        projectDocuments: {type: array, items: {$ref: "#/components/schemas/FileGroup"}}
+        pasteAsFileChars: {type: integer}
+        dictationMaxSeconds: {type: integer}
+
+    FileGroup:
+      description: Files the composer takes by extension, and the largest each may be.
+      type: object
+      required: [accept, maxBytes]
+      properties:
+        accept: {type: array, items: {type: string}}
+        maxBytes: {type: integer}
+        imageMaxSide: {type: integer}
+
+    RateLimit:
+      description: A free key's daily request quota, or a subscriber's hourly token budgets.
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          description: A client shows no quota of a kind it does not know.
+          anyOf:
+            - {type: [string, "null"], enum: [free_daily, hourly, null]}
+            - {type: string}
+        maxRequests: {type: integer}
+        remaining: {type: integer}
+        resetsAt: {$ref: "#/components/schemas/Timestamp"}
+        inputTokens: {$ref: "#/components/schemas/TokenBudget"}
+        outputTokens: {$ref: "#/components/schemas/TokenBudget"}
+
+    TokenBudget:
+      type: object
+      required: [max, used, remaining]
+      properties:
+        max: {type: integer}
+        used: {type: integer}
+        remaining: {type: integer}
+
+    # --- Turns and runs -------------------------------------------------------
+
+    Turn:
+      description: One user action on a chat, which its run carries out.
+      type: object
+      required: [clientRequestId, threadId]
+      properties:
+        key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+        clientRequestId: {type: string, format: uuid, description: "A nonce. A turn sent again with it is answered with the run it started."}
+        threadId: {$ref: "#/components/schemas/Identifier"}
+        kind: {type: string, enum: [send, edit, regenerate, continue, retry, retryToolCall, ask], description: "send when absent."}
+        ephemeral: {type: boolean, description: "An ask that is never stored."}
+        local: {type: boolean, description: "The chat is kept on the device, which sends it as thread."}
+        thread: {$ref: "#/components/schemas/ThreadInput"}
+        profile: {$ref: "#/components/schemas/ProfileInput"}
+        projectId: {type: [string, "null"]}
+        presetId: {type: [string, "null"]}
+        content: {type: string}
+        quote: {type: string}
+        messageId: {type: string, description: "The message an edit, regenerate, continue or retry acts on."}
+        toolCallId: {type: string, description: "The widget call a retryToolCall regenerates."}
+        attachments: {type: array, items: {$ref: "#/components/schemas/SentAttachment"}}
+        widgets: {type: array, items: {type: string}, description: "The widgets this client renders."}
+        options: {$ref: "#/components/schemas/TurnOptions"}
+
+    TurnOptions:
+      type: object
+      properties:
+        model: {type: string}
+        autoIntelligence: {type: string}
+        reasoningEffort: {type: string}
+        timezone: {type: string}
+        locale: {type: string}
+        thinking: {type: boolean}
+        webSearch: {type: boolean}
+        piiCheck: {type: boolean}
+        genUI: {type: boolean}
+        cacheSecret:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: 256 random bits the client keeps, hex encoded, which scope the model enclaves' prompt cache to the client. Turns without one share a cache only within their chat.
+
+    SentAttachment:
+      description: An upload's attachment as a turn sends it back, or the id alone of one the chat already holds.
+      type: object
+      required: [id]
+      properties:
+        id: {$ref: "#/components/schemas/Identifier"}
+        kind: {$ref: "#/components/schemas/AttachmentKind"}
+        fileName: {type: string}
+        mimeType: {type: string}
+        size: {type: integer}
+        thumbnail: {type: string}
+        textContent: {type: string}
+        description: {type: string}
+        pages: {type: array, items: {$ref: "#/components/schemas/DocumentPage"}}
+        base64: {type: string}
+
+    FollowInput:
+      type: object
+      required: [threadId, runId]
+      properties:
+        key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+        threadId: {$ref: "#/components/schemas/Identifier"}
+        runId: {type: string}
+
+    RunRequest:
+      description: A run, or a turn queued behind one, of a chat.
+      type: object
+      required: [threadId]
+      properties:
+        key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+        threadId: {$ref: "#/components/schemas/Identifier"}
+        runId: {type: string}
+        queueId: {type: string}
+
+    HarnessEvent:
+      description: One event of a run.
+      oneOf:
+        - {$ref: "#/components/schemas/RunStartedEvent"}
+        - {$ref: "#/components/schemas/MessagesSnapshotEvent"}
+        - {$ref: "#/components/schemas/StateSnapshotEvent"}
+        - {$ref: "#/components/schemas/StateDeltaEvent"}
+        - {$ref: "#/components/schemas/TextMessageChunkEvent"}
+        - {$ref: "#/components/schemas/ReasoningMessageChunkEvent"}
+        - {$ref: "#/components/schemas/ReasoningSummaryEvent"}
+        - {$ref: "#/components/schemas/ToolCallStartEvent"}
+        - {$ref: "#/components/schemas/ToolCallArgsEvent"}
+        - {$ref: "#/components/schemas/ToolCallEndEvent"}
+        - {$ref: "#/components/schemas/ToolCallResultEvent"}
+        - {$ref: "#/components/schemas/ActivitySnapshotEvent"}
+        - {$ref: "#/components/schemas/ActivityDeltaEvent"}
+        - {$ref: "#/components/schemas/RunFinishedEvent"}
+        - {$ref: "#/components/schemas/RunErrorEvent"}
+      discriminator:
+        propertyName: type
+        mapping:
+          RUN_STARTED: "#/components/schemas/RunStartedEvent"
+          MESSAGES_SNAPSHOT: "#/components/schemas/MessagesSnapshotEvent"
+          STATE_SNAPSHOT: "#/components/schemas/StateSnapshotEvent"
+          STATE_DELTA: "#/components/schemas/StateDeltaEvent"
+          TEXT_MESSAGE_CHUNK: "#/components/schemas/TextMessageChunkEvent"
+          REASONING_MESSAGE_CHUNK: "#/components/schemas/ReasoningMessageChunkEvent"
+          REASONING_SUMMARY: "#/components/schemas/ReasoningSummaryEvent"
+          TOOL_CALL_START: "#/components/schemas/ToolCallStartEvent"
+          TOOL_CALL_ARGS: "#/components/schemas/ToolCallArgsEvent"
+          TOOL_CALL_END: "#/components/schemas/ToolCallEndEvent"
+          TOOL_CALL_RESULT: "#/components/schemas/ToolCallResultEvent"
+          ACTIVITY_SNAPSHOT: "#/components/schemas/ActivitySnapshotEvent"
+          ACTIVITY_DELTA: "#/components/schemas/ActivityDeltaEvent"
+          RUN_FINISHED: "#/components/schemas/RunFinishedEvent"
+          RUN_ERROR: "#/components/schemas/RunErrorEvent"
+
+    RunStartedEvent:
+      description: Opens a run. A continuation names the reply it streams into.
+      type: object
+      required: [type, threadId, runId, instance]
+      properties:
+        type: {const: RUN_STARTED}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        threadId: {type: string}
+        runId: {type: string}
+        instance: {type: string, description: "The instance holding the run, which requests about the run send as X-Tinfoil-Harness-Instance."}
+        messageId: {type: string}
+
+    MessagesSnapshotEvent:
+      description: The chat's latest messages as the run begins.
+      type: object
+      required: [type, messages, hasOlder]
+      properties:
+        type: {const: MESSAGES_SNAPSHOT}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        messages: {type: array, items: {$ref: "#/components/schemas/MessageView"}}
+        hasOlder: {type: boolean}
+
+    StateSnapshotEvent:
+      type: object
+      required: [type, snapshot]
+      properties:
+        type: {const: STATE_SNAPSHOT}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        snapshot:
+          description: The run's chat, its queue, and the caller's quota.
+          type: object
+          required: [thread, queue, rateLimit]
+          properties:
+            thread: {$ref: "#/components/schemas/ThreadSummary"}
+            queue: {type: array, items: {$ref: "#/components/schemas/QueueItem"}}
+            rateLimit: {$ref: "#/components/schemas/RateLimit"}
+
+    StateDeltaEvent:
+      description: Changes to the run's state. One that names a run is about a turn queued behind the running reply.
+      type: object
+      required: [type, delta]
+      properties:
+        type: {const: STATE_DELTA}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        threadId: {type: string}
+        runId: {type: string}
+        delta: {type: array, items: {$ref: "#/components/schemas/StatePatch"}}
+
+    StatePatch:
+      oneOf:
+        - type: object
+          required: [op, path, value]
+          properties:
+            op: {const: add}
+            path: {const: /queue/-}
+            value: {$ref: "#/components/schemas/QueueItem"}
+        - type: object
+          required: [op, path, value]
+          properties:
+            op: {const: replace}
+            path: {const: /queue}
+            value: {type: array, items: {$ref: "#/components/schemas/QueueItem"}}
+        - type: object
+          required: [op, path, value]
+          properties:
+            op: {const: replace}
+            path: {const: /thread/title}
+            value: {type: string}
+        - type: object
+          required: [op, path, value]
+          properties:
+            op: {const: replace}
+            path: {const: /thread/titleState}
+            value: {$ref: "#/components/schemas/TitleState"}
+
+    QueueItem:
+      description: A turn waiting behind its chat's running reply.
+      type: object
+      required: [queueId, kind, content, quote, attachments, createdAt]
+      properties:
+        queueId: {type: string}
+        kind: {type: string}
+        content: {type: [string, "null"]}
+        quote: {type: [string, "null"]}
+        attachments:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              kind: {$ref: "#/components/schemas/AttachmentKind"}
+              fileName: {type: string}
+              mimeType: {type: string}
+              size: {type: integer}
+              thumbnail: {type: string}
+        createdAt: {$ref: "#/components/schemas/Timestamp"}
+
+    TextMessageChunkEvent:
+      type: object
+      required: [type, messageId, role, delta]
+      properties:
+        type: {const: TEXT_MESSAGE_CHUNK}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        messageId: {type: string}
+        role: {const: assistant}
+        delta: {type: string}
+
+    ReasoningMessageChunkEvent:
+      description: Reasoning streamed into a reply. Its messageId is the reply's with "-reasoning" after it.
+      type: object
+      required: [type, messageId, delta]
+      properties:
+        type: {const: REASONING_MESSAGE_CHUNK}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        messageId: {type: string}
+        delta: {type: string}
+
+    ReasoningSummaryEvent:
+      description: A short summary of a reasoning block while it goes on. It is not stored with the chat.
+      type: object
+      required: [type, messageId, blockId, content]
+      properties:
+        type: {const: REASONING_SUMMARY}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        messageId: {type: string}
+        blockId: {type: string}
+        content: {type: string}
+
+    ToolCallStartEvent:
+      type: object
+      required: [type, toolCallId, toolCallName]
+      properties:
+        type: {const: TOOL_CALL_START}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        toolCallId: {type: string}
+        toolCallName: {type: string}
+        parentMessageId: {type: string}
+
+    ToolCallArgsEvent:
+      type: object
+      required: [type, toolCallId, delta]
+      properties:
+        type: {const: TOOL_CALL_ARGS}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        toolCallId: {type: string}
+        delta: {type: string}
+
+    ToolCallEndEvent:
+      type: object
+      required: [type, toolCallId]
+      properties:
+        type: {const: TOOL_CALL_END}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        toolCallId: {type: string}
+
+    ToolCallResultEvent:
+      type: object
+      required: [type, messageId, toolCallId, role, content]
+      properties:
+        type: {const: TOOL_CALL_RESULT}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        messageId: {type: string}
+        toolCallId: {type: string}
+        role: {const: tool}
+        content: {$ref: "#/components/schemas/Json"}
+        metadata: {$ref: "#/components/schemas/JsonObject"}
+        display: {$ref: "#/components/schemas/ToolDisplay"}
+
+    ActivitySnapshotEvent:
+      description: Opens a tool's output while it runs. Its messageId is the call's id with "act_" before it.
+      type: object
+      required: [type, messageId, activityType, content]
+      properties:
+        type: {const: ACTIVITY_SNAPSHOT}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        messageId: {type: string}
+        activityType: {const: TOOL}
+        content: {$ref: "#/components/schemas/ToolActivity"}
+        display: {$ref: "#/components/schemas/ToolDisplay"}
+
+    ActivityDeltaEvent:
+      type: object
+      required: [type, messageId, activityType, patch]
+      properties:
+        type: {const: ACTIVITY_DELTA}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        messageId: {type: string}
+        activityType: {const: TOOL}
+        patch: {type: array, items: {$ref: "#/components/schemas/ActivityPatch"}}
+        display: {$ref: "#/components/schemas/ToolDisplay"}
+
+    ToolActivity:
+      description: A tool's output as it runs, its progress and the lines it printed.
+      type: object
+      required: [toolCallId, tool, progress, output]
+      properties:
+        toolCallId: {type: string}
+        tool: {type: string}
+        progress: {type: number}
+        output: {type: array, items: {$ref: "#/components/schemas/Json"}}
+
+    ActivityPatch:
+      oneOf:
+        - type: object
+          required: [op, path, value]
+          properties:
+            op: {const: replace}
+            path: {const: /progress}
+            value: {type: number}
+        - type: object
+          required: [op, path, value]
+          properties:
+            op: {const: add}
+            path: {const: /output/-}
+            value: {type: string}
+
+    RunFinishedEvent:
+      type: object
+      required: [type, threadId, runId, metadata]
+      properties:
+        type: {const: RUN_FINISHED}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        threadId: {type: string}
+        runId: {type: string}
+        metadata: {$ref: "#/components/schemas/RunMetadata"}
+
+    RunErrorEvent:
+      description: Ends a run that failed, with the members of ErrorBody. One a stream ends with after its run was lost names neither the chat nor the run.
+      type: object
+      required: [type, code, message, action]
+      properties:
+        type: {const: RUN_ERROR}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        threadId: {type: string}
+        runId: {type: string}
+        code: {$ref: "#/components/schemas/ErrorCode"}
+        message: {type: string}
+        action: {$ref: "#/components/schemas/ErrorAction"}
+        kind: {type: string}
+        retryAfter: {type: integer}
+        resetsAt: {$ref: "#/components/schemas/Timestamp"}
+        status: {type: integer}
+        keyId: {type: string}
+        upstreamCode: {type: string}
+        rateLimit: {$ref: "#/components/schemas/RateLimit"}
+        metadata: {$ref: "#/components/schemas/RunMetadata"}
+
+    RunMetadata:
+      description: What a run's last event reports. A device chat's run returns the whole chat.
+      type: object
+      properties:
+        messages: {type: array, items: {$ref: "#/components/schemas/CommittedReply"}}
+        thread: {$ref: "#/components/schemas/ThreadRecord"}
+        usage:
+          type: object
+          required: [prompt_tokens, completion_tokens, total_tokens]
+          properties:
+            prompt_tokens: {type: integer}
+            completion_tokens: {type: integer}
+            total_tokens: {type: integer}
+        rateLimit: {$ref: "#/components/schemas/RateLimit"}
+        cancelled: {type: boolean}
+
+    CommittedReply:
+      description: What a run commits to a reply beyond its streamed content.
+      type: object
+      required: [id]
+      properties:
+        id: {type: string}
+        model: {type: string}
+        modelDisplayName: {type: string}
+        usage: {$ref: "#/components/schemas/MessageUsage"}
+        isError: {type: boolean}
+        isInterrupted: {type: boolean}
+        annotations: {type: array, items: {$ref: "#/components/schemas/Annotation"}}
+
+    # --- Threads --------------------------------------------------------------
+
+    TitleState:
+      description: How a chat came by its title. A client shows the title of a state it does not know as it is.
+      anyOf:
+        - {type: string, enum: [placeholder, generated, manual]}
+        - {type: string}
+
+    ContextUsage:
+      description: How much of the model's window the chat's last prompt filled.
+      type: object
+      required: [usedTokens, limitTokens, percentage]
+      properties:
+        usedTokens: {type: integer}
+        limitTokens: {type: integer}
+        percentage: {type: number}
+
+    ThreadSummary:
+      description: A chat as a list shows it.
+      type: object
+      required: [id, title, titleState, createdAt, updatedAt, activityAt, projectId, model, webSearchEnabled, pinned, contextUsage, activeRun, messageCount]
+      properties:
+        id: {type: string}
+        title: {type: string}
+        titleState: {$ref: "#/components/schemas/TitleState"}
+        createdAt: {type: [string, "null"]}
+        updatedAt: {type: [string, "null"]}
+        activityAt: {type: string, description: "When the chat's latest message was written."}
+        projectId: {type: [string, "null"]}
+        model: {type: string}
+        webSearchEnabled: {type: boolean}
+        pinned: {type: boolean}
+        contextUsage:
+          description: "How much of the model's window the chat's last prompt filled."
+          type: [object, "null"]
+          required: [usedTokens, limitTokens, percentage]
+          properties:
+            usedTokens: {type: integer}
+            limitTokens: {type: integer}
+            percentage: {type: number}
+        activeRun:
+          description: "A hint that a reply may be streaming, until the run's deadline. It never locks the chat."
+          type: [object, "null"]
+          required: [runId, expiresAt, instance]
+          properties:
+            runId: {type: string}
+            expiresAt: {$ref: "#/components/schemas/Timestamp"}
+            instance: {type: string, description: "The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance."}
+        messageCount: {type: integer}
+        flagged: {type: boolean, description: "The safeguards flagged the chat, which takes no more turns."}
+
+    ThreadWindow:
+      description: A chat shown from its latest messages back.
+      type: object
+      required: [id, title, titleState, createdAt, updatedAt, activityAt, projectId, model, webSearchEnabled, pinned, contextUsage, activeRun, messageCount, revision, presetId, messages, hasOlder]
+      properties:
+        id: {type: string}
+        title: {type: string}
+        titleState: {$ref: "#/components/schemas/TitleState"}
+        createdAt: {type: [string, "null"]}
+        updatedAt: {type: [string, "null"]}
+        activityAt: {type: string, description: "When the chat's latest message was written."}
+        projectId: {type: [string, "null"]}
+        model: {type: string}
+        webSearchEnabled: {type: boolean}
+        pinned: {type: boolean}
+        contextUsage:
+          description: "How much of the model's window the chat's last prompt filled."
+          type: [object, "null"]
+          required: [usedTokens, limitTokens, percentage]
+          properties:
+            usedTokens: {type: integer}
+            limitTokens: {type: integer}
+            percentage: {type: number}
+        activeRun:
+          description: "A hint that a reply may be streaming, until the run's deadline. It never locks the chat."
+          type: [object, "null"]
+          required: [runId, expiresAt, instance]
+          properties:
+            runId: {type: string}
+            expiresAt: {$ref: "#/components/schemas/Timestamp"}
+            instance: {type: string, description: "The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance."}
+        messageCount: {type: integer}
+        flagged: {type: boolean, description: "The safeguards flagged the chat, which takes no more turns."}
+        revision: {type: string}
+        presetId: {type: [string, "null"]}
+        messages: {type: array, items: {$ref: "#/components/schemas/MessageView"}}
+        hasOlder: {type: boolean}
+
+    MessageView:
+      description: A message as a client shows it, a question's text or a reply's timeline, with its attachments' metadata.
+      type: object
+      required: [id, role, createdAt]
+      properties:
+        id: {type: string}
+        role: {$ref: "#/components/schemas/Role"}
+        createdAt: {type: string}
+        content: {type: string, description: "A question's text."}
+        timeline: {type: array, items: {$ref: "#/components/schemas/Block"}, description: "A reply's steps."}
+        quote: {type: string}
+        model: {type: string}
+        modelDisplayName: {type: string}
+        isError: {type: boolean}
+        isInterrupted: {type: boolean}
+        usage: {$ref: "#/components/schemas/MessageUsage"}
+        annotations: {type: array, items: {$ref: "#/components/schemas/Annotation"}}
+        attachments: {type: array, items: {$ref: "#/components/schemas/AttachmentView"}}
+
+    Role:
+      description: Who wrote a message. A client leaves out a message whose role it does not know.
+      anyOf:
+        - {type: string, enum: [user, assistant]}
+        - {type: string}
+
+    MessageUsage:
+      type: object
+      required: [promptTokens, completionTokens]
+      properties:
+        promptTokens: {type: integer}
+        completionTokens: {type: integer}
+
+    Block:
+      description: One step of a reply, text, reasoning, or a tool call. What a tool returned is kept as it came.
+      type: object
+      required: [id, type]
+      properties:
+        id: {type: string}
+        type:
+          description: A client leaves out a block of a type it does not know.
+          anyOf:
+            - {type: string, enum: [content, thinking, tool_call]}
+            - {type: string}
+        content: {type: string}
+        toolCallId: {type: string}
+        name: {type: string}
+        arguments: {type: string}
+        complete: {type: boolean}
+        result: {$ref: "#/components/schemas/Json"}
+        metadata: {$ref: "#/components/schemas/Json"}
+        progress: {type: array, items: {$ref: "#/components/schemas/Json"}}
+        activity: {$ref: "#/components/schemas/Json"}
+        display: {$ref: "#/components/schemas/ToolDisplay"}
+        startedAt: {type: number, description: "Epoch milliseconds."}
+        endedAt: {type: number, description: "Epoch milliseconds."}
+        duration: {type: number, description: "How long a reasoning step thought, in seconds."}
+        invalidArguments: {type: boolean, description: "The widget's current declaration refuses the call's arguments, so the client offers to regenerate them."}
+
+    ToolDisplay:
+      description: What a web search or page fetch shows, kept current while it runs.
+      type: object
+      required: [status, sources]
+      properties:
+        query: {type: string}
+        url: {type: string}
+        status:
+          description: A client shows a status it does not know as completed.
+          anyOf:
+            - {type: string, enum: [running, completed, failed]}
+            - {type: string}
+        sources:
+          type: array
+          items:
+            type: object
+            required: [url, title]
+            properties:
+              url: {type: string}
+              title: {type: string}
+              snippet: {type: string}
+
+    Annotation:
+      description: A reply's citation of a page.
+      type: object
+      required: [type]
+      properties:
+        type: {const: url_citation}
+        url_citation:
+          type: object
+          required: [url, title, start_index, end_index]
+          properties:
+            url: {type: string}
+            title: {type: string}
+            start_index: {type: integer}
+            end_index: {type: integer}
+
+    AttachmentKind:
+      description: What an attachment holds. A client shows an attachment of a kind it does not know as a file.
+      anyOf:
+        - {type: string, enum: [image, document, audio]}
+        - {type: string}
+
+    AttachmentView:
+      description: An attachment's metadata, thumbnail and any text it holds inline.
+      type: object
+      required: [id, kind, fileName, mimeType]
+      properties:
+        id: {type: string}
+        kind: {$ref: "#/components/schemas/AttachmentKind"}
+        fileName: {type: string}
+        mimeType: {type: string}
+        size: {type: integer}
+        thumbnail: {type: string}
+        textContent: {type: string}
+        description: {type: string}
+
+    Attachment:
+      description: An attachment as an upload returns it and a device chat keeps it.
+      type: object
+      required: [id, kind, fileName, mimeType]
+      properties:
+        id: {type: string}
+        kind: {$ref: "#/components/schemas/AttachmentKind"}
+        fileName: {type: string}
+        mimeType: {type: string}
+        size: {type: integer}
+        thumbnail: {type: string}
+        textContent: {type: string}
+        description: {type: string}
+        pages: {type: array, items: {$ref: "#/components/schemas/DocumentPage"}}
+        base64: {type: string, description: "The copy of an image models read."}
+        originalBase64: {type: string, description: "An imported image's original, only in an import's lines. A client keeps it apart from the chat."}
+
+    DocumentPage:
+      type: object
+      required: [image, is_scanned, page, text]
+      properties:
+        image: {type: string}
+        is_scanned: {type: boolean}
+        page: {type: integer}
+        text: {type: string}
+
+    ThreadRecord:
+      description: |
+        A whole chat, as a device keeps it. A device chat's run returns it, and
+        the next turn sends it back as thread. A client keeps every member,
+        including members this document does not list, and sends them back
+        unchanged.
+      type: object
+      required: [id, title, titleState, model, presetId, pinned, webSearchEnabled, messages, recordVersion]
+      properties:
+        id: {type: string}
+        title: {type: string}
+        titleState: {$ref: "#/components/schemas/TitleState"}
+        createdAt: {type: string}
+        updatedAt: {type: string}
+        model: {type: string}
+        projectId: {type: [string, "null"]}
+        presetId: {type: [string, "null"]}
+        pinned: {type: boolean}
+        webSearchEnabled: {type: boolean}
+        messages: {type: array, items: {$ref: "#/components/schemas/MessageRecord"}}
+        lastRequestId: {type: string}
+        lastRequestKind: {type: string, description: "What the last request's turn did, which a retry repeats."}
+        activeRun:
+          description: "A hint that a reply may be streaming, until the run's deadline. It never locks the chat."
+          type: [object, "null"]
+          required: [runId, expiresAt, instance]
+          properties:
+            runId: {type: string}
+            expiresAt: {$ref: "#/components/schemas/Timestamp"}
+            instance: {type: string, description: "The instance holding the run, which a client following or cancelling it after a reload sends as X-Tinfoil-Harness-Instance."}
+        contextUsage: {$ref: "#/components/schemas/ContextUsage"}
+        flagged: {type: boolean}
+        harnessHiddenCount: {type: integer, description: "How many leading messages an ask's chat holds as context without showing them."}
+        recordVersion: {type: integer, description: "The format the harness wrote the record in."}
+
+    MessageRecord:
+      type: object
+      required: [id, role, createdAt, content]
+      properties:
+        id: {type: string}
+        role: {$ref: "#/components/schemas/Role"}
+        createdAt: {type: string}
+        content: {type: string}
+        quote: {type: string}
+        model: {type: string}
+        modelDisplayName: {type: string}
+        timeline: {type: array, items: {$ref: "#/components/schemas/Block"}}
+        attachments: {type: array, items: {$ref: "#/components/schemas/Attachment"}}
+        annotations: {type: array, items: {$ref: "#/components/schemas/Annotation"}}
+        usage: {$ref: "#/components/schemas/MessageUsage"}
+        isError: {type: boolean}
+        isInterrupted: {type: boolean}
+
+    ThreadInput:
+      description: "A device chat as its client sends it: a ThreadRecord the harness returned, sent back whole, or a record without a recordVersion that an older client kept or a client made for a new chat. The harness refuses a ThreadRecord with a member its version does not have."
+      type: object
+      additionalProperties: true
+      properties:
+        recordVersion: {type: integer, description: "The version of the ThreadRecord the harness returned. Absent from a record an older client kept or a client made."}
+        title: {type: string}
+        titleState: {type: string}
+        model: {type: string}
+        lastRequestId: {type: string}
+        pinned: {type: boolean}
+        webSearchEnabled: {type: boolean}
+        presetId: {type: [string, "null"]}
+        messages:
+          type: array
+          maxItems: 10000
+          items:
+            type: object
+            additionalProperties: true
+            required: [role]
+            properties:
+              id: {$ref: "#/components/schemas/Identifier"}
+              role: {$ref: "#/components/schemas/Role"}
+              content: {type: [string, "null"]}
+              attachments: {type: array}
+              timeline: {type: array}
+
+    MessageRequest:
+      type: object
+      required: [threadId, messageId]
+      properties:
+        key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+        local: {type: boolean}
+        thread: {$ref: "#/components/schemas/ThreadInput"}
+        profile: {$ref: "#/components/schemas/ProfileInput"}
+        threadId: {$ref: "#/components/schemas/Identifier"}
+        messageId: {$ref: "#/components/schemas/Identifier"}
+        content: {type: string}
+
+    DeviceThreadReply:
+      type: object
+      required: [thread]
+      properties:
+        thread: {$ref: "#/components/schemas/ThreadRecord"}
+
+    SharedThread:
+      description: An opened share, whose attachments name the key that reads each blob.
+      type: object
+      required: [title, createdAt, messages]
+      properties:
+        title: {type: string}
+        createdAt: {type: [string, "null"]}
+        messages:
+          type: array
+          items:
+            type: object
+            required: [id, role, createdAt]
+            properties:
+              id: {type: string}
+              role: {$ref: "#/components/schemas/Role"}
+              createdAt: {type: string}
+              content: {type: string, description: "A question's text."}
+              timeline: {type: array, items: {$ref: "#/components/schemas/Block"}, description: "A reply's steps."}
+              quote: {type: string}
+              model: {type: string}
+              modelDisplayName: {type: string}
+              isError: {type: boolean}
+              isInterrupted: {type: boolean}
+              usage: {$ref: "#/components/schemas/MessageUsage"}
+              annotations: {type: array, items: {$ref: "#/components/schemas/Annotation"}}
+              attachments:
+                type: array
+                items:
+                  type: object
+                  required: [id, kind, fileName, mimeType, attKey]
+                  properties:
+                    id: {type: string}
+                    kind: {$ref: "#/components/schemas/AttachmentKind"}
+                    fileName: {type: string}
+                    mimeType: {type: string}
+                    size: {type: integer}
+                    thumbnail: {type: string}
+                    textContent: {type: string}
+                    description: {type: string}
+                    attKey: {type: [string, "null"]}
+
+    AttachmentRequest:
+      description: An attachment of a stored chat, or one a share names by the key its link carries.
+      type: object
+      required: [id]
+      properties:
+        type: {type: string}
+        key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+        id: {$ref: "#/components/schemas/Identifier"}
+        threadId: {$ref: "#/components/schemas/Identifier"}
+        attKey: {type: string}
+        kind: {$ref: "#/components/schemas/AttachmentKind"}
+        fileName: {type: string}
+        mimeType: {type: string}
+        textContent: {type: string}
+        pages: {type: array, items: {$ref: "#/components/schemas/DocumentPage"}}
+
+    # --- Profile --------------------------------------------------------------
+
+    Profile:
+      description: The account's settings. A field a profile leaves out takes its value from the session's profileDefaults.
+      type: object
+      properties:
+        themeMode:
+          description: A client applies its own default for a value it does not know, and keeps the value.
+          anyOf:
+            - {type: string, enum: [light, dark, system]}
+            - {type: string}
+        chatFont:
+          description: A client applies its own default for a value it does not know, and keeps the value.
+          anyOf:
+            - {type: string, enum: [system, serif, mono, dyslexic]}
+            - {type: string}
+        language: {type: string}
+        nickname: {type: string}
+        profession: {type: string}
+        traits: {type: array, items: {type: string}}
+        additionalContext: {type: string}
+        isUsingPersonalization: {type: boolean}
+        isUsingCustomPrompt: {type: boolean}
+        customSystemPrompt: {type: string}
+        customPromptPresets: {type: array, items: {$ref: "#/components/schemas/CustomPreset"}}
+        favoritePromptPresetIds: {type: array, items: {type: string}}
+        defaultPromptPresetId: {type: string}
+        selectedModel: {type: string}
+        autoIntelligence: {type: string}
+        reasoningEffort: {type: string}
+        thinkingEnabled: {type: boolean}
+        webSearchEnabled: {type: boolean}
+        webSearchAvailable: {type: boolean}
+        piiCheckEnabled: {type: boolean}
+        genUIEnabled: {type: boolean}
+        pixelateSidebarChatTitlesEnabled: {type: boolean}
+        browserTabChatTitleEnabled: {type: boolean}
+        enterToNewlineEnabled: {type: boolean}
+        hasSeenOnboarding: {type: boolean}
+        hasSeenWebSearchIntro: {type: boolean}
+        dismissed: {type: object, additionalProperties: {type: boolean}}
+
+    ProfileView:
+      type: object
+      properties:
+        themeMode:
+          description: A client applies its own default for a value it does not know, and keeps the value.
+          anyOf:
+            - {type: string, enum: [light, dark, system]}
+            - {type: string}
+        chatFont:
+          description: A client applies its own default for a value it does not know, and keeps the value.
+          anyOf:
+            - {type: string, enum: [system, serif, mono, dyslexic]}
+            - {type: string}
+        language: {type: string}
+        nickname: {type: string}
+        profession: {type: string}
+        traits: {type: array, items: {type: string}}
+        additionalContext: {type: string}
+        isUsingPersonalization: {type: boolean}
+        isUsingCustomPrompt: {type: boolean}
+        customSystemPrompt: {type: string}
+        customPromptPresets: {type: array, items: {$ref: "#/components/schemas/CustomPreset"}}
+        favoritePromptPresetIds: {type: array, items: {type: string}}
+        defaultPromptPresetId: {type: string}
+        selectedModel: {type: string}
+        autoIntelligence: {type: string}
+        reasoningEffort: {type: string}
+        thinkingEnabled: {type: boolean}
+        webSearchEnabled: {type: boolean}
+        webSearchAvailable: {type: boolean}
+        piiCheckEnabled: {type: boolean}
+        genUIEnabled: {type: boolean}
+        pixelateSidebarChatTitlesEnabled: {type: boolean}
+        browserTabChatTitleEnabled: {type: boolean}
+        enterToNewlineEnabled: {type: boolean}
+        hasSeenOnboarding: {type: boolean}
+        hasSeenWebSearchIntro: {type: boolean}
+        dismissed: {type: object, additionalProperties: {type: boolean}}
+        updatedAt: {$ref: "#/components/schemas/Timestamp"}
+
+    ProfileInput:
+      description: Settings a device keeps, which a client sends as a Profile. They may hold values older clients wrote, so the harness reads them leniently, ignoring fields it does not know and fields of the wrong type.
+      type: object
+      additionalProperties: true
+
+    CustomPreset:
+      description: A prompt the user saved. Its timestamps are kept as the client wrote them. A stored prompt always has a description and systemPrompt, empty when unset, and numeric timestamps, set when it is stored without them, as the apps' own profile sync requires.
+      type: object
+      required: [id, name]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+        systemPrompt: {type: string}
+        model: {type: string}
+        webSearchEnabled: {type: boolean}
+        createdAt: {$ref: "#/components/schemas/Json"}
+        updatedAt: {$ref: "#/components/schemas/Json"}
+
+    # --- Projects -------------------------------------------------------------
+
+    Project:
+      type: object
+      required: [id, name, description, systemInstructions, color]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+        systemInstructions: {type: string}
+        color: {type: [string, "null"]}
+        createdAt: {$ref: "#/components/schemas/Timestamp"}
+        updatedAt: {$ref: "#/components/schemas/Timestamp"}
+
+    ProjectDocument:
+      description: A document's extracted text, which every chat of its project reads.
+      type: object
+      required: [id, projectId, filename, contentType, sizeBytes]
+      properties:
+        id: {type: string}
+        projectId: {type: string}
+        filename: {type: string}
+        contentType: {type: string}
+        sizeBytes: {type: integer}
+        content: {type: string}
+        thumbnailBase64: {type: string}
+        createdAt: {$ref: "#/components/schemas/Timestamp"}
+        updatedAt: {$ref: "#/components/schemas/Timestamp"}
+
+    # --- Keys -----------------------------------------------------------------
+
+    KeyOrigin:
+      description: How the account's key was set up. A client treats an origin it does not know as unknown.
+      anyOf:
+        - {type: string, enum: [passkey, manual, recovery, start_fresh]}
+        - {type: string}
+
+    KeyRef:
+      type: object
+      required: [key]
+      properties:
+        key: {type: string, description: "A content key, base64."}
+
+    KeyBundleInput:
+      type: object
+      required: [credential_id, kek_iv, encrypted_keys]
+      properties:
+        credential_id: {type: string}
+        kek_iv: {type: string, description: "The AES-GCM IV, hex."}
+        encrypted_keys: {type: string, description: "The wrapped content key, hex."}
+
+    KeyCurrent:
+      type: object
+      required: [key_id, bundles]
+      properties:
+        key_id: {type: [string, "null"], description: "Hex. Null while the account has no key."}
+        etag: {type: string}
+        bundles:
+          description: "The passkey bundles by credential id. Null before the key has any."
+          type: [object, "null"]
+          additionalProperties:
+            type: object
+            required: [credential_id, kek_iv, encrypted_keys]
+            properties:
+              credential_id: {type: string}
+              kek_iv: {type: string}
+              encrypted_keys: {type: string}
+              bundle_version: {type: integer}
+              created_at: {type: string}
+              updated_at: {type: string}
+        created_via: {$ref: "#/components/schemas/KeyOrigin"}
+        created_at: {type: string}
+        has_data: {type: boolean, description: "The account has rows not sealed under this key."}
+
+    ResealReport:
+      description: "Where a reseal stands: the rows resealed so far, the rows still to try, and the rows no given key opens."
+      type: object
+      required: [status, migrated, remaining, blocked, partial]
+      properties:
+        status:
+          description: A client treats a status it does not know as running.
+          anyOf:
+            - {type: string, enum: [running, complete, failed]}
+            - {type: string}
+        migrated: {type: integer}
+        remaining: {type: integer}
+        blocked: {type: integer}
+        partial: {type: boolean, description: "The reseal's time or the account's credential ran out before every row was tried; a later call continues it."}
+
+    # --- Archives -------------------------------------------------------------
+
+    ImportLine:
+      description: One line of a device import.
+      type: object
+      properties:
+        thread:
+          description: A device chat. Its images' attachments carry the archive's original as originalBase64.
+          $ref: "#/components/schemas/ThreadRecord"
+        done:
+          type: object
+          required: [jobId, warnings]
+          properties:
+            jobId: {type: [string, "null"], description: "The cloud import job, whose status the client polls."}
+            warnings: {type: array, items: {type: string}}
+        error: {$ref: "#/components/schemas/ErrorBody"}
+
+    ImportStatus:
+      type: object
+      required: [jobId, status, imported, failed, total]
+      properties:
+        jobId: {type: string}
+        status: {type: string}
+        phase: {type: string}
+        imported: {type: integer}
+        failed: {type: integer}
+        total: {type: integer}
+        counts:
+          type: object
+          additionalProperties:
+            type: object
+            required: [imported, skipped, failed, blocked]
+            properties:
+              imported: {type: integer}
+              skipped: {type: integer}
+              failed: {type: integer}
+              blocked: {type: integer}
+        warnings: {type: array, items: {type: string}}
+        errors: {type: array, items: {type: string}}
+        failureReason: {type: string}
+        failureDetail: {type: string}
+
+    # --- Metadata -------------------------------------------------------------
+
+    LinkPreview:
+      type: object
+      required: [url, title, description, siteName, image]
+      properties:
+        url: {type: string}
+        title: {type: [string, "null"]}
+        description: {type: [string, "null"]}
+        siteName: {type: [string, "null"]}
+        image: {type: [string, "null"]}

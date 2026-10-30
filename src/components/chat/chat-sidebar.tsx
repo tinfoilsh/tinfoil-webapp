@@ -20,29 +20,33 @@ import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useAuth, useUser } from '@clerk/react'
 import {
   TfBoxX,
-  TfChat2,
   TfChevronDown,
   TfChevronRight,
-  TfCloud,
   TfFloppyDisk,
   TfFolder,
   TfFolderPlus,
-  TfLockLocked,
   TfMagnifyingGlass,
   TfMicrophone,
   TfSetting,
-  TfSidebarClose,
-  TfSidebarOpen,
   TfSparkle,
-  TfThumbtack,
   TfWarning,
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfChat2Animated,
+  TfChevronDownAnimated,
+  TfChevronRightAnimated,
+  TfCloudFaceAnimated,
+  TfLockLockedAnimated,
+  TfSidebarCloseAnimated,
+  TfSidebarOpenAnimated,
+  TfThumbtackAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useRouter } from 'next/router'
 import { PiSpinner } from 'react-icons/pi'
 import { ChatList, type ChatItemData } from './chat-list'
-import { formatRelativeTime } from './chat-list-utils'
+import { updatedLabel } from './chat-list-utils'
 import { CONSTANTS } from './constants'
 import { useDrag } from './drag-context'
 import { consumeFavoriteDrop } from './favorite-drag'
@@ -706,7 +710,7 @@ export function ChatSidebar({
                 alt=""
                 className="h-6 w-6 group-hover/logo:opacity-0"
               />
-              <TfSidebarOpen
+              <TfSidebarOpenAnimated
                 className="absolute inset-0 m-auto h-5 w-5 -scale-x-100 text-content-secondary opacity-0 group-hover/logo:opacity-100"
                 aria-hidden="true"
               />
@@ -762,7 +766,7 @@ export function ChatSidebar({
                   )}
                   aria-label="Favorites"
                 >
-                  <TfThumbtack className="h-5 w-5" aria-hidden="true" />
+                  <TfThumbtackAnimated className="h-5 w-5" aria-hidden="true" />
                 </button>
                 <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                   Favorites
@@ -810,7 +814,7 @@ export function ChatSidebar({
                 )}
                 aria-label="Chats"
               >
-                <TfChat2 className="h-5 w-5" aria-hidden="true" />
+                <TfChat2Animated className="h-5 w-5" aria-hidden="true" />
               </button>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 Chats <span className="text-content-muted">{modKey}.</span>
@@ -874,7 +878,7 @@ export function ChatSidebar({
               aria-label="Close sidebar"
               data-sidebar-close
             >
-              <TfSidebarClose
+              <TfSidebarCloseAnimated
                 className="h-5 w-5 -scale-x-100"
                 aria-hidden="true"
               />
@@ -966,7 +970,7 @@ export function ChatSidebar({
                 ) : (
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-3 text-xs text-content-secondary">
-                      <TfChat2
+                      <TfChat2Animated
                         className="h-4 w-4 flex-shrink-0 text-content-muted"
                         aria-hidden="true"
                       />
@@ -974,7 +978,7 @@ export function ChatSidebar({
                     </div>
 
                     <div className="flex items-center gap-3 text-xs text-content-secondary">
-                      <TfCloud
+                      <TfCloudFaceAnimated
                         className="h-4 w-4 flex-shrink-0 text-content-muted"
                         aria-hidden="true"
                       />
@@ -982,7 +986,7 @@ export function ChatSidebar({
                     </div>
 
                     <div className="flex items-center gap-3 text-xs text-content-secondary">
-                      <TfThumbtack
+                      <TfThumbtackAnimated
                         className="h-4 w-4 flex-shrink-0 text-content-muted"
                         aria-hidden="true"
                       />
@@ -1124,7 +1128,7 @@ export function ChatSidebar({
                 )}
               >
                 <span className="flex items-center gap-2">
-                  <TfThumbtack className="h-4 w-4" aria-hidden="true" />
+                  <TfThumbtackAnimated className="h-4 w-4" aria-hidden="true" />
                   <span
                     role="heading"
                     aria-level={2}
@@ -1290,9 +1294,9 @@ export function ChatSidebar({
                   </span>
                   <span className="flex items-center gap-1">
                     {isProjectsExpanded ? (
-                      <TfChevronDown className="h-4 w-4" />
+                      <TfChevronDownAnimated className="h-4 w-4" />
                     ) : (
-                      <TfChevronRight className="h-4 w-4" />
+                      <TfChevronRightAnimated className="h-4 w-4" />
                     )}
                   </span>
                 </button>
@@ -1330,7 +1334,7 @@ export function ChatSidebar({
                             onClick={openCloudSyncSetup}
                             className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
                           >
-                            <TfCloud
+                            <TfCloudFaceAnimated
                               className="h-3.5 w-3.5"
                               aria-hidden="true"
                             />
@@ -1418,9 +1422,11 @@ export function ChatSidebar({
                                       <span className="truncate font-aeonik-fono text-sm font-medium leading-5 text-content-primary">
                                         {project.name}
                                       </span>
-                                      <span className="text-xs text-content-muted">
-                                        {`Updated ${formatRelativeTime(new Date(project.updatedAt))}`}
-                                      </span>
+                                      {updatedLabel(project.updatedAt) && (
+                                        <span className="text-xs text-content-muted">
+                                          {updatedLabel(project.updatedAt)}
+                                        </span>
+                                      )}
                                     </div>
                                   </>
                                 )
@@ -1662,7 +1668,7 @@ export function ChatSidebar({
                   className="flex min-w-0 flex-1 items-center justify-between py-3 pl-4 pr-4 text-left"
                 >
                   <span className="flex items-center gap-2">
-                    <TfChat2 className="h-4 w-4" aria-hidden="true" />
+                    <TfChat2Animated className="h-4 w-4" aria-hidden="true" />
                     <span className="truncate font-aeonik font-medium">
                       Chats
                     </span>
@@ -1800,7 +1806,10 @@ export function ChatSidebar({
                               STORAGE_TAB_DROP_TARGET_CLASS_NAME,
                           )}
                         >
-                          <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
+                          <TfCloudFaceAnimated
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                          />
                           Cloud
                         </button>
                         <button
@@ -1903,7 +1912,7 @@ export function ChatSidebar({
                               }
                               className="flex w-full items-center gap-2 text-left transition-colors hover:text-content-secondary"
                             >
-                              <TfLockLocked
+                              <TfLockLockedAnimated
                                 className="h-3 w-3 shrink-0"
                                 aria-hidden="true"
                               />
@@ -1957,7 +1966,10 @@ export function ChatSidebar({
                           onClick={openCloudSyncSetup}
                           className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
                         >
-                          <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
+                          <TfCloudFaceAnimated
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                          />
                           Enable Cloud Sync
                         </button>
                       </div>

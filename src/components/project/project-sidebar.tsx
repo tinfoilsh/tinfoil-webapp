@@ -1,7 +1,7 @@
 'use client'
 
 import { ChatList, type ChatItemData } from '@/components/chat/chat-list'
-import { formatRelativeTime } from '@/components/chat/chat-list-utils'
+import { updatedLabel } from '@/components/chat/chat-list-utils'
 import {
   FilePreview,
   imageDataUrl,
@@ -35,6 +35,7 @@ import {
 import { toast } from '@/hooks/use-toast'
 import { acceptOf } from '@/services/harness/composer'
 import { useHarness } from '@/services/harness/provider'
+import { lastActive } from '@/services/harness/view-model'
 import type { Project } from '@/types/project'
 import { logError } from '@/utils/error-handling'
 import { formatFileSize } from '@/utils/format-file-size'
@@ -47,21 +48,25 @@ import { useAuth } from '@clerk/react'
 import { ArrowLeftIcon, NoSymbolIcon } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
-  TfChat2,
   TfChevronDown,
   TfChevronRight,
-  TfChevronUp,
   TfDocument,
   TfDocumentPlus,
   TfFolder,
   TfSetting,
-  TfSidebarClose,
-  TfSidebarOpen,
-  TfThumbtack,
   TfTrash,
-  TfWriting,
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfChat2Animated,
+  TfChevronDownAnimated,
+  TfChevronRightAnimated,
+  TfChevronUpAnimated,
+  TfSidebarCloseAnimated,
+  TfSidebarOpenAnimated,
+  TfThumbtackAnimated,
+  TfWritingAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useProject } from './project-context'
@@ -75,7 +80,7 @@ interface ProjectChat {
   id: string
   title: string
   messageCount: number
-  createdAt: Date
+  createdAt?: Date
   updatedAt?: string
   activityAt?: string
   projectId?: string
@@ -558,11 +563,7 @@ export function ProjectSidebar({
   // Convert chatsProp to ChatItemData format and sort by latest activity.
   const projectChats: ChatItemData[] = (chatsProp || [])
     .filter((c) => !c.isBlankChat)
-    .sort(
-      (a, b) =>
-        new Date(b.activityAt ?? b.createdAt).getTime() -
-        new Date(a.activityAt ?? a.createdAt).getTime(),
-    )
+    .sort((a, b) => lastActive(b) - lastActive(a))
     .map((c) => ({
       id: c.id,
       title: c.title,
@@ -625,7 +626,7 @@ export function ProjectSidebar({
                 className="h-6 w-6 !text-content-secondary group-hover/logo:opacity-0"
                 aria-hidden="true"
               />
-              <TfSidebarOpen
+              <TfSidebarOpenAnimated
                 className="absolute inset-0 m-auto h-5 w-5 -scale-x-100 text-content-secondary opacity-0 group-hover/logo:opacity-100"
                 aria-hidden="true"
               />
@@ -681,7 +682,7 @@ export function ProjectSidebar({
                   )}
                   aria-label="Favorites"
                 >
-                  <TfThumbtack className="h-5 w-5" aria-hidden="true" />
+                  <TfThumbtackAnimated className="h-5 w-5" aria-hidden="true" />
                 </button>
                 <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                   Favorites
@@ -761,15 +762,17 @@ export function ProjectSidebar({
                         displayProjectName
                       )}
                     </span>
-                    <TfWriting
+                    <TfWritingAnimated
                       className="h-4 w-4 shrink-0 !text-content-muted opacity-0 transition-opacity group-hover:opacity-100"
                       aria-hidden="true"
                     />
                   </button>
                 </h2>
-                <p className="truncate font-aeonik-fono text-xs leading-4 text-content-muted">
-                  Updated {formatRelativeTime(new Date(project.updatedAt))}
-                </p>
+                {updatedLabel(project.updatedAt) && (
+                  <p className="truncate font-aeonik-fono text-xs leading-4 text-content-muted">
+                    {updatedLabel(project.updatedAt)}
+                  </p>
+                )}
               </>
             ) : null}
           </div>
@@ -782,7 +785,7 @@ export function ProjectSidebar({
               aria-label="Close sidebar"
               data-sidebar-close
             >
-              <TfSidebarClose
+              <TfSidebarCloseAnimated
                 className="h-5 w-5 -scale-x-100"
                 aria-hidden="true"
               />
@@ -915,7 +918,7 @@ export function ProjectSidebar({
                 )}
               >
                 <span className="flex items-center gap-2">
-                  <TfThumbtack className="h-4 w-4" aria-hidden="true" />
+                  <TfThumbtackAnimated className="h-4 w-4" aria-hidden="true" />
                   <span
                     role="heading"
                     aria-level={2}
@@ -1009,9 +1012,12 @@ export function ProjectSidebar({
                 </span>
               </span>
               {settingsExpanded && !isLoading ? (
-                <TfChevronDown className="h-4 w-4" aria-hidden="true" />
+                <TfChevronDownAnimated className="h-4 w-4" aria-hidden="true" />
               ) : (
-                <TfChevronRight className="h-4 w-4" aria-hidden="true" />
+                <TfChevronRightAnimated
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
               )}
             </button>
 
@@ -1152,12 +1158,12 @@ export function ProjectSidebar({
                         >
                           <span>Danger Zone</span>
                           {dangerZoneExpanded ? (
-                            <TfChevronUp
+                            <TfChevronUpAnimated
                               className="h-4 w-4"
                               aria-hidden="true"
                             />
                           ) : (
-                            <TfChevronDown
+                            <TfChevronDownAnimated
                               className="h-4 w-4"
                               aria-hidden="true"
                             />
@@ -1226,9 +1232,12 @@ export function ProjectSidebar({
                 </span>
               </span>
               {documentsExpanded && !isLoading ? (
-                <TfChevronDown className="h-4 w-4" aria-hidden="true" />
+                <TfChevronDownAnimated className="h-4 w-4" aria-hidden="true" />
               ) : (
-                <TfChevronRight className="h-4 w-4" aria-hidden="true" />
+                <TfChevronRightAnimated
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
               )}
             </button>
             <input
@@ -1391,7 +1400,7 @@ export function ProjectSidebar({
           <section className="relative z-10 mt-2 flex min-h-48 flex-1 flex-col">
             <div className="relative z-10 mx-2 flex-none rounded-lg border border-border-subtle bg-surface-sidebar px-4 py-3">
               <h3 className="flex items-center gap-2 font-aeonik text-sm font-medium text-content-primary">
-                <TfChat2 className="h-4 w-4" aria-hidden="true" />
+                <TfChat2Animated className="h-4 w-4" aria-hidden="true" />
                 <span>Project Chats</span>
               </h3>
             </div>

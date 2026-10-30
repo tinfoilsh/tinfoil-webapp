@@ -1,7 +1,13 @@
 import type { AttachmentOriginal } from '@/services/storage/indexed-db'
 import { isThread, localThreadStore, type Originals } from './local-threads'
 import { imageBlob } from './open-attachments'
-import { ERROR_CODES, ROUTES } from './protocol'
+import {
+  actionOf,
+  ERROR_ACTIONS,
+  ERROR_CODES,
+  invalidResponse,
+  ROUTES,
+} from './protocol'
 import { harnessAPI, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import type {
@@ -52,6 +58,7 @@ const deviceStore = (api: HarnessAPI) => {
   if (!api.userId)
     throw new HarnessError({
       code: ERROR_CODES.unauthenticated,
+      action: ERROR_ACTIONS.stop,
       message: 'Sign in to import or export chats.',
     })
   return localThreadStore('device')
@@ -162,7 +169,7 @@ function countClaudeProjects(text: string): ClaudeProjectsExport {
   }
   if (!Array.isArray(projects))
     throw new HarnessError({
-      code: ERROR_CODES.invalidStream,
+      ...invalidResponse(),
       message: 'The chat service returned an invalid export.',
     })
   return {
@@ -212,6 +219,7 @@ interface FileImport extends ImportDone {
 const invalidImport = () =>
   new HarnessError({
     code: ERROR_CODES.invalidStream,
+    action: ERROR_ACTIONS.stop,
     message: 'The chat service returned an invalid import.',
   })
 
@@ -230,10 +238,17 @@ function importLine(text: string): { thread: StoredThread } | ImportDone {
   if (isThread(thread)) return { thread }
   // A failure after the first line ends the import; the chats stored before
   // it stay stored.
-  const { code, message } = (error ?? {}) as Partial<HarnessErrorBody>
-  if (typeof code === 'string' && typeof message === 'string')
-    throw new HarnessError(error as HarnessErrorBody)
-  const { jobId, warnings = [] } = (done ?? {}) as Partial<ImportDone>
+  const { code, message, action } = (error ?? {}) as Record<string, unknown>
+  if (
+    typeof code === 'string' &&
+    typeof message === 'string' &&
+    typeof action === 'string'
+  )
+    throw new HarnessError({
+      ...(error as HarnessErrorBody),
+      action: actionOf(action),
+    })
+  const { jobId, warnings } = (done ?? {}) as Partial<ImportDone>
   if (
     done &&
     (jobId === null || typeof jobId === 'string') &&
@@ -328,6 +343,7 @@ async function importFile(
   }
   throw new HarnessError({
     code: ERROR_CODES.streamInterrupted,
+    action: ERROR_ACTIONS.retry,
     message: 'The import ended before it finished.',
   })
 }

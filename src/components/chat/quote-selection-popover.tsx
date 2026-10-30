@@ -1,4 +1,5 @@
-import { TfChat2, TfQuote } from '@tinfoilsh/tinfoil-icons'
+import { TfQuote } from '@tinfoilsh/tinfoil-icons'
+import { TfChat2Animated } from '@tinfoilsh/tinfoil-icons/animated'
 import {
   useCallback,
   useEffect,
@@ -229,7 +230,7 @@ export function QuoteSelectionPopover({
           onClick={handleAskClick}
           className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat-background"
         >
-          <TfChat2 className="h-4 w-4" aria-hidden="true" />
+          <TfChat2Animated className="h-4 w-4" aria-hidden="true" />
           <span>Ask</span>
         </button>
       )}

@@ -84,6 +84,7 @@ beforeEach(() => {
           error: {
             code: 'UNAUTHENTICATED',
             message: 'An anonymous chat key is required',
+            action: 'reauthenticate',
           },
         },
         { status: 401 },
@@ -279,7 +280,13 @@ describe('signed-in storage modes', () => {
             user: { id: 'storage-user', anonymous: false },
           })
         : Response.json(
-            { error: { code: 'BAD_REQUEST', message: 'Unexpected request' } },
+            {
+              error: {
+                code: 'BAD_REQUEST',
+                message: 'Unexpected request',
+                action: 'stop',
+              },
+            },
             { status: 400 },
           ),
     )

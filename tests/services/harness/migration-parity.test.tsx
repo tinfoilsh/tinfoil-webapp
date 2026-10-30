@@ -116,8 +116,13 @@ it('merges device settings before switching to the cloud profile', async () => {
 function summary(id: string): ThreadSummary {
   return {
     ...storedThread(id),
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    projectId: null,
+    activeRun: null,
     messageCount: 0,
     activityAt: '2026-01-01T00:00:00Z',
+    contextUsage: null,
   }
 }
 
@@ -217,6 +222,7 @@ it('refreshes remote profile and open chat changes when the page regains focus',
   const thread = (): Thread => ({
     ...summary('shared'),
     title: `Remote ${revision}`,
+    presetId: null,
     hasOlder: false,
     messages: [
       {
@@ -349,7 +355,15 @@ it('accepts more than one queued message in a device chat', async () => {
     const n = ++runs,
       runId = `run-${n}`
     if (n === 1)
-      yield { id: 0, event: { type: 'RUN_STARTED', threadId: 'device', runId } }
+      yield {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          threadId: 'device',
+          runId,
+          instance: 'instance-1',
+        },
+      }
     else
       yield {
         id: 0,
@@ -361,7 +375,14 @@ it('accepts more than one queued message in a device chat', async () => {
             {
               op: 'add',
               path: '/queue/-',
-              value: { queueId: runId, content: input.content! },
+              value: {
+                queueId: runId,
+                kind: 'send',
+                content: input.content!,
+                quote: null,
+                attachments: [],
+                createdAt: '2026-01-01T00:00:00Z',
+              },
             },
           ],
         },
@@ -439,6 +460,7 @@ it('keeps images from an earlier queued turn when a later run stores its result'
   await store.add(thread)
   const completed = {
     ...thread,
+    recordVersion: 1,
     messages: [
       {
         ...thread.messages[0],
@@ -456,7 +478,12 @@ it('keeps images from an earlier queued turn when a later run stores its result'
   }
   await storeRun(
     { threadId: 'device', store, images: new Map(), since: 0 },
-    { type: 'RUN_FINISHED', metadata: { thread: completed } },
+    {
+      type: 'RUN_FINISHED',
+      threadId: 'device',
+      runId: 'run-1',
+      metadata: { thread: completed },
+    },
     [],
   )
   const saved = await store.get('device')

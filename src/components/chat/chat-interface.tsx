@@ -14,13 +14,16 @@ import { ArrowDownIcon } from '@heroicons/react/24/outline'
 import {
   TfDocumentPlus,
   TfGhost2,
-  TfLockLocked,
-  TfLockOpened,
   TfShare,
-  TfSidebarOpen,
   TfTinSad,
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfGhost2Animated,
+  TfLockLockedAnimated,
+  TfLockOpenedAnimated,
+  TfSidebarOpenAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
 import { PiSpinner } from 'react-icons/pi'
@@ -320,6 +323,7 @@ export function ChatInterface({
         resetsAt: failure?.resetsAt,
         retryAfter: failure?.retryAfter,
         upstreamCode: failure?.upstreamCode,
+        action: failure?.action,
         timestamp: thread.errorAt,
       }
     : null
@@ -1106,17 +1110,18 @@ export function ChatInterface({
     }
   }
   const sidebarChat = useSidebarChat({ context: thread.askContext, options })
-  // A flag stops the chat: its reply in progress, its queued turns, and an
-  // ask about it.
+  // A flag stops the chat: its reply in progress, which takes the turns
+  // queued behind it with it, and an ask about it.
   const runningRef = useRef(isStreaming)
   runningRef.current = isStreaming
   const queueRef = useRef(thread.queue)
   queueRef.current = thread.queue
   useEffect(() => {
     if (!currentChatIsFlagged) return
-    for (const item of queueRef.current)
-      void thread.removeQueued(item.id).catch(thread.report)
     if (runningRef.current) void thread.cancel().catch(thread.report)
+    else
+      for (const item of queueRef.current)
+        void thread.removeQueued(item.id).catch(thread.report)
     setIsAskSidebarOpen(false)
     sidebarChat.reset()
     // Only a newly flagged chat is stopped.
@@ -1706,7 +1711,10 @@ export function ChatInterface({
           aria-controls={SIDEBAR_PANEL_ID}
           data-sidebar-toggle
         >
-          <TfSidebarOpen className="h-5 w-5 -scale-x-100" aria-hidden="true" />
+          <TfSidebarOpenAnimated
+            className="h-5 w-5 -scale-x-100"
+            aria-hidden="true"
+          />
         </button>
         <span
           className={cn(
@@ -1771,7 +1779,7 @@ export function ChatInterface({
                     : 'border-transparent bg-surface-chat-background text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
                 )}
               >
-                <TfGhost2 className="h-4 w-4" aria-hidden="true" />
+                <TfGhost2Animated className="h-4 w-4" aria-hidden="true" />
               </button>
               <span
                 aria-hidden="true"
@@ -1832,7 +1840,7 @@ export function ChatInterface({
             </>
           ) : verificationStatus === 'verified' ? (
             <>
-              <TfLockLocked
+              <TfLockLockedAnimated
                 className="h-4 w-4 !text-brand-accent-dark dark:!text-brand-accent-light"
                 aria-hidden="true"
               />
@@ -1848,7 +1856,7 @@ export function ChatInterface({
             </>
           ) : (
             <>
-              <TfLockOpened
+              <TfLockOpenedAnimated
                 className="h-4 w-4 !text-red-500"
                 aria-hidden="true"
               />

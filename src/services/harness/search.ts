@@ -1,14 +1,14 @@
+import type { operations } from './openapi'
 import { ROUTES } from './protocol'
 import type { HarnessAPI } from './runtime'
 import type { ThreadSummary } from './types'
 
 // The harness searches the stored chats of an account, by title and
-// content, from an index it builds as chats change.
-export interface SearchPage {
-  results: (ThreadSummary & { score?: number })[]
-  // The index is being built, so results may be missing.
-  indexing: boolean
-}
+// content, from an index it builds as chats change. A page holds the chats
+// found, how many more match that cannot be opened, and whether the index is
+// still being built, so results may be missing.
+export type SearchPage =
+  operations['search']['responses'][200]['content']['application/json']
 
 const SEARCH_LIMIT = 20
 

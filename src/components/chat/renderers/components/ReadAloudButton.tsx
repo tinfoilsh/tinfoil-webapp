@@ -2,7 +2,8 @@ import { useSessionFeature } from '@/services/harness/provider'
 import { speakText } from '@/services/harness/speech'
 import { speechPlayer } from '@/services/speech/player'
 import { speechSource } from '@/services/speech/stream'
-import { TfAudio, TfPlay, TfStop } from '@tinfoilsh/tinfoil-icons'
+import { TfAudio, TfPlay } from '@tinfoilsh/tinfoil-icons'
+import { TfStopAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import { useSpeak } from '../../speech-context'
@@ -83,7 +84,10 @@ export function ReadAloudButton({
         ) : status === 'paused' ? (
           <TfPlay className="h-3.5 w-3.5" aria-hidden="true" />
         ) : active ? (
-          <TfStop className="-m-0.5 h-[18px] w-[18px]" aria-hidden="true" />
+          <TfStopAnimated
+            className="-m-0.5 h-[18px] w-[18px]"
+            aria-hidden="true"
+          />
         ) : (
           <TfAudio className="h-3.5 w-3.5" aria-hidden="true" />
         )}
@@ -116,7 +120,10 @@ export function ReadAloudButton({
             onClick={() => speechPlayer.stop(owner)}
             className="flex items-center rounded px-2 py-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
           >
-            <TfStop className="-m-0.5 h-[18px] w-[18px]" aria-hidden="true" />
+            <TfStopAnimated
+              className="-m-0.5 h-[18px] w-[18px]"
+              aria-hidden="true"
+            />
           </button>
           <span className="sr-only" role="status">
             Speech paused

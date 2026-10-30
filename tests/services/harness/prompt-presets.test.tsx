@@ -1,6 +1,6 @@
 import { usePromptLibrary } from '@/components/chat/hooks/use-prompt-library'
 import { localThreadStore } from '@/services/harness/local-threads'
-import { getView } from '@/services/harness/runtime'
+import { getView, publish } from '@/services/harness/runtime'
 import type { Frame, Session, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -61,14 +61,21 @@ function signIn({
   cloud,
   profile = {},
   profileDefaults = {},
+  edits = true,
 }: {
   cloud: boolean
   profile?: Record<string, unknown>
   profileDefaults?: Session['profileDefaults']
+  // The harness takes edits to saved prompts and favorites by id.
+  edits?: boolean
 }) {
   const api = signInTo({
     cloud,
-    session: { ...session, profileDefaults },
+    session: {
+      ...session,
+      profileDefaults,
+      features: { ...session.features, promptPresetEdits: edits },
+    },
     profile: { customPromptPresets: [RESEARCH, QUIET], ...profile },
   })
   client.post.mockImplementation(
@@ -89,12 +96,27 @@ function finishEachTurn() {
     input: Turn,
   ): AsyncGenerator<Frame> {
     const threadId = input.threadId!
-    yield { id: 0, event: { type: 'RUN_STARTED', threadId, runId: 'run-1' } }
-    yield { id: 1, event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' } }
+    yield {
+      id: 0,
+      event: {
+        type: 'RUN_STARTED',
+        threadId,
+        runId: 'run-1',
+        instance: 'instance-1',
+      },
+    }
+    yield {
+      id: 1,
+      event: { type: 'RUN_FINISHED', threadId, runId: 'run-1', metadata: {} },
+    }
   })
 }
 
 const turn = (call = 0) => client.events.mock.calls[call][1] as Turn
+const profileUpdates = () =>
+  client.post.mock.calls
+    .filter(([path]) => path === '/v1/profile/update')
+    .map(([, input]) => input)
 // What the attested client sends: the turn as JSON, without undefined fields.
 const sent = (call = 0) => JSON.parse(JSON.stringify(turn(call)))
 
@@ -390,6 +412,90 @@ describe('the prompt library', () => {
         defaultPromptPresetId: '',
       }),
     )
+    expect(profileUpdates()).toEqual([
+      { key: KEY, deletePromptPresetIds: [QUIET.id] },
+    ])
+  })
+
+  it('adds a prompt by id, so prompts this device has not loaded stay', async () => {
+    signIn({ cloud: true, profile: { customPromptPresets: [] } })
+    publish({ profileReady: false })
+    client.post.mockImplementation(
+      async (path: string, input: Record<string, unknown>) => {
+        if (path !== '/v1/profile/update')
+          throw new Error(`Unexpected harness request: ${path}`)
+        return {
+          customPromptPresets: [
+            RESEARCH,
+            QUIET,
+            ...(input.savePromptPresets as object[]),
+          ],
+        }
+      },
+    )
+    const { result } = renderHook(() => usePromptLibrary())
+
+    let created = { id: '' }
+    act(() => {
+      created = result.current.createUserPreset({
+        name: 'Notes',
+        description: '',
+        systemPrompt: 'Take notes.',
+      })
+    })
+
+    await waitFor(() =>
+      expect(result.current.userPresets.map((p) => p.id)).toEqual([
+        RESEARCH.id,
+        QUIET.id,
+        created.id,
+      ]),
+    )
+    expect(profileUpdates()).toEqual([
+      {
+        key: KEY,
+        savePromptPresets: [
+          {
+            id: created.id,
+            name: 'Notes',
+            description: '',
+            systemPrompt: 'Take notes.',
+            createdAt: expect.any(Number),
+            updatedAt: expect.any(Number),
+          },
+        ],
+      },
+    ])
+  })
+
+  it('sends a harness that takes only whole lists the loaded list', async () => {
+    signIn({ cloud: true, edits: false })
+    const { result } = renderHook(() => usePromptLibrary())
+
+    act(() => result.current.deleteUserPreset(QUIET.id))
+
+    await waitFor(() => expect(profileUpdates()).toHaveLength(1))
+    expect(profileUpdates()[0].patch).toEqual({
+      customPromptPresets: [RESEARCH],
+      favoritePromptPresetIds: [],
+    })
+  })
+
+  it('changes no prompt before the profile loads on a harness that takes only whole lists', async () => {
+    signIn({ cloud: true, profile: { customPromptPresets: [] }, edits: false })
+    publish({ profileReady: false })
+    const { result } = renderHook(() => usePromptLibrary())
+
+    await act(async () => {
+      result.current.createUserPreset({
+        name: 'Notes',
+        description: '',
+        systemPrompt: 'Take notes.',
+      })
+    })
+
+    expect(profileUpdates()).toEqual([])
+    expect(result.current.userPresets).toEqual([])
   })
 
   it('keeps both prompts favorited in quick succession', async () => {
@@ -407,13 +513,9 @@ describe('the prompt library', () => {
         QUIET.id,
       ]),
     )
-    expect(
-      client.post.mock.calls
-        .filter(([path]) => path === '/v1/profile/update')
-        .map(([, input]) => input.patch),
-    ).toEqual([
-      { favoritePromptPresetIds: [RESEARCH.id] },
-      { favoritePromptPresetIds: [RESEARCH.id, QUIET.id] },
+    expect(profileUpdates()).toEqual([
+      { key: KEY, addFavoritePromptPresetIds: [RESEARCH.id] },
+      { key: KEY, addFavoritePromptPresetIds: [QUIET.id] },
     ])
   })
 
@@ -461,5 +563,16 @@ describe('the prompt library', () => {
     expect(
       (getView().profile.customPromptPresets as object[])[0],
     ).not.toHaveProperty('model')
+    const [update] = profileUpdates()
+    expect(update).not.toHaveProperty('patch')
+    expect(update.savePromptPresets).toEqual([
+      {
+        ...RESEARCH,
+        model: undefined,
+        webSearchEnabled: false,
+        updatedAt: expect.any(Number),
+      },
+    ])
+    expect(update.savePromptPresets[0]).not.toHaveProperty('model')
   })
 })

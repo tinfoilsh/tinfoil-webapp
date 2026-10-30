@@ -1,6 +1,7 @@
 import { USER_ENCRYPTION_KEY } from '@/constants/storage-keys'
 import { useChatSearch } from '@/hooks/use-chat-search'
 import { publish } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import type { ThreadSummary } from '@/services/harness/types'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,6 +12,7 @@ const ACCOUNT_KEY_B64 = 'ERERERERERERERERERERERERERERERERERERERERERE='
 
 type SearchPage = {
   results: Partial<ThreadSummary>[]
+  unreadable: number
   indexing: boolean
 }
 
@@ -20,6 +22,7 @@ const search =
 function page(ids: string[], options: Partial<SearchPage> = {}): SearchPage {
   return {
     results: ids.map((id) => ({ id, title: `${id} result`, projectId: null })),
+    unreadable: 0,
     indexing: false,
     ...options,
   }
@@ -221,6 +224,7 @@ describe('useChatSearch', () => {
         { id: 'project-chat', title: 'Project result', projectId: 'p1' },
         { id: 'plain-chat', title: 'Plain result', projectId: null },
       ],
+      unreadable: 0,
       indexing: false,
     }
     search.mockResolvedValueOnce(mixed).mockResolvedValueOnce(mixed)
@@ -283,7 +287,7 @@ describe('useChatSearch', () => {
 
     expect(result.current.isSearching).toBe(false)
     expect(result.current.isIndexing).toBe(false)
-    expect(result.current.failed).toBe(true)
+    expect(result.current.failure).not.toBeNull()
     expect(result.current.results).toEqual([])
   })
 
@@ -296,16 +300,61 @@ describe('useChatSearch', () => {
       { initialProps: { term: 'duc' } },
     )
     await flushDebounce()
-    expect(result.current.failed).toBe(true)
+    expect(result.current.failure).not.toBeNull()
 
     rerender({ term: 'duck' })
-    expect(result.current.failed).toBe(false)
+    expect(result.current.failure).toBeNull()
     await flushDebounce()
-    expect(result.current.failed).toBe(false)
+    expect(result.current.failure).toBeNull()
     expect(result.current.results.map((thread) => thread.id)).toEqual([
       'recovered',
     ])
     expect(result.current.isSearching).toBe(false)
+  })
+
+  // A refusal keeps what the harness said; a search that never reached it is
+  // a connection to make again.
+  it.each([
+    {
+      cause: new HarnessError({
+        code: 'SEARCH_INDEX_FAILED',
+        action: 'retry',
+        message: 'The search index could not be rebuilt',
+      }),
+      failure: { code: 'SEARCH_INDEX_FAILED', action: 'retry' },
+    },
+    {
+      cause: new TypeError('Failed to fetch'),
+      failure: { code: 'CONNECTION', action: 'retry' },
+    },
+  ])(
+    'reports a search that failed with $failure.code',
+    async ({ cause, failure }) => {
+      search.mockRejectedValueOnce(cause)
+      const { result } = renderHook(() => useChatSearch('duck', true))
+      await flushDebounce()
+      expect(result.current.failure).toMatchObject(failure)
+    },
+  )
+
+  it('runs a failed search again, showing it as searching until it answers', async () => {
+    const answer = deferred<SearchPage>()
+    search
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockReturnValueOnce(answer.promise)
+    const { result } = renderHook(() => useChatSearch('duck', true))
+    await flushDebounce()
+    expect(result.current.failure).not.toBeNull()
+
+    act(() => result.current.retry())
+    expect(result.current.failure).toBeNull()
+    expect(result.current.isSearching).toBe(true)
+    await flushDebounce()
+    expect(search).toHaveBeenCalledTimes(2)
+    await act(async () => answer.resolve(page(['found'], { unreadable: 1 })))
+    expect(result.current.isSearching).toBe(false)
+    expect(result.current.results.map((thread) => thread.id)).toEqual(['found'])
+    expect(result.current.unreadable).toBe(1)
   })
 
   it('does not search before the account key is ready', async () => {

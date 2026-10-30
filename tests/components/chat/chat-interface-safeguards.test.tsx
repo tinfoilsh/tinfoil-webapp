@@ -1,6 +1,6 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { HarnessError } from '@/services/harness/sse'
-import type { Frame, Thread } from '@/services/harness/types'
+import type { Frame, QueueItem, Thread } from '@/services/harness/types'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
@@ -46,10 +46,13 @@ const thread: Thread = {
   titleState: 'generated',
   createdAt: '2026-04-01T09:00:00Z',
   updatedAt: '2026-04-01T09:00:00Z',
+  activityAt: '2026-04-01T09:00:01Z',
   model: 'test-model',
   projectId: null,
+  presetId: null,
   pinned: false,
   webSearchEnabled: true,
+  contextUsage: null,
   messageCount: 2,
   activeRun: null,
   hasOlder: false,
@@ -134,12 +137,16 @@ describe('a chat the safeguards flagged', () => {
     ).toBeInTheDocument()
   })
 
-  it('stops its reply in progress and its queued turns once its summary is flagged', async () => {
+  it('stops its reply in progress, and with it its queued turns, once its summary is flagged', async () => {
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/get')
         return {
           ...structuredClone(thread),
-          activeRun: { runId: 'run-1', expiresAt: '2026-04-01T10:00:00Z' },
+          activeRun: {
+            runId: 'run-1',
+            expiresAt: '2026-04-01T10:00:00Z',
+            instance: 'instance-1',
+          },
         }
       if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
       if (['/v1/threads/cancel', '/v1/threads/queue/remove'].includes(path))
@@ -155,14 +162,28 @@ describe('a chat the safeguards flagged', () => {
     const flagged = new Promise<void>((resolve) => {
       flag = resolve
     })
+    const queued: QueueItem = {
+      queueId: 'queued-1',
+      kind: 'send',
+      content: 'and then?',
+      quote: null,
+      attachments: [],
+      createdAt: '2026-04-01T09:00:02Z',
+    }
     client.events.mockImplementationOnce(async function* () {
       const frames: Frame['event'][] = [
-        { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-1' },
+        {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
         {
           type: 'STATE_SNAPSHOT',
           snapshot: {
             thread: summary,
-            queue: [{ queueId: 'queued-1', content: 'and then?' }],
+            queue: [queued],
+            rateLimit: { kind: null },
           },
         },
       ]
@@ -174,7 +195,8 @@ describe('a chat the safeguards flagged', () => {
           type: 'STATE_SNAPSHOT',
           snapshot: {
             thread: { ...summary, flagged: true },
-            queue: [{ queueId: 'queued-1', content: 'and then?' }],
+            queue: [queued],
+            rateLimit: { kind: null },
           },
         },
       }
@@ -206,10 +228,12 @@ describe('a chat the safeguards flagged', () => {
         expect.any(AbortSignal),
       ),
     )
-    expect(client.post).toHaveBeenCalledWith(
+    // Stopping the reply ends the turns queued behind it, so none is removed
+    // on its own, which the harness would refuse once the reply has stopped.
+    expect(client.post).not.toHaveBeenCalledWith(
       '/v1/threads/queue/remove',
-      { key: KEY, threadId: THREAD_ID, queueId: 'queued-1' },
-      expect.any(AbortSignal),
+      expect.anything(),
+      expect.anything(),
     )
     release()
   })
@@ -217,7 +241,11 @@ describe('a chat the safeguards flagged', () => {
   it('becomes read-only when the harness refuses a turn as flagged', async () => {
     client.events.mockImplementationOnce(async function* () {
       throw new HarnessError(
-        { code: 'CHAT_FLAGGED', message: 'This chat was flagged.' },
+        {
+          code: 'CHAT_FLAGGED',
+          message: 'This chat was flagged.',
+          action: 'stop',
+        },
         403,
       )
     })

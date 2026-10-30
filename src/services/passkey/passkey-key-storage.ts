@@ -38,7 +38,7 @@ import {
   hexToB64,
   newIdempotencyKey,
 } from '../harness/keys'
-import { HarnessError as SyncEnclaveError } from '../harness/sse'
+import { HarnessError } from '../harness/sse'
 import { requirePrimaryKeyB64 } from '../keys/cek-encoding'
 import type { CloudKeyAuthorizationMode } from '../keys/cloud-key-authorization'
 import { deriveTinfoilKeyIdHex } from '../keys/tinfoil-key-id'
@@ -68,10 +68,9 @@ const TINFOIL_GENERIC_KEY_ENVELOPE_MAX_BYTES = 128 * 1024
 export interface KeyBundle {
   primary: string
   /**
-   * Decryption-only history retained for legacy v0/v1 rows. New
-   * enclave bundles wrap only the current primary CEK. Removed in
-   * Layer C of the sync-enclave refactor once the client-side migration
-   * loop has re-sealed every legacy row under `primary`.
+   * Decryption-only history retained for legacy v0/v1 rows. Registered
+   * bundles wrap only the current primary CEK; authorizing the key sends
+   * these to keysMigrateAll, which reseals the rows older keys sealed.
    */
   alternatives: string[]
   authorizationMode?: CloudKeyAuthorizationMode
@@ -536,7 +535,7 @@ export async function storeEncryptedKeys(
         })
       } catch (err) {
         if (
-          err instanceof SyncEnclaveError &&
+          err instanceof HarnessError &&
           err.code === HARNESS_KEY_CODES.KeyMismatch
         ) {
           throw new PasskeyCredentialConflictError(

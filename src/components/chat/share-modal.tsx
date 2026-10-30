@@ -14,8 +14,8 @@ import {
   TfCopy,
   TfGlobe,
   TfLink,
-  TfLockLocked,
 } from '@tinfoilsh/tinfoil-icons'
+import { TfLockLockedAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useRef, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import { Card, CardContent } from '../ui/card'
@@ -464,7 +464,7 @@ function ShareModalContent({
                         ) : hasShare ? (
                           <TfGlobe className="h-5 w-5" aria-hidden="true" />
                         ) : (
-                          <TfLockLocked
+                          <TfLockLockedAnimated
                             className="h-5 w-5"
                             aria-hidden="true"
                           />

@@ -24,11 +24,57 @@ import {
   localProfileChanges,
   saveLocalProfile,
 } from './local-profile'
-import { ERROR_CODES, ROUTES, type HarnessRoute } from './protocol'
+import {
+  ERROR_ACTIONS,
+  ERROR_CODES,
+  ROUTES,
+  type HarnessRoute,
+} from './protocol'
 import { HarnessError } from './sse'
-import type { Json, RateLimit, Session, TokenBudget } from './types'
+import type {
+  Json,
+  PromptEdits,
+  RateLimit,
+  Session,
+  TokenBudget,
+} from './types'
 
 export type Profile = Record<string, any>
+
+// The fields prompt edits change, as the harness applies them to the profile
+// it stores: a saved prompt replaces the one with its id where it stands, and
+// a deleted one is no longer a favorite or the default.
+function applyPromptEdits(profile: Profile, edits: PromptEdits): Profile {
+  const {
+    savePromptPresets: saved = [],
+    deletePromptPresetIds: deleted = [],
+    addFavoritePromptPresetIds: favored = [],
+    removeFavoritePromptPresetIds: unfavored = [],
+  } = edits
+  const patch: Profile = {}
+  if (saved.length || deleted.length) {
+    const presets: Profile[] = [...(profile.customPromptPresets ?? [])]
+    for (const preset of saved) {
+      const index = presets.findIndex((kept) => kept.id === preset.id)
+      if (index >= 0) presets[index] = preset
+      else presets.push(preset)
+    }
+    patch.customPromptPresets = presets.filter(
+      (preset) => !deleted.includes(preset.id),
+    )
+  }
+  if (deleted.length || favored.length || unfavored.length) {
+    const favorites = (
+      (profile.favoritePromptPresetIds ?? []) as string[]
+    ).filter((id) => !deleted.includes(id) && !unfavored.includes(id))
+    for (const id of favored)
+      if (!favorites.includes(id) && !deleted.includes(id)) favorites.push(id)
+    patch.favoritePromptPresetIds = favorites
+  }
+  if (deleted.includes(profile.defaultPromptPresetId))
+    patch.defaultPromptPresetId = ''
+  return patch
+}
 type View = {
   chatRevision?: string
   projectRevision?: string
@@ -49,6 +95,8 @@ type View = {
 }
 
 const CHANGE_POLL_MS = 20_000
+// The kinds of quota this client shows.
+const RATE_LIMIT_KINDS: ReadonlySet<unknown> = new Set(['free_daily', 'hourly'])
 interface ChangeTokens {
   chats: string
   profile: string
@@ -198,12 +246,14 @@ export class HarnessAPI {
     if (localStorage.getItem(AUTH_ACTIVE_USER_ID) !== this.userId)
       throw new HarnessError({
         code: ERROR_CODES.keyRequired,
+        action: ERROR_ACTIONS.retry,
         message: 'Wait for your account to finish unlocking.',
       })
     const bytes = encryptionService.getCurrentKeyBytes()
     if (!bytes)
       throw new HarnessError({
         code: ERROR_CODES.keyRequired,
+        action: ERROR_ACTIONS.unlock,
         message: 'Unlock your encryption key in Settings to continue.',
       })
     try {
@@ -309,12 +359,14 @@ export class HarnessAPI {
 
   // Shows the quota a session, a run, a refusal or the account's chat access
   // reported, for this account only. The harness reports none for a
-  // subscriber, whose quota came with its chat access.
+  // subscriber, whose quota came with its chat access. A quota of a kind this
+  // client does not know replaces the one shown with none.
   reportRateLimit(rateLimit: RateLimit | undefined) {
     if (active !== this || this.lifetime.signal.aborted || !rateLimit?.kind)
       return
-    if (JSON.stringify(rateLimit) !== JSON.stringify(view.rateLimit))
-      publish({ rateLimit })
+    const shown = RATE_LIMIT_KINDS.has(rateLimit.kind) ? rateLimit : undefined
+    if (JSON.stringify(shown) !== JSON.stringify(view.rateLimit))
+      publish({ rateLimit: shown })
   }
 
   // A run's spend comes off the hourly budget the account's chat access
@@ -473,11 +525,38 @@ export class HarnessAPI {
     this.invalidateKey()
     return this.refreshProfile()
   }
-  // A change shows at once. Once saved the view shows the profile the
-  // harness stored under any later changes still being saved; a refused
-  // change is taken back.
   updateProfile(
     change: Profile | ((current: Profile) => Profile),
+  ): Promise<Profile> {
+    return this.saveProfile(change)
+  }
+  // Saved prompts and favorites change by id on the profile as the harness
+  // stores it, so a list this device read before another changed it, or
+  // before the profile loaded, never replaces the stored one.
+  editPrompts(edits: PromptEdits): Promise<Profile> {
+    const change = (current: Profile) => applyPromptEdits(current, edits)
+    if (!this.cloud) return this.saveProfile(change)
+    if (view.session?.features.promptPresetEdits === true)
+      return this.saveProfile(change, edits)
+    // A harness without edits takes whole lists, which only the loaded
+    // profile holds.
+    if (!view.profileReady)
+      return Promise.reject(
+        new HarnessError({
+          code: ERROR_CODES.profileLoading,
+          action: ERROR_ACTIONS.wait,
+          message: 'Wait for your settings to load, then try again.',
+        }),
+      )
+    return this.saveProfile(change)
+  }
+  // A change shows at once. Once saved the view shows the profile the
+  // harness stored under any later changes still being saved; a refused
+  // change is taken back. The harness is sent the change's fields, or the
+  // prompt edits that make it.
+  private saveProfile(
+    change: Profile | ((current: Profile) => Profile),
+    edits?: PromptEdits,
   ): Promise<Profile> {
     const cloud = this.cloud
     const signal = this.signal({ keyless: !cloud })
@@ -500,11 +579,9 @@ export class HarnessAPI {
         const patch =
           typeof change === 'function' ? change(this.storedProfile) : change
         const profile = cloud
-          ? await this.post<Profile>(
-              ROUTES.profileUpdate,
-              { patch },
-              { signal },
-            )
+          ? await this.post<Profile>(ROUTES.profileUpdate, edits ?? { patch }, {
+              signal,
+            })
           : saveLocalProfile(patch)
         signal.throwIfAborted()
         settle()
@@ -573,6 +650,7 @@ export function harnessAPI(): HarnessAPI {
   if (!active)
     throw new HarnessError({
       code: ERROR_CODES.unauthenticated,
+      action: ERROR_ACTIONS.retry,
       message: 'Wait for your session to load.',
     })
   return active

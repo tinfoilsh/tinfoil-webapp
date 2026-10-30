@@ -9,7 +9,7 @@ import prettier from 'prettier'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export const WIDGETS_JSON = path.resolve(
   root,
-  '../confidential-tinfoil-harness/widgets.json',
+  '../confidential-tinfoil-harness/internal/domain/widgets.json',
 )
 export const WIDGET_TYPES = path.join(
   root,

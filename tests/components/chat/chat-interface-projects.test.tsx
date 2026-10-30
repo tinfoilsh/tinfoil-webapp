@@ -114,20 +114,28 @@ const project = {
   documents: [],
 }
 const projectChat: ThreadSummary = {
-  ...storedThread('project-chat', {
-    title: 'Project discussion',
-    projectId: project.id,
-  }),
+  ...storedThread('project-chat', { title: 'Project discussion' }),
+  createdAt: '2026-04-01T09:00:00Z',
+  updatedAt: '2026-04-01T09:00:00Z',
+  activityAt: '2026-04-01T09:00:00Z',
+  projectId: project.id,
+  activeRun: null,
+  contextUsage: null,
   messageCount: 2,
 }
 const mainChat: ThreadSummary = {
   ...storedThread('main-chat', { title: 'Weekend plans' }),
+  createdAt: '2026-04-01T09:00:00Z',
+  updatedAt: '2026-04-01T09:00:00Z',
+  activityAt: '2026-04-01T09:00:00Z',
+  projectId: null,
+  activeRun: null,
+  contextUsage: null,
   messageCount: 2,
 }
 const openProjectChat: Thread = {
   ...storedThread(projectChat.id, {
     title: projectChat.title,
-    projectId: project.id,
     messages: [
       {
         id: 'project-question',
@@ -137,6 +145,12 @@ const openProjectChat: Thread = {
       },
     ],
   }),
+  createdAt: '2026-04-01T09:00:00Z',
+  updatedAt: '2026-04-01T09:00:00Z',
+  activityAt: '2026-10-22T12:00:00Z',
+  projectId: project.id,
+  activeRun: null,
+  contextUsage: null,
   messageCount: 1,
   hasOlder: false,
 }
@@ -814,7 +828,11 @@ it('shows a project chat still replying as generating its response', async () =>
     listPage([
       {
         ...projectChat,
-        activeRun: { runId: 'run-1', expiresAt: '2026-10-22T12:10:00Z' },
+        activeRun: {
+          runId: 'run-1',
+          expiresAt: '2026-10-22T12:10:00Z',
+          instance: 'instance-1',
+        },
       },
     ])
   render(projectView())
@@ -825,7 +843,11 @@ it('shows a project chat still replying as generating its response', async () =>
 it('leaves the address of a linked project that fails to open, listing every chat again', async () => {
   routes['/v1/projects/get'] = () => {
     throw new HarnessError(
-      { code: 'THREAD_NOT_FOUND', message: 'Project not found' },
+      {
+        code: 'THREAD_NOT_FOUND',
+        message: 'Project not found',
+        action: 'stop',
+      },
       404,
     )
   }

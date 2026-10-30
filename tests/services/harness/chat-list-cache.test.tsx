@@ -1,3 +1,4 @@
+import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { CLOUD_CHAT_LIST_CACHE_PREFIX } from '@/constants/storage-keys'
 import {
   ENCRYPTION_KEY_CHANGED_EVENT,
@@ -26,9 +27,11 @@ function summary(id: string, projectId: string | null = null): ThreadSummary {
     model: 'gpt-oss-120b',
     createdAt: '2026-10-22T12:00:00Z',
     updatedAt: '2026-10-22T12:00:00Z',
+    activityAt: '2026-10-22T12:00:00Z',
     projectId,
     pinned: false,
     webSearchEnabled: true,
+    contextUsage: null,
     messageCount: 2,
     activeRun: null,
   }
@@ -84,7 +87,11 @@ it('restores sidebar summaries and favorites after a reload before fresh results
   signIn({ cloud: true })
   const cached = {
     ...summary('cached'),
-    activeRun: { runId: 'running', expiresAt: '2099-01-01T00:00:00Z' },
+    activeRun: {
+      runId: 'running',
+      expiresAt: '2099-01-01T00:00:00Z',
+      instance: 'instance-a',
+    },
     messages: [
       { id: 'message', role: 'user', content: 'Private message content' },
     ],
@@ -121,6 +128,64 @@ it('restores sidebar summaries and favorites after a reload before fresh results
   expect(reloaded.result.current.chats.map((chat) => chat.id)).toEqual([
     'fresh',
   ])
+})
+
+it('does not restore a list an earlier version cached without activity times', async () => {
+  signIn({ cloud: true })
+  client.post.mockResolvedValue(page([summary('cached')]))
+  const first = renderHook(() => useThread())
+  await waitFor(() => expect(first.result.current.chats).toHaveLength(1))
+  first.unmount()
+  expect(cacheKeys()).toHaveLength(1)
+  for (const key of cacheKeys()) {
+    const cached = JSON.parse(localStorage.getItem(key)!)
+    for (const chat of cached.threads) delete chat.activityAt
+    localStorage.setItem(key, JSON.stringify(cached))
+  }
+
+  signIn({ cloud: true })
+  const fresh = deferred<ReturnType<typeof page>>()
+  client.post.mockReturnValue(fresh.promise)
+  const reloaded = renderHook(() => useThread())
+  expect(reloaded.result.current.chats).toEqual([])
+  await act(async () => fresh.resolve(page([summary('fresh')])))
+  expect(reloaded.result.current.chats.map((chat) => chat.id)).toEqual([
+    'fresh',
+  ])
+})
+
+it('restores a chat whose title state this client does not know, titled as it is', async () => {
+  signIn({ cloud: true })
+  const suggested = {
+    ...summary('suggested'),
+    title: PLACEHOLDER_CHAT_TITLE,
+    titleState: 'suggested',
+  }
+  client.post.mockResolvedValue(page([suggested]))
+  const first = renderHook(() => useThread())
+  await waitFor(() => expect(first.result.current.chats).toHaveLength(1))
+  first.unmount()
+
+  signIn({ cloud: true })
+  const fresh = deferred<ReturnType<typeof page>>()
+  client.post.mockReturnValue(fresh.promise)
+  const reloaded = renderHook(() => useThread())
+  expect(reloaded.result.current.chats).toHaveLength(1)
+  const [chat] = reloaded.result.current.chats
+  expect(chat).toMatchObject({ id: 'suggested', title: PLACEHOLDER_CHAT_TITLE })
+  expect(chat.titleState).toBeUndefined()
+  await act(async () => fresh.resolve(page([suggested])))
+})
+
+it('leaves a chat stored without its creation time undated', async () => {
+  signIn({ cloud: true })
+  client.post.mockResolvedValue(
+    page([{ ...summary('legacy'), createdAt: null, updatedAt: null }]),
+  )
+  const { result } = renderHook(() => useThread())
+  await waitFor(() => expect(result.current.chats).toHaveLength(1))
+
+  expect(result.current.chats[0]).not.toHaveProperty('createdAt')
 })
 
 it('keeps rename and deletion results through a reload', async () => {

@@ -1,5 +1,5 @@
 import { BYTES_PER_MB, formatFileSize } from '@/utils/format-file-size'
-import { ERROR_CODES } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES } from './protocol'
 import { HarnessError } from './sse'
 import type { FileGroup } from './types'
 
@@ -45,6 +45,7 @@ export function checkUpload(file: File, groups: readonly FileGroup[]) {
     throw new HarnessError(
       {
         code: ERROR_CODES.attachmentUnsupported,
+        action: ERROR_ACTIONS.revise,
         message: `${file.name} is not a supported file type.`,
       },
       415,
@@ -55,6 +56,7 @@ export function checkUpload(file: File, groups: readonly FileGroup[]) {
   throw new HarnessError(
     {
       code: ERROR_CODES.attachmentTooLarge,
+      action: ERROR_ACTIONS.revise,
       message: text
         ? `Text file exceeds the limit of ${limit}.`
         : `File size exceeds the limit of ${limit}.`,
