@@ -19,7 +19,6 @@ export {
   loadRecoveryCandidates,
   promoteRecoveredCekToEnclave,
   recoverPasskeyKeyBundle,
-  savePasskeyCredentials,
   storeEncryptedKeys,
   tinfoilWrappedKeyBundleToEnclave,
   wrapTinfoilKeyBundle,

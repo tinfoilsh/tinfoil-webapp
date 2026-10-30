@@ -89,26 +89,3 @@ export function logInfo(message: string, context?: ErrorContext): void {
     )
   }
 }
-
-/**
- * Handle and log errors with user-friendly fallback
- */
-export function handleError(
-  error: Error | unknown,
-  fallbackMessage: string,
-  context?: ErrorContext,
-): string {
-  logError(fallbackMessage, error, context)
-
-  // Return user-friendly message
-  if (error instanceof Error) {
-    return error.message || fallbackMessage
-  }
-
-  return fallbackMessage
-}
-
-export function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return String(error)
-}

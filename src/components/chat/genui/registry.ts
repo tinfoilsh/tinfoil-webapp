@@ -35,13 +35,3 @@ export const GENUI_WIDGETS: GenUIWidget[] = [
  */
 export const GENUI_WIDGETS_BY_NAME: Record<string, GenUIWidget> =
   Object.fromEntries(GENUI_WIDGETS.map((w) => [w.name, w]))
-
-/**
- * True if the given tool name corresponds to a registered GenUI widget.
- *
- * Uses `hasOwn` so prototype keys like `toString` or `constructor`, which
- * the model could theoretically emit, do not get treated as registered.
- */
-export function isGenUIToolName(name: string): boolean {
-  return Object.prototype.hasOwnProperty.call(GENUI_WIDGETS_BY_NAME, name)
-}

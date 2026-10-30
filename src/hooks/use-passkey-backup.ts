@@ -357,8 +357,6 @@ export function usePasskeyBackup({
     },
     options?: {
       knownBundleVersion?: number | null
-      incrementBundleVersion?: boolean
-      enforceRemoteBundleVersion?: boolean
     },
   ): Promise<StoredPasskeyBackup | null> => {
     const primaryBytes = encryptionService.getAlternativeKeyBytes(keys.primary)
@@ -380,8 +378,6 @@ export function usePasskeyBackup({
 
     const result = await storeEncryptedKeys(wrappedKeys, keys, {
       knownBundleVersion: options?.knownBundleVersion,
-      incrementBundleVersion: options?.incrementBundleVersion,
-      enforceRemoteBundleVersion: options?.enforceRemoteBundleVersion,
     })
     if (!result) return null
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
@@ -402,10 +398,6 @@ export function usePasskeyBackup({
   const generateKeyWithPasskeyBackup = useCallback(
     async (
       authorizationMode: CloudKeyAuthorizationMode = 'validated',
-      options?: {
-        incrementBundleVersion?: boolean
-        enforceRemoteBundleVersion?: boolean
-      },
     ): Promise<GeneratedPasskeyKey | null> => {
       const userInfo = getPasskeyUserInfo()
       if (!userInfo) return null
@@ -421,8 +413,6 @@ export function usePasskeyBackup({
         },
         {
           knownBundleVersion: getLocalBundleVersion(),
-          incrementBundleVersion: options?.incrementBundleVersion,
-          enforceRemoteBundleVersion: options?.enforceRemoteBundleVersion,
         },
       )
       if (!created) return null
@@ -751,21 +741,16 @@ export function usePasskeyBackup({
         (entry) => entry.id === wrappedKey.credentialId,
       )
 
-      let localSyncVersion = getLocalSyncVersion(wrappedKey.credentialId)
       let localBundleVersion = getLocalBundleVersion()
 
-      if (
-        (localSyncVersion === null || localBundleVersion === null) &&
-        currentEntry
-      ) {
+      if (localBundleVersion === null && currentEntry) {
         const currentRemoteBundle = recovered?.keyBundle
 
         if (
           currentRemoteBundle &&
           (await doesCurrentStateMatchBundle(currentRemoteBundle))
         ) {
-          localSyncVersion ??= currentEntry.sync_version
-          localBundleVersion ??= currentEntry.bundle_version ?? 0
+          localBundleVersion = currentEntry.bundle_version ?? 0
         }
       }
 
@@ -777,10 +762,7 @@ export function usePasskeyBackup({
           authorizationMode,
         },
         {
-          expectedSyncVersion: localSyncVersion,
           knownBundleVersion: localBundleVersion,
-          incrementBundleVersion: true,
-          enforceRemoteBundleVersion: true,
         },
       )
 
@@ -1302,8 +1284,6 @@ export function usePasskeyBackup({
         },
         {
           knownBundleVersion: getLocalBundleVersion(),
-          incrementBundleVersion: false,
-          enforceRemoteBundleVersion: true,
         },
       )
       if (!created) return false
@@ -1343,13 +1323,7 @@ export function usePasskeyBackup({
     let didSetNewKey = false
 
     try {
-      const newKey = await generateKeyWithPasskeyBackup(
-        'explicit_start_fresh',
-        {
-          incrementBundleVersion: true,
-          enforceRemoteBundleVersion: false,
-        },
-      )
+      const newKey = await generateKeyWithPasskeyBackup('explicit_start_fresh')
       if (!newKey) return null
       didSetNewKey = true
 

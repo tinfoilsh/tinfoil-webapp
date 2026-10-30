@@ -126,10 +126,7 @@ export type PasskeyDeviceState =
   'this-device' | 'other-device-only' | 'empty' | 'unknown'
 
 export interface StoreEncryptedKeysOptions {
-  expectedSyncVersion?: number | null
   knownBundleVersion?: number | null
-  incrementBundleVersion?: boolean
-  enforceRemoteBundleVersion?: boolean
 }
 
 export class PasskeyCredentialConflictError extends Error {
@@ -397,22 +394,6 @@ export async function loadRecoveryCandidates(): Promise<
   return [...byId.values()]
 }
 
-/**
- * Legacy bulk-replace. The enclave wire doesn't expose a put-all
- * endpoint — bundles are added/removed individually — so this helper
- * is now a no-op kept only for source compatibility. Callers must
- * use `storeEncryptedKeys` and `deletePasskeyCredential`.
- */
-export async function savePasskeyCredentials(
-  _entries: PasskeyCredentialEntry[],
-): Promise<boolean> {
-  logInfo('savePasskeyCredentials is a no-op under the enclave wire', {
-    component: 'PasskeyKeyStorage',
-    action: 'savePasskeyCredentials',
-  })
-  return true
-}
-
 export async function deletePasskeyCredential(
   credentialId: string,
 ): Promise<boolean> {
@@ -491,10 +472,9 @@ export async function getPasskeyDeviceState(
  *    PasskeyCredentialConflictError so the hook routes the user to
  *    the recovery wizard instead of clobbering.
  *
- * The version-counter knobs in `StoreEncryptedKeysOptions` are
- * accepted for source compat; the enclave owns concurrency so there
- * is no client-side rev loop. The returned counters mirror what the
- * enclave reports for the freshly written bundle.
+ * The enclave owns concurrency so there is no client-side rev loop.
+ * The returned counters mirror what the enclave reports for the
+ * freshly written bundle.
  */
 export async function storeEncryptedKeys(
   wrappedKeys: TinfoilWrappedKeyBundle,
