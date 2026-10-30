@@ -7,9 +7,7 @@
  * `key-current` / `register-key` / `add-bundle` / `remove-bundle`
  * wire.
  *
- * New enclave bundles use the raw wrapped-CEK wire shape shared with
- * iOS. `KeyBundle.alternatives` remains supported when reading legacy
- * generic envelopes so existing recovery history is not lost.
+ * Enclave bundles use the raw wrapped-CEK wire shape shared with iOS.
  *
  * Optimistic concurrency is enforced by the enclave: register-key uses
  * `if_match='*'` for first-time writes and the harness returns
@@ -21,12 +19,7 @@
 
 import { base64ToUint8Array } from '@/utils/binary-codec'
 import { logError, logInfo } from '@/utils/error-handling'
-import {
-  decodeWrappedKeyRecord,
-  encodeWrappedKeyRecord,
-  type PRFResult,
-  type WrappedKey,
-} from '@tinfoilsh/passkey-kit'
+import type { PRFResult, WrappedKey } from '@tinfoilsh/passkey-kit'
 import { encryptionService } from '../encryption/encryption-service'
 import {
   bytesToBase64,
@@ -45,7 +38,6 @@ import { HARNESS_KEY_CODES, IF_MATCH_SENTINELS } from '../keys/wire-contract'
 import {
   evaluateTinfoilCredential,
   passkeyKeyManager,
-  TINFOIL_PASSKEY_PROFILE,
   tinfoilWrappedKeyFromEnclaveBundle,
 } from './kit'
 
@@ -53,12 +45,6 @@ const AES_GCM_IV_BYTES = 12
 
 /** AES-GCM ciphertext bytes for one wrapped 32-byte key and its 16-byte tag. */
 export const TINFOIL_RAW_WRAPPED_KEY_CIPHERTEXT_BYTES = 48
-
-/** Version of the app-owned multi-key envelope stored in encrypted_keys. */
-export const TINFOIL_GENERIC_KEY_ENVELOPE_VERSION = 1
-
-const TINFOIL_GENERIC_KEY_ENVELOPE_MAX_ALTERNATIVES = 64
-const TINFOIL_GENERIC_KEY_ENVELOPE_MAX_BYTES = 128 * 1024
 
 export interface KeyBundle {
   primary: string
@@ -74,13 +60,6 @@ export interface KeyBundle {
 export interface TinfoilWrappedKeyBundle {
   primary: WrappedKey
   alternatives: WrappedKey[]
-}
-
-interface TinfoilGenericKeyEnvelope {
-  version: typeof TINFOIL_GENERIC_KEY_ENVELOPE_VERSION
-  authorizationMode: CloudKeyAuthorizationMode
-  primary: string
-  alternatives: string[]
 }
 
 export interface PasskeyCredentialEntry {
@@ -136,11 +115,6 @@ function validateKeyBundle(keys: KeyBundle): {
   primary: Uint8Array
   alternatives: Uint8Array[]
 } {
-  if (
-    keys.alternatives.length > TINFOIL_GENERIC_KEY_ENVELOPE_MAX_ALTERNATIVES
-  ) {
-    throw new Error('Passkey key bundle has too many alternatives')
-  }
   const primary = encryptionService.getAlternativeKeyBytes(keys.primary)
   if (!primary) throw new Error('Passkey primary key is invalid')
   const seen = new Set([keys.primary])
@@ -156,30 +130,6 @@ function validateKeyBundle(keys: KeyBundle): {
   return { primary, alternatives }
 }
 
-function decodeCanonicalWrappedKeyRecord(record: string): WrappedKey {
-  const wrappedKey = decodeWrappedKeyRecord(record)
-  if (encodeWrappedKeyRecord(wrappedKey) !== record) {
-    throw new Error('Wrapped key record is not canonical')
-  }
-  return wrappedKey
-}
-
-function usesTinfoilPasskeyProfile(wrappedKey: WrappedKey): boolean {
-  const profile = wrappedKey.profile
-  return (
-    profile.version === TINFOIL_PASSKEY_PROFILE.version &&
-    profile.relyingPartyId === TINFOIL_PASSKEY_PROFILE.relyingPartyId &&
-    profile.prfSalt.length === TINFOIL_PASSKEY_PROFILE.prfSalt.length &&
-    profile.prfSalt.every(
-      (byte, index) => byte === TINFOIL_PASSKEY_PROFILE.prfSalt[index],
-    ) &&
-    profile.hkdfInfo.length === TINFOIL_PASSKEY_PROFILE.hkdfInfo.length &&
-    profile.hkdfInfo.every(
-      (byte, index) => byte === TINFOIL_PASSKEY_PROFILE.hkdfInfo[index],
-    )
-  )
-}
-
 export function tinfoilWrappedKeyBundleToEnclave(
   wrappedKeys: TinfoilWrappedKeyBundle,
 ): {
@@ -192,46 +142,6 @@ export function tinfoilWrappedKeyBundleToEnclave(
     kekIvHex: wrappedKeys.primary.kekIvHex,
     encryptedKeysHex: wrappedKeys.primary.wrappedKeyHex,
   }
-}
-
-function parseGenericKeyEnvelope(
-  bytes: Uint8Array,
-): TinfoilGenericKeyEnvelope | null {
-  if (bytes.length > TINFOIL_GENERIC_KEY_ENVELOPE_MAX_BYTES) return null
-  let text: string
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-  } catch {
-    return null
-  }
-  if (!text.trimStart().startsWith('{')) return null
-  const parsed = JSON.parse(text) as Record<string, unknown>
-  const fields = Object.keys(parsed).sort()
-  const expectedFields = [
-    'alternatives',
-    'authorizationMode',
-    'primary',
-    'version',
-  ]
-  if (
-    fields.length !== expectedFields.length ||
-    fields.some((field, index) => field !== expectedFields[index]) ||
-    parsed.version !== TINFOIL_GENERIC_KEY_ENVELOPE_VERSION ||
-    (parsed.authorizationMode !== 'validated' &&
-      parsed.authorizationMode !== 'explicit_start_fresh') ||
-    typeof parsed.primary !== 'string' ||
-    !Array.isArray(parsed.alternatives) ||
-    parsed.alternatives.length >
-      TINFOIL_GENERIC_KEY_ENVELOPE_MAX_ALTERNATIVES ||
-    parsed.alternatives.some((record) => typeof record !== 'string')
-  ) {
-    throw new Error('Invalid Tinfoil generic key envelope')
-  }
-  decodeCanonicalWrappedKeyRecord(parsed.primary)
-  for (const record of parsed.alternatives as string[]) {
-    decodeCanonicalWrappedKeyRecord(record)
-  }
-  return parsed as unknown as TinfoilGenericKeyEnvelope
 }
 
 export async function wrapTinfoilKeyBundle(
@@ -510,18 +420,10 @@ function bytesToHex(bytes: Uint8Array): string {
   )
 }
 
-type RecoveryCandidate =
-  | {
-      kind: 'envelope'
-      entry: PasskeyCredentialEntry
-      envelope: TinfoilGenericKeyEnvelope
-      wrappedKeys: TinfoilWrappedKeyBundle
-    }
-  | {
-      kind: 'raw'
-      entry: PasskeyCredentialEntry
-      wrappedKey: WrappedKey
-    }
+type RecoveryCandidate = {
+  entry: PasskeyCredentialEntry
+  wrappedKey: WrappedKey
+}
 
 function parseRecoveryCandidate(
   entry: PasskeyCredentialEntry,
@@ -531,34 +433,8 @@ function parseRecoveryCandidate(
     const encrypted = base64ToUint8Array(entry.encrypted_keys)
     if (iv.length !== AES_GCM_IV_BYTES) return null
 
-    const envelope = parseGenericKeyEnvelope(encrypted)
-    if (envelope) {
-      const primary = decodeCanonicalWrappedKeyRecord(envelope.primary)
-      const alternatives = envelope.alternatives.map(
-        decodeCanonicalWrappedKeyRecord,
-      )
-      const records = [primary, ...alternatives]
-      if (
-        records.some((wrappedKey) => !usesTinfoilPasskeyProfile(wrappedKey)) ||
-        records.some((wrappedKey) => wrappedKey.credentialId !== entry.id) ||
-        new Set(records.map((wrappedKey) => wrappedKey.kekIvHex)).size !==
-          records.length ||
-        new Set(envelope.alternatives).size !== envelope.alternatives.length ||
-        envelope.alternatives.includes(envelope.primary)
-      ) {
-        return null
-      }
-      return {
-        kind: 'envelope',
-        entry,
-        envelope,
-        wrappedKeys: { primary, alternatives },
-      }
-    }
-
     if (encrypted.length === TINFOIL_RAW_WRAPPED_KEY_CIPHERTEXT_BYTES) {
       return {
-        kind: 'raw',
         entry,
         wrappedKey: tinfoilWrappedKeyFromEnclaveBundle({
           credentialId: entry.id,
@@ -573,34 +449,6 @@ function parseRecoveryCandidate(
   }
 }
 
-async function unwrapGenericEnvelope(
-  candidate: Extract<RecoveryCandidate, { kind: 'envelope' }>,
-  prfResult: PRFResult,
-): Promise<KeyBundle | null> {
-  try {
-    const primary = await passkeyKeyManager.unwrapKeyWithPRFResult({
-      wrappedKey: candidate.wrappedKeys.primary,
-      prfResult,
-    })
-    const alternatives = await Promise.all(
-      candidate.wrappedKeys.alternatives.map((wrappedKey) =>
-        passkeyKeyManager.unwrapKeyWithPRFResult({ wrappedKey, prfResult }),
-      ),
-    )
-    const keyBundle: KeyBundle = {
-      primary: encryptionService.encodeKeyFromBytes(primary),
-      alternatives: alternatives.map((key) =>
-        encryptionService.encodeKeyFromBytes(key),
-      ),
-      authorizationMode: candidate.envelope.authorizationMode,
-    }
-    validateKeyBundle(keyBundle)
-    return keyBundle
-  } catch {
-    return null
-  }
-}
-
 async function recoverGenericCandidateFromManagerCache(
   candidates: RecoveryCandidate[],
 ): Promise<{
@@ -608,46 +456,19 @@ async function recoverGenericCandidateFromManagerCache(
   keyBundle: KeyBundle
 } | null> {
   const recovered = await passkeyKeyManager.recoverKeyFromCache({
-    wrappedKeys: candidates.map((candidate) =>
-      candidate.kind === 'envelope'
-        ? candidate.wrappedKeys.primary
-        : candidate.wrappedKey,
-    ),
+    wrappedKeys: candidates.map((candidate) => candidate.wrappedKey),
   })
   if (!recovered) return null
   const candidate = candidates.find(
     (item) => item.entry.id === recovered.credentialId,
   )
   if (!candidate) return null
-  if (candidate.kind === 'raw') {
-    return {
-      candidate,
-      keyBundle: {
-        primary: encryptionService.encodeKeyFromBytes(recovered.key),
-        alternatives: [],
-      },
-    }
-  }
-  const alternatives: string[] = []
-  for (const wrappedKey of candidate.wrappedKeys.alternatives) {
-    const alternative = await passkeyKeyManager.recoverKeyFromCache({
-      wrappedKeys: [wrappedKey],
-    })
-    if (!alternative || alternative.credentialId !== recovered.credentialId) {
-      return null
-    }
-    alternatives.push(encryptionService.encodeKeyFromBytes(alternative.key))
-  }
-  const keyBundle: KeyBundle = {
-    primary: encryptionService.encodeKeyFromBytes(recovered.key),
-    alternatives,
-    authorizationMode: candidate.envelope.authorizationMode,
-  }
-  try {
-    validateKeyBundle(keyBundle)
-    return { candidate, keyBundle }
-  } catch {
-    return null
+  return {
+    candidate,
+    keyBundle: {
+      primary: encryptionService.encodeKeyFromBytes(recovered.key),
+      alternatives: [],
+    },
   }
 }
 
@@ -682,21 +503,17 @@ export async function recoverPasskeyKeyBundle(
   if (!candidate) return null
 
   let keyBundle: KeyBundle | null
-  if (candidate.kind === 'envelope') {
-    keyBundle = await unwrapGenericEnvelope(candidate, prfResult)
-  } else {
-    try {
-      const key = await passkeyKeyManager.unwrapKeyWithPRFResult({
-        wrappedKey: candidate.wrappedKey,
-        prfResult,
-      })
-      keyBundle = {
-        primary: encryptionService.encodeKeyFromBytes(key),
-        alternatives: [],
-      }
-    } catch {
-      keyBundle = null
+  try {
+    const key = await passkeyKeyManager.unwrapKeyWithPRFResult({
+      wrappedKey: candidate.wrappedKey,
+      prfResult,
+    })
+    keyBundle = {
+      primary: encryptionService.encodeKeyFromBytes(key),
+      alternatives: [],
     }
+  } catch {
+    keyBundle = null
   }
   if (!keyBundle) return null
   return {

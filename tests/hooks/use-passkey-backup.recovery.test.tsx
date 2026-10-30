@@ -43,7 +43,6 @@ beforeEach(async () => {
     keyBundle: {
       primary: BACKUP_KEY,
       alternatives: [],
-      authorizationMode: 'explicit_start_fresh',
     },
     syncVersion: 1,
     bundleVersion: 1,
@@ -55,7 +54,7 @@ afterEach(() => {
   encryptionService.clearKey()
 })
 
-async function recoverStartFreshBackup() {
+async function recoverBackup() {
   const { result } = renderHook(() =>
     usePasskeyBackup({
       encryptionKey: DEVICE_KEY,
@@ -71,7 +70,7 @@ async function recoverStartFreshBackup() {
   return { result, recovered }
 }
 
-it('refuses a Start Fresh backup of another key without replacing the registered key', async () => {
+it('refuses a backup of another key without replacing the registered key', async () => {
   mocks.keyCurrent.mockResolvedValue({
     key_id: 'kid-of-the-current-key',
     etag: 'revision',
@@ -79,7 +78,7 @@ it('refuses a Start Fresh backup of another key without replacing the registered
     bundles: {},
   })
 
-  const { result, recovered } = await recoverStartFreshBackup()
+  const { result, recovered } = await recoverBackup()
 
   expect(recovered).toBeNull()
   expect(result.current.passkeyRecoveryFailure).toBe('stale_backup')
@@ -90,7 +89,7 @@ it('refuses a Start Fresh backup of another key without replacing the registered
   })
 })
 
-it('moves legacy data to a recovered Start Fresh key instead of dropping it', async () => {
+it('moves legacy data to a recovered key instead of dropping it', async () => {
   mocks.keyCurrent.mockResolvedValue({
     key_id: null,
     etag: '',
@@ -103,7 +102,7 @@ it('moves legacy data to a recovered Start Fresh key instead of dropping it', as
     return MIGRATION_STARTED
   })
 
-  const { result, recovered } = await recoverStartFreshBackup()
+  const { result, recovered } = await recoverBackup()
 
   expect(recovered).toBe(BACKUP_KEY)
   expect(result.current.passkeyRecoveryFailure).toBeNull()

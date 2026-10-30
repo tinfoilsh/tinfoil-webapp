@@ -105,8 +105,7 @@ type PasskeyInitializationSnapshot = {
 }
 
 type ApplyRecoveredKeyBundleResult =
-  | { mode: CloudKeyAuthorizationMode }
-  | { mode: null; reason: PasskeyRecoveryFailure }
+  { mode: 'validated' } | { mode: null; reason: PasskeyRecoveryFailure }
 
 export interface UsePasskeyBackupOptions {
   /** Current encryption key from useCloudSync (null if not yet set) */
@@ -430,7 +429,6 @@ export function usePasskeyBackup({
     keyBundle: {
       primary: string
       alternatives: string[]
-      authorizationMode?: CloudKeyAuthorizationMode
     }
     credentialId: string
     syncVersion: number | null
@@ -448,7 +446,6 @@ export function usePasskeyBackup({
     keyBundle: {
       primary: string
       alternatives: string[]
-      authorizationMode?: CloudKeyAuthorizationMode
     }
     credentialId: string
     syncVersion: number | null
@@ -504,21 +501,10 @@ export function usePasskeyBackup({
     [],
   )
 
-  const getRecoveredAuthorizationMode = useCallback(
-    (
-      authorizationMode?: CloudKeyAuthorizationMode,
-    ): CloudKeyAuthorizationMode =>
-      authorizationMode === 'explicit_start_fresh'
-        ? 'explicit_start_fresh'
-        : 'validated',
-    [],
-  )
-
   const doesCurrentStateMatchBundle = useCallback(
     async (bundle: {
       primary: string
       alternatives: string[]
-      authorizationMode?: CloudKeyAuthorizationMode
     }): Promise<boolean> => {
       const currentKeys = encryptionService.getAllKeys()
       if (currentKeys.primary !== bundle.primary) {
@@ -550,11 +536,9 @@ export function usePasskeyBackup({
       }
 
       const currentMode = await getCurrentCloudKeyAuthorizationMode()
-      return (
-        currentMode === getRecoveredAuthorizationMode(bundle.authorizationMode)
-      )
+      return currentMode === 'validated'
     },
-    [getRecoveredAuthorizationMode],
+    [],
   )
 
   const applyRecoveredKeyBundle = useCallback(
@@ -562,7 +546,6 @@ export function usePasskeyBackup({
       bundle: {
         primary: string
         alternatives: string[]
-        authorizationMode?: CloudKeyAuthorizationMode
       },
       previousKeys: {
         primary: string | null
@@ -570,20 +553,6 @@ export function usePasskeyBackup({
       },
     ): Promise<ApplyRecoveredKeyBundleResult> => {
       await encryptionService.setAllKeys(bundle.primary, bundle.alternatives)
-
-      const authorizationMode = getRecoveredAuthorizationMode(
-        bundle.authorizationMode,
-      )
-
-      if (authorizationMode === 'explicit_start_fresh') {
-        try {
-          await authorizeCurrentPrimaryKeyOrThrow()
-          return { mode: 'explicit_start_fresh' }
-        } catch {
-          await rollbackToPreviousKeys(previousKeys)
-          return { mode: null, reason: 'stale_backup' }
-        }
-      }
 
       let validation: Awaited<ReturnType<typeof validateCurrentPrimaryKey>>
       try {
@@ -606,7 +575,7 @@ export function usePasskeyBackup({
         return { mode: null, reason: 'auth_failed' }
       }
     },
-    [getRecoveredAuthorizationMode, rollbackToPreviousKeys],
+    [rollbackToPreviousKeys],
   )
 
   /**
@@ -1371,7 +1340,6 @@ export function usePasskeyBackup({
           {
             primary: generated.key,
             alternatives: [],
-            authorizationMode: 'validated',
           },
           previousKeys,
         )
@@ -1634,7 +1602,7 @@ export function usePasskeyBackup({
    * Add a passkey bundle for *this device* against the existing key.
    * Used when `passkeyAddDeviceAvailable === true` (another device
    * already has a bundle but this one doesn't). Wraps the local CEK
-   * in a generic envelope using a new WebAuthn PRF ceremony and pushes
+   * using a new WebAuthn PRF ceremony and pushes
    * it as an additional bundle via `add-bundle`. Returns true
    * on success.
    */

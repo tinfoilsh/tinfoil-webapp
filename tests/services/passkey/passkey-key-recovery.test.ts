@@ -4,14 +4,8 @@ import { hexToB64 } from '@/services/harness/keys'
 import { passkeyKeyManager } from '@/services/passkey/kit'
 import {
   recoverPasskeyKeyBundle,
-  wrapTinfoilKeyBundle,
-  type KeyBundle,
   type PasskeyCredentialEntry,
 } from '@/services/passkey/passkey-key-storage'
-import {
-  decodeWrappedKeyRecord,
-  encodeWrappedKeyRecord,
-} from '@tinfoilsh/passkey-kit'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
@@ -28,12 +22,6 @@ const originalCredentials = Object.getOwnPropertyDescriptor(
   navigator,
   'credentials',
 )
-
-function decodeEnvelope(candidate: PasskeyCredentialEntry) {
-  return JSON.parse(
-    Buffer.from(candidate.encrypted_keys, 'base64').toString('utf8'),
-  ) as { primary: string; alternatives: string[] }
-}
 
 function installCredentialGet(
   rawId = new Uint8Array([1, 2, 3]),
@@ -59,32 +47,19 @@ function undecryptableEnclaveEntry(): PasskeyCredentialEntry {
   })
 }
 
-async function genericEnvelopeEntry(
-  keyBundle: KeyBundle,
-  credentialId = CREDENTIAL_ID,
+async function rawBundleEntry(
+  key: Uint8Array,
+  credentialId: string,
 ): Promise<PasskeyCredentialEntry> {
-  const primaryBytes = encryptionService.getAlternativeKeyBytes(
-    keyBundle.primary,
-  )!
-  const primary = await passkeyKeyManager.wrapKeyWithPRFResult({
-    keyMaterial: primaryBytes,
+  const wrappedKey = await passkeyKeyManager.wrapKeyWithPRFResult({
+    keyMaterial: key,
     credentialId,
     prfResult: { output: PRF_OUTPUT },
   })
-  const wrappedKeys = await wrapTinfoilKeyBundle(primary, keyBundle, {
-    output: PRF_OUTPUT,
-  })
-  if (!wrappedKeys) throw new Error('failed to create generic envelope fixture')
-  const envelope = JSON.stringify({
-    version: 1,
-    authorizationMode: keyBundle.authorizationMode ?? 'validated',
-    primary: encodeWrappedKeyRecord(wrappedKeys.primary),
-    alternatives: wrappedKeys.alternatives.map(encodeWrappedKeyRecord),
-  })
   return entry({
     id: credentialId,
-    iv: hexToB64(wrappedKeys.primary.kekIvHex),
-    encrypted_keys: Buffer.from(envelope, 'utf8').toString('base64'),
+    iv: hexToB64(wrappedKey.kekIvHex),
+    encrypted_keys: hexToB64(wrappedKey.wrappedKeyHex),
   })
 }
 
@@ -187,7 +162,7 @@ describe('recoverPasskeyKeyBundle', () => {
     expect(cacheRecovery).not.toHaveBeenCalled()
   })
 
-  it('skips a malformed generic envelope without aborting a valid candidate', async () => {
+  it('skips a bundle that is not a raw wrapped key without aborting a valid candidate', async () => {
     const malformed = new TextEncoder().encode(
       JSON.stringify({ version: 99, primary: 'invalid', alternatives: [] }),
     )
@@ -223,79 +198,17 @@ describe('recoverPasskeyKeyBundle', () => {
     )
   })
 
-  it('round-trips a primary and multiple alternatives through the generic envelope', async () => {
+  it('recovers the credential the user picks among mixed credentials', async () => {
+    const key = new Uint8Array(32).fill(0x75)
     const keyBundle = {
-      primary: encryptionService.encodeKeyFromBytes(
-        new Uint8Array(32).fill(0x41),
-      ),
-      alternatives: [
-        encryptionService.encodeKeyFromBytes(new Uint8Array(32).fill(0x42)),
-        encryptionService.encodeKeyFromBytes(new Uint8Array(32).fill(0x43)),
-      ],
-      authorizationMode: 'validated' as const,
-    }
-    const candidate = await genericEnvelopeEntry(keyBundle)
-    const recovered = await recoverPasskeyKeyBundle([candidate], {
-      cachedOnly: true,
-    })
-
-    expect(recovered?.keyBundle).toEqual(keyBundle)
-  })
-
-  it.each(['matching', 'missing', 'other-credential'] as const)(
-    'routes cached recovery to each record and rejects unavailable alternatives: %s',
-    async (result) => {
-      const primary = new Uint8Array(32).fill(0x48)
-      const alternative = new Uint8Array(32).fill(0x49)
-      const keyBundle = {
-        primary: encryptionService.encodeKeyFromBytes(primary),
-        alternatives: [encryptionService.encodeKeyFromBytes(alternative)],
-        authorizationMode: 'validated' as const,
-      }
-      const candidate = await genericEnvelopeEntry(keyBundle)
-      const envelope = decodeEnvelope(candidate)
-      const primaryRecord = decodeWrappedKeyRecord(envelope.primary)
-      const alternativeRecord = decodeWrappedKeyRecord(envelope.alternatives[0])
-      localStorage.removeItem(SECRET_PASSKEY_PRF_OUTPUT)
-      const recoverFromCache = vi
-        .spyOn(passkeyKeyManager, 'recoverKeyFromCache')
-        .mockImplementation(async ({ wrappedKeys }) => {
-          if (recoverFromCache.mock.calls.length === 1) {
-            expect(wrappedKeys).toEqual([primaryRecord])
-            return { credentialId: CREDENTIAL_ID, key: primary }
-          }
-          expect(wrappedKeys).toEqual([alternativeRecord])
-          if (result === 'missing') return null
-          return {
-            credentialId: result === 'matching' ? CREDENTIAL_ID : 'BAUG',
-            key: alternative,
-          }
-        })
-
-      const recovered = await recoverPasskeyKeyBundle([candidate], {
-        cachedOnly: true,
-      })
-
-      if (result === 'matching') expect(recovered?.keyBundle).toEqual(keyBundle)
-      else expect(recovered).toBeNull()
-    },
-  )
-
-  it('recovers Start Fresh authorization on another device among mixed credentials', async () => {
-    const keyBundle = {
-      primary: encryptionService.encodeKeyFromBytes(
-        new Uint8Array(32).fill(0x75),
-      ),
-      alternatives: [
-        encryptionService.encodeKeyFromBytes(new Uint8Array(32).fill(0x76)),
-      ],
-      authorizationMode: 'explicit_start_fresh' as const,
+      primary: encryptionService.encodeKeyFromBytes(key),
+      alternatives: [],
     }
     const get = installCredentialGet(new Uint8Array([7, 8, 9]))
 
     const recovered = await recoverPasskeyKeyBundle([
       undecryptableEnclaveEntry(),
-      await genericEnvelopeEntry(keyBundle, 'BwgJ'),
+      await rawBundleEntry(key, 'BwgJ'),
     ])
 
     expect(recovered?.credentialId).toBe('BwgJ')
