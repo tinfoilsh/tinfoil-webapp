@@ -1,6 +1,10 @@
 import { DefaultMessageRenderer } from '@/components/chat/renderers/default/DefaultMessageRenderer'
 import { SpeechProvider } from '@/components/chat/speech-context'
-import type { Message, TimelineBlock } from '@/components/chat/types'
+import type {
+  Message,
+  TimelineBlock,
+  TimelineThinkingBlock,
+} from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
 import type {
   Annotation,
@@ -669,6 +673,103 @@ describe('DefaultMessageRenderer read aloud', () => {
   )
 })
 
+describe('DefaultMessageRenderer reply indicator', () => {
+  const settledThought: TimelineBlock = {
+    type: 'thinking',
+    id: 'thought',
+    content: 'Plan it.',
+    isThinking: false,
+    duration: 2,
+  }
+  const searched: TimelineBlock = {
+    type: 'web_search',
+    id: 'search',
+    state: { query: 'plan', status: 'completed', sources: [] },
+  }
+
+  it.each<{ name: string; timeline: TimelineBlock[]; shown: boolean }>([
+    { name: 'shows before anything arrives', timeline: [], shown: true },
+    {
+      name: 'shows while the answer streams',
+      timeline: [settledThought, { type: 'content', id: 'c', content: 'Go' }],
+      shown: true,
+    },
+    {
+      name: 'shows after a widget',
+      timeline: [
+        {
+          type: 'tool_call',
+          id: 'w',
+          toolCallId: 'w',
+          name: 'render_message_compose',
+          arguments: '',
+        },
+      ],
+      shown: true,
+    },
+    {
+      name: 'shows once a lone step settled',
+      timeline: [searched],
+      shown: true,
+    },
+    {
+      name: 'hides while it thinks',
+      timeline: [{ ...settledThought, isThinking: true }],
+      shown: false,
+    },
+    {
+      name: 'hides while it searches',
+      timeline: [
+        { ...searched, state: { query: 'plan', status: 'searching' } },
+      ],
+      shown: false,
+    },
+    {
+      name: 'hides while it reads a page',
+      timeline: [
+        {
+          type: 'url_fetches',
+          id: 'read',
+          fetches: [
+            { id: 'f', url: 'https://plan.example/', status: 'fetching' },
+          ],
+        },
+      ],
+      shown: false,
+    },
+    {
+      name: 'hides while its steps work, up to the first answer text',
+      timeline: [
+        settledThought,
+        searched,
+        { type: 'content', id: 'c', content: '\n\n' },
+      ],
+      shown: false,
+    },
+  ])('$name', ({ timeline, shown }) => {
+    render(
+      <Renderer
+        message={{
+          role: 'assistant',
+          content: '',
+          timestamp: new Date('2026-08-07T00:00:01.000Z'),
+          timeline,
+        }}
+        messageIndex={0}
+        model={model}
+        isDarkMode={false}
+        isLastMessage
+        isStreaming
+      />,
+    )
+    const indicator = screen.queryByRole('status', {
+      name: 'Streaming response',
+    })
+    if (shown) expect(indicator).toBeInTheDocument()
+    else expect(indicator).not.toBeInTheDocument()
+  })
+})
+
 describe('DefaultMessageRenderer work traces', () => {
   const traceTimeline: TimelineBlock[] = [
     {
@@ -724,9 +825,11 @@ describe('DefaultMessageRenderer work traces', () => {
         isStreaming
       />,
     )
-    expect(
-      screen.getByText('Searching the web for "second"').closest('button'),
-    ).toHaveAttribute('aria-expanded', 'false')
+    // The steps keep their own (inert) buttons in the DOM, so the group's
+    // header is the first button.
+    const header = screen.getAllByRole('button')[0]
+    expect(header).toHaveTextContent('Searching the web for "second"')
+    expect(header).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText(/Worked/)).not.toBeInTheDocument()
   })
 
@@ -781,7 +884,7 @@ describe('DefaultMessageRenderer work traces', () => {
     {
       display: { query: 'tinfoil', status: 'running', sources: [] },
       isStreaming: true,
-      label: 'Searching the web...',
+      label: 'Searching the web for "tinfoil"',
     },
     {
       display: { query: 'tinfoil', status: 'running', sources: [] },
@@ -793,7 +896,7 @@ describe('DefaultMessageRenderer work traces', () => {
       isStreaming: false,
       label: 'Search failed for "tinfoil"',
     },
-    { isStreaming: true, label: 'Searching the web...' },
+    { isStreaming: true, label: 'Searching the web' },
     { isStreaming: false, label: 'Search failed' },
   ])(
     'shows a search as the harness reports it: $label',
@@ -897,12 +1000,13 @@ describe('DefaultMessageRenderer work traces', () => {
         isStreaming
       />,
     )
-    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
-      'Worked for 42.0 seconds',
-    )
+    expect(
+      screen.getByRole('button', { name: 'Thought and searched the web' }),
+    ).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Working')).not.toBeInTheDocument()
   })
 
-  it('says how long the steps of a stored reply took', () => {
+  it('says how long a stored reply thought, and names its steps', () => {
     const thinking: WireBlock = {
       id: 't',
       type: 'thinking',
@@ -921,7 +1025,7 @@ describe('DefaultMessageRenderer work traces', () => {
     })
     const { unmount } = renderReply(stored([thinking, answer]), false)
     expect(screen.getByText('Thought').closest('button')).toHaveTextContent(
-      'Thought for 2.5 seconds',
+      'Thought for 2s',
     )
     unmount()
 
@@ -943,9 +1047,12 @@ describe('DefaultMessageRenderer work traces', () => {
       ]),
       false,
     )
-    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
-      'Worked for 10.0 seconds',
-    )
+    expect(
+      screen.getByRole('button', { name: 'Thought and searched the web' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Thought for 2s' }),
+    ).toBeInTheDocument()
   })
 
   it("lists the last search's results and the citations as the reply's sources", () => {
@@ -1054,88 +1161,9 @@ describe('DefaultMessageRenderer work traces', () => {
     // One step lists every page; only the pages read count as read.
     expect(screen.getByRole('button', { name: 'Read 2 links' })).toBeVisible()
     expect(container).not.toHaveTextContent('Read 1 link')
-    expect(container).not.toHaveTextContent('Worked')
+    expect(container).not.toHaveTextContent('Read 2 pages')
     for (const page of ['a.example/one', 'b.example/two', 'c.example/three'])
       expect(screen.getByText(page)).toBeInTheDocument()
-  })
-
-  it('times back-to-back reads from the first start to the last end', () => {
-    const fetch = (id: string, startedAt: number, endedAt: number) => ({
-      id,
-      type: 'tool_call' as const,
-      toolCallId: id,
-      name: 'web_fetch',
-      arguments: JSON.stringify({ urls: [`https://${id}.example/`] }),
-      complete: true,
-      display: { status: 'completed' as const, sources: [] },
-      startedAt,
-      endedAt,
-    })
-    renderReply(
-      {
-        id: 'a1',
-        role: 'assistant',
-        createdAt: '2026-08-07T00:00:01.000Z',
-        content: 'Read them.',
-        timeline: [
-          fetch('first', 1_000, 4_000),
-          fetch('second', 4_000, 9_000),
-          {
-            id: 't',
-            type: 'thinking',
-            content: 'Both read.',
-            startedAt: 5_000,
-            endedAt: 6_000,
-            duration: 1,
-          },
-          { id: 'c', type: 'content', content: 'Read them.' },
-        ],
-      },
-      false,
-    )
-
-    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
-      'Worked for 8.0 seconds',
-    )
-  })
-
-  it('times a cut-off read as long as it ran when it follows another read', () => {
-    const fetch = (id: string, startedAt: number, endedAt?: number) => ({
-      id,
-      type: 'tool_call' as const,
-      toolCallId: id,
-      name: 'web_fetch',
-      arguments: JSON.stringify({ urls: [`https://${id}.example/`] }),
-      complete: true,
-      startedAt,
-      endedAt,
-    })
-    renderReply(
-      {
-        id: 'a1',
-        role: 'assistant',
-        createdAt: '2026-08-07T00:00:01.000Z',
-        content: 'Read them.',
-        timeline: [
-          {
-            id: 't',
-            type: 'thinking',
-            content: 'Reading both.',
-            startedAt: 500,
-            endedAt: 900,
-            duration: 0.4,
-          },
-          fetch('first', 1_000, 4_000),
-          fetch('second', 5_000),
-          { id: 'c', type: 'content', content: 'Read them.' },
-        ],
-      },
-      false,
-    )
-
-    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
-      'Worked for 4.5 seconds',
-    )
   })
 
   it('shows nothing of the code an older chat ran, unlike a retired widget', () => {
@@ -1174,6 +1202,81 @@ describe('DefaultMessageRenderer work traces', () => {
     expect(screen.getByText('It is Monday.')).toBeInTheDocument()
   })
 
+  it('times a thought while it thinks, then says how long it thought', () => {
+    vi.useFakeTimers({ now: 20_000 })
+    try {
+      const view = (
+        thought: Partial<TimelineThinkingBlock>,
+        isStreaming: boolean,
+      ) => (
+        <Renderer
+          message={{
+            role: 'assistant',
+            content: '',
+            timestamp: new Date('2026-08-07T00:00:01.000Z'),
+            timeline: [
+              {
+                type: 'thinking',
+                id: 't',
+                content: 'Weighing it.',
+                isThinking: true,
+                startedAt: 8_000,
+                ...thought,
+              },
+            ],
+          }}
+          messageIndex={0}
+          model={model}
+          isDarkMode={false}
+          isLastMessage
+          isStreaming={isStreaming}
+        />
+      )
+      const { rerender } = render(view({}, true))
+      const header = screen.getByRole('button', { name: 'Thinking 12s' })
+      expect(header).toHaveAttribute('aria-expanded', 'false')
+
+      act(() => vi.advanceTimersByTime(2_000))
+      expect(header).toHaveAccessibleName('Thinking 14s')
+
+      rerender(view({ isThinking: false, duration: 14.6 }, false))
+      expect(header).toHaveAccessibleName('Thought for 14s')
+      rerender(view({ isThinking: false, duration: 0.4 }, false))
+      expect(header).toHaveAccessibleName('Thought')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("times back-to-back reads from the first one's start", () => {
+    vi.useFakeTimers({ now: 9_000 })
+    try {
+      const fetch = (id: string, startedAt: number): WireBlock => ({
+        id,
+        type: 'tool_call',
+        toolCallId: id,
+        name: 'web_fetch',
+        arguments: JSON.stringify({ urls: [`https://${id}.example/`] }),
+        startedAt,
+      })
+      renderReply(
+        {
+          id: 'a1',
+          role: 'assistant',
+          createdAt: '2026-08-07T00:00:01.000Z',
+          timeline: [fetch('first', 1_000), fetch('second', 4_000)],
+        },
+        true,
+      )
+
+      expect(
+        screen.getByRole('button', { name: 'Reading 2 links 8s' }),
+      ).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('leaves a lone trace block rendered as itself', () => {
     renderMessage({
       role: 'assistant',
@@ -1185,7 +1288,7 @@ describe('DefaultMessageRenderer work traces', () => {
       ],
     })
     expect(screen.getByText('Thought')).toBeInTheDocument()
-    expect(screen.getByText('for 4.7 seconds')).toBeInTheDocument()
+    expect(screen.getByText('for 4s')).toBeInTheDocument()
     expect(screen.queryByText(/Worked/)).not.toBeInTheDocument()
   })
 })
