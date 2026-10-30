@@ -82,7 +82,7 @@ function ImageLightbox({
           onClose()
         }}
         aria-label="Close image preview"
-        className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25"
+        className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/10 hover:text-white"
       >
         <TfBoxX className="h-5 w-5" />
       </button>

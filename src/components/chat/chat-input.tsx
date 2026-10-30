@@ -820,7 +820,7 @@ export function ChatInput({
                   type="button"
                   onClick={onClearQuote}
                   aria-label="Remove quote"
-                  className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
+                  className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
                 >
                   <TfBoxX className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
@@ -857,16 +857,18 @@ export function ChatInput({
                         e.stopPropagation()
                         removeDocument(doc.id)
                       }}
-                      className={cn(
-                        'absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full border-[0.5px] border-white',
-                        'bg-surface-chat text-content-secondary shadow-sm hover:bg-surface-chat-background hover:text-content-primary',
-                      )}
+                      className="absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center text-content-secondary transition-colors hover:text-content-primary"
                       aria-label={`Remove ${doc.name}`}
                     >
-                      <TfBoxX className="h-3 w-3" aria-hidden="true" />
+                      <TfBoxX className="h-4 w-4" aria-hidden="true" />
                     </button>
                   )}
-                  <div className="flex items-center gap-2">
+                  <div
+                    className={cn(
+                      'flex items-center gap-2',
+                      removeDocument && 'pr-4',
+                    )}
+                  >
                     <FilePreview
                       filename={doc.name}
                       imageSrc={
