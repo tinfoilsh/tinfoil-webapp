@@ -5,7 +5,6 @@ import { HarnessProvider } from '@/services/harness/provider'
 import '@/styles/globals.css'
 import '@/styles/tailwind.css'
 import { analyticsExcluded } from '@/utils/analytics-routes'
-import { isCatchAllSection } from '@/utils/navigation'
 import { migrateStorageKeys } from '@/utils/storage-migration'
 import { Clerk } from '@clerk/clerk-js/no-rhc'
 import { ClerkProvider } from '@clerk/react'
@@ -137,15 +136,15 @@ const Toaster = dynamic(
 
 export default function App({ Component, pageProps, router }: AppProps) {
   useChatFontSync()
-  // Pages that never use the chat service, including the not-found page the
-  // catch-all route shows for an unknown path.
-  const withoutHarness =
-    ['/signin', '/signup', '/sso-callback', '/404', '/_error'].includes(
-      router.pathname,
-    ) ||
-    (router.pathname === '/[...slug]' &&
-      router.isReady &&
-      !isCatchAllSection(router.query.slug))
+  // Pages that never use the chat service, including the not-found page an
+  // unknown path shows.
+  const withoutHarness = [
+    '/signin',
+    '/signup',
+    '/sso-callback',
+    '/404',
+    '/_error',
+  ].includes(router.pathname)
 
   return (
     <>
