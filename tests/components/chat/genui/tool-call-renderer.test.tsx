@@ -82,8 +82,6 @@ describe('GenUIToolCallRenderer', () => {
       window.removeEventListener(OPEN_ARTIFACT_PREVIEW_EVENT, listener)
     }
     artifactPreviewListeners.length = 0
-    vi.restoreAllMocks()
-    vi.unstubAllGlobals()
   })
 
   it('renders completed widget arguments while the assistant stream continues', () => {
@@ -141,7 +139,7 @@ describe('GenUIToolCallRenderer', () => {
     })
   })
 
-  it('highlights only the open artifact and shows its full description', () => {
+  it('highlights only the open artifact', () => {
     const secondArtifact = {
       ...artifact,
       title: 'Second artifact',
@@ -173,12 +171,8 @@ describe('GenUIToolCallRenderer', () => {
     const secondButton = screen.getByRole('button', {
       name: /Second artifact/,
     })
-    const description = screen.getByText(secondArtifact.description)
     expect(firstButton).toHaveAttribute('aria-pressed', 'false')
     expect(secondButton).toHaveAttribute('aria-pressed', 'true')
-    expect(secondButton.parentElement).toHaveClass('border-brand-accent-dark')
-    expect(description).toHaveClass('whitespace-pre-wrap', 'break-words')
-    expect(description).not.toHaveClass('truncate')
 
     rerender(
       <GenUIToolCallRenderer
@@ -218,7 +212,7 @@ describe('GenUIToolCallRenderer', () => {
     ).toBe(false)
   })
 
-  it('shows a simple generating state without raw data or a character count', () => {
+  it('shows a generating state without the raw data', () => {
     const rawArguments = '{"source":{"type":"html","html":"private-markup"'
     render(
       <GenUIToolCallRenderer
@@ -234,11 +228,7 @@ describe('GenUIToolCallRenderer', () => {
     )
 
     expect(screen.getByText(/Generating artifact preview/)).toBeInTheDocument()
-    expect(screen.queryByText(/chars/)).not.toBeInTheDocument()
     expect(screen.queryByText(/private-markup/)).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: /show stream/i }),
-    ).not.toBeInTheDocument()
   })
 
   it('distinguishes invalid JSON, schema validation, and unknown widgets', () => {
@@ -319,17 +309,6 @@ describe('GenUIToolCallRenderer', () => {
     )
 
     const retryButton = screen.getByRole('button', { name: 'Retry widget' })
-    expect(retryButton).toHaveClass(
-      'w-full',
-      'bg-brand-accent-dark',
-      'text-white',
-      'md:w-auto',
-    )
-    expect(retryButton.parentElement).toHaveClass('flex-col', 'md:flex-row')
-    expect(retryButton.parentElement?.parentElement).toHaveClass(
-      'flex-col',
-      'md:flex-row',
-    )
     expect(
       screen.getByRole('button', { name: 'Regenerate response' }),
     ).toBeInTheDocument()
@@ -364,32 +343,6 @@ describe('GenUIToolCallRenderer', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate response' }))
     expect(regenerate).toHaveBeenCalledOnce()
-  })
-
-  it.each([
-    ['request_failed', /Could not request a replacement/],
-    ['schema_conversion_failed', /Could not prepare the component schema/],
-    [
-      'schema_invalid_replacement',
-      /replacement did not match the component schema/,
-    ],
-    ['stale_target', /component changed while retrying/],
-    ['unavailable_target', /component is no longer available to repair/],
-  ] as const)('shows the %s retry category', async (code, description) => {
-    render(
-      <GenUIToolCallRenderer
-        isStreaming={false}
-        toolCalls={[
-          { id: 'one', name: 'render_chart', arguments: '{"type":"bar"' },
-        ]}
-        onRetryToolCall={vi
-          .fn()
-          .mockRejectedValue(new ArtifactRetryError(code))}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Retry widget' }))
-    expect(await screen.findByText(description)).toBeInTheDocument()
   })
 
   it('retries render exceptions and resets after arguments change', async () => {

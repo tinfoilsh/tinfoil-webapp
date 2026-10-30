@@ -25,8 +25,6 @@ function renderModal(selectedModel?: string) {
 
 describe('ReportBugModal', () => {
   afterEach(() => {
-    vi.restoreAllMocks()
-    vi.unstubAllGlobals()
     toast.mockClear()
   })
 

@@ -2,11 +2,7 @@ import { useSidebarChat } from '@/components/chat/hooks/use-sidebar-chat'
 import { harnessAPI } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, expect, it, vi } from 'vitest'
-
-beforeEach(() => {
-  vi.mocked(harnessAPI().client.events).mockReset()
-})
+import { expect, it, vi } from 'vitest'
 
 it('stops streaming a cancelled ask and keeps its partial answer', async () => {
   let streamSignal: AbortSignal | undefined
@@ -38,6 +34,11 @@ it('stops streaming a cancelled ask and keeps its partial answer', async () => {
       }
     },
   )
+  vi.mocked(harnessAPI().client.post).mockImplementation(async (path) => {
+    if (path !== '/v1/threads/cancel')
+      throw new Error(`Unexpected request: ${path}`)
+    return {}
+  })
   const { result } = renderHook(() =>
     useSidebarChat({
       context: async () => ({ threadId: 'thread-1', key: 'content-key' }),

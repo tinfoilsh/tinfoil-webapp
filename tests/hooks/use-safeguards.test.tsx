@@ -29,7 +29,6 @@ describe('useSafeguardsLoader', () => {
 
   afterEach(() => {
     vi.useRealTimers()
-    vi.restoreAllMocks()
   })
 
   it('refreshes immediately, every 30 seconds, on focus, and online', () => {

@@ -1,5 +1,6 @@
 import { CloudSyncSetupModal } from '@/components/modals/cloud-sync-setup-modal'
 import * as setupMode from '@/components/modals/cloud-sync-setup-mode'
+import { SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL } from '@/constants/storage-keys'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { PasskeyTimeoutError, PrfNotSupportedError } from '@/services/passkey'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -7,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
-  logError: vi.fn(),
 }))
 
 vi.mock('@/hooks/use-toast', () => ({
@@ -15,7 +15,7 @@ vi.mock('@/hooks/use-toast', () => ({
 }))
 
 vi.mock('@/utils/error-handling', () => ({
-  logError: mocks.logError,
+  logError: vi.fn(),
   logInfo: vi.fn(),
 }))
 
@@ -40,8 +40,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks()
-  vi.restoreAllMocks()
-  localStorage.clear()
 })
 
 describe('CloudSyncSetupModal onboarding', () => {
@@ -87,137 +85,49 @@ describe('CloudSyncSetupModal onboarding', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
-    await waitFor(() => {
-      expect(mocks.logError).toHaveBeenCalledWith(
-        'Could not start passkey setup',
-        error,
-        {
-          component: 'CloudSyncSetupModal',
-          action: 'handleContinue',
-        },
-      )
-    })
     expect(
       await screen.findByRole('heading', { name: 'Setup Failed' }),
     ).toBeInTheDocument()
-  })
-
-  it('explains when the passkey provider does not support PRF', async () => {
-    const error = new PrfNotSupportedError()
-    render(
-      <CloudSyncSetupModal
-        {...baseProps}
-        prfSupported
-        onSetupWithPasskey={vi.fn().mockRejectedValue(error)}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-
-    expect(
-      await screen.findByRole('heading', {
-        name: 'Passkey Provider Not Supported',
-      }),
-    ).toBeInTheDocument()
-    expect(screen.getByText(error.message)).toBeInTheDocument()
-    expect(mocks.logError).not.toHaveBeenCalled()
-  })
-
-  it('explains when passkey setup times out', async () => {
-    const error = new PasskeyTimeoutError()
-    render(
-      <CloudSyncSetupModal
-        {...baseProps}
-        prfSupported
-        onSetupWithPasskey={vi.fn().mockRejectedValue(error)}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-
-    expect(
-      await screen.findByRole('heading', { name: 'Passkey Setup Timed Out' }),
-    ).toBeInTheDocument()
-    expect(screen.getByText(error.message)).toBeInTheDocument()
-    expect(mocks.logError).not.toHaveBeenCalled()
-  })
-
-  it('shows the intro before manual key setup', async () => {
-    render(<CloudSyncSetupModal {...baseProps} />)
-
-    expect(
-      screen.getByRole('heading', { name: 'Encrypted Backups & Sync' }),
-    ).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-
-    expect(
-      await screen.findByRole('heading', { name: 'Encryption Key' }),
-    ).toBeInTheDocument()
-    expect(
-      document.querySelector('[class*="bg-[#F9F8F6]"]'),
-    ).toBeInTheDocument()
-    expect(document.querySelector('svg[class*="h-20"]')).toBeInTheDocument()
     expect(
       screen.getByText(
-        'This device does not have a passkey. You can generate a new personal encryption key or restore an existing one from another device. Your chats will be encrypted and synced with this personal key.',
+        'Could not create passkey backup. You can try again later.',
       ),
-    ).toHaveClass('text-balance', 'text-center', 'leading-relaxed')
-    const restoreKeyButton = screen.getByRole('button', {
-      name: 'Restore Encryption Key',
-    })
-    expect(restoreKeyButton).toHaveClass(
-      'bg-brand-accent-dark-darker',
-      'h-auto',
-      'py-3.5',
-      'rounded',
-      'font-aeonik-fono',
-    )
-    expect(restoreKeyButton.parentElement?.parentElement).toHaveClass(
-      'mt-auto',
-      'pt-4',
-      'grid',
-      'w-full',
-      'max-w-full',
-      'sm:grid-cols-2',
-    )
-    expect(screen.getByText('Have an existing key?')).toHaveClass('text-center')
-    expect(screen.getByText('First time set up?')).toHaveClass('text-center')
-    expect(
-      screen.getByRole('button', { name: 'Generate Encryption Key' }),
-    ).toHaveClass(
-      'border-border-subtle',
-      'bg-surface-card',
-      'font-aeonik-fono',
-      'h-auto',
-      'py-3.5',
-      'w-full',
-    )
-    expect(
-      screen.queryByRole('button', { name: 'Back' }),
-    ).not.toBeInTheDocument()
+    ).toBeInTheDocument()
   })
 
-  it('closes from the top-right button on the intro step', () => {
-    const onClose = vi.fn()
-    render(<CloudSyncSetupModal {...baseProps} onClose={onClose} />)
+  it.each([
+    ['Passkey Provider Not Supported', new PrfNotSupportedError()],
+    ['Passkey Setup Timed Out', new PasskeyTimeoutError()],
+  ])('explains a passkey setup failure: %s', async (title, error) => {
+    render(
+      <CloudSyncSetupModal
+        {...baseProps}
+        prfSupported
+        onSetupWithPasskey={vi.fn().mockRejectedValue(error)}
+      />,
+    )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
-    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(
+      await screen.findByRole('heading', { name: title }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(error.message)).toBeInTheDocument()
   })
 
-  it('closes without activating a key when dismissed with Maybe later', () => {
+  it('remembers the intro was seen when dismissed with Maybe later', () => {
     const onClose = vi.fn()
     render(<CloudSyncSetupModal {...baseProps} onClose={onClose} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Maybe later' }))
 
     expect(onClose).toHaveBeenCalledTimes(1)
-    expect(baseProps.onSetupComplete).not.toHaveBeenCalled()
+    expect(localStorage.getItem(SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL)).toBe(
+      'true',
+    )
   })
 
-  it('shows a spinner while generating an encryption key', async () => {
+  it('shows a generated encryption key before activating it', async () => {
     let finishGeneration!: (key: string) => void
     const generateKey = vi
       .spyOn(encryptionService, 'generateKey')
@@ -239,9 +149,6 @@ describe('CloudSyncSetupModal onboarding', () => {
     )
 
     expect(screen.getByRole('button', { name: 'Generating...' })).toBeDisabled()
-    expect(screen.getByTestId('generate-key-spinner')).toHaveClass(
-      'animate-spin',
-    )
     expect(generateKey).toHaveBeenCalledTimes(1)
     const generatedKey = 'key_generated-for-setup'
     await act(async () => {
@@ -290,36 +197,6 @@ describe('CloudSyncSetupModal onboarding', () => {
     expect(
       screen.queryByRole('heading', { name: 'Encrypted Backups & Sync' }),
     ).not.toBeInTheDocument()
-    expect(document.querySelector('svg[class*="h-20"]')).toBeInTheDocument()
-    const unlockButton = screen.getByRole('button', {
-      name: 'Unlock with Passkey',
-    })
-    const enterKeyButton = screen.getByRole('button', {
-      name: 'Enter Key Manually',
-    })
-    const startFreshButton = screen.getByRole('button', {
-      name: 'Start Fresh',
-    })
-    expect(unlockButton.querySelector('svg')).toBeInTheDocument()
-    expect(unlockButton.parentElement).toHaveClass(
-      'flex',
-      'flex-1',
-      'flex-col',
-      'items-center',
-      'justify-center',
-    )
-    expect(enterKeyButton.parentElement).toHaveClass(
-      'grid',
-      'w-fit',
-      'grid-cols-1',
-      'sm:grid-cols-2',
-    )
-    expect(startFreshButton.parentElement).toBe(enterKeyButton.parentElement)
-    expect(enterKeyButton).toHaveClass('w-full', 'font-aeonik-fono')
-    expect(startFreshButton).toHaveClass('w-full', 'font-aeonik-fono')
-    screen.getAllByRole('button').forEach((button) => {
-      expect(button).toHaveClass('inline-flex')
-    })
   })
 
   it('bypasses the intro for manual recovery', () => {

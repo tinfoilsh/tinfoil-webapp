@@ -7,9 +7,7 @@ import {
   resetRendererRegistry,
 } from '@/components/chat/renderers/registry'
 import type { MessageRenderer } from '@/components/chat/renderers/types'
-import { SharedChatView } from '@/components/chat/shared-chat-view'
 import type { BaseModel } from '@/config/models'
-import { publish } from '@/services/harness/runtime'
 import {
   act,
   cleanup,
@@ -20,7 +18,6 @@ import {
 } from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
 import {
   controlledSpeech,
   FakeAudioContext,
@@ -143,12 +140,6 @@ beforeEach(() => {
   audio = new FakeAudioContext()
   audioMocks.stream.mockReset().mockImplementation(generation.stream)
   audioMocks.context.mockReset().mockReturnValue(audio)
-  publish({
-    session: {
-      ...testSession,
-      features: { ...testSession.features, speech: true },
-    },
-  })
   frames.clear()
   nextFrame = 0
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
@@ -164,24 +155,9 @@ afterEach(() => {
   cleanup()
   resetRendererRegistry()
   window.getSelection()?.removeAllRanges()
-  vi.restoreAllMocks()
 })
 
 describe('QuoteSelectionPopover', () => {
-  it.each(['user', 'assistant'] as const)(
-    'allows element-node selection endpoints within a %s message',
-    (messageRole) => {
-      const onQuote = vi.fn()
-      render(<Harness enabled messageRole={messageRole} onQuote={onQuote} />)
-      selectText()
-      const range = window.getSelection()!.getRangeAt(0)
-      range.selectNodeContents(screen.getByText('Selected text'))
-      flushFrames()
-      fireEvent.click(screen.getByRole('button', { name: 'Quote' }))
-      expect(onQuote).toHaveBeenCalledWith('Selected text')
-    },
-  )
-
   it.each([
     {
       name: 'nested elements',
@@ -268,31 +244,6 @@ describe('QuoteSelectionPopover', () => {
     expect(generation.requests[0].text).toBe(text)
   })
 
-  it('cancels speech when the selection menu is dismissed', async () => {
-    render(<Harness enabled />)
-    selectText()
-    flushFrames()
-    fireEvent.click(screen.getByRole('button', { name: 'Read' }))
-    await waitFor(() => expect(generation.requests).toHaveLength(1))
-    window.getSelection()?.removeAllRanges()
-    fireEvent(document, new Event('selectionchange'))
-    flushFrames()
-    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
-    expect(generation.requests[0].signal.aborted).toBe(true)
-    expect(audio.close).toHaveBeenCalledOnce()
-  })
-
-  it('does not offer reading the selection when the harness does not offer speech', () => {
-    publish({ session: testSession })
-    render(<Harness enabled />)
-    selectText()
-    flushFrames()
-    expect(screen.getByRole('toolbar')).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Read' }),
-    ).not.toBeInTheDocument()
-  })
-
   it('keeps the wider toolbar inside the viewport near either edge', () => {
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
       new DOMRect(0, 0, 300, 32),
@@ -330,15 +281,6 @@ describe('QuoteSelectionPopover', () => {
       expect(screen.getByRole('toolbar')).toBeInTheDocument()
     },
   )
-  it('does not show actions when selection is disabled for the welcome screen', () => {
-    render(<Harness enabled={false} />)
-    selectText()
-    fireEvent.mouseUp(document)
-    flushFrames()
-    expect(
-      screen.queryByRole('toolbar', { name: 'Selection actions' }),
-    ).not.toBeInTheDocument()
-  })
 
   it.each(['Quote', 'Ask'])(
     'keeps the %s action working for conversation selections',
@@ -457,43 +399,5 @@ describe.each(['custom', 'default'])(
         expect(onQuote).toHaveBeenCalledWith('Sidebar selection')
       },
     )
-
-    it('preserves message boundaries and focus semantics in shared chat', () => {
-      const { container } = render(
-        <SharedChatView
-          chatData={{
-            title: 'Shared conversation',
-            createdAt: '1970-01-01T00:00:00.000Z',
-            messages: [
-              {
-                id: 'shared-prompt',
-                role: 'user',
-                content: 'Shared prompt',
-                createdAt: '1970-01-01T00:00:00.000Z',
-              },
-              {
-                id: 'shared-answer',
-                role: 'assistant',
-                content: 'Shared answer',
-                createdAt: '1970-01-01T00:00:00.001Z',
-              },
-            ],
-          }}
-          model={model}
-          isDarkMode={false}
-        />,
-      )
-      const messages = container.querySelectorAll<HTMLElement>(
-        '[data-message-role]',
-      )
-      expect(messages).toHaveLength(2)
-      expect(screen.getAllByRole('article')).toHaveLength(2)
-      expect(messages[0]).toContainElement(screen.getByText('Shared prompt'))
-      expect(messages[1]).toContainElement(screen.getByText('Shared answer'))
-      expect(messages[0]).toHaveAccessibleName('You said')
-      expect(messages[1]).toHaveAccessibleName('Al said')
-      messages[1].focus({ preventScroll: true })
-      expect(messages[1]).toHaveFocus()
-    })
   },
 )

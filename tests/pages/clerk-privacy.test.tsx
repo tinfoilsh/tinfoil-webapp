@@ -70,13 +70,12 @@ describe('Clerk privacy configuration', () => {
     )
   })
 
-  it('does not preconnect to the stale Clerk development host', () => {
-    expect(elementProps(Document())).not.toContainEqual(
-      expect.objectContaining({
-        href: 'https://clerk.accounts.dev',
-        rel: 'preconnect',
-      }),
+  it('does not preconnect the document to other hosts', () => {
+    const urls = elementProps(Document()).flatMap(({ href, src }) =>
+      [href, src].filter((url) => url !== undefined),
     )
+    expect(urls).toContain('/js/boot.js')
+    expect(urls.filter((url) => !/^\/(?!\/)/.test(String(url)))).toEqual([])
   })
 
   it('matches the rendered analytics script integrity to the served asset', () => {

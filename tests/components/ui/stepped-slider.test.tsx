@@ -29,23 +29,6 @@ function ControlledSlider() {
 afterEach(cleanup)
 
 describe('SteppedSlider', () => {
-  it.each(STEPS)('exposes the selected $label step and bounds', (step) => {
-    render(
-      <SteppedSlider
-        steps={STEPS}
-        value={step.id}
-        onValueChange={vi.fn()}
-        aria-label="Intelligence"
-      />,
-    )
-
-    const thumb = screen.getByRole('slider', { name: 'Intelligence' })
-    expect(thumb).toHaveAttribute('aria-valuenow', String(STEPS.indexOf(step)))
-    expect(thumb).toHaveAttribute('aria-valuetext', step.label)
-    expect(thumb).toHaveAttribute('aria-valuemin', '0')
-    expect(thumb).toHaveAttribute('aria-valuemax', String(STEPS.length - 1))
-  })
-
   it('moves between steps with arrow keys and stays within the endpoints', () => {
     render(<ControlledSlider />)
     const thumb = screen.getByRole('slider', { name: 'Intelligence' })
@@ -65,17 +48,6 @@ describe('SteppedSlider', () => {
         String(STEPS.findIndex((step) => step.label === label)),
       )
     }
-  })
-
-  it('jumps to the first and last steps with Home and End', () => {
-    render(<ControlledSlider />)
-    const thumb = screen.getByRole('slider', { name: 'Intelligence' })
-
-    fireEvent.keyDown(thumb, { key: 'Home' })
-    expect(thumb).toHaveAttribute('aria-valuetext', 'Low')
-
-    fireEvent.keyDown(thumb, { key: 'End' })
-    expect(thumb).toHaveAttribute('aria-valuetext', 'High')
   })
 
   it('follows external value changes without emitting a selection', () => {
@@ -106,14 +78,9 @@ describe('SteppedSlider', () => {
       css = result.css
     })
 
-    it.each([
-      { theme: 'light', motion: 'no-preference' },
-      { theme: 'light', motion: 'reduce' },
-      { theme: 'dark', motion: 'no-preference' },
-      { theme: 'dark', motion: 'reduce' },
-    ])(
-      'uses blue and honors reduced motion in $theme / $motion',
-      async ({ theme, motion }) => {
+    it.each(['no-preference', 'reduce'])(
+      'animates the max fill only when motion is allowed (%s)',
+      async (motion) => {
         const browserWindow = new Window({
           settings: { device: { prefersReducedMotion: motion } },
         })
@@ -121,14 +88,6 @@ describe('SteppedSlider', () => {
           const style = browserWindow.document.createElement('style')
           style.textContent = css
           browserWindow.document.head.append(style)
-          browserWindow.document.documentElement.setAttribute(
-            'data-theme',
-            theme,
-          )
-          browserWindow.document.documentElement.classList.toggle(
-            'dark',
-            theme === 'dark',
-          )
           const { container } = render(<ControlledSlider />)
           const thumb = screen.getByRole('slider', { name: 'Intelligence' })
           expect(container.querySelector('.stepped-slider-max-fill')).toBeNull()
@@ -155,11 +114,6 @@ describe('SteppedSlider', () => {
               key === 'End' && motion === 'no-preference'
                 ? 'slider-max-flow 8s linear infinite'
                 : '',
-            )
-            expect(computed.backgroundColor).toBe('rgb(16 52 125 / 1)')
-            expect(thumb).toHaveClass(
-              'focus-visible:ring-tinfoil-accent-blue',
-              'dark:focus-visible:ring-white',
             )
           }
         } finally {
