@@ -18,6 +18,7 @@ import {
   indexedDBStorage,
 } from '@/services/storage/indexed-db'
 import {
+  deleteEncryptionKey,
   performSignoutCleanup,
   performUserSwitchCleanup,
   retryFailedStorageCleanup,
@@ -151,6 +152,29 @@ describe('performSignoutCleanup', () => {
     expect(encryptionService.getKey()).toBe(ACCOUNT_KEY)
     expect(encryptionService.getKeyBytesOrThrow()).toHaveLength(32)
     expect(localStorage.getItem('private-chat-state')).toBeNull()
+  })
+
+  it('keeps a preserved key tied to its account, so another account clears it', async () => {
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+    await encryptionService.setKey(ACCOUNT_KEY)
+
+    await performSignoutCleanup({ preserveEncryptionKey: true })
+
+    expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('alice')
+    await performUserSwitchCleanup('bob')
+    expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBeNull()
+    expect(encryptionService.getKey()).toBeNull()
+  })
+
+  it('forgets the account once its kept key is deleted', async () => {
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+    await encryptionService.setKey(ACCOUNT_KEY)
+    await performSignoutCleanup({ preserveEncryptionKey: true })
+
+    deleteEncryptionKey()
+
+    expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBeNull()
+    expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBeNull()
   })
 
   it('preserves the browser onboarding flag while clearing user data', async () => {
