@@ -1,5 +1,6 @@
 import { ChatSearchModal } from '@/components/chat/chat-search-modal'
 import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
+import type { HarnessErrorBody } from '@/services/harness/types'
 import { createEvent, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -11,9 +12,11 @@ const searchState = {
     messageCount: number
     projectId?: string
   }[],
+  unreadable: 0,
   isSearching: false,
   isIndexing: false,
-  failed: false,
+  failure: null as HarnessErrorBody | null,
+  retry: vi.fn(),
   available: true,
 }
 
@@ -65,7 +68,9 @@ describe('ChatSearchModal', () => {
   beforeEach(() => {
     searchState.results = []
     searchState.available = true
-    searchState.failed = false
+    searchState.unreadable = 0
+    searchState.failure = null
+    searchState.retry = vi.fn()
     searchState.isSearching = false
   })
 
@@ -285,6 +290,87 @@ describe('ChatSearchModal', () => {
     ).toEqual(['Local pond notes'])
     expect(screen.getByRole('status')).toHaveTextContent(
       'Searching synced chats...',
+    )
+  })
+
+  // A failure is described by what its error says, and runs again only when
+  // its action allows it.
+  it.each([
+    {
+      failure: {
+        code: 'UPSTREAM_REFUSED',
+        action: 'retry',
+        message: 'The sync service could not fetch the data in time',
+      },
+      shown: "The search didn't finish. Try again.",
+      canRetry: true,
+    },
+    {
+      failure: {
+        code: 'INVALID_RESPONSE',
+        action: 'stop',
+        message: 'The chat service sent a response this client cannot read.',
+      },
+      shown: "This search couldn't be completed.",
+      canRetry: false,
+    },
+  ] as const)(
+    'explains a search failed with $failure.code',
+    ({ failure, shown, canRetry }) => {
+      searchState.failure = { ...failure }
+      renderModal({ searchEnabled: true })
+      fireEvent.change(screen.getByRole('textbox'), {
+        target: { value: 'peroxide' },
+      })
+      expect(screen.getByRole('listbox')).toHaveTextContent(shown)
+      expect(screen.getByRole('listbox')).not.toHaveTextContent('unavailable')
+      const retry = screen.queryByRole('button', { name: 'Try again' })
+      if (canRetry) fireEvent.click(retry!)
+      else expect(retry).not.toBeInTheDocument()
+      expect(searchState.retry).toHaveBeenCalledTimes(canRetry ? 1 : 0)
+    },
+  )
+
+  it('shows a failed search below the chats that match by title', () => {
+    searchState.failure = {
+      code: 'UPSTREAM_REFUSED',
+      action: 'retry',
+      message: 'The sync service could not fetch the data in time',
+    }
+    renderModal({
+      chats: [{ id: 'local', title: 'Local pond notes', isLocalOnly: true }],
+      searchEnabled: true,
+    })
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'pond' } })
+    expect(
+      screen.getAllByRole('option').map((option) => option.textContent),
+    ).toEqual(['Local pond notes'])
+    expect(screen.getByRole('status')).toHaveTextContent(
+      "The search didn't finish. Try again.",
+    )
+  })
+
+  it('says how many matching chats could not be opened', () => {
+    searchState.unreadable = 2
+    const { rerender } = renderModal({ searchEnabled: true })
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'peroxide' },
+    })
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    expect(screen.getByRole('listbox')).toHaveTextContent(
+      "2 matching chats couldn't be opened.",
+    )
+    expect(screen.getByRole('listbox')).not.toHaveTextContent('No matches.')
+
+    searchState.results = [
+      { id: 'found', title: 'Acne treatment options', messageCount: 2 },
+    ]
+    rerender({ searchEnabled: true })
+    expect(
+      screen.getAllByRole('option').map((option) => option.textContent),
+    ).toEqual(['Acne treatment options'])
+    expect(screen.getByRole('listbox')).toHaveTextContent(
+      "2 matching chats couldn't be opened.",
     )
   })
 })

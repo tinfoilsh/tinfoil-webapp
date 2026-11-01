@@ -1,4 +1,4 @@
-import { ERROR_CODES, ROUTES } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import { harnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import type { SharedThread } from './types'
@@ -27,6 +27,7 @@ export async function shareStatus(threadId: string): Promise<boolean> {
   if (typeof status?.shared !== 'boolean')
     throw new HarnessError({
       code: ERROR_CODES.upstreamRefused,
+      action: ERROR_ACTIONS.retry,
       message: 'The share status could not be read.',
     })
   return status.shared

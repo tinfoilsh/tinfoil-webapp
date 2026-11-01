@@ -4,7 +4,7 @@ import { RunController } from '@/services/harness/run-controller'
 import { useStore } from '@/services/harness/store'
 import type { AskContext } from '@/services/harness/thread-store'
 import type { Turn } from '@/services/harness/types'
-import { messageView } from '@/services/harness/view-model'
+import { messageView, shownMessages } from '@/services/harness/view-model'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LoadingState, Message } from '../types'
 const CONTEXT_UNREADABLE = 'The chat could not be read.'
@@ -121,13 +121,13 @@ export function useSidebarChat({
       ...(question ? [question] : []),
       // The question stands for the ask's message, which the harness returns
       // with the quote as its content.
-      ...state.messages.flatMap((m, index) =>
+      ...shownMessages(state.messages).flatMap((m) =>
         m.role === 'user'
           ? []
           : [
               messageView(
                 m,
-                isStreaming && index === state.messages.length - 1,
+                isStreaming && m === state.messages.at(-1),
                 state.summaries,
               ),
             ],

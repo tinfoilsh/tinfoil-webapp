@@ -1,8 +1,7 @@
 import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { ROUTES, type HarnessRoute } from './protocol'
 import { harnessAPI } from './runtime'
-import { HarnessError as SyncEnclaveError } from './sse'
-export { SyncEnclaveError }
+import type { KeyOrigin } from './types'
 export interface OKResponse {
   ok: boolean
 }
@@ -87,7 +86,7 @@ export interface KeyCurrentResponse {
   etag?: string
   /** Map of credential_id → bundle body. Empty when key_id is null. */
   bundles: Record<string, KeyCurrentBundle>
-  created_via?: 'passkey' | 'manual' | 'recovery' | 'start_fresh'
+  created_via?: KeyOrigin
   created_at?: string
   /**
    * Whether the user owns encrypted blobs not sealed under the reported
@@ -148,33 +147,25 @@ export async function removeBundle(
 
 /**
  * Fetch the current key id and the full set of passkey bundles
- * registered for the authenticated user. Returns `{ key_id: null,
- * bundles: {} }` when the user has no key yet (HTTP 404 from the
- * enclave is mapped to this empty shape so callers can treat it as a
- * normal "first-time user" state without special-casing exceptions).
+ * registered for the authenticated user. The harness answers with
+ * `key_id: null` while the user has no key yet; any refusal, including
+ * a 404, throws.
  */
 export async function keyCurrent(
   signal?: AbortSignal,
 ): Promise<KeyCurrentResponse> {
   signal?.throwIfAborted()
   const client = keyClient
-  try {
-    const resp = await client.post<KeyCurrentResponse>(
-      ROUTES.keysCurrent,
-      {},
-      signal,
-    )
-    // The server is a Go service; a nil bundle map marshals to JSON
-    // null. Normalize so callers can Object.values/index the map
-    // without crashing on edge shapes (e.g. a key registered via
-    // migrate-all bootstrap before any bundle exists).
-    return { ...resp, key_id: resp.key_id ?? null, bundles: resp.bundles ?? {} }
-  } catch (err) {
-    if (err instanceof SyncEnclaveError && err.status === 404) {
-      return { key_id: null, bundles: {}, has_data: false }
-    }
-    throw err
-  }
+  const resp = await client.post<KeyCurrentResponse>(
+    ROUTES.keysCurrent,
+    {},
+    signal,
+  )
+  // The server is a Go service; a nil bundle map marshals to JSON
+  // null. Normalize so callers can Object.values/index the map
+  // without crashing on edge shapes (e.g. a key registered via
+  // migrate-all bootstrap before any bundle exists).
+  return { ...resp, key_id: resp.key_id ?? null, bundles: resp.bundles ?? {} }
 }
 
 export function hexToB64(hex: string): string {

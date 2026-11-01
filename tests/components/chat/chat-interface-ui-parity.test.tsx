@@ -154,7 +154,11 @@ it('offers key recovery after the profile request actually refuses the key', asy
   client.post.mockImplementation(async (path) => {
     if (path === '/v1/profile/get')
       throw new HarnessError(
-        { code: 'KEY_MISMATCH', message: 'Another key is required' },
+        {
+          code: 'KEY_MISMATCH',
+          message: 'Another key is required',
+          action: 'unlock',
+        },
         409,
       )
     throw new Error(`Unexpected ${path}`)
@@ -265,6 +269,7 @@ it.each(['missing', 'connection', 'key'])(
           {
             code: failure === 'key' ? 'KEY_MISMATCH' : 'THREAD_NOT_FOUND',
             message: 'Chat unavailable',
+            action: failure === 'key' ? 'unlock' : 'stop',
           },
           failure === 'key' ? 409 : 404,
         )
@@ -317,6 +322,7 @@ it('keeps the source list available from a completed answer', async () => {
               id: 'answer',
               role: 'assistant',
               createdAt: '2026-10-22T12:00:00Z',
+              content: 'An answer with sources.',
               timeline: [
                 {
                   id: 'search',
@@ -332,7 +338,16 @@ it('keeps the source list available from a completed answer', async () => {
                   content: 'An answer with sources.',
                 },
               ],
-              annotations: [{ type: 'url_citation', url_citation: sources[0] }],
+              annotations: [
+                {
+                  type: 'url_citation',
+                  url_citation: {
+                    ...sources[0],
+                    start_index: 0,
+                    end_index: 23,
+                  },
+                },
+              ],
             },
           ],
         }),

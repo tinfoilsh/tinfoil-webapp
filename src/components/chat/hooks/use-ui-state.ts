@@ -31,6 +31,11 @@ function savedThemeMode(): ThemeMode {
   return theme === 'light' || theme === 'dark' ? theme : 'system'
 }
 
+// The theme mode the settings name. A mode this client does not know shows
+// the system theme, and the settings keep it.
+const normalizeThemeMode = (value: unknown): ThemeMode =>
+  value === 'light' || value === 'dark' ? value : 'system'
+
 export function useUIState(): UseUIStateReturn {
   const { profile, profileReady, api } = useHarness()
   const [isClient, setIsClient] = useState(false)
@@ -53,7 +58,7 @@ export function useUIState(): UseUIStateReturn {
   // they may still import.
   useEffect(() => {
     const mode: ThemeMode = profileReady
-      ? (profile.themeMode ?? 'system')
+      ? normalizeThemeMode(profile.themeMode)
       : savedThemeMode()
     setThemeModeState(mode)
     setIsDarkMode(

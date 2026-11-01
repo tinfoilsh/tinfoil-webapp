@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '@/config'
-import { ERROR_CODES } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES } from './protocol'
 import { HarnessError } from './sse'
 import type { RateLimit, TokenBudget } from './types'
 
@@ -190,6 +190,7 @@ export class ChatCredentialCache {
     )
       throw new HarnessError({
         code: ERROR_CODES.configuration,
+        action: ERROR_ACTIONS.stop,
         message: 'Configure an HTTPS origin for the controlplane.',
       })
     return fetch(new URL(path, base), {
@@ -234,6 +235,7 @@ export class ChatCredentialCache {
     )
       throw new HarnessError({
         code: ERROR_CODES.upstreamRefused,
+        action: ERROR_ACTIONS.retry,
         message: 'Tinfoil returned invalid chat access. Please try again.',
       })
     this.onRateLimit(
@@ -273,6 +275,7 @@ export class ChatCredentialCache {
       error = new HarnessError(
         {
           code: ERROR_CODES.quotaExhausted,
+          action: ERROR_ACTIONS.wait,
           message:
             str(value.error) || 'You have reached your hourly usage limit.',
           kind: 'hourly',
@@ -287,6 +290,7 @@ export class ChatCredentialCache {
       error = new HarnessError(
         {
           code: ERROR_CODES.rateLimited,
+          action: ERROR_ACTIONS.retry,
           message: 'Chat access is busy. Please try again shortly.',
           retryAfter,
         },
@@ -296,6 +300,7 @@ export class ChatCredentialCache {
       error = new HarnessError(
         {
           code: ERROR_CODES.upstreamRefused,
+          action: ERROR_ACTIONS.stop,
           message: 'This account is suspended.',
         },
         response.status,
@@ -304,6 +309,7 @@ export class ChatCredentialCache {
       error = new HarnessError(
         {
           code: ERROR_CODES.upstreamRefused,
+          action: ERROR_ACTIONS.retry,
           message:
             str(value.code) === ACCOUNT_PROVISIONING_CODE
               ? 'Your account is still being set up. Please try again shortly.'
@@ -316,6 +322,7 @@ export class ChatCredentialCache {
       error = new HarnessError(
         {
           code: ERROR_CODES.upstreamRefused,
+          action: ERROR_ACTIONS.retry,
           message: 'Unable to obtain chat access. Please try again.',
           status: response.status,
         },

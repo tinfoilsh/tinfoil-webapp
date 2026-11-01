@@ -39,3 +39,16 @@ export function formatRelativeTime(
   const months = Math.floor(days / 30)
   return `${months}mo ago`
 }
+
+/**
+ * The "Updated …" line for a time the harness gave, or null when it gave
+ * none, so nothing is shown rather than an invalid date.
+ */
+export function updatedLabel(
+  updatedAt: string | undefined,
+  referenceTime = Date.now(),
+): string | null {
+  const time = Date.parse(updatedAt ?? '')
+  if (Number.isNaN(time)) return null
+  return `Updated ${formatRelativeTime(new Date(time), referenceTime)}`
+}

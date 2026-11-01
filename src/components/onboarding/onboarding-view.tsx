@@ -5,12 +5,11 @@ import { SAFEGUARDS_INFO_URL } from '@/constants/external-links'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useUser } from '@clerk/react'
+import { TfBoxCheckmark, TfShieldCheck } from '@tinfoilsh/tinfoil-icons'
 import {
-  TfBoxCheckmark,
-  TfLockLocked,
-  TfShieldCheck,
-  TfUnlockOpen,
-} from '@tinfoilsh/tinfoil-icons'
+  TfLockLockedAnimated,
+  TfLockOpenedAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useState } from 'react'
 
@@ -282,7 +281,7 @@ function OnboardingPrivacyPage({
                 exit={{ opacity: 0, scale: 0.85 }}
                 transition={{ duration: 0.5, ease: 'easeOut' }}
               >
-                <TfLockLocked
+                <TfLockLockedAnimated
                   className="h-24 w-24 text-content-primary"
                   aria-hidden="true"
                 />
@@ -295,7 +294,7 @@ function OnboardingPrivacyPage({
                 exit={{ opacity: 0, scale: 0.85 }}
                 transition={{ duration: 0.15, ease: 'easeOut' }}
               >
-                <TfUnlockOpen
+                <TfLockOpenedAnimated
                   className="h-24 w-24 text-content-primary"
                   aria-hidden="true"
                 />

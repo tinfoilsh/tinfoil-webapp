@@ -1,15 +1,14 @@
 /**
  * passkey-key-storage.storeEncryptedKeys — enclave-wire contract.
  *
- * The legacy implementation talked to /api/passkey-credentials/ and
- * ran an optimistic client-side concurrency loop. The new module
- * routes through the enclave's register-key / add-bundle wire and
- * leaves concurrency to the enclave, so these tests assert the
+ * The module routes through the enclave's register-key / add-bundle
+ * wire and leaves concurrency to the enclave, so these tests assert the
  * branching contract (first-time register vs add-bundle vs
  * conflict) rather than version counters.
  */
 
 import { HarnessError } from '@/services/harness/sse'
+import type { ErrorAction, ErrorCode } from '@/services/harness/types'
 import { deriveTinfoilKeyIdHex } from '@/services/keys/tinfoil-key-id'
 import { TINFOIL_PASSKEY_PROFILE } from '@/services/passkey/kit'
 import {
@@ -118,15 +117,15 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     expect(arg.initialBundle.credentialId).toBe('AQID')
   })
 
-  it.each([
-    { code: 'KEY_MISMATCH', conflict: true },
-    { code: 'REVISION_CONFLICT', conflict: false },
+  it.each<{ code: ErrorCode; action: ErrorAction; conflict: boolean }>([
+    { code: 'KEY_MISMATCH', action: 'unlock', conflict: true },
+    { code: 'REVISION_CONFLICT', action: 'reload', conflict: false },
   ])(
     'maps only the harness key-mismatch refusal to a credential conflict: $code',
-    async ({ code, conflict }) => {
+    async ({ code, action, conflict }) => {
       mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
       mockRegisterKey.mockRejectedValue(
-        new HarnessError({ message: 'refused', code }, 409),
+        new HarnessError({ message: 'refused', code, action }, 409),
       )
       const stored = storeEncryptedKeys(wrappedKeys('AQID'), KEY_BUNDLE)
       if (conflict)

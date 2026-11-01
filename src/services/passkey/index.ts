@@ -6,20 +6,18 @@ export {
 } from './kit'
 export {
   getLocalPasskeyCredentialId,
+  getRoamingPasskeyCredentialIds,
+  getThisDevicePasskeyCredentialIds,
   setLocalPasskeyCredentialId,
 } from './local-passkey-credential'
 export {
   PasskeyCredentialConflictError,
   addWrappedKeyForCurrentKey,
-  decryptKeyBundle,
   deletePasskeyCredential,
   getPasskeyCredentialState,
   getPasskeyDeviceState,
   loadPasskeyCredentials,
-  loadRecoveryCandidates,
-  promoteRecoveredCekToEnclave,
   recoverPasskeyKeyBundle,
-  savePasskeyCredentials,
   storeEncryptedKeys,
   tinfoilWrappedKeyBundleToEnclave,
   wrapTinfoilKeyBundle,

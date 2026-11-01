@@ -38,6 +38,7 @@ import { validateCurrentPrimaryKey } from '@/services/keys/cloud-key-preflight'
 import {
   deletePasskeyCredential,
   getLocalPasskeyCredentialId,
+  getRoamingPasskeyCredentialIds,
   loadPasskeyCredentials,
   PrfNotSupportedError,
   type PasskeyCredentialEntry,
@@ -73,8 +74,6 @@ import {
   TfBoxCheckmark,
   TfBoxX,
   TfCard,
-  TfChat2,
-  TfChevronDown,
   TfChevronRight,
   TfCloudSync,
   TfComputer,
@@ -89,17 +88,21 @@ import {
   TfNumber2,
   TfNumber3,
   TfNumber4,
-  TfPerson,
   TfPersonKey,
-  TfPlus,
   TfShieldCheck,
   TfShieldWithExclamation,
   TfSignIn,
   TfStack,
   TfSunLightMode,
-  TfTools,
   TfTrash,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfChat2Animated,
+  TfChevronDownAnimated,
+  TfPersonAnimated,
+  TfPlusAnimated,
+  TfToolsAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
@@ -574,7 +577,7 @@ function ImportAccordionHeader({
         <span className="font-aeonik text-sm font-medium text-content-primary">
           {title}
         </span>
-        <TfChevronDown
+        <TfChevronDownAnimated
           aria-hidden="true"
           className={cn(
             'h-4 w-4 text-content-muted transition-transform',
@@ -622,6 +625,7 @@ function PasskeyBundleInventory({
 }) {
   const canManage = keyStatus === 'match'
   const localCredentialId = getLocalPasskeyCredentialId()
+  const roamingCredentialIds = getRoamingPasskeyCredentialIds()
   const sorted = [...entries].sort((a, b) => {
     if (a.id === localCredentialId) return -1
     if (b.id === localCredentialId) return 1
@@ -670,7 +674,7 @@ function PasskeyBundleInventory({
       <ul className="divide-y divide-border-subtle">
         {sorted.map((entry) => {
           const isCurrentPlatform = entry.id === localCredentialId
-          const isLegacy = entry.source === 'legacy'
+          const isRoaming = roamingCredentialIds.includes(entry.id)
           const isRemoving = removingId === entry.id
           return (
             <li
@@ -684,13 +688,12 @@ function PasskeyBundleInventory({
                     aria-hidden="true"
                   />
                   <span className="truncate text-sm font-medium text-content-primary">
-                    {isCurrentPlatform ? 'This platform' : 'Other platform'}
+                    {isCurrentPlatform
+                      ? 'This platform'
+                      : isRoaming
+                        ? 'Security key or phone'
+                        : 'Other platform'}
                   </span>
-                  {isLegacy && (
-                    <span className="rounded bg-surface-chat px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted">
-                      Legacy
-                    </span>
-                  )}
                 </div>
                 <p className="mt-0.5 truncate font-mono text-xs text-content-muted">
                   {formatCredentialId(entry.id)} ·{' '}
@@ -702,17 +705,15 @@ function PasskeyBundleInventory({
                 onClick={() => {
                   void onRemove(entry.id)
                 }}
-                disabled={removingId !== null || isLegacy || !canManage}
+                disabled={removingId !== null || !canManage}
                 title={
-                  isLegacy
-                    ? 'Legacy credentials cannot be removed from settings yet'
-                    : !canManage
-                      ? "This device's key must match your current cloud key to remove passkeys"
-                      : undefined
+                  !canManage
+                    ? "This device's key must match your current cloud key to remove passkeys"
+                    : undefined
                 }
                 className={cn(
                   'shrink-0 rounded-md border border-border-subtle px-2.5 py-1 text-xs font-medium transition-colors',
-                  removingId !== null || isLegacy || !canManage
+                  removingId !== null || !canManage
                     ? 'cursor-not-allowed opacity-50'
                     : 'hover:bg-surface-chat/80',
                 )}
@@ -1920,7 +1921,7 @@ ${encryptionKey.replace('key_', '')}
   if (!isOpen) return null
 
   const navItems = [
-    { id: 'account' as const, label: 'Account', icon: TfPerson },
+    { id: 'account' as const, label: 'Account', icon: TfPersonAnimated },
     {
       id: 'general' as const,
       label: 'General',
@@ -1929,17 +1930,17 @@ ${encryptionKey.replace('key_', '')}
     {
       id: 'chat' as const,
       label: 'Chat Settings',
-      icon: TfChat2,
+      icon: TfChat2Animated,
     },
     {
       id: 'personalization' as const,
       label: 'Personalization',
-      icon: TfPerson,
+      icon: TfPersonAnimated,
     },
     {
       id: 'prompts' as const,
       label: 'Prompts',
-      icon: TfTools,
+      icon: TfToolsAnimated,
     },
     ...(isSignedIn
       ? [
@@ -2641,7 +2642,7 @@ ${encryptionKey.replace('key_', '')}
                                     aria-hidden="true"
                                   />
                                 ) : (
-                                  <TfPlus
+                                  <TfPlusAnimated
                                     className="inline-block h-3 w-3"
                                     aria-hidden="true"
                                   />
@@ -2809,7 +2810,10 @@ ${encryptionKey.replace('key_', '')}
                       )}
                     >
                       <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-surface-chat text-content-secondary">
-                        <TfTools className="h-5 w-5" aria-hidden="true" />
+                        <TfToolsAnimated
+                          className="h-5 w-5"
+                          aria-hidden="true"
+                        />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block font-aeonik text-sm font-medium text-content-primary">
@@ -2852,7 +2856,7 @@ ${encryptionKey.replace('key_', '')}
                           How It Works
                         </h3>
                       </div>
-                      <TfChevronDown
+                      <TfChevronDownAnimated
                         className={cn(
                           'h-4 w-4 text-content-muted transition-transform',
                           isHowItWorksOpen && 'rotate-180',
@@ -3199,8 +3203,8 @@ ${encryptionKey.replace('key_', '')}
                                   Sync and backup using Passkeys
                                 </span>
                                 <p className="text-xs text-content-muted">
-                                  Use Face ID or Touch ID to sync chats across
-                                  devices
+                                  Use a passkey or security key to sync chats
+                                  across devices
                                 </p>
                               </div>
                             </div>
@@ -3323,8 +3327,8 @@ ${encryptionKey.replace('key_', '')}
                                       : 'Add Passkey for seamless sync'}
                                   </span>
                                   <p className="text-xs text-content-muted">
-                                    Use Face ID or Touch ID to sync chats across
-                                    devices
+                                    Use a passkey or security key to sync chats
+                                    across devices
                                   </p>
                                 </div>
                               </div>
@@ -3345,7 +3349,7 @@ ${encryptionKey.replace('key_', '')}
                                     toast({
                                       title: 'Passkey added for this device',
                                       description:
-                                        'You can now unlock your chats on this device with Face ID or Touch ID',
+                                        'You can now unlock your chats on this device with your passkey',
                                     })
                                   }
                                 } catch (error) {
@@ -4326,7 +4330,7 @@ ${encryptionKey.replace('key_', '')}
                         >
                           <div className="text-left">
                             <div className="flex items-center gap-3">
-                              <TfPerson
+                              <TfPersonAnimated
                                 className="h-5 w-5 text-content-muted"
                                 aria-hidden="true"
                               />
@@ -4353,7 +4357,7 @@ ${encryptionKey.replace('key_', '')}
                           isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                         )}
                       >
-                        <TfPerson
+                        <TfPersonAnimated
                           className="mx-auto h-12 w-12 text-content-muted"
                           aria-hidden="true"
                         />

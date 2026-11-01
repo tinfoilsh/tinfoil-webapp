@@ -54,7 +54,7 @@ it('registers a new account key through the harness', async () => {
     idempotencyKey: 'nonce',
   })
 })
-it('moves existing encrypted data to the active key through the harness', async () => {
+it('registers the key that recovers existing data, then reseals the data under it', async () => {
   const stored = new Uint8Array(32).fill(1)
   const previous = new Uint8Array(32).fill(2)
   localStorage.setItem(
@@ -89,6 +89,35 @@ it('moves existing encrypted data to the active key through the harness', async 
       ],
       target: { key: 'active-key' },
     },
+    expect.any(AbortSignal),
+  )
+  expect(mocks.register).toHaveBeenCalledExactlyOnceWith({
+    keyB64: 'active-key',
+    ifMatch: '*',
+    createdVia: 'recovery',
+    idempotencyKey: 'nonce',
+  })
+  expect(mocks.register.mock.invocationCallOrder[0]).toBeLessThan(
+    vi.mocked(harnessAPI().client.post).mock.invocationCallOrder[0],
+  )
+})
+it('reseals data older keys sealed once this key is registered', async () => {
+  mocks.validate.mockResolvedValue({
+    canWrite: true,
+    remoteState: 'exists',
+    current: { key_id: 'active-kid', has_data: true },
+  })
+  vi.mocked(harnessAPI().client.post).mockImplementation(async (path) => {
+    if (path !== '/v1/keys/migrate-all')
+      throw new Error(`Unexpected request: ${path}`)
+    return MIGRATION_STARTED
+  })
+
+  await authorizeCurrentPrimaryKeyOrThrow()
+
+  expect(harnessAPI().client.post).toHaveBeenCalledExactlyOnceWith(
+    '/v1/keys/migrate-all',
+    expect.objectContaining({ target: { key: 'active-key' } }),
     expect.any(AbortSignal),
   )
   expect(mocks.register).not.toHaveBeenCalled()

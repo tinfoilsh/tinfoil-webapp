@@ -1,9 +1,5 @@
-import {
-  TfKey,
-  TfLockLocked,
-  TfServer1,
-  TfShieldCheck,
-} from '@tinfoilsh/tinfoil-icons'
+import { TfKey, TfServer1, TfShieldCheck } from '@tinfoilsh/tinfoil-icons'
+import { TfLockLockedAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { memo, useLayoutEffect, useRef, useState } from 'react'
 
 const ARROW_COLOR = 'hsl(var(--content-muted) / 0.7)'
@@ -178,7 +174,7 @@ export const DataFlowDiagram = memo(function DataFlowDiagram() {
           }}
         >
           <div className="flex items-center gap-2 whitespace-nowrap">
-            <TfLockLocked
+            <TfLockLockedAnimated
               className="h-3.5 w-3.5 shrink-0 !text-brand-accent-dark dark:!text-brand-accent-light"
               aria-hidden="true"
             />

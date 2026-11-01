@@ -1,6 +1,7 @@
 'use client'
 
-import { TfFloppyDisk, TfGhost2 } from '@tinfoilsh/tinfoil-icons'
+import { TfFloppyDisk } from '@tinfoilsh/tinfoil-icons'
+import { TfGhost2Animated } from '@tinfoilsh/tinfoil-icons/animated'
 import { cn } from '../ui/utils'
 import { formatRelativeTime } from './chat-list-utils'
 import type { Chat } from './types'
@@ -81,7 +82,7 @@ export function ChatHeader({
       <span key="storage" className="flex items-center gap-1">
         {storageStatus.kind === 'temporary' ? (
           <span className="flex items-center gap-1 text-orange-500">
-            <TfGhost2 className="h-3 w-3" aria-hidden="true" />
+            <TfGhost2Animated className="h-3 w-3" aria-hidden="true" />
             Temporary chat
           </span>
         ) : (

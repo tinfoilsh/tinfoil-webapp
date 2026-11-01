@@ -1,4 +1,11 @@
 // The chat service's routes and the error codes the browser acts on.
+import type { paths } from './openapi'
+import type {
+  ClientErrorCode,
+  ErrorAction,
+  ErrorCode,
+  HarnessErrorBody,
+} from './types'
 
 export const ROUTES = {
   session: '/v1/session',
@@ -51,7 +58,7 @@ export const ROUTES = {
   export: '/v1/export',
   import: '/v1/import',
   importStatus: '/v1/import/status',
-} as const
+} as const satisfies Record<string, keyof paths>
 
 export type HarnessRoute = (typeof ROUTES)[keyof typeof ROUTES]
 
@@ -74,6 +81,9 @@ export const ERROR_CODES = {
   // A stream that closed before its run ended. The run may go on.
   streamInterrupted: 'STREAM_INTERRUPTED',
   invalidStream: 'INVALID_STREAM',
+  // Set by this client, not the harness: a refusal or a run's error without
+  // the members the protocol requires of it.
+  invalidResponse: 'INVALID_RESPONSE',
   upstreamRefused: 'UPSTREAM_REFUSED',
   keyRequired: 'KEY_REQUIRED',
   keyMismatch: 'KEY_MISMATCH',
@@ -101,6 +111,8 @@ export const ERROR_CODES = {
   // Other archives hold the harness's temporary space for now.
   tempSpaceBusy: 'TEMP_SPACE_BUSY',
   projectsRequireCloud: 'PROJECTS_REQUIRE_CLOUD',
+  // The search index could not be rebuilt for a search.
+  searchIndexFailed: 'SEARCH_INDEX_FAILED',
   importInvalid: 'IMPORT_INVALID',
   importTooLarge: 'IMPORT_TOO_LARGE',
   payloadTooLarge: 'PAYLOAD_TOO_LARGE',
@@ -109,8 +121,61 @@ export const ERROR_CODES = {
   credentialRequired: 'CREDENTIAL_REQUIRED',
   // Set by this client, not the harness: a reply this device could not store.
   localSaveFailed: 'LOCAL_SAVE_FAILED',
-} as const
+  // Set by this client, not the harness: a change that needs the account's
+  // settings before they have loaded.
+  profileLoading: 'PROFILE_LOADING',
+} as const satisfies Record<string, ErrorCode | ClientErrorCode>
+
+// What this client does about an error it has no handling of its own for.
+export const ERROR_ACTIONS = {
+  reauthenticate: 'reauthenticate',
+  reload: 'reload',
+  retry: 'retry',
+  wait: 'wait',
+  unlock: 'unlock',
+  revise: 'revise',
+  stop: 'stop',
+} as const satisfies Record<string, ErrorAction>
+
+// The action an error asks for. One this client does not know, as a later
+// harness may ask for, fails the request: the client shows the error and
+// offers nothing more.
+export const actionOf = (action: string): ErrorAction =>
+  Object.values<string>(ERROR_ACTIONS).includes(action)
+    ? (action as ErrorAction)
+    : ERROR_ACTIONS.stop
+
+// Why a request failed when the harness's answer to it is not one the
+// protocol allows.
+export const invalidResponse = (): HarnessErrorBody => ({
+  code: ERROR_CODES.invalidResponse,
+  action: ERROR_ACTIONS.stop,
+  message: 'The chat service sent a response this client cannot read.',
+})
+
+// Set on every answer the enclave seals, which is every answer the harness
+// gives; one without it came from whatever stands in front of the enclave.
+export const RESPONSE_NONCE_HEADER = 'Ehbp-Response-Nonce'
+
+// Why a request failed when its answer did not come from the harness: a
+// refusal the enclave did not seal says nothing this client may show or act
+// on, and whether the request took effect is unknown, as when the connection
+// drops.
+export const unsealedRefusal = (): HarnessErrorBody => ({
+  code: ERROR_CODES.connection,
+  action: ERROR_ACTIONS.retry,
+  message:
+    'The chat service could not be reached. Check your connection and try again.',
+})
 
 // Carries a signed-in account's chat access, which the harness checks before
 // it reads a request's body.
 export const INFERENCE_KEY_HEADER = 'X-Tinfoil-Inference-Key'
+
+// Names the harness instance holding a run, so a request about the run can
+// be routed to it.
+export const HARNESS_INSTANCE_HEADER = 'X-Tinfoil-Harness-Instance'
+
+// Names the last event of a run a client applied, which following the run
+// resumes after.
+export const LAST_EVENT_ID_HEADER = 'Last-Event-ID'

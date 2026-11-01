@@ -3,10 +3,13 @@ import type {
   Chat,
   Message,
   TimelineBlock,
+  TitleState,
+  Annotation as UIAnnotation,
 } from '@/components/chat/types'
 import { DEFAULT_CHAT_TITLE, PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { WIDGET_PREFIX } from './protocol'
 import type {
+  QueueItem,
   ThreadSummary,
   AttachmentDescriptor as WireAttachment,
   TimelineBlock as WireBlock,
@@ -23,6 +26,26 @@ const FETCH_STATUS = {
   completed: 'completed',
   failed: 'failed',
 } as const
+type ToolStatus = keyof typeof SEARCH_STATUS
+
+// The roles and title states this client knows. A later harness may send
+// others.
+const ROLES: ReadonlySet<string> = new Set<Message['role']>([
+  'user',
+  'assistant',
+])
+const TITLE_STATES: ReadonlySet<string> = new Set<TitleState>([
+  'placeholder',
+  'generated',
+  'manual',
+])
+
+const isTitleState = (state: string): state is TitleState =>
+  TITLE_STATES.has(state)
+
+// A tool status this client does not know shows as completed.
+const toolStatus = (status: string): ToolStatus =>
+  Object.hasOwn(SEARCH_STATUS, status) ? (status as ToolStatus) : 'completed'
 
 const isShownTool = (name = '') =>
   name === 'web_search' ||
@@ -102,9 +125,10 @@ function mergedReads(timeline: TimelineBlock[]): TimelineBlock[] {
 function toolBlock(block: WireBlock, streaming: boolean): TimelineBlock | null {
   const toolCallId = block.toolCallId ?? block.id
   const { display } = block
+  const reported = display && toolStatus(display.status)
   const status = streaming
-    ? (display?.status ?? 'running')
-    : display?.status === 'completed'
+    ? (reported ?? 'running')
+    : reported === 'completed'
       ? 'completed'
       : 'failed'
   const timing = { startedAt: block.startedAt, endedAt: block.endedAt }
@@ -169,10 +193,38 @@ export function attachmentView(
     thumbnailBase64: a.thumbnail ?? undefined,
   }
 }
+// A queued turn's attachments that can be shown. One the chat already holds
+// is named by its id alone.
+export function queuedAttachmentViews(
+  attachments: QueueItem['attachments'],
+): Attachment[] {
+  return attachments.flatMap(({ id, kind, fileName, mimeType, ...rest }) =>
+    id && kind && fileName !== undefined
+      ? [
+          attachmentView({
+            id,
+            kind,
+            fileName,
+            mimeType: mimeType ?? '',
+            ...rest,
+          }),
+        ]
+      : [],
+  )
+}
+// A message of a role this client knows.
+type Known<M> = M & { role: Message['role'] }
+export type ShownMessage = Known<WireMessage>
+
+// The messages a chat shows, without those whose role this client does not
+// know. The message actions name a message by its index among them.
+export const shownMessages = <M extends Pick<WireMessage, 'role'>>(
+  messages: readonly M[],
+) => messages.filter((message): message is Known<M> => ROLES.has(message.role))
 // A message as the view shows it, with the latest summary of each thinking
 // block's reasoning.
 export function messageView(
-  message: WireMessage,
+  message: ShownMessage,
   streaming = false,
   summaries: Readonly<Record<string, string>> = {},
 ): Message {
@@ -190,6 +242,8 @@ export function messageView(
       }
     if (block.type === 'content')
       return { ...block, type: 'content', content: block.content ?? '' }
+    // A block of a type this client does not know has no view.
+    if (block.type !== 'tool_call') return []
     // A tool that is neither a search nor a widget, as the code an older
     // chat ran, has no view.
     if (!isShownTool(block.name)) return []
@@ -210,7 +264,10 @@ export function messageView(
     quote: message.quote,
     modelDisplayName: message.modelDisplayName,
     attachments: message.attachments?.map(attachmentView),
-    annotations: message.annotations,
+    annotations: message.annotations?.flatMap(
+      ({ type, url_citation }): UIAnnotation[] =>
+        url_citation ? [{ type, url_citation }] : [],
+    ),
     isError: message.isError,
     isInterrupted: message.isInterrupted,
   }
@@ -223,6 +280,15 @@ export const chatTitle = ({
   titleState === 'placeholder' && title === PLACEHOLDER_CHAT_TITLE
     ? DEFAULT_CHAT_TITLE
     : title
+// When a chat was last active, by which lists order it. A chat with no date
+// at all is ordered last.
+export const lastActive = (
+  chat: Pick<Chat, 'activityAt' | 'createdAt'>,
+): number =>
+  chat.activityAt
+    ? Date.parse(chat.activityAt)
+    : (chat.createdAt?.getTime() ?? 0)
+
 export function threadView(
   thread: ThreadSummary,
   messages: Message[] = [],
@@ -230,10 +296,11 @@ export function threadView(
   return {
     id: thread.id,
     title: chatTitle(thread),
-    titleState: thread.titleState,
-    createdAt: new Date(thread.createdAt),
-    updatedAt: thread.updatedAt,
-    activityAt: thread.activityAt ?? thread.createdAt,
+    // The title of a state this client does not know shows as it is.
+    titleState: isTitleState(thread.titleState) ? thread.titleState : undefined,
+    ...(thread.createdAt ? { createdAt: new Date(thread.createdAt) } : {}),
+    updatedAt: thread.updatedAt ?? undefined,
+    activityAt: thread.activityAt || undefined,
     model: thread.model,
     projectId: thread.projectId ?? undefined,
     webSearchEnabled: thread.webSearchEnabled,

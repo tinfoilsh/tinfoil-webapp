@@ -7,14 +7,16 @@ import {
 } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
-  TfChevronDown,
   TfCopy,
   TfFork,
-  TfLockLocked,
   TfRefreshTwoArrows,
   TfTrash,
-  TfWriting,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfChevronDownAnimated,
+  TfLockLockedAnimated,
+  TfWritingAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import React, { memo, useState, type JSX } from 'react'
 import { ConfirmDialog } from '../../components/confirm-dialog'
 import { CONSTANTS } from '../../constants'
@@ -54,7 +56,7 @@ const MessageMetadata = ({
       </>
     )}
     <span className="flex items-center gap-1 text-[10px]">
-      <TfLockLocked className="h-3 w-3" aria-hidden="true" />
+      <TfLockLockedAnimated className="h-3 w-3" aria-hidden="true" />
       Encrypted
     </span>
   </div>
@@ -344,7 +346,7 @@ const DefaultMessageComponent = ({
       items.push({
         label: 'Edit',
         ariaLabel: 'Edit response',
-        icon: <TfWriting className="h-4 w-4" aria-hidden="true" />,
+        icon: <TfWritingAnimated className="h-4 w-4" aria-hidden="true" />,
         onSelect: handleStartEdit,
       })
     }
@@ -685,7 +687,7 @@ const DefaultMessageComponent = ({
                       <span>
                         {isUserMessageExpanded ? 'Show less' : 'Show more'}
                       </span>
-                      <TfChevronDown
+                      <TfChevronDownAnimated
                         aria-hidden="true"
                         className={cn(
                           'h-3 w-3 transition-transform',
@@ -811,7 +813,10 @@ const DefaultMessageComponent = ({
                           aria-label="Edit message"
                           className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                         >
-                          <TfWriting className="h-4 w-4" aria-hidden="true" />
+                          <TfWritingAnimated
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          />
                         </button>
                         <span
                           aria-hidden="true"

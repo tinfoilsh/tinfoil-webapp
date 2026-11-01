@@ -13,11 +13,13 @@ import {
   TfGlobe,
   TfGlobeX,
   TfMicrophone,
-  TfPlus,
   TfQuote,
-  TfStop,
-  TfTools,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfPlusAnimated,
+  TfStopAnimated,
+  TfToolsAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import type { FormEvent, RefObject } from 'react'
 import {
   useCallback,
@@ -818,7 +820,7 @@ export function ChatInput({
                   type="button"
                   onClick={onClearQuote}
                   aria-label="Remove quote"
-                  className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
+                  className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
                 >
                   <TfBoxX className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
@@ -855,26 +857,26 @@ export function ChatInput({
                         e.stopPropagation()
                         removeDocument(doc.id)
                       }}
-                      className={cn(
-                        'absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full border-[0.5px] border-white',
-                        'bg-surface-chat text-content-secondary shadow-sm hover:bg-surface-chat-background hover:text-content-primary',
-                      )}
+                      className="absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center text-content-secondary transition-colors hover:text-content-primary"
                       aria-label={`Remove ${doc.name}`}
                     >
-                      <TfBoxX className="h-3 w-3" aria-hidden="true" />
+                      <TfBoxX className="h-4 w-4" aria-hidden="true" />
                     </button>
                   )}
-                  <div className="flex items-center gap-2">
+                  <div
+                    className={cn(
+                      'flex items-center gap-2',
+                      removeDocument && 'pr-4',
+                    )}
+                  >
                     <FilePreview
                       filename={doc.name}
                       imageSrc={
-                        doc.attachment?.type === 'image' || doc.imageData
+                        doc.attachment?.type === 'image'
                           ? imageDataUrl(
-                              doc.attachment?.thumbnailBase64 ??
-                                doc.attachment?.base64 ??
-                                doc.imageData?.base64,
-                              doc.attachment?.mimeType ??
-                                doc.imageData?.mimeType,
+                              doc.attachment.thumbnailBase64 ??
+                                doc.attachment.base64,
+                              doc.attachment.mimeType,
                             )
                           : null
                       }
@@ -903,8 +905,7 @@ export function ChatInput({
                           <span className="text-xs text-content-muted">
                             {doc.isGeneratingDescription
                               ? 'Generating text description...'
-                              : doc.attachment?.type === 'image' ||
-                                  doc.imageData
+                              : doc.attachment?.type === 'image'
                                 ? 'Image'
                                 : 'Document'}
                           </span>
@@ -1243,7 +1244,7 @@ export function ChatInput({
                     aria-haspopup="menu"
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                   >
-                    <TfPlus className="h-5 w-5" aria-hidden="true" />
+                    <TfPlusAnimated className="h-5 w-5" aria-hidden="true" />
                   </button>
                   {isInputMenuOpen && (
                     <>
@@ -1283,7 +1284,7 @@ export function ChatInput({
                             }}
                             className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                           >
-                            <TfTools
+                            <TfToolsAnimated
                               className="h-5 w-5 text-content-secondary"
                               aria-hidden="true"
                             />
@@ -1369,7 +1370,7 @@ export function ChatInput({
                     disabled={isTranscribing}
                   >
                     {isRecording ? (
-                      <TfStop
+                      <TfStopAnimated
                         className="h-6 w-6 md:h-5 md:w-5"
                         aria-hidden="true"
                       />
@@ -1433,7 +1434,7 @@ export function ChatInput({
                       aria-label={showStopAction ? 'Stop generation' : 'Send'}
                     >
                       {showStopAction ? (
-                        <TfStop
+                        <TfStopAnimated
                           className="h-6 w-6 text-white/80 transition-colors md:h-5 md:w-5"
                           aria-hidden="true"
                         />

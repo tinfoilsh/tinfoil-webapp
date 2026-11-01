@@ -10,11 +10,14 @@ import {
   TfChevronRight,
   TfDocument,
   TfExternalLink,
-  TfPerson,
   TfQuestionMarkCircle,
   TfSetting,
   TfShieldCheck,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfChevronRightAnimated,
+  TfPersonAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { useRouter } from 'next/router'
 import {
   useCallback,
@@ -409,7 +412,7 @@ export function SidebarAccountMenu({
           {isSignedIn ? (
             <UserAvatar size={28} />
           ) : (
-            <TfPerson className="h-7 w-7" aria-hidden="true" />
+            <TfPersonAnimated className="h-7 w-7" aria-hidden="true" />
           )}
           {syncNeedsAttention && (
             <span
@@ -462,7 +465,7 @@ export function SidebarAccountMenu({
                 onPointerEnter={handleOtherRowEnter}
                 onClick={() => runAndClose(() => onOpenSettings('account'))}
               >
-                <TfPerson className="h-4 w-4" aria-hidden="true" />
+                <TfPersonAnimated className="h-4 w-4" aria-hidden="true" />
                 Account
               </button>
             ) : (
@@ -475,7 +478,7 @@ export function SidebarAccountMenu({
                 onClick={closeAndRestoreFocus}
                 onKeyDown={handleMenuLinkKeyDown}
               >
-                <TfPerson className="h-4 w-4" aria-hidden="true" />
+                <TfPersonAnimated className="h-4 w-4" aria-hidden="true" />
                 Sign in
               </Link>
             )}
@@ -533,7 +536,7 @@ export function SidebarAccountMenu({
               >
                 <TfQuestionMarkCircle className="h-4 w-4" aria-hidden="true" />
                 <span className="flex-1">Help</span>
-                <TfChevronRight
+                <TfChevronRightAnimated
                   className="h-4 w-4 text-content-muted"
                   aria-hidden="true"
                 />

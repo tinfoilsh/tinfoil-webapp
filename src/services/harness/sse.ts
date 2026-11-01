@@ -1,4 +1,4 @@
-import { ERROR_CODES } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES } from './protocol'
 import type { Frame, HarnessErrorBody, HarnessEvent } from './types'
 
 export class HarnessError extends Error {
@@ -62,6 +62,7 @@ export async function* readEvents(
             } catch {
               throw new HarnessError({
                 code: ERROR_CODES.invalidStream,
+                action: ERROR_ACTIONS.stop,
                 message: 'The chat stream contained an invalid event.',
               })
             }
@@ -83,6 +84,7 @@ export async function* readEvents(
             if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
               throw new HarnessError({
                 code: ERROR_CODES.invalidStream,
+                action: ERROR_ACTIONS.stop,
                 message: 'The chat stream contained an invalid cursor.',
               })
             }
@@ -92,12 +94,14 @@ export async function* readEvents(
         if (size > maxFrameCharacters)
           throw new HarnessError({
             code: ERROR_CODES.invalidStream,
+            action: ERROR_ACTIONS.stop,
             message: 'The chat event exceeded its size limit.',
           })
       }
       if (size + buffer.length > maxFrameCharacters)
         throw new HarnessError({
           code: ERROR_CODES.invalidStream,
+          action: ERROR_ACTIONS.stop,
           message: 'The chat event exceeded its size limit.',
         })
       if (chunk.done) break
@@ -105,6 +109,7 @@ export async function* readEvents(
     if (!terminal)
       throw new HarnessError({
         code: ERROR_CODES.streamInterrupted,
+        action: ERROR_ACTIONS.retry,
         message: 'The connection closed. Reconnect to continue this run.',
       })
   } finally {

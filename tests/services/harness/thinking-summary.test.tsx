@@ -65,7 +65,12 @@ describe('the live thinking summary', () => {
     client.events.mockImplementation(async function* (_path, input) {
       const threadId = input.threadId as string
       const frames: Frame['event'][] = [
-        { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+        {
+          type: 'RUN_STARTED',
+          threadId,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
         {
           type: 'MESSAGES_SNAPSHOT',
           messages: [

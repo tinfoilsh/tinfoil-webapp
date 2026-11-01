@@ -139,8 +139,9 @@ describe('NativeBackupExport', () => {
       .mockRejectedValueOnce(
         new HarnessError(
           {
-            code: 'ARCHIVE_BUSY',
+            code: 'RATE_LIMITED',
             message: 'Another archive is being written.',
+            action: 'retry',
           },
           429,
         ),
@@ -167,6 +168,7 @@ describe('NativeBackupExport', () => {
         {
           code: 'ARCHIVE_TOO_LARGE',
           message: 'The backup holds too many items',
+          action: 'revise',
         },
         413,
       ),
