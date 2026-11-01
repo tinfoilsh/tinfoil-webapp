@@ -26,7 +26,7 @@ jobs:
         run: >-
           curl --fail --silent --show-error --location --retry 3
           --output "$RUNNER_TEMP/widgets.json"
-          https://raw.githubusercontent.com/tinfoilsh/confidential-tinfoil-harness/main/widgets.json
+          https://raw.githubusercontent.com/tinfoilsh/confidential-tinfoil-harness/main/internal/domain/widgets.json
 
       - run: npm run test:shuffle
         env:
