@@ -80,7 +80,7 @@ describe('settings opening', () => {
     signOut.mockReset().mockResolvedValue(undefined)
   })
 
-  it("offers a signed-out visitor this browser's chats but no account data", () => {
+  it("lets a signed-out visitor delete this browser's chats but not move or reach account data", () => {
     render(
       <Harness
         initialTab="data"
@@ -106,9 +106,6 @@ describe('settings opening', () => {
       'Import from Claude',
       'Import from Tinfoil',
       'Export Chats',
-    ])
-      expect(screen.getByRole('button', { name })).toBeEnabled()
-    for (const name of [
       'Cloud Sync',
       'Delete all projects',
       'Export Projects for Claude',
@@ -183,7 +180,7 @@ describe('settings opening', () => {
   )
 
   it.each([false, true])(
-    'gates project transfers in settings (premium: %s)',
+    'offers imports and exports to every account and project transfers to subscribers (premium: %s)',
     (isPremium) => {
       authState.isSignedIn = true
       signIn({ cloud: true })
@@ -201,9 +198,18 @@ describe('settings opening', () => {
       expect(
         screen.getByRole('button', { name: 'Delete all projects' }),
       ).toBeInTheDocument()
+      for (const name of [
+        'Import from ChatGPT',
+        'Import from Tinfoil',
+        'Export Chats',
+      ])
+        expect(screen.getByRole('button', { name })).toBeEnabled()
       fireEvent.click(
         screen.getByRole('button', { name: 'Import from Claude' }),
       )
+      expect(
+        screen.getByRole('button', { name: 'Conversations' }),
+      ).toBeEnabled()
       expect(Boolean(screen.queryByRole('button', { name: 'Projects' }))).toBe(
         isPremium,
       )
@@ -778,7 +784,12 @@ describe('settings imports', () => {
     })
     const onChatsUpdated = vi.fn()
     render(
-      <Harness initialTab="data" isSignedIn onChatsUpdated={onChatsUpdated} />,
+      <Harness
+        initialTab="data"
+        isSignedIn
+        isPremium
+        onChatsUpdated={onChatsUpdated}
+      />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Import from ChatGPT' }))
     const picker = document.querySelector<HTMLInputElement>(
@@ -840,7 +851,7 @@ describe('settings imports', () => {
         return { projects: [], nextCursor: null }
       throw new Error(`Unexpected request: ${path}`)
     })
-    render(<Harness initialTab="data" isSignedIn />)
+    render(<Harness initialTab="data" isSignedIn isPremium />)
     fireEvent.click(screen.getByRole('button', { name: 'Import from ChatGPT' }))
     fireEvent.change(
       document.querySelector(

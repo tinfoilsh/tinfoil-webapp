@@ -28,6 +28,9 @@ export const AUTH_SIGNOUT_REQUESTED_AT = 'tinfoil-auth-signout-requested-at'
 // --- localStorage: Sidebar cache --------------------------------------------
 export const CLOUD_CHAT_LIST_CACHE_PREFIX = 'tinfoil-cloud-chat-list-v1'
 
+// --- localStorage: Prompt cache scope ---------------------------------------
+export const PROMPT_CACHE_SECRET_PREFIX = 'tinfoil-prompt-cache-secret-v1'
+
 // --- localStorage: Cloud settings cache -------------------------------------
 // The settings the chat service last stored for an account with cloud sync,
 // shown on this device until they load and while the account's key is

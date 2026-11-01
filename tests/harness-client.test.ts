@@ -1,16 +1,28 @@
+import { API_BASE_URL } from '@/config'
 import { HarnessClient } from '@/services/harness/client'
-import type { HarnessRoute } from '@/services/harness/protocol'
+import {
+  INFERENCE_KEY_HEADER,
+  type HarnessRoute,
+} from '@/services/harness/protocol'
 import { initialChat, reduceEvent } from '@/services/harness/reducer'
 import { HarnessError, readEvents } from '@/services/harness/sse'
 import type {
   Frame,
   Json,
   Message,
+  RateLimit,
   TimelineBlock,
 } from '@/services/harness/types'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { stubChatAccess } from './harness-fixture'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
+
+const transport = () => ({
+  ready: vi.fn().mockResolvedValue(undefined),
+  fetch: vi.fn(),
+  getVerificationDocument: vi.fn(),
+})
 
 function stream(text: string, bytesPerChunk = 1): ReadableStream<Uint8Array> {
   const bytes = new TextEncoder().encode(text)
@@ -655,10 +667,8 @@ describe('continuing a reply', () => {
 })
 
 describe('attested harness transport', () => {
-  const transport = () => ({
-    ready: vi.fn().mockResolvedValue(undefined),
-    fetch: vi.fn(),
-    getVerificationDocument: vi.fn(),
+  beforeEach(() => {
+    stubChatAccess()
   })
   it('refreshes an expired Clerk JWT once while retaining the same turn nonce and body', async () => {
     vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['fr-FR', 'fr'])
@@ -822,4 +832,504 @@ describe('attested harness transport', () => {
         ),
     ).toThrow(HarnessError)
   })
+})
+
+describe('chat access a signed-in client mints', () => {
+  const CONTROLPLANE = API_BASE_URL || 'https://api.tinfoil.sh'
+  const expiresAt = () => new Date(Date.now() + 15 * 60_000).toISOString()
+  // What each request to the harness carried as its chat access.
+  const access = (secure: ReturnType<typeof transport>) =>
+    secure.fetch.mock.calls.map((call) =>
+      new Headers(call[1].headers).get(INFERENCE_KEY_HEADER),
+    )
+  const connect = (secure: ReturnType<typeof transport>) => {
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      () => secure,
+    )
+    const reported: RateLimit[] = []
+    client.onRateLimit = (rateLimit) => reported.push(rateLimit)
+    return { client, reported }
+  }
+  const needsAccess = () =>
+    Response.json(
+      {
+        error: { code: 'CREDENTIAL_REQUIRED', message: 'Chat access expired' },
+      },
+      { status: 401 },
+    )
+
+  it('mints a subscriber token once while it lasts and reports its quota', async () => {
+    const controlplane = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        key: 'chat-token',
+        expires_at: expiresAt(),
+        is_free_tier: false,
+        rate_limit: {
+          max_input_tokens: 1000,
+          input_tokens_used: 10,
+          input_tokens_remaining: 990,
+          resets_at: '2026-10-23T00:00:00Z',
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', controlplane)
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => Response.json({}))
+    const { client, reported } = connect(secure)
+    await client.post('/v1/session', {})
+    await client.post('/v1/threads/turn', {})
+    expect(controlplane).toHaveBeenCalledTimes(1)
+    expect(String(controlplane.mock.calls[0][0])).toBe(
+      `${CONTROLPLANE}/api/chat/token`,
+    )
+    expect(
+      new Headers(controlplane.mock.calls[0][1]?.headers).get('Authorization'),
+    ).toBe('Bearer clerk')
+    expect(access(secure)).toEqual(['chat-token', 'chat-token'])
+    expect(reported).toEqual([
+      {
+        kind: 'hourly',
+        inputTokens: { max: 1000, used: 10, remaining: 990 },
+        resetsAt: '2026-10-23T00:00:00Z',
+      },
+    ])
+  })
+
+  it("sends the account's free key only without a subscription", async () => {
+    const controlplane = vi.fn<typeof fetch>(async (url) =>
+      String(url).endsWith('/api/chat/token')
+        ? new Response('{}', { status: 402 })
+        : Response.json({
+            key: 'free_key',
+            expires_at: expiresAt(),
+            is_free_tier: true,
+            rate_limit: { max_requests: 10, remaining: 7 },
+          }),
+    )
+    vi.stubGlobal('fetch', controlplane)
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => Response.json({}))
+    const { client, reported } = connect(secure)
+    await client.post('/v1/threads/turn', {})
+    expect(controlplane.mock.calls.map((call) => String(call[0]))).toEqual([
+      `${CONTROLPLANE}/api/chat/token`,
+      `${CONTROLPLANE}/api/keys/chat`,
+    ])
+    expect(access(secure)).toEqual(['free_key'])
+    expect(reported).toEqual([
+      { kind: 'free_daily', maxRequests: 10, remaining: 7 },
+    ])
+  })
+
+  it('keeps an hourly cap until it lifts and shows it where access is needed', async () => {
+    const resetsAt = new Date(Date.now() + 30 * 60_000).toISOString()
+    const controlplane = vi.fn<typeof fetch>(async () =>
+      Response.json(
+        {
+          error: 'You have reached your hourly usage limit.',
+          code: 'HOURLY_LIMIT_REACHED',
+          resets_at: resetsAt,
+          rate_limit: {
+            max_output_tokens: 100,
+            output_tokens_used: 100,
+            output_tokens_remaining: 0,
+          },
+        },
+        { status: 429 },
+      ),
+    )
+    vi.stubGlobal('fetch', controlplane)
+    const secure = transport()
+    secure.fetch.mockImplementation(async (url: string, init: RequestInit) =>
+      url.endsWith('/v1/threads/turn') &&
+      !new Headers(init.headers).has(INFERENCE_KEY_HEADER)
+        ? needsAccess()
+        : Response.json({ ok: true }),
+    )
+    const { client, reported } = connect(secure)
+    await expect(client.post('/v1/session', {})).resolves.toEqual({ ok: true })
+    await expect(client.post('/v1/threads/turn', {})).rejects.toMatchObject({
+      code: 'QUOTA_EXHAUSTED',
+      detail: { kind: 'hourly', resetsAt },
+    })
+    // Neither asked again with each request nor downgraded to a free key.
+    expect(controlplane).toHaveBeenCalledTimes(1)
+    expect(reported).toEqual([
+      {
+        kind: 'hourly',
+        outputTokens: { max: 100, used: 100, remaining: 0 },
+        maxRequests: 0,
+        remaining: 0,
+        resetsAt,
+      },
+    ])
+    // Renewing asks again, as when the cap may have lifted.
+    controlplane.mockImplementation(async () =>
+      Response.json({ key: 'chat-token', expires_at: expiresAt() }),
+    )
+    await client.renewCredential()
+    expect(reported.at(-1)).toEqual({ kind: null })
+    await expect(client.post('/v1/threads/turn', {})).resolves.toEqual({
+      ok: true,
+    })
+    expect(controlplane).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    { status: 429, code: 'RATE_LIMITED', retryAfter: null, heldMs: 60_000 },
+    { status: 503, code: 'UPSTREAM_REFUSED', retryAfter: null, heldMs: 60_000 },
+    { status: 403, code: 'UPSTREAM_REFUSED', retryAfter: null, heldMs: 60_000 },
+    { status: 429, code: 'RATE_LIMITED', retryAfter: '120', heldMs: 120_000 },
+  ])(
+    'keeps a $status refusal (Retry-After: $retryAfter) for $heldMs ms before asking again',
+    async ({ status, code, retryAfter, heldMs }) => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      try {
+        const controlplane = vi.fn<typeof fetch>(
+          async () =>
+            new Response('{}', {
+              status,
+              headers: retryAfter ? { 'Retry-After': retryAfter } : {},
+            }),
+        )
+        vi.stubGlobal('fetch', controlplane)
+        const secure = transport()
+        secure.fetch.mockImplementation(async () => needsAccess())
+        const { client } = connect(secure)
+        const first = await client
+          .post('/v1/threads/turn', {})
+          .catch((cause: unknown) => cause)
+        expect(first).toBeInstanceOf(HarnessError)
+        expect(first).toMatchObject({ status, code })
+        expect(controlplane).toHaveBeenCalledOnce()
+
+        vi.advanceTimersByTime(heldMs - 1)
+        await expect(client.post('/v1/threads/turn', {})).rejects.toBe(first)
+        expect(controlplane).toHaveBeenCalledOnce()
+
+        vi.advanceTimersByTime(1)
+        const next = await client
+          .post('/v1/threads/turn', {})
+          .catch((cause: unknown) => cause)
+        expect(next).toBeInstanceOf(HarnessError)
+        expect(next).not.toBe(first)
+        expect(next).toMatchObject({ status, code })
+        expect(controlplane).toHaveBeenCalledTimes(2)
+        expect(access(secure)).toEqual([null, null, null, null, null, null])
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
+
+  describe('while a run stream is open', () => {
+    const RENEWAL_POINT_MS = 10 * 60_000
+    const encoder = new TextEncoder()
+    // A run stream the test holds open until it finishes the run.
+    function heldRun() {
+      let controller!: ReadableStreamDefaultController<Uint8Array>
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          controller = c
+        },
+      })
+      const send = (type: string) =>
+        controller.enqueue(encoder.encode(`data: {"type":"${type}"}\n\n`))
+      send('RUN_STARTED')
+      return {
+        response: () =>
+          new Response(body, {
+            headers: { 'Content-Type': 'text/event-stream' },
+          }),
+        finish: () => {
+          send('RUN_FINISHED')
+          controller.close()
+        },
+      }
+    }
+    // Reads a run's stream, resolving `started` at its first event.
+    function read(client: HarnessClient) {
+      let started!: () => void
+      const running = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      const reading = (async () => {
+        const types: string[] = []
+        for await (const frame of client.events('/v1/threads/follow', {
+          threadId: 'thread',
+          runId: 'run',
+        })) {
+          types.push(frame.event.type)
+          started()
+        }
+        return types
+      })()
+      return { running, reading }
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+      return () => vi.useRealTimers()
+    })
+
+    it('mints the chat token again before it expires and presents it once', async () => {
+      const keys = ['idle-token', 'run-token', 'renewed-token']
+      const controlplane = vi.fn<typeof fetch>(async () =>
+        Response.json({ key: keys.shift(), expires_at: expiresAt() }),
+      )
+      vi.stubGlobal('fetch', controlplane)
+      const run = heldRun()
+      let presented!: () => void
+      const presenting = new Promise<void>((resolve) => {
+        presented = resolve
+      })
+      const secure = transport()
+      secure.fetch.mockImplementation(async (url: string) => {
+        if (url.endsWith('/v1/threads/follow')) return run.response()
+        if (secure.fetch.mock.calls.length > 1) presented()
+        return Response.json({})
+      })
+      const { client } = connect(secure)
+
+      // No run is open: the token is left to expire.
+      await client.post('/v1/session', {})
+      await vi.advanceTimersByTimeAsync(2 * RENEWAL_POINT_MS)
+      expect(controlplane).toHaveBeenCalledOnce()
+      expect(vi.getTimerCount()).toBe(0)
+
+      const { running, reading } = read(client)
+      await running
+      expect(controlplane).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(RENEWAL_POINT_MS - 1)
+      expect(controlplane).toHaveBeenCalledTimes(2)
+      expect(secure.fetch).toHaveBeenCalledTimes(2)
+
+      await vi.advanceTimersByTimeAsync(1)
+      await presenting
+      expect(controlplane).toHaveBeenCalledTimes(3)
+      expect(
+        secure.fetch.mock.calls.map(([url, init]) => [
+          url,
+          new Headers(init.headers).get('Authorization'),
+          new Headers(init.headers).get(INFERENCE_KEY_HEADER),
+        ]),
+      ).toEqual([
+        ['https://harness.example/v1/session', 'Bearer clerk', 'idle-token'],
+        [
+          'https://harness.example/v1/threads/follow',
+          'Bearer clerk',
+          'run-token',
+        ],
+        ['https://harness.example/v1/session', 'Bearer clerk', 'renewed-token'],
+      ])
+
+      run.finish()
+      await expect(reading).resolves.toEqual(['RUN_STARTED', 'RUN_FINISHED'])
+      await vi.advanceTimersByTimeAsync(2 * RENEWAL_POINT_MS)
+      expect(controlplane).toHaveBeenCalledTimes(3)
+      expect(secure.fetch).toHaveBeenCalledTimes(3)
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it("leaves an account's free key as it is", async () => {
+      const controlplane = vi.fn<typeof fetch>(async (url) =>
+        String(url).endsWith('/api/chat/token')
+          ? new Response('{}', { status: 402 })
+          : Response.json({ key: 'free_key', expires_at: expiresAt() }),
+      )
+      vi.stubGlobal('fetch', controlplane)
+      const run = heldRun()
+      const secure = transport()
+      secure.fetch.mockImplementation(async () => run.response())
+      const { client } = connect(secure)
+
+      const { running, reading } = read(client)
+      await running
+      await vi.advanceTimersByTimeAsync(2 * RENEWAL_POINT_MS)
+      run.finish()
+      await expect(reading).resolves.toEqual(['RUN_STARTED', 'RUN_FINISHED'])
+      expect(controlplane).toHaveBeenCalledTimes(2)
+      expect(access(secure)).toEqual(['free_key'])
+    })
+  })
+
+  it('mints again when the harness refuses the access it was sent', async () => {
+    const keys = ['old-token', 'new-token']
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        Response.json({ key: keys.shift(), expires_at: expiresAt() }),
+      ),
+    )
+    const secure = transport()
+    secure.fetch
+      .mockResolvedValueOnce(needsAccess())
+      .mockResolvedValueOnce(Response.json({ ok: true }))
+    const { client } = connect(secure)
+    await expect(client.post('/v1/threads/turn', {})).resolves.toEqual({
+      ok: true,
+    })
+    expect(access(secure)).toEqual(['old-token', 'new-token'])
+  })
+
+  it('mints with the refreshed Clerk session before retrying a turn', async () => {
+    const controlplane = vi.fn<typeof fetch>(async (_url, init) =>
+      new Headers(init?.headers).get('Authorization') === 'Bearer expired'
+        ? new Response('{}', { status: 401 })
+        : Response.json({ key: 'fresh-chat-token', expires_at: expiresAt() }),
+    )
+    vi.stubGlobal('fetch', controlplane)
+    const secure = transport()
+    secure.fetch.mockImplementation(async (_url: string, init: RequestInit) => {
+      const headers = new Headers(init.headers)
+      if (headers.get('Authorization') === 'Bearer expired')
+        return Response.json(
+          { error: { code: 'UNAUTHENTICATED', message: 'Expired session' } },
+          { status: 401 },
+        )
+      return headers.has(INFERENCE_KEY_HEADER)
+        ? Response.json({ ok: true })
+        : needsAccess()
+    })
+    const client = new HarnessClient(
+      'https://harness.example',
+      vi.fn().mockResolvedValueOnce('expired').mockResolvedValue('fresh'),
+      () => secure,
+    )
+    await expect(client.post('/v1/threads/turn', {})).resolves.toEqual({
+      ok: true,
+    })
+    expect(access(secure)).toEqual([null, 'fresh-chat-token'])
+    expect(
+      controlplane.mock.calls.map((call) =>
+        new Headers(call[1]?.headers).get('Authorization'),
+      ),
+    ).toEqual(['Bearer expired', 'Bearer fresh'])
+  })
+
+  it('keeps valid access through transient refresh failures but honors a cap', async () => {
+    const controlplane = stubChatAccess('held-token')
+    const secure = transport()
+    secure.fetch.mockImplementation(async (_url: string, init: RequestInit) =>
+      new Headers(init.headers).has(INFERENCE_KEY_HEADER)
+        ? Response.json({ ok: true })
+        : needsAccess(),
+    )
+    const { client } = connect(secure)
+    await client.post('/v1/threads/turn', {})
+    controlplane.mockImplementation(
+      async () => new Response('{}', { status: 503 }),
+    )
+    await expect(client.renewCredential()).rejects.toMatchObject({
+      status: 503,
+    })
+    await expect(client.post('/v1/threads/turn', {})).resolves.toEqual({
+      ok: true,
+    })
+    expect(access(secure)).toEqual(['held-token', 'held-token'])
+
+    controlplane.mockImplementation(async () =>
+      Response.json(
+        {
+          code: 'HOURLY_LIMIT_REACHED',
+          resets_at: expiresAt(),
+        },
+        { status: 429 },
+      ),
+    )
+    await expect(client.renewCredential()).rejects.toMatchObject({
+      code: 'QUOTA_EXHAUSTED',
+    })
+    await expect(client.post('/v1/threads/turn', {})).rejects.toMatchObject({
+      code: 'QUOTA_EXHAUSTED',
+    })
+    expect(access(secure).slice(2)).toEqual([null, null])
+  })
+
+  it('replaces a pending mint without letting its late answer restore old access', async () => {
+    let release!: (response: Response) => void
+    let started!: () => void
+    const reached = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const held = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    const controlplane = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(() => {
+        started()
+        return held
+      })
+      .mockImplementation(async () =>
+        Response.json({ key: 'renewed-token', expires_at: expiresAt() }),
+      )
+    vi.stubGlobal('fetch', controlplane)
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => Response.json({ ok: true }))
+    const { client, reported } = connect(secure)
+    const previous = client.post('/v1/session', {})
+    await reached
+    const renewal = client.renewCredential()
+    try {
+      await vi.waitFor(() => expect(controlplane).toHaveBeenCalledTimes(2))
+      await renewal
+    } finally {
+      release(
+        Response.json({
+          key: 'old-token',
+          expires_at: expiresAt(),
+          rate_limit: { max_requests: 5, remaining: 0 },
+        }),
+      )
+    }
+    await previous
+    await client.post('/v1/threads/turn', {})
+    expect(access(secure)).not.toContain('old-token')
+    expect(access(secure).at(-1)).toBe('renewed-token')
+    expect(reported).toEqual([{ kind: null }])
+  })
+
+  it.each([true, false])(
+    'drops only denied subscriber access when the free-key fallback fails (subscriber: %s)',
+    async (subscriber) => {
+      let lostSubscription = false
+      const controlplane = vi.fn<typeof fetch>(async (url) => {
+        if (String(url).endsWith('/api/chat/token'))
+          return subscriber && !lostSubscription
+            ? Response.json({
+                key: 'subscriber-token',
+                expires_at: expiresAt(),
+              })
+            : new Response('{}', { status: 402 })
+        return lostSubscription
+          ? new Response('{}', { status: 503 })
+          : Response.json({ key: 'free_key', expires_at: expiresAt() })
+      })
+      vi.stubGlobal('fetch', controlplane)
+      const secure = transport()
+      secure.fetch.mockImplementation(
+        async (_url: string, init: RequestInit) =>
+          new Headers(init.headers).has(INFERENCE_KEY_HEADER)
+            ? Response.json({ ok: true })
+            : needsAccess(),
+      )
+      const { client } = connect(secure)
+      await client.post('/v1/threads/turn', {})
+      lostSubscription = true
+      await expect(client.renewCredential()).rejects.toMatchObject({
+        status: 503,
+      })
+      const next = client.post('/v1/threads/turn', {})
+      if (subscriber) {
+        await expect(next).rejects.toMatchObject({ status: 503 })
+        expect(access(secure)).toEqual(['subscriber-token', null, null])
+      } else {
+        await expect(next).resolves.toEqual({ ok: true })
+        expect(access(secure)).toEqual(['free_key', 'free_key'])
+      }
+    },
+  )
 })

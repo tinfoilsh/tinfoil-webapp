@@ -149,6 +149,15 @@ describe('RateLimitUsage', () => {
     rerender(<RateLimitUsage isPremium={false} />)
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('clears an old quota when renewed access has no usage limits', async () => {
+    const { container } = render(<RateLimitUsage isPremium />)
+    await refreshSession(hourly(500_000))
+    expect(screen.getByText('500K / 2M')).toBeInTheDocument()
+    act(() => client.onRateLimit?.({ kind: null }))
+    expect(getView().rateLimit).toEqual({ kind: null })
+    expect(container).toBeEmptyDOMElement()
+  })
 })
 
 describe('usage reported by runs', () => {
@@ -185,7 +194,10 @@ describe('usage reported by runs', () => {
         type: 'RUN_FINISHED',
         threadId: 'thread-1',
         runId: 'run-1',
-        metadata: { rateLimit: hourly(600_000) },
+        metadata: {
+          rateLimit: hourly(600_000),
+          usage: { prompt_tokens: 100_000 },
+        },
       }),
     )
     await act(() => result.current.send({ content: 'first' }))
@@ -224,5 +236,22 @@ describe('usage reported by runs', () => {
     await act(() => result.current.send({ content: 'third' }))
     expect(getView().rateLimit).toEqual(exhausted)
     expect(screen.getByText('2M / 2M')).toBeInTheDocument()
+  })
+
+  it('debits the mint quota when the terminal report has no quota kind', async () => {
+    const { result } = renderHook(() => useThread())
+    client.events.mockImplementationOnce(
+      run('run-1', hourly(500_000), {
+        type: 'RUN_FINISHED',
+        threadId: 'thread-1',
+        runId: 'run-1',
+        metadata: {
+          rateLimit: { kind: null },
+          usage: { prompt_tokens: 100_000 },
+        },
+      }),
+    )
+    await act(() => result.current.send({ content: 'first' }))
+    expect(getView().rateLimit).toEqual(hourly(600_000))
   })
 })

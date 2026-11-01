@@ -20,7 +20,13 @@ import {
   within,
 } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
-import { client, KEY, signIn, testSession } from '../../harness-fixture'
+import {
+  CACHE_SECRET,
+  client,
+  KEY,
+  signIn,
+  testSession,
+} from '../../harness-fixture'
 import {
   resetChatStoresAroundEachTest,
   storedThread,
@@ -181,6 +187,7 @@ const turnOptions = (webSearch: boolean) => ({
   piiCheck: true,
   genUI: true,
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  cacheSecret: CACHE_SECRET,
 })
 
 it('hides the web search control and has the harness leave search out once Settings turns it off', async () => {

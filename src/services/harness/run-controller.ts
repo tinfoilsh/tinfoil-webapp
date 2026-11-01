@@ -1,4 +1,5 @@
 import type { ImagesById, LocalThreadStore, Originals } from './local-threads'
+import { scopedTurn } from './prompt-cache-secret'
 import { ERROR_CODES, ROUTES, type RunRoute } from './protocol'
 import {
   initialChat,
@@ -195,10 +196,11 @@ export class RunController {
     let threadId = input.threadId
     let succeeded = false
     let view = this.view.get()
+    const sent = 'kind' in input ? scopedTurn(input, this.api.userId) : input
     try {
       for await (const frame of this.api.client.events(
         route,
-        input,
+        sent,
         this.api.signal({ signal: controller.signal, keyless: !input.key }),
       )) {
         const shown = attached()
@@ -377,8 +379,11 @@ export class RunController {
   private reportQuota(event: HarnessEvent) {
     if (event.type === 'STATE_SNAPSHOT')
       this.api.reportRateLimit(event.snapshot.rateLimit)
-    else if (isTerminal(event))
+    else if (isTerminal(event)) {
       this.api.reportRateLimit(event.metadata?.rateLimit)
+      if (!event.metadata?.rateLimit?.kind)
+        this.api.reportUsage(event.metadata?.usage)
+    }
   }
 
   cancel(input: { key?: string; threadId: string | null; runId?: string }) {

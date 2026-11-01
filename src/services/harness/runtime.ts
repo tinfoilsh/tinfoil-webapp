@@ -26,7 +26,7 @@ import {
 } from './local-profile'
 import { ERROR_CODES, ROUTES, type HarnessRoute } from './protocol'
 import { HarnessError } from './sse'
-import type { RateLimit, Session } from './types'
+import type { Json, RateLimit, Session, TokenBudget } from './types'
 
 export type Profile = Record<string, any>
 type View = {
@@ -184,7 +184,14 @@ export class HarnessAPI {
   constructor(
     readonly client: HarnessClient,
     readonly userId: string | null,
-  ) {}
+  ) {
+    // A successful mint can explicitly clear the previous quota. A keyless
+    // harness report carries no such authority.
+    client.onRateLimit = (rateLimit) => {
+      if (active === this && !this.lifetime.signal.aborted)
+        publish({ rateLimit })
+    }
+  }
   key() {
     this.lifetime.signal.throwIfAborted()
     if (!this.userId) return undefined
@@ -300,19 +307,57 @@ export class HarnessAPI {
     return result
   }
 
-  // Shows the quota a session, a run or a refusal reported, as the harness
-  // counted it, for this account only.
+  // Shows the quota a session, a run, a refusal or the account's chat access
+  // reported, for this account only. The harness reports none for a
+  // subscriber, whose quota came with its chat access.
   reportRateLimit(rateLimit: RateLimit | undefined) {
-    if (active !== this || this.lifetime.signal.aborted || !rateLimit) return
+    if (active !== this || this.lifetime.signal.aborted || !rateLimit?.kind)
+      return
     if (JSON.stringify(rateLimit) !== JSON.stringify(view.rateLimit))
       publish({ rateLimit })
   }
 
+  // A run's spend comes off the hourly budget the account's chat access
+  // reported, until the access is minted again with the control plane's
+  // count.
+  reportUsage(usage: Json | undefined) {
+    const limit = view.rateLimit
+    if (active !== this || limit?.kind !== 'hourly' || !usage) return
+    const spend = (budget: TokenBudget | undefined, tokens: unknown) =>
+      budget && typeof tokens === 'number' && tokens > 0
+        ? {
+            max: budget.max,
+            used: budget.used + tokens,
+            remaining: Math.max(0, budget.remaining - tokens),
+          }
+        : budget
+    const tokens = usage as Record<string, unknown>
+    publish({
+      rateLimit: {
+        ...limit,
+        inputTokens: spend(limit.inputTokens, tokens.prompt_tokens),
+        outputTokens: spend(limit.outputTokens, tokens.completion_tokens),
+      },
+    })
+  }
+
   async refresh({ credentials = false }: { credentials?: boolean } = {}) {
+    // A refusal reaches the view as the quota it reports, and the requests
+    // that need chat access.
+    if (credentials)
+      await this.client.renewCredential(this.lifetime.signal).catch((cause) => {
+        this.lifetime.signal.throwIfAborted()
+        logError('Failed to renew chat access', cause, {
+          component: 'HarnessAPI',
+          action: 'refresh',
+        })
+      })
     const session = await this.post<Session>(
       ROUTES.session,
-      credentials ? { refreshCredentials: true } : {},
-      { keyless: true },
+      {},
+      {
+        keyless: true,
+      },
     )
     publish({ session, error: undefined })
     this.reportRateLimit(session.rateLimit)

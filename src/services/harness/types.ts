@@ -260,6 +260,7 @@ export interface Turn {
     webSearch?: boolean
     genUI?: boolean
     piiCheck?: boolean
+    cacheSecret?: string
   }
 }
 
