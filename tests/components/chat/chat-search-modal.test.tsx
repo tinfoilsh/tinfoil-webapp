@@ -1,4 +1,5 @@
 import { ChatSearchModal } from '@/components/chat/chat-search-modal'
+import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { createEvent, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -6,6 +7,7 @@ const searchState = {
   results: [] as {
     id: string
     title: string
+    titleState?: 'placeholder' | 'generated' | 'manual'
     messageCount: number
     projectId?: string
   }[],
@@ -17,6 +19,7 @@ const searchState = {
 
 vi.mock('@/hooks/use-chat-search', () => ({
   useChatSearch: () => searchState,
+  useChatsOutsideProjects: () => [],
 }))
 
 const chats = [
@@ -75,6 +78,24 @@ describe('ChatSearchModal', () => {
       'Grilling lamb',
     ])
     expect(screen.getByText('Recent chats')).toBeInTheDocument()
+  })
+
+  it('shows a found chat still waiting for its title as Untitled', () => {
+    searchState.results = [
+      {
+        id: 'waiting',
+        title: PLACEHOLDER_CHAT_TITLE,
+        titleState: 'placeholder',
+        messageCount: 2,
+      },
+    ]
+    renderModal({ searchEnabled: true })
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'lamb' },
+    })
+    expect(
+      screen.getAllByRole('option').map((option) => option.textContent),
+    ).toEqual(['Untitled'])
   })
 
   it('filters locally by title when server search is unavailable', () => {

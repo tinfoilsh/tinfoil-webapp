@@ -69,6 +69,11 @@ export interface TimelineBlock {
   display?: ToolDisplay
   // A widget's stored arguments no longer match the widget's declaration.
   invalidArguments?: boolean
+  // When a reasoning or tool step ran, in epoch milliseconds, and how long
+  // a reasoning step thought, in seconds.
+  startedAt?: number
+  endedAt?: number
+  duration?: number
 }
 
 export interface Message {
@@ -98,6 +103,7 @@ export interface ThreadSummary {
   titleState: 'placeholder' | 'generated' | 'manual'
   createdAt: string
   updatedAt: string
+  activityAt?: string
   model: string
   projectId: string | null
   pinned: boolean
@@ -215,6 +221,7 @@ export interface Session {
 
 // Files the composer takes by extension, and the largest each may be.
 export interface FileGroup {
+  imageMaxSide?: number
   accept: string[]
   maxBytes: number
 }
@@ -265,8 +272,13 @@ export interface FollowInput {
 
 export interface QueueItem {
   queueId: string
-  content: string
+  content?: string | null
   kind?: string
+  quote?: string | null
+  attachments?: Pick<
+    AttachmentDescriptor,
+    'id' | 'kind' | 'fileName' | 'mimeType' | 'size' | 'thumbnail'
+  >[]
 }
 export interface Snapshot {
   thread: ThreadSummary | null
@@ -300,6 +312,16 @@ export type ActivityPatch =
 // What a run's final event reports. A device chat's run returns the whole
 // thread.
 export interface RunMetadata {
+  messages?: Pick<
+    Message,
+    | 'id'
+    | 'model'
+    | 'modelDisplayName'
+    | 'usage'
+    | 'annotations'
+    | 'isError'
+    | 'isInterrupted'
+  >[]
   cancelled?: boolean
   rateLimit?: RateLimit
   usage?: Json

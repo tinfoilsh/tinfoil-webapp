@@ -1,10 +1,12 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
+import { getView } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Thread, Turn } from '@/services/harness/types'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { client, signIn } from '../../harness-fixture'
+import { client, signIn, testSession } from '../../harness-fixture'
 import { refuseFetch } from './chat-interface-fixture'
+import { chatPage, errorHandling } from './chat-page-mocks'
 
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
 vi.mock('next/router', async () => (await import('./chat-page-mocks')).router)
@@ -72,6 +74,8 @@ const thread: Thread = {
 const turn = (call: number) => client.events.mock.calls[call][1] as Turn
 
 beforeEach(() => {
+  chatPage.premium = false
+  errorHandling.logError.mockClear()
   refuseFetch()
   signIn({ cloud: true })
   client.post.mockImplementation(async (path: string) => {
@@ -82,6 +86,64 @@ beforeEach(() => {
 })
 
 describe('a turn the harness refuses', () => {
+  it('rechecks the harness entitlement after a subscription upgrade', async () => {
+    const api = signIn({
+      cloud: true,
+      session: {
+        ...testSession,
+        rateLimit: { kind: 'free_daily', maxRequests: 5, remaining: 0 },
+      },
+    })
+    api.reportRateLimit({ kind: 'free_daily', maxRequests: 5, remaining: 0 })
+    client.post.mockImplementation(async (path, input) => {
+      if (path === '/v1/session') {
+        expect(input).toEqual({ refreshCredentials: true })
+        return {
+          ...testSession,
+          rateLimit: {
+            kind: 'hourly',
+            inputTokens: { max: 10000, used: 0, remaining: 10000 },
+          },
+        }
+      }
+      if (path === '/v1/profile/get') return {}
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      throw new Error(`Unexpected ${path}`)
+    })
+    const { rerender } = render(<ChatInterface />)
+    expect(getView().rateLimit?.kind).toBe('free_daily')
+    await act(async () => {
+      chatPage.premium = true
+      rerender(<ChatInterface />)
+    })
+    await waitFor(() => expect(getView().rateLimit?.kind).toBe('hourly'))
+  })
+  it('keeps a failed recheck after a subscription change out of the reply error banner', async () => {
+    client.post.mockImplementation(async (path) => {
+      if (path === '/v1/session') throw new TypeError('Network unavailable')
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      throw new Error(`Unexpected ${path}`)
+    })
+    const { rerender } = render(<ChatInterface />)
+    await screen.findByRole('textbox', { name: /message/i })
+
+    await act(async () => {
+      chatPage.premium = true
+      rerender(<ChatInterface />)
+    })
+
+    await waitFor(() =>
+      expect(
+        errorHandling.logError.mock.calls.map(([message]) => message),
+      ).toContain('Failed to refresh after a subscription change'),
+    )
+    expect(client.post).toHaveBeenCalledWith(
+      '/v1/session',
+      { refreshCredentials: true },
+      expect.any(AbortSignal),
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
   it('explains a full queue without the quota or upgrade, and resends the message', async () => {
     const { messages: _messages, hasOlder: _hasOlder, ...summary } = thread
     let release!: () => void
@@ -135,4 +197,98 @@ describe('a turn the harness refuses', () => {
     expect(turn(2)).toEqual(turn(1))
     release()
   })
+  it.each([
+    [
+      'a lost connection',
+      new TypeError('Failed to fetch'),
+      'Connection problemCheck your internet connection, then resend your message. Your message was not lost.',
+      false,
+    ],
+    [
+      'the hourly limit',
+      new HarnessError(
+        { code: 'RATE_LIMITED', message: 'You reached the hourly limit' },
+        429,
+      ),
+      'Too many requests right nowWait a moment, then resend your message. Your message was not lost.',
+      false,
+    ],
+    [
+      'a connection lost once the harness queued it',
+      new TypeError('Failed to fetch'),
+      'Connection problemCheck your internet connection, then resend your message. Your message was not lost.',
+      true,
+    ],
+  ])(
+    'keeps the reply streaming when %s refuses a message queued behind it',
+    async (_refusal, refusal, explanation, queued) => {
+      const { messages: _messages, hasOlder: _hasOlder, ...summary } = thread
+      let release!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let finish!: () => void
+      const finished = new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      client.events.mockImplementationOnce(async function* () {
+        const frames: Frame['event'][] = [
+          { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-1' },
+          { type: 'STATE_SNAPSHOT', snapshot: { thread: summary, queue: [] } },
+        ]
+        for (const [id, event] of frames.entries()) yield { id, event }
+        await held
+        yield {
+          id: frames.length,
+          event: {
+            type: 'TEXT_MESSAGE_CHUNK',
+            messageId: 'a1',
+            delta: ' and more',
+          },
+        }
+        await finished
+      })
+      client.events.mockImplementationOnce(async function* () {
+        if (queued)
+          yield {
+            id: 0,
+            event: {
+              type: 'STATE_DELTA',
+              runId: 'run-2',
+              delta: [
+                {
+                  op: 'add',
+                  path: '/queue/-',
+                  value: { queueId: 'run-2', content: 'And one more' },
+                },
+              ],
+            },
+          } satisfies Frame
+        throw refusal
+      })
+      render(<ChatInterface initialChatId={THREAD_ID} />)
+      await screen.findByText('Hello there')
+      await waitFor(() =>
+        expect(client.events).toHaveBeenCalledWith(
+          '/v1/threads/follow',
+          expect.objectContaining({ runId: 'run-1' }),
+          expect.any(AbortSignal),
+        ),
+      )
+      const input = screen.getByRole('textbox', { name: /message/i })
+      fireEvent.change(input, { target: { value: 'And one more' } })
+      fireEvent.submit(input.closest('form')!)
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(explanation)
+      expect(
+        screen.getByRole('button', { name: 'Stop generation' }),
+      ).toBeInTheDocument()
+      await act(async () => release())
+      expect(screen.getByText('Hello there and more')).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: 'Stop generation' }),
+      ).toBeInTheDocument()
+      finish()
+    },
+  )
 })

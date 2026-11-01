@@ -1,15 +1,47 @@
 import { GENUI_WIDGETS } from '@/components/chat/genui/registry'
+import {
+  ArtifactRetryError,
+  type ArtifactRetryErrorCode,
+} from '@/components/chat/genui/retry'
 import { generateReverseId } from '@/utils/reverse-id'
 import { now } from './local-threads'
 import type { OpenAttachments } from './open-attachments'
 import { uploaded } from './open-attachments'
-import { presetIdOf, type OpenChat, type PresetChoice } from './open-chat'
-import { ROUTES } from './protocol'
+import {
+  presetIdOf,
+  type OpenChat,
+  type OpenChatResult,
+  type PresetChoice,
+} from './open-chat'
+import { ERROR_CODES, ROUTES } from './protocol'
 import type { RunController } from './run-controller'
 import { getView, type HarnessAPI, type Profile } from './runtime'
+import { HarnessError } from './sse'
 import type { Store } from './store'
 import type { ThreadStore, TurnSettings } from './thread-store'
-import type { Session, ThreadMessage, Turn } from './types'
+import type {
+  HarnessErrorBody,
+  Message,
+  Session,
+  ThreadMessage,
+  Turn,
+} from './types'
+
+// What a widget's card says of a retry the harness refused or could not
+// finish.
+function widgetRetryFailure(
+  detail: HarnessErrorBody | undefined,
+): ArtifactRetryErrorCode {
+  switch (detail?.code) {
+    case ERROR_CODES.threadNotFound:
+    case ERROR_CODES.toolUnavailable:
+      return 'unavailable_target'
+    case ERROR_CODES.revisionConflict:
+      return 'stale_target'
+    default:
+      return 'request_failed'
+  }
+}
 
 export interface TurnContext {
   api: HarnessAPI
@@ -30,7 +62,7 @@ export interface TurnContext {
   // A new chat names the route it will open under.
   claim(threadId: string): void
   // Opens the chat the route names again, when nothing else reconnects.
-  reopen(): Promise<void> | undefined
+  reopen(): Promise<OpenChatResult> | undefined
 }
 
 // The turns of the open chat: sending, regenerating, continuing, and what
@@ -64,6 +96,13 @@ export function chatTurns({
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
   })
+  const turnSettings = (current: OpenChat): TurnSettings => ({
+    first: !current.id || current.unsaved === current.id,
+    presetId: presetIdOf(current, profile),
+    presetChosen: current.presetChosen,
+    projectId,
+    profile: getView().profile,
+  })
   // A new chat takes its id with its first turn, and keeps showing the
   // prompt it started with and the settings the prompt chose.
   function startChat(choice: PresetChoice): string {
@@ -88,7 +127,8 @@ export function chatTurns({
     return threadId
   }
   // A new chat's first turn leaves the settings its prompt chooses to the
-  // harness, which applies the prompt.
+  // harness, which applies the prompt. Web search turned off in Settings
+  // stays off whatever the prompt chooses.
   const leaveToPreset = (
     options: Turn['options'],
     choice: PresetChoice,
@@ -96,7 +136,8 @@ export function chatTurns({
     if (!options) return options
     const left = { ...options }
     if (choice.model) delete left.model
-    if (choice.webSearchEnabled !== undefined) delete left.webSearch
+    if (choice.webSearchEnabled !== undefined && left.webSearch !== false)
+      delete left.webSearch
     return left
   }
   // The message a turn adds, under the id the harness stores it with. A
@@ -115,29 +156,64 @@ export function chatTurns({
       ...(sent.length ? { attachments: sent } : {}),
     }
   }
+  // A message as the view shows it, without its uploads' contents.
+  const shownMessage = ({
+    attachments: sent,
+    ...message
+  }: ThreadMessage): Message =>
+    sent
+      ? {
+          ...message,
+          attachments: sent.map(
+            ({ base64: _base64, pages: _pages, ...shown }) => shown,
+          ),
+        }
+      : message
   // A message the user sends shows at once, until the run's first window
   // replaces the messages.
-  function showSent({ attachments: sent, ...message }: ThreadMessage) {
+  function showSent(message: ThreadMessage) {
     controller.view.update((state) => ({
       ...state,
-      messages: [
-        ...state.messages,
-        sent
-          ? {
-              ...message,
-              attachments: sent.map(
-                ({ base64: _base64, pages: _pages, ...shown }) => shown,
-              ),
-            }
-          : message,
-      ],
+      messages: [...state.messages, shownMessage(message)],
     }))
+  }
+  // The messages a turn that regenerates, edits or continues leaves, as the
+  // harness applies it: the messages after the one it names go, and an
+  // edited message is sent again under the turn's id. A turn queued behind
+  // a running reply changes nothing yet.
+  function appliedTurn(input: Turn): Message[] | null {
+    const { messages, status } = controller.view.get()
+    if (status === 'streaming' || status === 'queued') return null
+    const index = messages.findIndex(({ id }) => id === input.messageId)
+    const target = messages[index]
+    if (!target) return null
+    if (input.kind === 'regenerate' || input.kind === 'continue')
+      return target.role === 'assistant'
+        ? messages.slice(0, input.kind === 'continue' ? index + 1 : index)
+        : null
+    if (input.kind !== 'edit' || target.role !== 'user') return null
+    const quote = input.quote ?? target.quote
+    const sent = input.attachments
+      ? uploaded(input.attachments)
+      : (target.attachments ?? [])
+    return [
+      ...messages.slice(0, index),
+      shownMessage({
+        id: input.clientRequestId,
+        role: 'user',
+        createdAt: now(),
+        content: input.content ?? target.content ?? '',
+        ...(quote ? { quote } : {}),
+        ...(sent.length ? { attachments: sent } : {}),
+      }),
+    ]
   }
   function send(fields: Partial<Turn> = {}): Promise<boolean> | undefined {
     const threads = openStore()
+    if (controller.view.get().status === 'submitting') return
     if (threads.local && controller.startingThread() !== undefined) return
     const current = open.get()
-    if (current.id && moving.has(current.id)) return
+    if (current.loadingId || (current.id && moving.has(current.id))) return
     patch({ failure: null })
     attachments.rememberSent(fields.attachments)
     let key: { key?: string }
@@ -147,46 +223,98 @@ export function chatTurns({
       report(cause)
       return
     }
-    const settings: TurnSettings = {
-      first: !current.id || current.unsaved === current.id,
-      presetId: presetIdOf(current, profile),
-      presetChosen: current.presetChosen,
-      projectId,
-      profile: getView().profile,
-    }
+    const settings = turnSettings(current)
     const choice = presetChoice()
     const threadId = startChat(choice)
     const defaults = turnDefaults()
-    return (async () => {
-      const turn = await threads.prepareTurn(
-        threadId,
-        {
-          defaults: {
-            ...defaults,
-            options: leaveToPreset(defaults.options, choice),
-          },
-          fields: {
-            ...fields,
-            ...(fields.options
-              ? { options: leaveToPreset(fields.options, choice) }
-              : {}),
-          },
-          key,
-        },
-        settings,
-      )
-      if (!turn) return false
-      controller.pending = { input: turn.resend, run: turn.run }
-      const message = sentMessage(turn.input)
-      if (message) {
-        showSent(message)
-        await turn.keep?.(message)
+    const shown = controller.track()
+    const before = controller.view.get().messages
+    const message = sentMessage({ ...defaults, ...fields })
+    if (message) showSent(message)
+    const applied = appliedTurn({ ...defaults, ...fields })
+    if (applied)
+      controller.view.update((state) => ({ ...state, messages: applied }))
+    // A turn that did not start leaves the chat as the harness stores it.
+    const unapply = () => {
+      if (applied && shown() && controller.view.get().messages === applied)
+        controller.view.update((state) => ({ ...state, messages: before }))
+    }
+    const status = controller.view.get().status
+    const submit = (): Promise<boolean> => {
+      controller.retryPreparation = null
+      const submission =
+        status === 'streaming' || status === 'queued'
+          ? undefined
+          : { threadId, cancelled: false }
+      if (submission) {
+        controller.submission = submission
+        controller.view.update((state) => ({
+          ...state,
+          status: 'submitting',
+          runId: undefined,
+          error: undefined,
+        }))
       }
-      return controller.run(ROUTES.turn, turn.input, { device: turn.run })
-    })().catch((cause) => {
-      report(cause)
-      return false
-    })
+      return (async () => {
+        const turn = await threads.prepareTurn(
+          threadId,
+          {
+            defaults: {
+              ...defaults,
+              options: leaveToPreset(defaults.options, choice),
+            },
+            fields: {
+              ...fields,
+              ...(fields.options
+                ? { options: leaveToPreset(fields.options, choice) }
+                : {}),
+            },
+            key,
+          },
+          settings,
+        )
+        if (!turn || !shown()) {
+          unapply()
+          return false
+        }
+        const pending = { input: turn.resend, run: turn.run }
+        controller.pending = pending
+        if (message) {
+          await turn.keep?.(message)
+        }
+        if (!shown() || submission?.cancelled) {
+          if (turn.run) controller.settle(turn.run)
+          if (shown()) controller.pending = null
+          unapply()
+          return false
+        }
+        const ran = await controller.run(ROUTES.turn, turn.input, {
+          device: turn.run,
+          submission,
+        })
+        if (controller.pending === pending) unapply()
+        return ran
+      })()
+        .catch((cause) => {
+          if (shown()) {
+            if (submission) controller.retryPreparation = submit
+            report(cause)
+          }
+          unapply()
+          return false
+        })
+        .finally(() => {
+          if (submission && controller.submission === submission) {
+            controller.submission = null
+            controller.view.update((state) =>
+              state.status === 'submitting'
+                ? { ...state, status: 'idle' }
+                : state,
+            )
+          }
+        })
+    }
+    return submit()
   }
   // A refused content key rejects these actions instead of throwing, as
   // their callers report a rejection.
@@ -233,6 +361,7 @@ export function chatTurns({
   }
   async function reconnect() {
     patch({ failure: null })
+    if (controller.retryPreparation) return controller.retryPreparation()
     const threads = openStore()
     const threadId = open.get().id
     // A turn whose acceptance never arrived is sent again with its nonce,
@@ -263,6 +392,53 @@ export function chatTurns({
     if (!failedRun || status !== 'error') return reconnect()
     return send({ ...fields, kind: 'retry' })
   }
+  // Asks the harness for new arguments for a widget call, while the chat
+  // shows no run or error of its own. A retry that does not repair the
+  // widget rejects with why.
+  async function retryToolCall(fields: Partial<Turn>) {
+    const threads = openStore()
+    const current = open.get()
+    const { status } = controller.view.get()
+    if (
+      !current.id ||
+      current.loadingId ||
+      moving.has(current.id) ||
+      status === 'submitting' ||
+      status === 'streaming' ||
+      status === 'queued' ||
+      (threads.local && controller.startingThread() !== undefined)
+    )
+      throw new ArtifactRetryError('unavailable_target')
+    const shown = controller.track()
+    const widgetRetry: { failure?: HarnessErrorBody } = {}
+    let repaired: boolean
+    try {
+      const turn = await threads.prepareTurn(
+        current.id,
+        {
+          defaults: turnDefaults(),
+          fields: { ...fields, kind: 'retryToolCall', content: '' },
+          key: threads.runKey(),
+        },
+        turnSettings(current),
+      )
+      if (!turn || !shown()) throw new ArtifactRetryError('unavailable_target')
+      repaired = await controller.run(ROUTES.turn, turn.input, {
+        device: turn.run,
+        widgetRetry,
+      })
+    } catch (cause) {
+      if (cause instanceof ArtifactRetryError) throw cause
+      throw new ArtifactRetryError(
+        widgetRetryFailure(
+          cause instanceof HarnessError ? cause.detail : undefined,
+        ),
+        { cause },
+      )
+    }
+    if (repaired) return true
+    throw new ArtifactRetryError(widgetRetryFailure(widgetRetry.failure))
+  }
   const queueInput = (queueId: string) => ({
     ...openStore().runKey(),
     threadId: open.get().id,
@@ -275,6 +451,7 @@ export function chatTurns({
     continueReply,
     reconnect,
     retry,
+    retryToolCall,
     sendQueued: async (queueId: string) =>
       controller.sendQueued(queueInput(queueId)),
     removeQueued: async (queueId: string) =>

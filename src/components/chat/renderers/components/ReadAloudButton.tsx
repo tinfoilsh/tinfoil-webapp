@@ -20,7 +20,9 @@ export function ReadAloudButton({
   variant?: 'icon' | 'menu'
 }) {
   const [owner] = useState(() => Symbol('read-aloud'))
-  const available = useSessionFeature('speech')
+  // Offered while the session loads, so replies keep their layout when it
+  // arrives.
+  const available = useSessionFeature('speech', true)
   const speak = useSpeak()
   const snapshot = useSyncExternalStore(
     speechPlayer.subscribe,

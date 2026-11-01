@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   chatInterface: vi.fn(),
   router: {
+    pathname: '/newchat',
     isReady: true,
     query: {} as Record<string, string | string[] | undefined>,
   },
@@ -13,6 +14,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('next/router', () => ({
   useRouter: () => mocks.router,
+}))
+vi.mock('@/hooks/use-subscription-status', () => ({
+  useSubscriptionStatus: () => ({
+    isLoading: false,
+    chat_subscription_active: false,
+  }),
 }))
 
 vi.mock('@/components/chat', () => ({

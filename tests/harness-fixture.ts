@@ -87,6 +87,7 @@ export interface FakeClient {
   upload: Mock
   download: Mock
   stream: Mock
+  multipart: Mock
 }
 
 function unexpected(path: string): never {
@@ -129,6 +130,7 @@ export function signIn({
     upload: vi.fn(async (path: string) => unexpected(path)),
     download: vi.fn(async (path: string) => unexpected(path)),
     stream: vi.fn(async (path: string) => unexpected(path)),
+    multipart: vi.fn(async (path: string) => unexpected(path)),
   }
   const api = new HarnessAPI(client as unknown as HarnessClient, userId)
   const unlocked = !!userId && !locked
@@ -138,6 +140,7 @@ export function signIn({
     session,
     profile,
     keyReady: unlocked || !userId,
+    keyLocked: cloud && !unlocked,
     profileReady: true,
   })
   return api

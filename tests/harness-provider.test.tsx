@@ -198,6 +198,66 @@ it('shows the loader without contacting services until Clerk loads', async () =>
   })
 })
 
+it('opens a shared chat as a visitor before Clerk loads, and keeps that session until the page is left', async () => {
+  auth.isLoaded = false
+  // A new element each time, so a rerender reads the auth state again.
+  const shared = () => (
+    <HarnessProvider anonymous>
+      <SessionStatus />
+    </HarnessProvider>
+  )
+  const view = render(shared())
+  await waitFor(() =>
+    expect(
+      screen.getByText('Anonymous chat ready with 9 requests'),
+    ).toBeInTheDocument(),
+  )
+  const sent = () =>
+    secure.fetch.mock.calls.map(([url, init]) => [
+      url,
+      new Headers(init.headers).get('Authorization'),
+    ])
+  expect(sent()).toEqual([
+    ['https://harness.example/v1/session', 'Bearer free_guest'],
+  ])
+
+  // Clerk loads a signed-in account, which the shared chat does not use.
+  auth.isLoaded = true
+  auth.userId = 'alice'
+  auth.getToken.mockResolvedValue('alice-jwt')
+  view.rerender(shared())
+  await act(async () => {})
+
+  expect(
+    screen.getByText('Anonymous chat ready with 9 requests'),
+  ).toBeInTheDocument()
+  expect(sent()).toEqual([
+    ['https://harness.example/v1/session', 'Bearer free_guest'],
+  ])
+  expect(auth.getToken).not.toHaveBeenCalled()
+  await expect(authTokenManager.getValidToken()).rejects.toMatchObject({
+    reason: 'not-initialized',
+  })
+
+  // Another page opens the account's own session.
+  secure.fetch.mockImplementation(async () =>
+    Response.json({ ...testSession, user: { id: 'alice', anonymous: false } }),
+  )
+  view.rerender(
+    <HarnessProvider>
+      <SessionStatus />
+    </HarnessProvider>,
+  )
+  await waitFor(() => expect(secure.fetch).toHaveBeenCalledTimes(2))
+  expect(sent()[1]).toEqual([
+    'https://harness.example/v1/session',
+    'Bearer alice-jwt',
+  ])
+  await waitFor(() =>
+    expect(screen.getByText('Connecting')).toBeInTheDocument(),
+  )
+})
+
 function StorageMode() {
   const { session, keyReady, profileReady, profile } = useHarness()
   if (!session || !profileReady) return <p>Loading settings</p>

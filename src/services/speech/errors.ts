@@ -1,3 +1,4 @@
+import { ERROR_CODES } from '@/services/harness/protocol'
 import { HarnessError } from '@/services/harness/sse'
 
 export type SpeechErrorCode =
@@ -10,19 +11,20 @@ export class SpeechError extends Error {
   }
 }
 
-// Statuses with which the harness refuses the text itself, as one with
-// nothing to read aloud or too long, and says why.
-const REFUSED_TEXT_STATUSES = new Set([400, 413])
-
 export function speechErrorMessage(error: unknown): string {
   if (error instanceof HarnessError && error.status === 429) {
     return 'Speech usage limit reached. Please try again later.'
   }
+  // The harness refuses a text with nothing to read aloud as a bad request,
+  // and one too long to read as too large.
+  if (error instanceof HarnessError && error.code === ERROR_CODES.badRequest) {
+    return 'There is no readable text in this response.'
+  }
   if (
     error instanceof HarnessError &&
-    REFUSED_TEXT_STATUSES.has(error.status ?? 0)
+    error.code === ERROR_CODES.payloadTooLarge
   ) {
-    return error.message
+    return 'This response is too long to read aloud.'
   }
   if (error instanceof SpeechError) {
     switch (error.code) {

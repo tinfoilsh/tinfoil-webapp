@@ -42,29 +42,43 @@ beforeEach(() => {
 })
 
 describe('DocumentList document text', () => {
-  it('reads a stored document when it is opened and shows its text', async () => {
+  it('reads a stored document as its chip shows, and previews its text', async () => {
     const reading = deferred<string>()
     load.mockReturnValueOnce(reading.promise)
-    renderList([stored])
-    expect(load).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole('button', { name: /report\.pdf/ }))
+    const { rerender } = renderList([stored])
 
     expect(load).toHaveBeenCalledExactlyOnceWith(stored)
-    expect(screen.getByRole('dialog')).toHaveTextContent('Loading document…')
     await act(async () =>
       reading.resolve('# Quarterly report\nRevenue grew.\nCosts fell.\n'),
     )
+    expect(
+      screen.getByRole('button', {
+        name: /^report\.pdf Revenue grew\.\s+Costs fell\.$/,
+      }),
+    ).toBeInTheDocument()
+
+    // Showing the chip again, or opening it, reads nothing again.
+    rerender(
+      <DocumentTextProvider load={(attachment) => load(attachment)}>
+        <DocumentList attachments={[{ ...stored }]} messageIndex={0} />
+      </DocumentTextProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /report\.pdf/ }))
     expect(screen.getByRole('dialog')).toHaveTextContent(
       '# Quarterly report Revenue grew. Costs fell.',
     )
+    expect(load).toHaveBeenCalledOnce()
+  })
 
-    // The chip previews the text it read, and reopening reads nothing again.
-    fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0])
-    expect(
-      screen.getByRole('button', { name: /report\.pdf Revenue grew\./ }),
-    ).toBeInTheDocument()
+  it('opens a document whose preview is still being read', async () => {
+    const reading = deferred<string>()
+    load.mockReturnValueOnce(reading.promise)
+    renderList([stored])
+
     fireEvent.click(screen.getByRole('button', { name: /report\.pdf/ }))
+
+    expect(screen.getByRole('dialog')).toHaveTextContent('Loading document…')
+    await act(async () => reading.resolve('Revenue grew.'))
     expect(screen.getByRole('dialog')).toHaveTextContent('Revenue grew.')
     expect(load).toHaveBeenCalledOnce()
   })

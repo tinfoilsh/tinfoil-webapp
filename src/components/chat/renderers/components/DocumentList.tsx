@@ -1,7 +1,7 @@
 import { cn } from '@/components/ui/utils'
 import { logError } from '@/utils/error-handling'
 import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { PiSpinner } from 'react-icons/pi'
 
@@ -11,7 +11,10 @@ import {
   useUnsavedImages,
 } from '../../components/unsaved-images-notice'
 
-import { useDocumentText } from '../../document-text-context'
+import {
+  useDocumentText,
+  type LoadDocumentText,
+} from '../../document-text-context'
 import {
   attachmentToImageSrc,
   ImageLightbox,
@@ -44,8 +47,10 @@ export const DocumentList = memo(function DocumentList({
     content: string
     status: 'ready' | 'loading' | 'failed'
   } | null>(null)
-  // Text read on demand for documents whose message does not carry it.
+  // Text read for documents whose message does not carry it, each read once
+  // unless it fails.
   const [loadedTexts, setLoadedTexts] = useState<Record<string, string>>({})
+  const textReads = useRef(new Map<string, Promise<string>>())
   const textRequest = useRef(0)
   // Local fallback lightbox for render contexts without a gallery provider
   // (e.g. shared/printable views); scoped to this message's images.
@@ -65,6 +70,50 @@ export const DocumentList = memo(function DocumentList({
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [modalOpen])
+
+  const readText = useCallback(
+    (attachment: Attachment, load: LoadDocumentText) => {
+      const known = textReads.current.get(attachment.id)
+      if (known) return known
+      const reading = load(attachment)
+      textReads.current.set(attachment.id, reading)
+      reading.then(
+        (text) =>
+          setLoadedTexts((previous) => ({
+            ...previous,
+            [attachment.id]: text,
+          })),
+        () => {
+          if (textReads.current.get(attachment.id) === reading)
+            textReads.current.delete(attachment.id)
+        },
+      )
+      return reading
+    },
+    [],
+  )
+
+  // A document's chip previews its text, which is read once as the chip
+  // shows; opening the document tries a failed read again.
+  const previewed = useRef(new Set<string>())
+  useEffect(() => {
+    if (!loadText) return
+    for (const attachment of attachments ?? []) {
+      if (
+        attachment.type !== 'document' ||
+        attachment.textContent !== undefined ||
+        previewed.current.has(attachment.id)
+      )
+        continue
+      previewed.current.add(attachment.id)
+      readText(attachment, loadText).catch((error) =>
+        logError('Failed to load document text', error, {
+          component: 'DocumentList',
+          action: 'previewDocument',
+        }),
+      )
+    }
+  }, [attachments, loadText, readText])
 
   if (!attachments?.length) {
     return null
@@ -87,9 +136,8 @@ export const DocumentList = memo(function DocumentList({
     if (!loadText) return
     setModalContent({ attachment, content: '', status: 'loading' })
     setModalOpen(true)
-    loadText(attachment)
+    readText(attachment, loadText)
       .then((text) => {
-        setLoadedTexts((previous) => ({ ...previous, [attachment.id]: text }))
         if (request === textRequest.current)
           setModalContent({ attachment, content: text.trim(), status: 'ready' })
       })

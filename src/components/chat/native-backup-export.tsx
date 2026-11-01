@@ -1,23 +1,42 @@
-import {
-  nativeBackupExportError,
-  runNativeBackupExport,
-  type NativeBackupExportProgress,
-} from '@/services/native-backup/export'
+import { AuthTokenUnavailableError } from '@/services/auth'
+import { exportArchive } from '@/services/harness/archives'
+import { describeArchiveError } from '@/services/harness/import-failure-copy'
+import { ERROR_CODES } from '@/services/harness/protocol'
+import { HarnessError } from '@/services/harness/sse'
+import { formatFileSize } from '@/utils/format-file-size'
 import { TfDownload } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/confirm-dialog'
 
-const progressLabel: Record<NativeBackupExportProgress, string> = {
-  collecting: 'Collecting cloud data...',
-  formatting: 'Formatting backup...',
-  writing: 'Saving archive...',
+const PAYLOAD_TOO_LARGE_STATUS = 413
+const UNAUTHORIZED_STATUS = 401
+
+function nativeBackupExportError(error: unknown): string {
+  if (error instanceof DOMException && error.name === 'AbortError')
+    return 'Backup canceled. No backup file was saved.'
+  const refusal = describeArchiveError(error)
+  if (refusal) return refusal
+  if (
+    error instanceof HarnessError &&
+    error.status === PAYLOAD_TOO_LARGE_STATUS
+  )
+    return 'This backup is too large to create. Remove some large images or documents, then try again.'
+  if (error instanceof HarnessError && error.code === ERROR_CODES.keyRequired)
+    return 'Unlock your cloud encryption key on this device, then try again.'
+  if (
+    error instanceof AuthTokenUnavailableError ||
+    (error instanceof HarnessError && error.status === UNAUTHORIZED_STATUS)
+  )
+    return 'Your account session is unavailable. Sign in again, then retry the backup.'
+  // The chat service describes its other refusals.
+  if (error instanceof HarnessError) return error.message
+  return 'The backup could not be created. Check your connection and try again.'
 }
 
 export function NativeBackupExport({ available }: { available: boolean }) {
   const [showWarning, setShowWarning] = useState(false)
-  const [progress, setProgress] = useState<NativeBackupExportProgress | null>(
-    null,
-  )
+  // The bytes of the backup received so far, while a backup is created.
+  const [received, setReceived] = useState<number | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   const controller = useRef<AbortController | null>(null)
@@ -28,7 +47,7 @@ export function NativeBackupExport({ available }: { available: boolean }) {
     if (!available) {
       controller.current = null
       setShowWarning(false)
-      setProgress(null)
+      setReceived(null)
       setMessage(null)
       setFailed(false)
     }
@@ -42,31 +61,17 @@ export function NativeBackupExport({ available }: { available: boolean }) {
     const current = new AbortController()
     controller.current = current
     const isCurrent = () => controller.current === current
+    setReceived(0)
     try {
-      const result = await runNativeBackupExport(current.signal, (value) => {
-        if (isCurrent()) setProgress(value)
+      await exportArchive('native', {
+        cloud: true,
+        signal: current.signal,
+        onProgress: (bytes) => {
+          if (isCurrent()) setReceived(bytes)
+        },
       })
       if (!isCurrent() || !availableRef.current) return
-      const warningDetails = result
-        ? [
-            result.omitted
-              ? `${result.omitted} source item${result.omitted === 1 ? '' : 's'} could not be included.`
-              : '',
-            result.adjustedRelationships
-              ? `${result.adjustedRelationships} relationship${result.adjustedRelationships === 1 ? ' was' : 's were'} adjusted to keep the archive valid.`
-              : '',
-            result.localInventoryUnstable
-              ? 'Local chats changed repeatedly; included local chats are a partial snapshot.'
-              : '',
-          ]
-            .filter(Boolean)
-            .join(' ')
-        : ''
-      setMessage(
-        result && !result.complete
-          ? `Backup saved with warnings. ${warningDetails}`
-          : 'Backup saved successfully.',
-      )
+      setMessage('Backup saved successfully.')
     } catch (error) {
       if (!isCurrent()) return
       setFailed(true)
@@ -74,7 +79,7 @@ export function NativeBackupExport({ available }: { available: boolean }) {
     } finally {
       if (isCurrent()) {
         controller.current = null
-        setProgress(null)
+        setReceived(null)
       }
     }
   }
@@ -90,18 +95,22 @@ export function NativeBackupExport({ available }: { available: boolean }) {
         <button
           type="button"
           onClick={() => setShowWarning(true)}
-          disabled={progress !== null}
+          disabled={received !== null}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors hover:bg-surface-chat disabled:cursor-not-allowed disabled:opacity-60"
         >
           <TfDownload className="h-4 w-4" />
           Create Tinfoil Backup
         </button>
-        {progress && (
+        {received !== null && (
           <div
             className="mt-3 flex items-center justify-between gap-3 text-xs text-content-muted"
             role="status"
           >
-            <span>{progressLabel[progress]}</span>
+            <span>
+              {received > 0
+                ? `Saving archive... ${formatFileSize(received)}`
+                : 'Collecting cloud data...'}
+            </span>
             <button
               type="button"
               onClick={() => controller.current?.abort()}

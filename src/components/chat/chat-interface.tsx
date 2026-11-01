@@ -1,5 +1,7 @@
-import { getSelectedModelLabel } from '@/config/models'
+import { findSelectableModel, getSelectedModelLabel } from '@/config/models'
+import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
+import { UI_EXPAND_PROJECT_DOCUMENTS } from '@/constants/storage-keys'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
@@ -10,7 +12,6 @@ import { logError } from '@/utils/error-handling'
 import { useAuth, useUser } from '@clerk/react'
 import { ArrowDownIcon } from '@heroicons/react/24/outline'
 import {
-  TfChat2,
   TfDocumentPlus,
   TfGhost2,
   TfLockLocked,
@@ -63,13 +64,22 @@ import { ArtifactSidebar } from './artifact-sidebar'
 import { AskSidebar } from './ask-sidebar'
 import { ChatAnnouncer } from './chat-announcer'
 import { ChatHeader } from './chat-header'
+import {
+  ChatHistoryStatus,
+  type ChatHistoryProblem,
+} from './chat-history-status'
 import { ChatInput } from './chat-input'
 import { ChatMessages } from './chat-messages'
+import {
+  getChatContentBottomScrollTop,
+  getChatSpacerHeight,
+} from './chat-scroll'
 import { ChatSidebar } from './chat-sidebar'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { DragProvider } from './drag-context'
 import { ForkOverlay } from './fork-overlay'
+import { ArtifactRetryError } from './genui/retry'
 import {
   artifactPreviewTargetsEqual,
   OPEN_ARTIFACT_PREVIEW_EVENT,
@@ -142,7 +152,9 @@ const OnboardingView = dynamic(
 )
 
 import { verifyChatService } from '@/services/harness/attestation'
-import { useHarness } from '@/services/harness/provider'
+import { ERROR_CODES } from '@/services/harness/protocol'
+import { reportProfileError, useHarness } from '@/services/harness/provider'
+import { HarnessError } from '@/services/harness/sse'
 import { isAttachmentsUnavailable } from '@/services/harness/transfer'
 import type { Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
@@ -151,6 +163,8 @@ import {
   authorizeCurrentPrimaryKeyOrThrow,
   registerStartFreshKeyIfNeeded,
 } from '@/services/keys/cloud-key-authorization'
+import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
+import { hasPasskeyBackup } from '@/utils/signout-cleanup'
 import { useUIState } from './hooks/use-ui-state'
 
 type ChatInterfaceProps = {
@@ -167,13 +181,14 @@ export function ChatInterface({
   isLocalChatUrl = false,
   initialNewChatIsLocalOnly = false,
   suppressIntroModals = false,
-  inputMinHeight = '60px',
+  inputMinHeight = CONSTANTS.INPUT_MIN_HEIGHT,
 }: ChatInterfaceProps) {
   const {
     api,
     session,
     profile,
     keyReady,
+    keyLocked,
     profileReady,
     error: sessionError,
     // The harness stores chats only for a signed-in account with cloud
@@ -201,6 +216,9 @@ export function ChatInterface({
     exitProjectMode,
     createProject,
     uploadDocument,
+    error: projectError,
+    addUploadingFile,
+    removeUploadingFile,
   } = useProject()
   const { projects } = useProjects({ autoLoad: cloudSyncEnabled })
   const thread = useThread(
@@ -216,11 +234,16 @@ export function ChatInterface({
     chats,
     loading: isChatHydrating,
     running: isStreaming,
-    model: selectedModel,
+    model: chatModel,
     presetId: activePresetId,
   } = thread
+  // A selected chat owns its URL change until the router finishes.
+  const selectionNavigation = useRef<symbol | null>(null)
   useEffect(() => {
     if (
+      selectionNavigation.current ||
+      isChatHydrating ||
+      thread.loadFailed ||
       !currentChat.id ||
       currentChat.isTemporary ||
       currentChat.pendingSave ||
@@ -236,6 +259,8 @@ export function ChatInterface({
         .replace(path, undefined, { shallow: true })
         .catch(thread.report)
   }, [
+    isChatHydrating,
+    thread.loadFailed,
     currentChat.id,
     currentChat.isTemporary,
     currentChat.isLocalOnly,
@@ -246,11 +271,39 @@ export function ChatInterface({
     thread.report,
   ])
   const models = useMemo(() => session?.models ?? [], [session])
+  // A chat whose model was retired continues on the user's pick, or else
+  // the session's default.
+  const pickedModel: string = profile.selectedModel ?? ''
+  const selectedModel = findSelectableModel(chatModel, models)
+    ? chatModel
+    : findSelectableModel(pickedModel, models)
+      ? pickedModel
+      : (session?.defaultModel ?? chatModel)
   const isLoadingConfig = !session
   const hasValidatedModel = !!session
-  const loadingState = isStreaming ? 'streaming' : 'idle'
+  const loadingState = isStreaming ? 'loading' : 'idle'
   const isWaitingForResponse =
     isStreaming && currentChat.messages.at(-1)?.role !== 'assistant'
+  const historyProblem: ChatHistoryProblem | null =
+    initialChatId && !isLocalChatUrl && isAuthLoaded && !isSignedIn
+      ? 'sign-in'
+      : initialChatId &&
+          !isLocalChatUrl &&
+          !keyReady &&
+          (keyLocked || !cloudSyncEnabled)
+        ? 'unlock'
+        : thread.loadFailed &&
+            thread.errorDetail?.code === ERROR_CODES.keyMismatch
+          ? 'wrong-key'
+          : thread.notFound
+            ? 'not-found'
+            : thread.loadFailed ||
+                (initialChatId &&
+                  !isLocalChatUrl &&
+                  !profileReady &&
+                  sessionError)
+              ? 'failed'
+              : null
   const isTemporaryMode = thread.temporary
   useSafeguardsReset()
   // A chat the safeguards flagged is read-only, as the harness reports it.
@@ -271,11 +324,26 @@ export function ChatInterface({
       }
     : null
   // A capped subscriber's cap may lift before it resets.
-  const checkQuota = () => api.refresh()
+  const checkQuota = () => api.refresh({ credentials: true })
   const dismissStreamError = thread.dismissError
   const { isLoading: isSubscriptionLoading, chat_subscription_active } =
     useSubscriptionStatus()
   const isPremium = !isSubscriptionLoading && chat_subscription_active
+  const previousSubscription = useRef(chat_subscription_active)
+  useEffect(() => {
+    if (isSubscriptionLoading) return
+    const changed = previousSubscription.current !== chat_subscription_active
+    previousSubscription.current = chat_subscription_active
+    if (changed && isSignedIn) {
+      void api.refresh({ credentials: true }).catch((cause) => {
+        if (cause instanceof DOMException && cause.name === 'AbortError') return
+        logError('Failed to refresh after a subscription change', cause, {
+          component: 'ChatInterface',
+          action: 'refreshSubscription',
+        })
+      })
+    }
+  }, [api, isSignedIn, isSubscriptionLoading, chat_subscription_active])
   // The composer only uses premium status to decide which controls to show,
   // and the server enforces access on every request. Using the cached value
   // while auth loads keeps the toolbar from reflowing once Clerk resolves.
@@ -293,18 +361,49 @@ export function ChatInterface({
     setExpandedLabel((value) => (value === label ? null : label))
     action()
   }
+  useEffect(() => {
+    if (expandedLabel !== 'model') return
+    const selector = '[data-model-selector], [data-model-menu]'
+    const dismissOutside = (event: Event) => {
+      if (event.target instanceof Element && !event.target.closest(selector))
+        setExpandedLabel(null)
+    }
+    const dismissWithKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setExpandedLabel(null)
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[data-model-selector]'),
+      )
+        .find((element) => element.getClientRects().length > 0)
+        ?.focus()
+    }
+    document.addEventListener('mousedown', dismissOutside)
+    document.addEventListener('focusin', dismissOutside)
+    document.addEventListener('keydown', dismissWithKeyboard)
+    return () => {
+      document.removeEventListener('mousedown', dismissOutside)
+      document.removeEventListener('focusin', dismissOutside)
+      document.removeEventListener('keydown', dismissWithKeyboard)
+    }
+  }, [expandedLabel])
   const [processedDocuments, setProcessedDocuments] = useState<
     ProcessedDocument[]
   >([])
   const [quote, setQuote] = useState<string | null>(null)
-  // Onboarding is shown to signed-in users once their profile has loaded.
-  const { showOnboarding, dismissOnboarding } = useOnboarding({
-    isAuthLoaded: isAuthLoaded && !!session,
-    isSignedIn,
-    userId: user?.id,
-    hasCompletedOnboarding: !profileReady || profile.hasSeenOnboarding === true,
-    suppressIntroModals,
-  })
+  // Onboarding is shown to signed-in users once their profile has loaded,
+  // unless the account completed it on any device. A refused key keeps the
+  // profile from loading, so the account and this device decide then.
+  const { showOnboarding, isOnboardingReady, dismissOnboarding } =
+    useOnboarding({
+      isAuthLoaded: isAuthLoaded && !!session && (profileReady || keyLocked),
+      isSignedIn,
+      userId: user?.id,
+      hasCompletedOnboarding:
+        user?.unsafeMetadata?.has_completed_onboarding === true ||
+        profile.hasSeenOnboarding === true,
+      suppressIntroModals,
+    })
   const [logoAnimDone, setLogoAnimDone] = useState(false)
   const handleLogoAnimFinished = useCallback(() => {
     setLogoAnimDone(true)
@@ -324,6 +423,7 @@ export function ChatInterface({
   const [hasMountedReportBugModal, setHasMountedReportBugModal] =
     useState(false)
   const [showCloudSyncSetupModal, setShowCloudSyncSetupModal] = useState(false)
+  const [isCloudSyncRoutePending, setIsCloudSyncRoutePending] = useState(false)
   const [isFirstTimePasskeySetupBusy, setIsFirstTimePasskeySetupBusy] =
     useState(false)
   const [isSubscribePromptOpen, setIsSubscribePromptOpen] = useState(false)
@@ -355,89 +455,180 @@ export function ChatInterface({
   const activePreset = getPresetById(activePresetId)
   const pixelateSidebarChatTitles =
     profile.pixelateSidebarChatTitlesEnabled ?? false
-  const webSearchAvailable = session?.features.webSearch ?? false
-  const effectiveWebSearchEnabled =
-    currentChat.webSearchEnabled ?? profile.webSearchEnabled ?? true
+  // Settings can turn web search off for every chat; otherwise each chat
+  // searches unless it was turned off for that chat.
+  const webSearchAvailable =
+    (session?.features.webSearch ?? false) &&
+    (profile.webSearchAvailable ?? true)
+  const chatWebSearchEnabled = currentChat.webSearchEnabled ?? true
+  const effectiveWebSearchEnabled = webSearchAvailable && chatWebSearchEnabled
   const contextUsage = thread.contextUsage
   const modKey =
     typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
       ? '⌘'
       : 'Ctrl+'
+  // Blank, temporary, loading and placeholder chats keep the base title, as
+  // what they show as a title is a generic label.
+  const shownChatTitle = currentChat.title.trim()
   const documentTitle =
     (profile.browserTabChatTitleEnabled ?? true) &&
-    currentChat.titleState !== 'placeholder'
-      ? `${currentChat.title} · Tinfoil`
-      : 'Tinfoil Private Chat'
-  const handleInputFocusWithRateLimitCheck = handleInputFocus
+    !isChatHydrating &&
+    !currentChat.isBlankChat &&
+    !currentChat.isTemporary &&
+    currentChat.titleState !== 'placeholder' &&
+    !!shownChatTitle &&
+    shownChatTitle !== PLACEHOLDER_CHAT_TITLE
+      ? `${shownChatTitle} · ${CONSTANTS.BASE_DOCUMENT_TITLE}`
+      : CONSTANTS.BASE_DOCUMENT_TITLE
+  // A free account out of daily requests is asked to subscribe instead of
+  // sending; focusing the composer asks once each time the quota runs out.
+  const dailyQuotaExhausted =
+    rateLimit?.kind === 'free_daily' &&
+    typeof rateLimit.remaining === 'number' &&
+    rateLimit.remaining <= 0
+  const quotaPromptDismissed = useRef(false)
+  useEffect(() => {
+    if (!dailyQuotaExhausted) quotaPromptDismissed.current = false
+  }, [dailyQuotaExhausted])
+  const handleInputFocusWithRateLimitCheck = () => {
+    if (dailyQuotaExhausted && !quotaPromptDismissed.current)
+      setIsSubscribePromptOpen(true)
+    handleInputFocus()
+  }
+  const promptedForQuota = () => {
+    if (dailyQuotaExhausted) setIsSubscribePromptOpen(true)
+    return dailyQuotaExhausted
+  }
   const canChangeMessages = thread.canChangeMessages
   const canFork =
     !!currentChat.id && !currentChat.isTemporary && !currentChat.isBlankChat
-  const canShare =
-    !!isSignedIn && !currentChat.isTemporary && currentChat.messages.length > 0
-  const canChat = thread.canSend
+  const canShare = !currentChat.isTemporary && currentChat.messages.length > 0
+  const canChat = thread.canSend && !historyProblem
   const reloadChats = () => thread.refresh()
+  const loadEarlierMessages = () =>
+    thread.older().then(
+      () => true,
+      (cause) => {
+        thread.report(cause)
+        return false
+      },
+    )
   const createNewChat = (isLocalOnly = false, fromUserAction = true) => {
+    selectionNavigation.current = null
     thread.newChat({ local: isLocalOnly })
-    setInput('')
-    setQuote(null)
-    setProcessedDocuments([])
     // The sidebar switches a blank chat to its tab's storage without moving
     // the page, which may still be opening a chat from its URL.
     if (!fromUserAction) return
-    void router.push(
+    // As selecting a chat does, starting one adds nothing to history.
+    void router.replace(
       activeProject ? `/project/${activeProject.id}` : '/',
       undefined,
       { shallow: true },
     )
   }
   const handleChatSelect = (id: string) => {
-    setProcessedDocuments([])
-    setQuote(null)
+    const selection = Symbol()
+    selectionNavigation.current = selection
     const isLocalOnly =
       !cloudSyncEnabled || !!chats.find((chat) => chat.id === id)?.isLocalOnly
     void thread
       .open(id, { local: isLocalOnly })
-      .then(() =>
-        router.push(
+      .then((result) => {
+        if (
+          selectionNavigation.current !== selection ||
+          result.status === 'superseded'
+        )
+          return
+        const projectId =
+          result.status === 'opened'
+            ? (result.thread.projectId ?? undefined)
+            : activeProject?.id
+        // Selecting a chat changes the address without adding to history.
+        return router.replace(
           getChatPath(id, {
             isLocalOnly,
-            projectId: isLocalOnly ? undefined : activeProject?.id,
+            projectId: isLocalOnly ? undefined : projectId,
           }),
           undefined,
           { shallow: true },
-        ),
-      )
-      .catch(thread.report)
+        )
+      })
+      .catch((cause) => {
+        if (selectionNavigation.current === selection) thread.report(cause)
+      })
+      .finally(() => {
+        if (selectionNavigation.current === selection)
+          selectionNavigation.current = null
+      })
   }
+  // A chat list action that fails is undone in the list and logged, rather
+  // than shown as a failure of the open chat.
+  const logListAction =
+    (message: string, chatId: string) => (cause: unknown) => {
+      if (cause instanceof DOMException && cause.name === 'AbortError') return
+      logError(message, cause, {
+        component: 'ChatInterface',
+        action: 'chatListAction',
+        metadata: { chatId },
+      })
+    }
+  // Deleting the open chat leaves its address for a new chat's, which
+  // replaces it in the history, as the chat is gone.
   const deleteChat = (id: string) => {
-    void thread.remove(id).catch(thread.report)
+    const leaving = currentChat.id === id
+    void thread.remove(id).catch(logListAction('Failed to delete chat', id))
+    if (!leaving) return
+    void router
+      .replace(
+        activeProject ? getNewChatPath({ projectId: activeProject.id }) : '/',
+        undefined,
+        { shallow: true },
+      )
+      .catch(logListAction('Failed to leave a deleted chat', id))
+  }
+  // A chat setting that fails to save is logged, rather than shown as a
+  // failure of the open chat's reply.
+  const logSettingError = (message: string) => (cause: unknown) => {
+    if (cause instanceof DOMException && cause.name === 'AbortError') return
+    logError(message, cause, {
+      component: 'ChatInterface',
+      action: 'chatSetting',
+    })
   }
   const updateChatTitle = (id: string, title: string) => {
-    void thread.update(id, { title }).catch(thread.report)
+    void thread
+      .update(id, { title })
+      .catch(logListAction('Failed to rename chat', id))
   }
   const handleModelSelect = (model: string) => {
     thread.setModel(model)
-    setExpandedLabel(null)
+    if (!findSelectableModel(model, models)?.auto) setExpandedLabel(null)
     if (currentChat.id)
-      void thread.update(currentChat.id, { model }).catch(thread.report)
-    void api.updateProfile({ selectedModel: model }).catch(thread.report)
+      void thread
+        .update(currentChat.id, { model })
+        .catch(logSettingError('Failed to save the chat model'))
+    void api.updateProfile({ selectedModel: model }).catch(reportProfileError)
   }
   // Choosing a prompt also applies its model and web search setting.
   const handleSetActivePreset = (presetId: string | null) => {
-    void thread.selectPreset(presetId).catch(thread.report)
+    void thread
+      .selectPreset(presetId)
+      .catch(logSettingError('Failed to save the chat prompt'))
   }
   const options = {
     model: selectedModel,
     autoIntelligence,
     reasoningEffort,
     thinking: thinkingEnabled,
-    webSearch: effectiveWebSearchEnabled,
+    // While Settings turns search off, the harness leaves it out and keeps
+    // the chat's own setting for when it is turned back on.
+    webSearch: (session?.features.webSearch ?? false) && chatWebSearchEnabled,
     piiCheck: profile.piiCheckEnabled ?? true,
     genUI: profile.genUIEnabled ?? true,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }
   const handleQuery = (content: string, fields: Partial<Turn> = {}) => {
-    if (generationBlocked) return
+    if (generationBlocked || promptedForQuota()) return
     return thread.send({ content, options, ...fields })
   }
   const handleSubmit = (event: React.FormEvent) => {
@@ -446,22 +637,23 @@ export function ChatInterface({
     submitComposer()
   }
   const submitComposer = () => {
-    if (
-      isChatHydrating ||
-      processedDocuments.some((d) => d.isUploading) ||
-      (!input.trim() && !processedDocuments.length)
-    )
-      return
-    const result = handleQuery(input, {
+    // Files still uploading stay in the composer for the next message; files
+    // the harness cannot read are cleared with it.
+    const uploaded = processedDocuments.filter((d) => d.descriptor)
+    const text = input.trim()
+    if (isChatHydrating || (!text && !quote?.trim() && !uploaded.length)) return
+    const result = handleQuery(text, {
       quote: quote ?? undefined,
-      attachments: processedDocuments.flatMap((d) =>
+      attachments: uploaded.flatMap((d) =>
         d.descriptor ? [d.descriptor] : [],
       ),
     })
     if (result) {
       setInput('')
       setQuote(null)
-      setProcessedDocuments([])
+      setProcessedDocuments((previous) =>
+        previous.filter((d) => !uploaded.includes(d) && !d.isUnsupported),
+      )
     }
   }
   const editMessage = (index: number, content: string) => {
@@ -471,17 +663,16 @@ export function ChatInterface({
     })
   }
   const regenerateMessage = (index: number) => {
-    if (generationBlocked) return
+    if (generationBlocked || promptedForQuota()) return
     void thread.regenerate(index, { options }).catch(thread.report)
   }
   const retryToolCall = async (index: number, toolCallId: string) => {
-    return Boolean(
-      await handleQuery('', {
-        kind: 'retryToolCall',
-        messageId: currentChat.messages[index]?.id,
-        toolCallId,
-      }),
-    )
+    if (promptedForQuota()) throw new ArtifactRetryError('request_failed')
+    return thread.retryToolCall({
+      options,
+      messageId: currentChat.messages[index]?.id,
+      toolCallId,
+    })
   }
   const retryLastMessage = () => {
     if (generationBlocked) return
@@ -494,10 +685,12 @@ export function ChatInterface({
   }
   const editAssistantMessage = (index: number, content: string) => {
     if (isStreaming || currentChatIsFlagged) return
-    void thread.editReply(index, content).catch(thread.report)
+    const editing = thread.editReply(index, content)
+    editing.catch(thread.report)
+    return editing
   }
   const continueAssistantMessage = (index: number) => {
-    if (isStreaming || generationBlocked) return
+    if (isStreaming || generationBlocked || promptedForQuota()) return
     try {
       void thread.continueReply(index, { options })
     } catch (cause) {
@@ -514,8 +707,6 @@ export function ChatInterface({
     try {
       const forkId = await thread.fork(index)
       if (!forkId) return
-      setProcessedDocuments([])
-      setQuote(null)
       // The overlay stays long enough to read as a step, not a flicker.
       const elapsed = Date.now() - startedAt
       if (elapsed < CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS)
@@ -545,10 +736,15 @@ export function ChatInterface({
   const removeQueuedMessage = (id: string) => {
     void thread.removeQueued(id).catch(thread.report)
   }
-  const favoriteChats = chats.filter((c) => c.pinned)
+  const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
+  const favoriteChats = thread.favoriteIds
+    .flatMap((id) => chatsById.get(id) ?? [])
+    .slice(0, CONSTANTS.MAX_FAVORITE_CHATS)
   const pinnedChatIds = favoriteChats.map((c) => c.id)
   const unpinChat = (id: string) => {
-    void thread.update(id, { pinned: false }).catch(thread.report)
+    void thread
+      .update(id, { pinned: false })
+      .catch(logListAction('Failed to unpin chat', id))
   }
   // Chats move between the cloud and this device with cloud sync.
   const canMoveChats = cloudSyncEnabled
@@ -617,7 +813,9 @@ export function ChatInterface({
       if (!canMoveChats) return
       if (!(await handleConvertChatToCloud(favorite.id))) return
     }
-    await thread.update(favorite.id, { pinned: true }).catch(thread.report)
+    await thread
+      .update(favorite.id, { pinned: true })
+      .catch(logListAction('Failed to pin chat', favorite.id))
   }
   const handleOpenFavorite = (chat: { id: string }) => handleChatSelect(chat.id)
   // A chat kept on this device moves to the cloud before it joins a project;
@@ -671,34 +869,117 @@ export function ChatInterface({
       })
     }
   }
-  const handleRemoveChatFromProject = (id: string) =>
-    thread.update(id, { projectId: null }).then(reloadChats)
+  // Settles either way, so a drop that removes the chat can end its drag.
+  const handleRemoveChatFromProject = async (id: string) => {
+    try {
+      await thread.update(id, { projectId: null })
+      await reloadChats()
+      toast({
+        title: 'Chat removed from project',
+        description: 'The chat is now in your main chat list.',
+      })
+    } catch (error) {
+      if (isAbort(error)) return
+      logError('Failed to remove chat from project', error, {
+        component: 'ChatInterface',
+        action: 'handleRemoveChatFromProject',
+        metadata: { chatId: id },
+      })
+      await reloadChats().catch(thread.report)
+      toast({
+        title: 'Failed to remove chat',
+        description: 'Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }
   const handleDeleteProjectChats = async () => {
     if (!activeProject) return
     await thread.removeProjectChats(activeProject.id)
   }
   const handleCreateProject = async () => {
-    const project = await createProject({ name: 'New Project' })
-    await enterProjectMode(project.id)
-    createNewChat()
+    try {
+      const project = await createProject({
+        name: `My Project #${projects.length + 1}`,
+        description: '',
+      })
+      createNewChat()
+      await handleEnterProjectMode(project.id)
+    } catch (error) {
+      logError('Failed to create project', error, {
+        component: 'ChatInterface',
+        action: 'handleCreateProject',
+      })
+      toast({
+        title: 'Failed to create project',
+        description: 'Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }
+  const handleEnterProjectMode = async (id: string, name?: string) => {
+    const entered = await enterProjectMode(id, name)
+    if (entered)
+      await router.replace(getNewChatPath({ projectId: id }), undefined, {
+        shallow: true,
+      })
+    return entered
   }
   const handleExitProject = () => {
     exitProjectMode()
     thread.newChat()
-    void router.push('/')
+    void router.replace('/')
   }
-  // Leaving a project while one of its chats is dragged keeps the open chat
-  // and the page, so the drag can end on the Cloud or Local tab.
+  // Leaving a project while one of its chats is dragged keeps the open chat,
+  // so the drag can end on the Cloud or Local tab. The page leaves the
+  // project for the chat's own address, so the chat list shows every chat.
   const handleExitProjectWhileDragging = () => {
     setPendingProjectUpload(null)
     setShowAddToProjectModal(false)
     exitProjectMode()
+    void router.replace(
+      currentChat.id && !currentChat.isTemporary
+        ? getChatPath(currentChat.id, { isLocalOnly: currentChat.isLocalOnly })
+        : '/',
+      undefined,
+      { shallow: true },
+    )
   }
+  // A temporary chat saved while its reply streams is kept once the reply
+  // is stored.
   const canToggleTemporaryChat = (chat: Chat) =>
-    !chat.id && !processedDocuments.length && !isStreaming
+    !!chat.isBlankChat || !!chat.isTemporary
+  // The temporary chat whose save waits for its reply to be stored.
+  const [savingTemporaryChatId, setSavingTemporaryChatId] = useState<
+    string | null
+  >(null)
+  const handleSaveTemporaryChat = async () => {
+    const savingId = currentChat.id
+    setSavingTemporaryChatId(savingId)
+    try {
+      await thread.saveTemporary()
+    } catch (error) {
+      if (isAbort(error)) return
+      logError('Failed to save temporary chat', error, {
+        component: 'ChatInterface',
+        action: 'handleSaveTemporaryChat',
+      })
+      toast({
+        title: 'Failed to save chat',
+        description: 'Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSavingTemporaryChatId((saving) =>
+        saving === savingId ? null : saving,
+      )
+    }
+  }
   const handleToggleTemporaryMode = () => {
-    if (canToggleTemporaryChat(currentChat))
-      thread.setTemporary(!thread.temporary)
+    if (!canToggleTemporaryChat(currentChat)) return
+    if (thread.temporary && currentChat.messages.length > 0)
+      void handleSaveTemporaryChat()
+    else thread.setTemporary(!thread.temporary)
   }
   const handleWebSearchToggle = () => {
     thread.setWebSearch(!effectiveWebSearchEnabled)
@@ -707,22 +988,39 @@ export function ChatInterface({
         .update(currentChat.id, {
           webSearchEnabled: !effectiveWebSearchEnabled,
         })
-        .catch(thread.report)
-    void api
-      .updateProfile({ webSearchEnabled: !effectiveWebSearchEnabled })
-      .catch(thread.report)
+        .catch(logSettingError('Failed to save the chat web search setting'))
   }
   const handleOpenVerifierSidebar = () => {
-    setIsVerifierSidebarOpen((value) => !value)
+    handleSetVerifierSidebarOpen(!isVerifierSidebarOpen)
+    if (!isVerifierSidebarOpen) {
+      setIsSettingsModalOpen(false)
+      setIsAskSidebarOpen(false)
+      setIsArtifactSidebarOpen(false)
+      sidebarChat.reset()
+    }
   }
-  const handleSetVerifierSidebarOpen = setIsVerifierSidebarOpen
-  const handleOpenSettingsModal = () => {
+  const handleSetVerifierSidebarOpen = (open: boolean) => {
+    setIsVerifierSidebarOpen(open)
+    if (open && windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT)
+      setIsSidebarOpen(false)
+  }
+  const handleOpenSettingsModal = (tab?: SettingsTab) => {
+    if (isSettingsModalOpen && !tab) {
+      setIsSettingsModalOpen(false)
+      return
+    }
+    // A refused key is explained on the Cloud Sync tab.
+    setSettingsInitialTab(tab ?? (keyLocked ? 'cloud-sync' : undefined))
     setHasMountedSettingsModal(true)
     setIsSettingsModalOpen(true)
+    setIsVerifierSidebarOpen(false)
+    setIsAskSidebarOpen(false)
+    setIsArtifactSidebarOpen(false)
+    if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT)
+      setIsSidebarOpen(false)
   }
   const handleOpenSafeguardsSettings = () => {
-    setSettingsInitialTab('safeguards')
-    handleOpenSettingsModal()
+    handleOpenSettingsModal('safeguards')
   }
   const handleOpenShareModal = () => {
     setHasMountedShareModal(true)
@@ -745,8 +1043,24 @@ export function ChatInterface({
     setHasMountedReportBugModal(true)
     setIsReportBugModalOpen(true)
   }
-  const handleOpenCloudSyncSetup = () => setShowCloudSyncSetupModal(true)
-  const handleCloseSubscribePrompt = () => setIsSubscribePromptOpen(false)
+  // Without a key on this device, the setup opens at once while the account
+  // is checked for a passkey to recover with, and then for a first passkey
+  // setup; the modal follows what the checks find.
+  const handleOpenCloudSyncSetup = async () => {
+    setShowCloudSyncSetupModal(true)
+    if (encryptionService.getKey()) return
+    setIsCloudSyncRoutePending(true)
+    try {
+      if (await showPasskeyRecoveryPrompt()) return
+      await showFirstTimePasskeyPrompt()
+    } finally {
+      setIsCloudSyncRoutePending(false)
+    }
+  }
+  const handleCloseSubscribePrompt = () => {
+    setIsSubscribePromptOpen(false)
+    if (dailyQuotaExhausted) quotaPromptDismissed.current = true
+  }
   const handleKeyChanged = async (key: string, options?: { mode?: string }) => {
     const previous = encryptionService.getKey()
     await encryptionService.setKey(key, { persist: false })
@@ -756,7 +1070,9 @@ export function ChatInterface({
       else await authorizeCurrentPrimaryKeyOrThrow()
       api.lifetime.signal.throwIfAborted()
       encryptionService.persistCurrentKeyState()
-      await api.refresh()
+      // A passkey backup is encrypted again with a new key, so the passkey
+      // goes on recovering the key in use.
+      if (key !== previous && hasPasskeyBackup()) void updatePasskeyBackup()
     } catch (cause) {
       if (!api.lifetime.signal.aborted) {
         if (previous)
@@ -765,11 +1081,30 @@ export function ChatInterface({
       }
       throw cause
     }
+    // The account keeps the key it accepted even if the session then fails
+    // to reload.
+    await api.refresh().catch(thread.report)
   }
+  // A key started fresh lives only on this device until a passkey backs it
+  // up. An active passkey's backup is encrypted again as the key changes.
+  // A cancel or failure leaves the sidebar's backup warning in place.
   const backupStartFreshKeyWithPasskey = async () => {
-    await setupPasskey()
+    if (passkeyActive) return
+    try {
+      if (!(await isPrfSupported())) return
+      await setupPasskey()
+    } catch (error) {
+      if (error instanceof PrfNotSupportedError) return
+      logError(
+        'Failed to back up new key with passkey after start fresh',
+        error,
+        {
+          component: 'ChatInterface',
+          action: 'backupStartFreshKeyWithPasskey',
+        },
+      )
+    }
   }
-  const isCloudSyncRoutePending = false
   const sidebarChat = useSidebarChat({ context: thread.askContext, options })
   // A flag stops the chat: its reply in progress, its queued turns, and an
   // ask about it.
@@ -809,6 +1144,25 @@ export function ChatInterface({
         ),
       )
     } catch (cause) {
+      // A file the harness cannot read stays, marked, until it is removed.
+      if (
+        cause instanceof HarnessError &&
+        cause.code === ERROR_CODES.attachmentUnsupported
+      ) {
+        setProcessedDocuments((previous) =>
+          previous.map((d) =>
+            d.id === localId
+              ? {
+                  id: localId,
+                  name: file.name,
+                  time: d.time,
+                  isUnsupported: true,
+                }
+              : d,
+          ),
+        )
+        return
+      }
       setProcessedDocuments((previous) =>
         previous.filter((d) => d.id !== localId),
       )
@@ -821,38 +1175,88 @@ export function ChatInterface({
       })
     }
   }
+  // A file added in a project, or one still loading, is offered to it.
   const handleFileUpload = async (file: File) => {
-    if (activeProject) {
+    const target = loadingProject ?? activeProject
+    if (target) {
       setPendingProjectUpload((previous) => ({
-        projectId: activeProject.id,
-        files: [...(previous?.files ?? []), file],
+        projectId: target.id,
+        files:
+          previous?.projectId === target.id
+            ? [...previous.files, file]
+            : [file],
       }))
-      setShowAddToProjectModal(true)
     } else await processFileForChat(file)
+  }
+  // The offer waits for its project to open, and is dropped if another
+  // project opens or the project fails to.
+  useEffect(() => {
+    if (!pendingProjectUpload) return
+    const cancel = (title: string, description: string) => {
+      setPendingProjectUpload(null)
+      setShowAddToProjectModal(false)
+      toast({
+        title,
+        description,
+        variant: 'destructive',
+        position: 'top-right',
+      })
+    }
+    if (loadingProject) {
+      if (loadingProject.id !== pendingProjectUpload.projectId)
+        cancel(
+          'Upload canceled',
+          'The file was not attached because the project changed.',
+        )
+    } else if (activeProject?.id === pendingProjectUpload.projectId)
+      setShowAddToProjectModal(true)
+    else if (projectError)
+      cancel(
+        'Project unavailable',
+        'The file was not attached because the project failed to load.',
+      )
+    else
+      cancel(
+        'Upload canceled',
+        activeProject
+          ? 'The file was not attached because the project changed.'
+          : 'The file was not attached because project mode ended.',
+      )
+  }, [activeProject, loadingProject, pendingProjectUpload, projectError])
+  // A document being added shows uploading among the project's documents.
+  const addFileToProject = async (file: File) => {
+    const uploadId = crypto.randomUUID()
+    addUploadingFile({ id: uploadId, name: file.name, size: file.size })
+    try {
+      await uploadDocument(file, '')
+    } catch (cause) {
+      toast({
+        title: 'Upload failed',
+        description: uploadErrorMessage(
+          cause,
+          'Failed to add document to project context.',
+        ),
+        variant: 'destructive',
+        position: 'top-right',
+      })
+    } finally {
+      removeUploadingFile(uploadId)
+    }
   }
   const handleAddToProjectConfirm = async (addToProject: boolean) => {
     const pending = pendingProjectUpload
     setPendingProjectUpload(null)
     setShowAddToProjectModal(false)
-    for (const file of pending?.files ?? []) {
-      if (!addToProject) {
-        await processFileForChat(file)
-        continue
-      }
-      try {
-        await uploadDocument(file, '')
-      } catch (cause) {
-        toast({
-          title: 'Upload failed',
-          description: uploadErrorMessage(
-            cause,
-            'Failed to add document to project context.',
-          ),
-          variant: 'destructive',
-          position: 'top-right',
-        })
-      }
+    if (!pending) return
+    if (!addToProject) {
+      for (const file of pending.files) await processFileForChat(file)
+      return
     }
+    // The sidebar opens to the project's documents, where every file shows
+    // uploading at once.
+    sessionStorage.setItem(UI_EXPAND_PROJECT_DOCUMENTS, 'true')
+    setIsSidebarOpen(true)
+    await Promise.all(pending.files.map(addFileToProject))
   }
   const removeDocument = (id: string) =>
     setProcessedDocuments((previous) => previous.filter((d) => d.id !== id))
@@ -862,10 +1266,6 @@ export function ChatInterface({
       .then(() => setVerificationStatus('verified'))
       .catch(() => setVerificationStatus('failed'))
   }, [api])
-  useEffect(() => {
-    if (!initialProjectId || !keyReady) return
-    void enterProjectMode(initialProjectId).catch(thread.report)
-  }, [initialProjectId, keyReady, enterProjectMode, thread.report])
   const {
     passkeyActive,
     passkeyRecoveryNeeded,
@@ -877,16 +1277,20 @@ export function ChatInterface({
     passkeyFirstTimePromptAvailable,
     setupPasskey,
     setupFirstTimePasskey,
+    showFirstTimePasskeyPrompt,
+    showPasskeyRecoveryPrompt,
     dismissFirstTimePasskeyPrompt,
     recoverWithPasskey,
     setupNewKeySplit,
+    updatePasskeyBackup,
     dismissBackupWarning,
     skipPasskeyRecovery,
     addPasskeyToThisDevice,
     refreshBundleState,
   } = usePasskeyBackup({
     encryptionKey,
-    initialized: !!session,
+    // Passkey prompts wait for onboarding to be dismissed.
+    initialized: !!session && isOnboardingReady && !showOnboarding,
     isSignedIn,
     user,
     onEncryptionKeyRecovered: useCallback(
@@ -918,10 +1322,30 @@ export function ChatInterface({
     setInput('')
     setQuote(null)
     setProcessedDocuments([])
-    void router.push('/', undefined, { shallow: true })
+    void router.replace('/', undefined, { shallow: true })
     // Only a change of the storage mode moves the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloudSyncEnabled])
+  // A project the address names that cannot open, because it failed to
+  // load or the key is refused, leaves the address, whose chat list would
+  // hide every chat outside it.
+  const projectUnavailable =
+    !!initialProjectId &&
+    !activeProject &&
+    !loadingProject &&
+    (!!projectError || keyLocked)
+  useEffect(() => {
+    if (!projectUnavailable) return
+    void router.replace(
+      currentChat.id
+        ? getChatPath(currentChat.id, { isLocalOnly: currentChat.isLocalOnly })
+        : '/',
+      undefined,
+      { shallow: true },
+    )
+    // The address moves once the project turns out unavailable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectUnavailable])
   useEffect(() => {
     if (!router.isReady || router.query.upgrade !== 'projects') return
     setIsSubscribePromptOpen(true)
@@ -1020,6 +1444,14 @@ export function ChatInterface({
       window.removeEventListener('resize', update)
     }
   }, [])
+
+  useEffect(() => {
+    if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT && isSidebarOpen) {
+      setIsVerifierSidebarOpen(false)
+      setIsAskSidebarOpen(false)
+      setIsArtifactSidebarOpen(false)
+    }
+  }, [windowWidth, isSidebarOpen])
 
   // Listen for `OPEN_ARTIFACT_PREVIEW_EVENT` dispatched by the
   // `render_artifact_preview` inline card. Shows the artifact in the right
@@ -1121,9 +1553,12 @@ export function ChatInterface({
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [inputAreaHeight, setInputAreaHeight] = useState(0)
   const inputAreaObserver = useRef<ResizeObserver | null>(null)
-  const inputAreaRef = useCallback((node: HTMLDivElement | null) => {
+  const inputAreaRef = useCallback((node: HTMLFieldSetElement | null) => {
     inputAreaObserver.current?.disconnect()
-    if (!node) return
+    if (!node) {
+      setInputAreaHeight(0)
+      return
+    }
     const measure = () =>
       setInputAreaHeight(node.getBoundingClientRect().height)
     measure()
@@ -1131,17 +1566,38 @@ export function ChatInterface({
     inputAreaObserver.current.observe(node)
   }, [])
   useEffect(() => () => inputAreaObserver.current?.disconnect(), [])
-  const handleScroll = () => {
+  const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current
     if (el)
       setShowScrollButton(
-        el.scrollHeight - el.scrollTop - el.clientHeight > 200,
+        getChatContentBottomScrollTop(
+          el.scrollHeight,
+          el.clientHeight,
+          getChatSpacerHeight(el),
+        ) -
+          el.scrollTop >
+          CONSTANTS.CHAT_SCROLL_BUTTON_THRESHOLD_PX,
       )
-  }
+  }, [])
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    const observer = new ResizeObserver(handleScroll)
+    observer.observe(el)
+    if (el.firstElementChild) observer.observe(el.firstElementChild)
+    return () => observer.disconnect()
+  }, [handleScroll, logoAnimDone])
   const scrollToLastMessage = () => {
     const el = scrollContainerRef.current
     if (!el) return
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    el.scrollTo({
+      top: getChatContentBottomScrollTop(
+        el.scrollHeight,
+        el.clientHeight,
+        getChatSpacerHeight(el),
+      ),
+      behavior: 'smooth',
+    })
     // Move keyboard/screen-reader focus to the latest message so it is read
     // out and becomes the navigation anchor. preventScroll avoids fighting the
     // smooth scroll above.
@@ -1149,14 +1605,11 @@ export function ChatInterface({
     const lastMessage = messageEls[messageEls.length - 1] as HTMLElement | null
     lastMessage?.focus({ preventScroll: true })
   }
-  useEffect(() => {
-    if (!showScrollButton) {
-      const el = scrollContainerRef.current
-      el?.scrollTo({ top: el.scrollHeight })
-    }
-  }, [currentChat.messages.length, isStreaming, showScrollButton])
   const showEmptyChatGrid =
-    currentChat.messages.length === 0 && !isWaitingForResponse
+    currentChat.messages.length === 0 &&
+    !isWaitingForResponse &&
+    !isChatHydrating &&
+    !historyProblem
 
   if (!session && sessionError) {
     return (
@@ -1172,7 +1625,8 @@ export function ChatInterface({
             Something went wrong
           </h2>
           <p role="alert" className="mb-6 text-content-secondary">
-            {sessionError}
+            Tinfoil Chat is experiencing some technical difficulties. We&apos;re
+            working on resolving it. Please try again later.
           </p>
           <button
             onClick={() => window.location.reload()}
@@ -1191,36 +1645,27 @@ export function ChatInterface({
     )
   }
 
-  if (isLocalChatUrl && thread.notFound) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center bg-surface-chat-background px-4 font-aeonik">
-        <div className="max-w-md text-center">
-          <div className="mb-6 flex justify-center">
-            <div className="rounded-full bg-surface-chat p-4">
-              <TfChat2
-                className="h-8 w-8 !text-content-secondary"
-                aria-hidden="true"
-              />
-            </div>
-          </div>
-          <h2 className="mb-3 text-xl font-semibold text-content-primary">
-            Chat not found
-          </h2>
-          <p className="mb-6 text-content-secondary">
-            This local chat may have been deleted from your browser.
-          </p>
-          <Link
-            href="/"
-            className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
-          >
-            Start new chat
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
-  const showChatHeader = currentChat.messages.length > 0 && !isChatHydrating
+  const showChatHeader =
+    currentChat.messages.length > 0 || isChatHydrating || !!historyProblem
+  const showChatLoading = isChatHydrating && !historyProblem
+  // A chat whose history could not open explains why in its place.
+  const streamErrorBanner = streamError && !historyProblem && (
+    <StreamErrorBanner
+      key={streamError.timestamp}
+      error={streamError}
+      onDismiss={dismissStreamError}
+      onRetry={retryLastMessage}
+      onUnlock={handleOpenCloudSyncSetup}
+      isDarkMode={isDarkMode}
+    />
+  )
+  // On desktop the welcome screen holds the composer until a first message,
+  // so a send the locked key refused before showing it is explained there.
+  const showKeyErrorOnWelcome =
+    windowWidth >= CONSTANTS.MOBILE_BREAKPOINT &&
+    !showChatHeader &&
+    (streamError?.code === ERROR_CODES.keyRequired ||
+      streamError?.code === ERROR_CODES.keyMismatch)
 
   const hideTopControlsOnMobile =
     windowWidth < CONSTANTS.MOBILE_BREAKPOINT &&
@@ -1298,24 +1743,29 @@ export function ChatInterface({
         </Link>
       )}
 
-      {!!isSignedIn &&
+      {!isChatHydrating &&
         canToggleTemporaryChat(currentChat) &&
         (() => {
           const hasMessages = currentChat.messages.length > 0
+          const saving =
+            !!currentChat.id && savingTemporaryChatId === currentChat.id
           const label = isTemporaryMode
-            ? hasMessages
-              ? 'Save chat'
-              : 'Exit temporary chat'
+            ? saving
+              ? 'Saving chat'
+              : hasMessages
+                ? 'Save chat'
+                : 'Exit temporary chat'
             : 'Temporary chat'
           return (
             <div className="group relative">
               <button
                 type="button"
                 onClick={handleToggleTemporaryMode}
+                disabled={saving}
                 aria-label={label}
                 aria-pressed={isTemporaryMode}
                 className={cn(
-                  'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
+                  'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200 disabled:cursor-wait disabled:opacity-60',
                   isTemporaryMode
                     ? 'border-orange-500/40 bg-surface-chat-background bg-gradient-to-b from-orange-500/15 to-orange-500/15 text-orange-500 hover:from-orange-500/25 hover:to-orange-500/25'
                     : 'border-transparent bg-surface-chat-background text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
@@ -1334,7 +1784,8 @@ export function ChatInterface({
         })()}
 
       {/* Share button - a signed-in user shares a chat the harness stores,
-          or one kept on this device when the harness seals local shares */}
+          or one kept on this device when the harness seals local shares. A
+          signed-out visitor can copy the chat's markdown. */}
       {canShare && (
         <button
           type="button"
@@ -1431,6 +1882,7 @@ export function ChatInterface({
           : c.messages.length,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
+        activityAt: c.activityAt,
         projectId: c.projectId,
         isBlankChat: c.isBlankChat,
         isTemporary: c.isTemporary,
@@ -1483,7 +1935,7 @@ export function ChatInterface({
       {/* URL Hash Settings Handler */}
       <UrlHashSettingsHandler
         isReady={
-          !isLoadingConfig && isClient && profileReady && hasValidatedModel
+          isAuthLoaded && !isLoadingConfig && isClient && hasValidatedModel
         }
         onSettingsTabReady={(tab) => {
           setSettingsInitialTab(tab)
@@ -1561,6 +2013,9 @@ export function ChatInterface({
                 <ProjectSidebar
                   hasMore={thread.hasMoreChats}
                   onLoadMore={thread.loadMoreChats}
+                  isLoadingChats={thread.loadingChats}
+                  chatListError={thread.chatListError}
+                  onRetryChats={thread.retryChatList}
                   isOpen={isSidebarOpen}
                   setIsOpen={setIsSidebarOpen}
                   project={activeProject}
@@ -1636,6 +2091,10 @@ export function ChatInterface({
               className="z-40"
             >
               <ChatSidebar
+                isLoadingChats={thread.loadingChats}
+                chatListError={thread.chatListError}
+                onRetryChats={thread.retryChatList}
+                onUnlockChats={keyLocked ? handleOpenCloudSyncSetup : undefined}
                 isOpen={isSidebarOpen}
                 setIsOpen={setIsSidebarOpen}
                 chats={chats}
@@ -1672,7 +2131,7 @@ export function ChatInterface({
                     projectId,
                     projectName,
                     createNewChat,
-                    enterProjectMode,
+                    enterProjectMode: handleEnterProjectMode,
                   })
                 }}
                 onCreateProject={handleCreateProject}
@@ -1751,6 +2210,7 @@ export function ChatInterface({
           chats={chats}
           projects={projects}
           searchEnabled={cloudSyncEnabled && keyReady}
+          projectScoped={!!(activeProject?.id ?? initialProjectId)}
           isPremium={isPremium}
           onOpenChat={handleOpenFavorite}
           onOpenProject={(project) =>
@@ -1758,7 +2218,7 @@ export function ChatInterface({
               projectId: project.id,
               projectName: project.name,
               createNewChat,
-              enterProjectMode,
+              enterProjectMode: handleEnterProjectMode,
             })
           }
         />
@@ -1793,7 +2253,7 @@ export function ChatInterface({
           chatTitle={currentChat.title}
           chatCreatedAt={currentChat.createdAt}
           chatId={currentChat.id}
-          share={thread.share}
+          share={isSignedIn ? thread.share : undefined}
           loadDocumentText={thread.documentText}
         />
       )}
@@ -1838,9 +2298,12 @@ export function ChatInterface({
           onDeleteAllChats={thread.removeAll}
           onAllChatsDeleted={() => createNewChat()}
           onAllProjectsDeleted={() => {
+            // Only a chat in a project closes with the projects.
+            if (!activeProject && !loadingProject && !currentChat.projectId)
+              return
             exitProjectMode()
             thread.newChat()
-            void router.push('/')
+            void router.replace('/')
           }}
           isSignedIn={isSignedIn}
           isPremium={isPremium}
@@ -1932,6 +2395,8 @@ export function ChatInterface({
               <ChatHeader
                 chat={currentChat}
                 isStreaming={isStreaming}
+                isLoading={showChatLoading}
+                isUnavailable={!!historyProblem}
                 actions={topControls}
                 leadingAction={sidebarToggle}
                 notice={
@@ -1977,14 +2442,6 @@ export function ChatInterface({
             />
             <div className="relative flex min-h-0 flex-1">
               <AnimatePresence>{isForking && <ForkOverlay />}</AnimatePresence>
-              {thread.hasOlder && (
-                <button
-                  className="absolute top-16 z-10 rounded-full border border-border-subtle px-4 py-2 text-content-secondary"
-                  onClick={() => void thread.older().catch(thread.report)}
-                >
-                  Load earlier messages
-                </button>
-              )}
               <div
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
@@ -2008,7 +2465,20 @@ export function ChatInterface({
                 }
               >
                 <div className="flex min-h-full min-w-0 flex-1 [container-type:inline-size]">
-                  {isChatHydrating ? (
+                  {historyProblem ? (
+                    <ChatHistoryStatus
+                      problem={historyProblem}
+                      path={router.asPath}
+                      local={thread.local}
+                      onRetry={() => {
+                        if (!profileReady)
+                          void api.refresh().catch(thread.report)
+                        else void thread.retryOpen()?.catch(thread.report)
+                      }}
+                      onUnlock={handleOpenCloudSyncSetup}
+                      onNewChat={() => createNewChat()}
+                    />
+                  ) : isChatHydrating ? (
                     <div
                       className="flex min-h-full flex-1 items-center justify-center text-content-secondary"
                       role="status"
@@ -2065,6 +2535,14 @@ export function ChatInterface({
                       loadDocumentText={thread.documentText}
                       speak={thread.speak}
                       imagesUnsaved={!isSignedIn && !isTemporaryMode}
+                      earlierMessageCount={Math.max(
+                        0,
+                        (currentChat.messageCount ?? 0) -
+                          currentChat.messages.length,
+                      )}
+                      loadEarlierMessages={
+                        thread.hasOlder ? loadEarlierMessages : undefined
+                      }
                       showScrollButton={showScrollButton}
                       webSearchEnabled={effectiveWebSearchEnabled}
                       onWebSearchToggle={
@@ -2080,23 +2558,27 @@ export function ChatInterface({
                       activePromptPreset={activePreset}
                       onOpenPromptLibrary={handleOpenPromptLibrary}
                       onSelectPromptPreset={handleSetActivePreset}
+                      composerNotice={
+                        showKeyErrorOnWelcome ? streamErrorBanner : undefined
+                      }
+                      quote={quote}
+                      onClearQuote={() => setQuote(null)}
                     />
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Input Form - Show on mobile always, on desktop only when there are messages */}
+            {/* Input Form - Show on mobile always, on desktop for conversations and while they load */}
             {isClient &&
-              !isChatHydrating &&
-              (windowWidth < CONSTANTS.MOBILE_BREAKPOINT ||
-                currentChat.messages.length > 0) && (
-                <div
+              (windowWidth < CONSTANTS.MOBILE_BREAKPOINT || showChatHeader) && (
+                <fieldset
                   ref={inputAreaRef}
                   data-chat-input-area
-                  aria-busy={isForking || undefined}
+                  disabled={isChatHydrating || !!historyProblem}
+                  aria-busy={isForking || showChatLoading || undefined}
                   className={cn(
-                    'pointer-events-none absolute inset-x-0 bottom-0 isolate z-20 px-4 pb-4',
+                    'pointer-events-none absolute inset-x-0 bottom-0 isolate z-20 min-w-0 px-4 pb-4',
                     // The fork overlay only covers the transcript; the
                     // composer lives in this sibling layer, so it goes
                     // inert here or a send could race the fork.
@@ -2156,15 +2638,7 @@ export function ChatInterface({
                           pillClassName="rounded-full border"
                         />
                       )}
-                      {streamError && (
-                        <StreamErrorBanner
-                          key={streamError.timestamp}
-                          error={streamError}
-                          onDismiss={dismissStreamError}
-                          onRetry={retryLastMessage}
-                          isDarkMode={isDarkMode}
-                        />
-                      )}
+                      {streamErrorBanner}
                       <MessageQueue
                         queue={queuedMessages}
                         onRemove={removeQueuedMessage}
@@ -2173,6 +2647,7 @@ export function ChatInterface({
                         }}
                       />
                       <ChatInput
+                        key={isChatHydrating ? 'loading' : 'ready'}
                         input={input}
                         setInput={setInput}
                         handleSubmit={handleSubmit}
@@ -2197,7 +2672,7 @@ export function ChatInterface({
                           // With a preset active, the preset tab attached to
                           // the input card already opens the library; the
                           // mobile Prompts button would collide with it.
-                          !currentChat.messages.length && !activePreset ? (
+                          !showChatHeader && !activePreset ? (
                             <div className="mb-3 md:hidden">
                               <PromptPresetSuggestions
                                 activePreset={activePreset}
@@ -2207,7 +2682,7 @@ export function ChatInterface({
                             </div>
                           ) : undefined
                         }
-                        hasMessages={currentChat.messages.length > 0}
+                        hasMessages={showChatHeader}
                         modelSelectorButton={
                           models.length > 0 &&
                           selectedModel &&
@@ -2258,7 +2733,7 @@ export function ChatInterface({
                       />
                     </form>
                   )}
-                </div>
+                </fieldset>
               )}
           </div>
         </div>
@@ -2363,9 +2838,16 @@ export function ChatInterface({
             key={user?.id}
             onComplete={() => {
               dismissOnboarding()
+              // The account records completion too, so the profile failing
+              // to save it, as while the key is refused, is only logged.
               void api
                 .updateProfile({ hasSeenOnboarding: true })
-                .catch(thread.report)
+                .catch((cause) =>
+                  logError('Failed to save onboarding completion', cause, {
+                    component: 'ChatInterface',
+                    action: 'completeOnboarding',
+                  }),
+                )
             }}
           />
         )}

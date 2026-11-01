@@ -36,7 +36,7 @@ export const deleteProject = (api: HarnessAPI, id: string) =>
   api.post(ROUTES.projectsDelete, { id })
 
 export const deleteAllProjects = (api: HarnessAPI) =>
-  api.post(ROUTES.projectsDeleteAll)
+  api.post<{ deleted: number }>(ROUTES.projectsDeleteAll)
 
 export const uploadProjectDocument = (
   api: HarnessAPI,

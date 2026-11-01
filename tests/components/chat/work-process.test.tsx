@@ -146,8 +146,8 @@ describe('WorkProcess while the run is active', () => {
     expect(container).not.toHaveTextContent(/Worked/)
   })
 
-  it('shows the running URL fetch and code exec labels', () => {
-    const { rerender } = renderWork(
+  it('shows the running URL fetch label', () => {
+    renderWork(
       [
         search('s0'),
         {
@@ -162,29 +162,6 @@ describe('WorkProcess while the run is active', () => {
       true,
     )
     expect(getHeader()).toHaveTextContent('Reading 2 links')
-
-    rerender(
-      <WorkProcess
-        blocks={[
-          search('s0'),
-          {
-            type: 'code_exec',
-            id: 'c1',
-            calls: [
-              {
-                id: 'call-1',
-                toolName: 'bash',
-                arguments: { command: 'ls -la' },
-                status: 'running',
-              },
-            ],
-          },
-        ]}
-        isActive
-        isDarkMode={false}
-      />,
-    )
-    expect(getHeader()).toHaveTextContent('Running `ls -la`')
   })
 
   it('shows "Working" between steps when the last one has settled', () => {

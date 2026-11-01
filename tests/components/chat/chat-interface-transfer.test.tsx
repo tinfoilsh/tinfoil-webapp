@@ -332,6 +332,7 @@ describe('moving chats from the chat page', () => {
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/transcript')
         return {
+          revision: 'transfer-revision',
           thread: { ...deviceChat, updatedAt: '2026-04-02T09:00:00Z' },
         }
       if (path === '/v1/threads/delete') {
@@ -348,7 +349,10 @@ describe('moving chats from the chat page', () => {
 
     expect(calls()).toEqual([
       ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
-      ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
+      [
+        '/v1/threads/delete',
+        { key: KEY, id: CHAT_ID, revision: 'transfer-revision' },
+      ],
     ])
     expect(await stored()).toEqual({
       ...deviceChat,

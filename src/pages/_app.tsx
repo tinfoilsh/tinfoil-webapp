@@ -145,6 +145,8 @@ export default function App({ Component, pageProps, router }: AppProps) {
     '/404',
     '/_error',
   ].includes(router.pathname)
+  // A shared link opens even while the account loads, or if it cannot.
+  const sharedChat = router.pathname === '/share/[[...slug]]'
 
   return (
     <>
@@ -209,7 +211,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
           {withoutHarness ? (
             <Component {...pageProps} />
           ) : (
-            <HarnessProvider>
+            <HarnessProvider anonymous={sharedChat}>
               <Component {...pageProps} />
             </HarnessProvider>
           )}

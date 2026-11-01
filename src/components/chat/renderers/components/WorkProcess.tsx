@@ -1,5 +1,4 @@
 import type {
-  TimelineCodeExecBlock,
   TimelineThinkingBlock,
   TimelineURLFetchBlock,
   TimelineWebSearchBlock,
@@ -7,7 +6,6 @@ import type {
 import { LoadingDots } from '@/components/loading-dots'
 import { memo, useMemo, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
-import { CodeExecProcess, getCodeExecHeaderLabel } from './CodeExecProcess'
 import { formatDurationLabel } from './format-duration'
 import { ThoughtProcess } from './ThoughtProcess'
 import {
@@ -18,10 +16,7 @@ import {
 import { WebSearchProcess } from './WebSearchProcess'
 
 export type WorkBlock =
-  | TimelineThinkingBlock
-  | TimelineWebSearchBlock
-  | TimelineURLFetchBlock
-  | TimelineCodeExecBlock
+  TimelineThinkingBlock | TimelineWebSearchBlock | TimelineURLFetchBlock
 
 interface WorkProcessProps {
   /** Consecutive trace blocks, in timeline order. */
@@ -79,10 +74,6 @@ function getLiveActivity(blocks: WorkBlock[]): LiveActivity {
     case 'url_fetches':
       if (!isAnyURLFetching(last.fetches)) return { kind: 'idle' }
       return { kind: 'action', label: getURLFetchHeaderLabel(last.fetches) }
-    case 'code_exec':
-      if (!last.calls.some((c) => c.status === 'running'))
-        return { kind: 'idle' }
-      return { kind: 'action', label: getCodeExecHeaderLabel(last.calls) }
   }
 }
 
@@ -220,8 +211,6 @@ export const WorkProcess = memo(function WorkProcess({
                       urlFetches={block.fetches}
                     />
                   )
-                case 'code_exec':
-                  return <CodeExecProcess key={block.id} calls={block.calls} />
               }
             })}
           </div>

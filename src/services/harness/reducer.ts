@@ -1,10 +1,11 @@
-import { ERROR_CODES } from './protocol'
+import { ERROR_CODES, WIDGET_PREFIX } from './protocol'
 import { HarnessError } from './sse'
 import type {
   ActivityPatch,
   Frame,
   HarnessErrorBody,
   HarnessEvent,
+  Json,
   Message,
   Snapshot,
   StatePatch,
@@ -19,7 +20,7 @@ export interface ChatState {
   messages: Message[]
   hasOlder: boolean
   runId?: string
-  status: 'idle' | 'queued' | 'streaming' | 'error'
+  status: 'idle' | 'submitting' | 'queued' | 'streaming' | 'error'
   error?: HarnessErrorBody
   // The run that ended with RUN_ERROR. It is run again rather than rejoined.
   failedRun?: string
@@ -57,6 +58,9 @@ export const runOf = (event: HarnessEvent): string | undefined =>
 const REASONING_SUFFIX = /-reasoning$/
 // A tool's activity streams under the tool call's id with this prefix.
 const ACTIVITY_PREFIX = /^act_/
+// The status of a widget call's result when the harness refused its
+// arguments and asked the model to call the widget again.
+const REFUSED_WIDGET_STATUS = 'error'
 const DEFAULT_RUN_ERROR = 'The run could not finish.'
 
 function invalidPatch(): never {
@@ -68,6 +72,35 @@ function invalidPatch(): never {
 
 const replaceAt = <T>(items: readonly T[], index: number, item: T): T[] =>
   items.map((current, at) => (at === index ? item : current))
+
+// Whether a widget call's result refuses the arguments it was drawn from.
+function refusesWidget(block: TimelineBlock, result: Json | undefined) {
+  return (
+    !!block.name?.startsWith(WIDGET_PREFIX) &&
+    typeof result === 'object' &&
+    result !== null &&
+    !Array.isArray(result) &&
+    result.status === REFUSED_WIDGET_STATUS
+  )
+}
+
+// When an event happened, in epoch milliseconds, if it says.
+function millisOf(timestamp: string | undefined): number | undefined {
+  const at = timestamp ? Date.parse(timestamp) : NaN
+  return Number.isNaN(at) ? undefined : at
+}
+
+// How long a reasoning block has thought by a chunk at `at`, as the harness
+// stores it.
+function thoughtUntil(
+  block: TimelineBlock,
+  at: number | undefined,
+): Partial<TimelineBlock> {
+  if (block.startedAt === undefined || at === undefined || at < block.startedAt)
+    return {}
+  const duration = (at - block.startedAt) / 1000
+  return { endedAt: at, ...(duration > 0 ? { duration } : {}) }
+}
 
 // The queue and title changes a run sends. Each change copies only what it
 // changes.
@@ -169,17 +202,59 @@ function sealOf(messages: Message[], id: string): Record<string, number> {
   }
 }
 
+// A window of the chat's latest messages, after the earlier messages the
+// view loaded before the window's first.
+export function afterLoaded(
+  view: Pick<ChatState, 'messages' | 'hasOlder'>,
+  messages: Message[],
+  hasOlder: boolean,
+): Pick<ChatState, 'messages' | 'hasOlder'> {
+  const start = view.messages.findIndex(
+    (message) => message.id === messages[0]?.id,
+  )
+  if (start <= 0) return { messages, hasOlder }
+  return {
+    messages: [...view.messages.slice(0, start), ...messages],
+    hasOlder: view.hasOlder,
+  }
+}
+
 const withoutQueued = (snapshot: Snapshot, runId?: string): Snapshot => ({
   ...snapshot,
   queue: snapshot.queue.filter((item) => item.queueId !== runId),
 })
 
+// Why a run ended with RUN_ERROR.
+export const runErrorOf = (
+  event: Extract<HarnessEvent, { type: 'RUN_ERROR' }>,
+): HarnessErrorBody => ({
+  code: event.code ?? ERROR_CODES.upstreamRefused,
+  message: event.message ?? DEFAULT_RUN_ERROR,
+  ...(event.kind ? { kind: event.kind } : {}),
+  ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
+  ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
+})
+
+// The events of a widget's retry that the chat applies: the call redrawn
+// from its new arguments, and what the call read for them, as a link
+// preview's page. The run reports the reply it redrew as its own, under the
+// model the chat has now.
+const WIDGET_RETRY_EVENTS: ReadonlySet<HarnessEvent['type']> = new Set([
+  'TOOL_CALL_START',
+  'TOOL_CALL_ARGS',
+  'TOOL_CALL_END',
+  'TOOL_CALL_RESULT',
+])
+
 // Applies one frame of a run. A frame the state applied already, as when a
-// run is replayed from its first frame, returns the state itself.
+// run is replayed from its first frame, returns the state itself. A widget's
+// retry redraws the widget and leaves the chat's run, status and error as
+// they were.
 export function reduceEvent(
   state: ChatState,
   frame: Frame,
   runHint?: string,
+  widgetRetry = false,
 ): ChatState {
   const { event } = frame
   const runId = runOf(event) ?? runHint ?? state.runId
@@ -195,9 +270,11 @@ export function reduceEvent(
       ? { ...state.cursors, [runId]: frame.id }
       : state.cursors
   const next: ChatState = { ...state, cursors }
+  if (widgetRetry && !WIDGET_RETRY_EVENTS.has(event.type)) return next
   // A queued run has its own stream. Its cancellation cannot stop the active
   // run, and late frames from the previous run cannot modify a newer snapshot.
   if (
+    !widgetRetry &&
     runId &&
     state.runId &&
     runId !== state.runId &&
@@ -238,13 +315,14 @@ export function reduceEvent(
         : { ...next, snapshot }
     }
     case 'MESSAGES_SNAPSHOT': {
-      const messages = event.messages
+      const shown = afterLoaded(next, event.messages, event.hasOlder ?? false)
       return {
         ...next,
-        messages,
-        hasOlder: event.hasOlder ?? false,
+        ...shown,
         // The window holds the continued reply as the harness stored it.
-        ...(next.continued ? { sealed: sealOf(messages, next.continued) } : {}),
+        ...(next.continued
+          ? { sealed: sealOf(shown.messages, next.continued) }
+          : {}),
       }
     }
     case 'TEXT_MESSAGE_CHUNK':
@@ -255,14 +333,29 @@ export function reduceEvent(
         : event.messageId
       const type = thinking ? 'thinking' : 'content'
       const sealed = next.sealed?.[id] ?? 0
+      const at = millisOf(event.timestamp)
       return {
         ...next,
         messages: withReply(next.messages, id, event.timestamp, (blocks) => {
           const last = blocks.at(-1)
+          const before = blocks.at(-2)
+          // Reasoning that arrives after the reply's text began is the tail
+          // of the reasoning before that text, as the harness keeps it.
+          if (
+            thinking &&
+            blocks.length - 2 >= sealed &&
+            last?.type === 'content' &&
+            before?.type === 'thinking'
+          )
+            return replaceAt(blocks, blocks.length - 2, {
+              ...before,
+              content: (before.content ?? '') + event.delta,
+            })
           if (last?.type === type && blocks.length > sealed)
             return replaceAt(blocks, blocks.length - 1, {
               ...last,
               content: (last.content ?? '') + event.delta,
+              ...(thinking ? thoughtUntil(last, at) : {}),
             })
           return [
             ...blocks,
@@ -270,6 +363,9 @@ export function reduceEvent(
               id: `${id}_${type}_${blocks.length}`,
               type,
               content: event.delta,
+              ...(thinking && at !== undefined
+                ? { startedAt: at, endedAt: at }
+                : {}),
             },
           ]
         }),
@@ -282,12 +378,17 @@ export function reduceEvent(
       }
     case 'TOOL_CALL_START': {
       const { toolCallId, toolCallName: name } = event
-      const restarted = withToolCall(next.messages, toolCallId, (block) => ({
-        ...block,
-        arguments: '',
-        name,
-        complete: false,
-      }))
+      const at = millisOf(event.timestamp)
+      const restarted = withToolCall(
+        next.messages,
+        toolCallId,
+        ({ invalidArguments: _invalid, ...block }) => ({
+          ...block,
+          arguments: '',
+          name,
+          complete: false,
+        }),
+      )
       return {
         ...next,
         messages:
@@ -306,6 +407,7 @@ export function reduceEvent(
                 arguments: '',
                 complete: false,
                 progress: [],
+                ...(at !== undefined ? { startedAt: at } : {}),
               },
             ],
           ),
@@ -329,7 +431,8 @@ export function reduceEvent(
             complete: true,
           })) ?? next.messages,
       }
-    case 'TOOL_CALL_RESULT':
+    case 'TOOL_CALL_RESULT': {
+      const at = millisOf(event.timestamp)
       return {
         ...next,
         messages:
@@ -338,8 +441,16 @@ export function reduceEvent(
             result: event.content,
             metadata: event.metadata,
             ...(event.display ? { display: event.display } : {}),
+            ...(refusesWidget(block, event.content)
+              ? { invalidArguments: true }
+              : {}),
+            ...(at !== undefined &&
+            (block.startedAt === undefined || at >= block.startedAt)
+              ? { endedAt: at }
+              : {}),
           })) ?? next.messages,
       }
+    }
     case 'ACTIVITY_SNAPSHOT':
     case 'ACTIVITY_DELTA': {
       const toolCallId = event.messageId.replace(ACTIVITY_PREFIX, '')
@@ -368,8 +479,8 @@ export function reduceEvent(
     case 'RUN_FINISHED':
     case 'RUN_ERROR': {
       const failed = event.type === 'RUN_ERROR'
-      const last = next.messages.findLastIndex(
-        (message) => message.role === 'assistant',
+      const committed = new Map(
+        event.metadata?.messages?.map((message) => [message.id, message]),
       )
       return {
         ...next,
@@ -377,27 +488,17 @@ export function reduceEvent(
         status: failed ? 'error' : 'idle',
         ...(failed
           ? {
-              error: {
-                code: event.code ?? ERROR_CODES.upstreamRefused,
-                message: event.message ?? DEFAULT_RUN_ERROR,
-                ...(event.kind ? { kind: event.kind } : {}),
-                ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
-                ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
-              },
+              error: runErrorOf(event),
               ...(runId ? { failedRun: runId } : {}),
               ...(event.code === ERROR_CODES.chatFlagged
                 ? { flagged: true }
                 : {}),
             }
           : {}),
-        messages:
-          last < 0
-            ? next.messages
-            : replaceAt(next.messages, last, {
-                ...next.messages[last],
-                isError: failed,
-                isInterrupted: event.metadata?.cancelled === true,
-              }),
+        messages: next.messages.map((message) => {
+          const metadata = committed.get(message.id)
+          return metadata ? { ...message, ...metadata } : message
+        }),
       }
     }
   }

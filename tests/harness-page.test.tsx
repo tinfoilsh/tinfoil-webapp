@@ -136,8 +136,11 @@ it('rejoins an accepted turn by its run when its stream drops', async () => {
     event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a', delta },
   })
   client.events
-    .mockImplementationOnce(async function* () {
-      yield started
+    .mockImplementationOnce(async function* (_path, input: Turn) {
+      yield {
+        ...started,
+        event: { ...started.event, threadId: input.threadId! },
+      }
       yield messages
       yield chunk(2, ', and more')
       throw new TypeError('connection closed')

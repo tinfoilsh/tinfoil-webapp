@@ -158,6 +158,42 @@ describe('ShareModal', () => {
     )
   })
 
+  it('copies the markdown only once the documents it lists are read', async () => {
+    const read = deferred<string>()
+    const writeText = vi.fn(async (_text: string) => {})
+    vi.spyOn(navigator, 'clipboard', 'get').mockReturnValue({
+      writeText,
+    } as unknown as Clipboard)
+    render(
+      <ShareModal
+        {...props}
+        loadDocumentText={() => read.promise}
+        messages={[
+          {
+            role: 'user',
+            content: 'See attached',
+            timestamp: new Date(0),
+            attachments: [
+              { id: 'att_report', type: 'document', fileName: 'report.pdf' },
+            ],
+          },
+        ]}
+      />,
+    )
+    const loading = screen.getByRole('button', { name: 'Loading documents...' })
+    expect(loading).toBeDisabled()
+    fireEvent.click(loading)
+    expect(writeText).not.toHaveBeenCalled()
+
+    await act(async () => read.resolve('Revenue grew.'))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy to Clipboard' }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce())
+    expect(writeText.mock.calls[0][0]).toContain(
+      'Document title: report.pdf\nRevenue grew.',
+    )
+  })
+
   it('reads a document again when the dialog reopens after its read failed while closed', async () => {
     const first = deferred<string>()
     const load = vi

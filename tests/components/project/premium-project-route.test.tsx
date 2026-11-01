@@ -1,4 +1,4 @@
-import { PremiumProjectRoute } from '@/components/project/premium-project-route'
+import { ChatRoute as PremiumProjectRoute } from '@/components/chat/chat-route'
 import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

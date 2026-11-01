@@ -215,11 +215,21 @@ describe('speech requests', () => {
   })
 
   it.each([
-    [400, 'BAD_REQUEST', 'There is nothing to read aloud'],
-    [413, 'PAYLOAD_TOO_LARGE', 'The text is too long to read aloud'],
+    [
+      400,
+      'BAD_REQUEST',
+      'There is nothing to read aloud',
+      'There is no readable text in this response.',
+    ],
+    [
+      413,
+      'PAYLOAD_TOO_LARGE',
+      'The text is too long to read aloud',
+      'This response is too long to read aloud.',
+    ],
   ])(
     'shows why the harness refuses a text with status %i',
-    async (status, code, message) => {
+    async (status, code, message, shown) => {
       const { speech } = connect(
         () =>
           new Response(JSON.stringify({ error: { code, message } }), {
@@ -230,7 +240,7 @@ describe('speech requests', () => {
       const result = collect(speech(new AbortController().signal)).catch(
         speechErrorMessage,
       )
-      await expect(result).resolves.toBe(message)
+      await expect(result).resolves.toBe(shown)
     },
   )
 })

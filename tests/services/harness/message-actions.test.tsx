@@ -311,6 +311,112 @@ describe('regenerating a reply', () => {
   })
 })
 
+describe('the chat a regenerated or edited turn leaves', () => {
+  function openCloud() {
+    signIn({ cloud: true, session })
+    client.post.mockImplementation(async (path: string) =>
+      path === '/v1/threads/get'
+        ? cloudThread()
+        : path === '/v1/threads/list'
+          ? { threads: [], nextCursor: null }
+          : {},
+    )
+    return renderHook(() => useThread(THREAD_ID, null))
+  }
+  // A run whose frames wait until it is released.
+  function heldRun(run: () => AsyncGenerator<Frame>) {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    client.events.mockImplementationOnce(async function* () {
+      await held
+      yield* run()
+    })
+    return () => act(async () => release())
+  }
+
+  it('shows at once without the regenerated reply', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    const release = heldRun(regenerated(transcript.slice(0, 3).map(wire)))
+
+    let regenerating!: Promise<boolean | undefined>
+    act(() => {
+      regenerating = result.current.regenerate(3)
+    })
+
+    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+    expect(result.current.running).toBe(true)
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+    ])
+    await release()
+    await act(() => regenerating)
+    expect(result.current.chat.messages.map((m) => [m.id, m.content])).toEqual([
+      ['u1', 'one'],
+      ['a1', 'first answer'],
+      ['u2', 'two'],
+      ['msg_regen', 'new answer'],
+    ])
+  })
+
+  it('shows the edited message at once in place of the one it replaces', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    const release = heldRun(regenerated(transcript.slice(0, 2).map(wire)))
+
+    let editing!: Promise<boolean> | undefined
+    act(() => {
+      editing = result.current.send({
+        kind: 'edit',
+        messageId: 'u2',
+        content: 'two, edited',
+      })
+    })
+
+    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+    expect(turn()).toMatchObject({
+      kind: 'edit',
+      messageId: 'u2',
+      content: 'two, edited',
+    })
+    expect(result.current.chat.messages.map((m) => [m.id, m.content])).toEqual([
+      ['u1', 'one'],
+      ['a1', 'first answer'],
+      [turn().clientRequestId, 'two, edited'],
+    ])
+    expect(result.current.chat.messages[2].role).toBe('user')
+    await release()
+    await act(async () => {
+      await editing
+    })
+  })
+
+  it('shows the chat as it was when the harness refuses the turn', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    client.events.mockImplementationOnce(async function* () {
+      throw new HarnessError(
+        { code: 'RATE_LIMITED', message: 'Chat access is busy; retry shortly' },
+        429,
+      )
+    })
+
+    await act(() => result.current.regenerate(3))
+
+    expect(result.current.errorDetail).toMatchObject({ code: 'RATE_LIMITED' })
+    expect(result.current.chat.messages.map((m) => [m.id, m.content])).toEqual([
+      ['u1', 'one'],
+      ['a1', 'first answer'],
+      ['u2', 'two'],
+      ['a2', 'second answer'],
+    ])
+  })
+})
+
 describe('retrying after an error', () => {
   function openCloud() {
     signIn({ cloud: true, session })
@@ -836,5 +942,119 @@ describe('changing messages of a local chat', () => {
       thread: localThread(),
       profile: {},
     })
+  })
+})
+
+describe('keeping the earlier messages the user loaded', () => {
+  const question: ThreadMessage = {
+    id: 'u3',
+    role: 'user',
+    createdAt: '2026-04-01T09:02:00Z',
+    content: 'three',
+  }
+  // Opens a stored chat whose window holds its last exchange, and loads the
+  // messages before it. The harness answers a message change with `changed`.
+  async function openWithEarlier(changed?: Thread) {
+    signIn({ cloud: true, session })
+    client.post.mockImplementation(async (path: string, input: unknown) => {
+      if (path === '/v1/threads/get')
+        return (input as { before?: string }).before === 'u2'
+          ? { ...cloudThread(transcript.slice(0, 2)), hasOlder: false }
+          : { ...cloudThread(transcript.slice(2)), hasOlder: true }
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      if (
+        changed &&
+        (path === '/v1/threads/messages/delete' ||
+          path === '/v1/threads/messages/update')
+      )
+        return changed
+      throw new Error(`Unexpected ${path}`)
+    })
+    const hook = renderHook(() => useThread(THREAD_ID, null))
+    await waitFor(() =>
+      expect(hook.result.current.chat.messages).toHaveLength(2),
+    )
+    await act(() => hook.result.current.older())
+    expect(hook.result.current.chat.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+    ])
+    expect(hook.result.current.hasOlder).toBe(false)
+    return hook
+  }
+  // The window the harness answers a change with: the chat's last two
+  // messages, after which more are stored.
+  const lastTwo = (messages: ThreadMessage[]): Thread => ({
+    ...cloudThread(messages.slice(-2)),
+    messageCount: messages.length,
+    hasOlder: true,
+  })
+
+  it("keeps them when a run's window starts after them", async () => {
+    const { result } = await openWithEarlier()
+    client.events.mockImplementationOnce(async function* () {
+      const events: Frame['event'][] = [
+        { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-2' },
+        {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [transcript[3], question].map(wire),
+          hasOlder: true,
+        },
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'a3',
+          delta: 'third answer',
+          timestamp: '2026-04-01T09:02:01Z',
+        },
+        { type: 'RUN_FINISHED', threadId: THREAD_ID, runId: 'run-2' },
+      ]
+      for (const [id, event] of events.entries()) yield { id, event }
+    })
+
+    await act(() => result.current.send({ content: 'three' }))
+
+    expect(result.current.chat.messages.map((m) => [m.id, m.content])).toEqual([
+      ['u1', 'one'],
+      ['a1', 'first answer'],
+      ['u2', 'two'],
+      ['a2', 'second answer'],
+      ['u3', 'three'],
+      ['a3', 'third answer'],
+    ])
+    expect(result.current.hasOlder).toBe(false)
+  })
+
+  it('keeps them, less the one deleted, when a message is deleted', async () => {
+    const { result } = await openWithEarlier(
+      lastTwo([transcript[0], transcript[2], transcript[3]]),
+    )
+
+    await act(() => result.current.deleteMessage(1))
+
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'u2',
+      'a2',
+    ])
+    expect(result.current.hasOlder).toBe(false)
+  })
+
+  it('keeps them, with the reply rewritten, when an earlier reply is edited', async () => {
+    const { result } = await openWithEarlier(lastTwo(transcript))
+
+    await act(() => result.current.editReply(1, 'Better first'))
+
+    expect(result.current.chat.messages.map((m) => [m.id, m.content])).toEqual([
+      ['u1', 'one'],
+      ['a1', 'Better first'],
+      ['u2', 'two'],
+      ['a2', 'second answer'],
+    ])
+    expect(result.current.chat.messages[1].timeline).toEqual([
+      { id: 'b1', type: 'content', content: 'Better first' },
+    ])
+    expect(result.current.hasOlder).toBe(false)
   })
 })

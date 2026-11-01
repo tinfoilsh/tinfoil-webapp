@@ -1,4 +1,6 @@
+import { DEFAULT_CHAT_TITLE } from '@/constants/chat'
 import { localThreadStore } from '@/services/harness/local-threads'
+import type { OpenChatResult } from '@/services/harness/open-chat'
 import { HarnessError } from '@/services/harness/sse'
 import type {
   AttachmentDescriptor,
@@ -237,6 +239,53 @@ describe('local chats of a signed-in account without cloud sync', () => {
     )
   })
 
+  it('explains a reply this device could not store, without offering to resend', async () => {
+    signIn('alice')
+    const store = localThreadStore('device')
+    const update = store.update.bind(store)
+    let refuse = false
+    vi.spyOn(store, 'update').mockImplementation((...args) =>
+      refuse
+        ? Promise.reject(
+            new DOMException('Storage is full', 'QuotaExceededError'),
+          )
+        : update(...args),
+    )
+    client.events.mockImplementation((_path: string, input: Turn) => {
+      const threadId = input.threadId!
+      const returned = storedThread(threadId, {
+        messages: [
+          {
+            id: input.clientRequestId,
+            role: 'user',
+            createdAt: '2026-05-01T10:00:01Z',
+            content: 'Hi there',
+          },
+        ],
+      })
+      return (async function* (): AsyncGenerator<Frame> {
+        yield {
+          id: 0,
+          event: { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+        }
+        // Only the reply's own save fails.
+        refuse = true
+        yield { id: 1, event: finished(threadId, returned) }
+      })()
+    })
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+
+    await act(() => result.current.send({ content: 'Hi there' }))
+
+    await waitFor(() =>
+      expect(result.current.errorDetail).toEqual({
+        code: 'LOCAL_SAVE_FAILED',
+        message: 'This chat could not be saved on this device.',
+      }),
+    )
+  })
+
   it('lists a new chat with its message as soon as it is sent', async () => {
     signIn('alice')
     let release!: () => void
@@ -280,7 +329,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     const threadId = turn().threadId!
     expect(result.current.chats[0]).toMatchObject({
       id: threadId,
-      title: 'New Chat',
+      title: DEFAULT_CHAT_TITLE,
       isLocalOnly: true,
       messageCount: 1,
     })
@@ -351,7 +400,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     act(() => {
       sending = result.current.send({ content: 'third' })
     })
-    await waitFor(() => expect(result.current.running).toBe(true))
+    await waitFor(() => expect(result.current.status).toBe('streaming'))
 
     applies({ title: 'Mine', titleState: 'manual' })
     await act(() => result.current.update(SEEDED_ID, { title: 'Mine' }))
@@ -508,7 +557,12 @@ describe('local chats of a signed-in account without cloud sync', () => {
     )
     await waitFor(() => expect(hook.result.current.model).toBe('test-model'))
     if (initialId)
-      await waitFor(() => expect(hook.result.current.chat.id).toBe(initialId))
+      await waitFor(() =>
+        expect(hook.result.current).toMatchObject({
+          chat: { id: initialId },
+          loading: false,
+        }),
+      )
     let sending!: Promise<boolean | undefined> | undefined
     act(() => {
       sending = hook.result.current.send({ content: 'Q' })
@@ -722,7 +776,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
       return read(id)
     })
     const { result } = renderHook(() => useThread())
-    let opening!: Promise<void>
+    let opening!: Promise<OpenChatResult>
     act(() => {
       opening = result.current.open(SEEDED_ID, { local: true })
     })
@@ -736,6 +790,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     })
 
     expect(result.current.chat.isBlankChat).toBe(true)
+    expect(result.current.loading).toBe(false)
     expect(client.events).not.toHaveBeenCalled()
   })
 
@@ -1089,7 +1144,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(turn().thread).toEqual(upgraded)
   })
 
-  it("shows the messages before a run's window from the copy on this device", async () => {
+  it("keeps showing the messages before a run's window", async () => {
     signIn('alice')
     await localThreadStore('device').update(SEEDED_ID, () => seeded())
     const [, , u2, a2] = SEEDED_MESSAGES
@@ -1118,6 +1173,47 @@ describe('local chats of a signed-in account without cloud sync', () => {
     )
     await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
     await act(() => result.current.send({ content: 'third' }))
+
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+      'u3',
+    ])
+    expect(result.current.hasOlder).toBe(false)
+    expect(client.post).not.toHaveBeenCalled()
+  })
+
+  it("shows the messages before a run's window from the copy on this device", async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const question = {
+      id: 'u3',
+      role: 'user' as const,
+      createdAt: 't5',
+      content: 'third',
+    }
+    client.events.mockImplementation(
+      frames(
+        { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-1' },
+        {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [question] as Message[],
+          hasOlder: true,
+        },
+        finished(
+          SEEDED_ID,
+          seeded({ messages: [...SEEDED_MESSAGES, question] }),
+        ),
+      ),
+    )
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    await act(() => result.current.send({ content: 'third' }))
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual(['u3'])
     expect(result.current.hasOlder).toBe(true)
 
     await act(() => result.current.older())
@@ -1172,7 +1268,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     act(() => {
       sending = result.current.send({ content: 'Long task' })
     })
-    await waitFor(() => expect(result.current.running).toBe(true))
+    await waitFor(() => expect(result.current.status).toBe('streaming'))
     const threadId = turn().threadId!
 
     await act(() => result.current.cancel())
@@ -1705,7 +1801,12 @@ describe('cloud chats', () => {
         throw new Error(`Unexpected ${path}`)
       })
       const hook = renderHook(() => useThread(stored.id))
-      await waitFor(() => expect(hook.result.current.chat.id).toBe(stored.id))
+      await waitFor(() =>
+        expect(hook.result.current).toMatchObject({
+          chat: { id: stored.id },
+          loading: false,
+        }),
+      )
       return hook
     }
 
@@ -1842,7 +1943,12 @@ describe('cloud chats', () => {
       throw new Error(`Unexpected ${path}`)
     })
     const { result } = renderHook(() => useThread('cloud-a'))
-    await waitFor(() => expect(result.current.chat.id).toBe('cloud-a'))
+    await waitFor(() =>
+      expect(result.current).toMatchObject({
+        chat: { id: 'cloud-a' },
+        loading: false,
+      }),
+    )
 
     await act(async () => {
       releaseList()
@@ -1934,7 +2040,12 @@ describe('cloud chats', () => {
       }
     })
     const { result } = renderHook(() => useThread(stored.id))
-    await waitFor(() => expect(result.current.chat.id).toBe(stored.id))
+    await waitFor(() =>
+      expect(result.current).toMatchObject({
+        chat: { id: stored.id },
+        loading: false,
+      }),
+    )
     let sending: Promise<unknown> | undefined
     act(() => {
       sending = result.current.send({ content: 'More' })

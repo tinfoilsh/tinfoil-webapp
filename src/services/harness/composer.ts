@@ -1,4 +1,4 @@
-import { formatFileSize } from '@/utils/format-file-size'
+import { BYTES_PER_MB, formatFileSize } from '@/utils/format-file-size'
 import { ERROR_CODES } from './protocol'
 import { HarnessError } from './sse'
 import type { FileGroup } from './types'
@@ -13,12 +13,34 @@ function extensionOf(name: string) {
 export const acceptOf = (groups: readonly FileGroup[] | undefined) =>
   groups?.flatMap((group) => group.accept).join(',')
 
-// Refuses a picked file before it uploads: one whose extension no group
-// accepts, or one larger than its group takes.
+// A file of a type no group names uploads as text, which the harness reads
+// when its contents are text.
+const TEXT_EXTENSION = '.txt'
+
+// The megabyte the app has always allowed over the limit it states for
+// files other than text: it states 32MB, and a file of about 32.5MB still
+// fits under the 33MB the harness takes.
+const STATED_LIMIT_ALLOWANCE_MB = 1
+
+// A limit of whole megabytes reads as the app always wrote it: 50MB for
+// text, and 32MB for other files the harness takes up to 33MB of.
+const limitLabel = (bytes: number, text: boolean) => {
+  if (bytes % BYTES_PER_MB !== 0) return formatFileSize(bytes)
+  const megabytes = bytes / BYTES_PER_MB
+  const stated =
+    text || megabytes <= STATED_LIMIT_ALLOWANCE_MB
+      ? megabytes
+      : megabytes - STATED_LIMIT_ALLOWANCE_MB
+  return `${stated}MB`
+}
+
+// Refuses a picked file before it uploads: one larger than its group takes,
+// or one of a type no group names when no group takes text.
 export function checkUpload(file: File, groups: readonly FileGroup[]) {
   const extension = extensionOf(file.name)
   const group =
-    extension && groups.find((group) => group.accept.includes(extension))
+    (extension && groups.find((group) => group.accept.includes(extension))) ||
+    groups.find((group) => group.accept.includes(TEXT_EXTENSION))
   if (!group)
     throw new HarnessError(
       {
@@ -27,12 +49,70 @@ export function checkUpload(file: File, groups: readonly FileGroup[]) {
       },
       415,
     )
-  if (file.size <= group.maxBytes) return
+  if (file.size <= group.maxBytes) return group
+  const text = group.accept.includes(TEXT_EXTENSION)
+  const limit = limitLabel(group.maxBytes, text)
   throw new HarnessError(
     {
       code: ERROR_CODES.attachmentTooLarge,
-      message: `${file.name} is larger than the ${formatFileSize(group.maxBytes)} limit.`,
+      message: text
+        ? `Text file exceeds the limit of ${limit}.`
+        : `File size exceeds the limit of ${limit}.`,
     },
     413,
   )
+}
+
+const UPLOAD_IMAGE_QUALITY = 0.85
+
+// Only the upload copy is scaled; text extraction and image descriptions
+// belong to the harness.
+export async function prepareUpload(
+  file: File,
+  groups: readonly FileGroup[],
+): Promise<File> {
+  const group = checkUpload(file, groups)
+  if (!group.imageMaxSide) return file
+  const source = URL.createObjectURL(file)
+  try {
+    const image = new Image()
+    image.src = source
+    await image.decode()
+    const scale = Math.min(
+      1,
+      group.imageMaxSide / Math.max(image.naturalWidth, image.naturalHeight),
+    )
+    if (scale === 1) {
+      return file
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.floor(image.naturalWidth * scale))
+    canvas.height = Math.max(1, Math.floor(image.naturalHeight * scale))
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Image resizing is unavailable.')
+    context.fillStyle = 'white'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (value) =>
+          value
+            ? resolve(value)
+            : reject(new Error('The image could not be resized.')),
+        'image/jpeg',
+        UPLOAD_IMAGE_QUALITY,
+      ),
+    )
+    const resized = new File([blob], file.name, {
+      type: blob.type,
+      lastModified: file.lastModified,
+    })
+    return resized.size <= group.maxBytes ? resized : file
+  } catch {
+    // A browser without this image decoder can still upload an image that
+    // already fits; the harness has its own decoders.
+    return file
+  } finally {
+    URL.revokeObjectURL(source)
+  }
 }

@@ -8,8 +8,16 @@ vi.mock('@clerk/react', () => ({
   ClerkProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
 vi.mock('@/services/harness/provider', () => ({
-  HarnessProvider: ({ children }: { children: ReactNode }) => (
-    <div data-testid="harness">{children}</div>
+  HarnessProvider: ({
+    children,
+    anonymous = false,
+  }: {
+    children: ReactNode
+    anonymous?: boolean
+  }) => (
+    <div data-testid="harness" data-anonymous={String(anonymous)}>
+      {children}
+    </div>
   ),
 }))
 vi.mock('@/components/auth-cleanup-handler', () => ({
@@ -58,4 +66,49 @@ describe('the chat service around pages', () => {
     expect(screen.getByRole('main')).toHaveTextContent('Page')
     expect(screen.queryByTestId('harness') !== null).toBe(wrapped)
   })
+
+  it.each([
+    { pathname: '/', asPath: '/', isReady: true, anonymous: 'false' },
+    {
+      pathname: '/chat/[[...slug]]',
+      asPath: '/chat/c1',
+      isReady: true,
+      anonymous: 'false',
+    },
+    {
+      pathname: '/share/[[...slug]]',
+      asPath: '/share/s1',
+      isReady: true,
+      anonymous: 'true',
+    },
+    // The share shell's route names the page before the router has its id.
+    {
+      pathname: '/share/[[...slug]]',
+      asPath: '/share/s1',
+      isReady: false,
+      anonymous: 'true',
+    },
+  ])(
+    'opens $asPath (ready: $isReady) without the account: $anonymous',
+    ({ pathname, asPath, isReady, anonymous }) => {
+      const router = {
+        pathname,
+        asPath,
+        query: {},
+        isReady,
+      }
+      render(
+        <App
+          Component={() => <main>Page</main>}
+          pageProps={{}}
+          router={router as unknown as AppProps['router']}
+        />,
+      )
+
+      expect(screen.getByTestId('harness')).toHaveAttribute(
+        'data-anonymous',
+        anonymous,
+      )
+    },
+  )
 })

@@ -98,6 +98,36 @@ describe('StreamErrorBanner', () => {
   })
 
   it.each([
+    { code: 'KEY_REQUIRED', title: 'Your encryption key is locked' },
+    { code: 'KEY_MISMATCH', title: 'Your encryption key is out of date' },
+  ])(
+    'offers to unlock the key instead of retrying for $code',
+    ({ code, title }) => {
+      const onRetry = vi.fn()
+      const onUnlock = vi.fn()
+      render(
+        <StreamErrorBanner
+          error={{ code, message: 'Unlock your encryption key' }}
+          isDarkMode={false}
+          onRetry={onRetry}
+          onUnlock={onUnlock}
+          onDismiss={vi.fn()}
+        />,
+      )
+      expect(screen.getByRole('alert')).toHaveTextContent(title)
+      expect(screen.getByRole('alert')).not.toHaveTextContent(
+        'The service is having trouble',
+      )
+      expect(
+        screen.queryByRole('button', { name: 'Try again' }),
+      ).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Unlock' }))
+      expect(onUnlock).toHaveBeenCalledOnce()
+      expect(onRetry).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
     { code: 'QUOTA_EXHAUSTED', title: 'Usage limit reached' },
     {
       code: 'CONTEXT_TOO_LARGE',
@@ -168,6 +198,27 @@ describe('StreamErrorBanner', () => {
     },
   )
 
+  it.each([undefined, 'CONNECTION', 'STREAM_INTERRUPTED', 'RATE_LIMITED'])(
+    'explains the resend its action offers for code %s',
+    (code) => {
+      render(
+        <StreamErrorBanner
+          error={{ code, message: 'Failed to fetch' }}
+          isDarkMode={false}
+          onRetry={vi.fn()}
+          onDismiss={vi.fn()}
+        />,
+      )
+      expect(
+        screen.getByRole('button', { name: 'Resend message' }),
+      ).toBeEnabled()
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        /resend your message\. Your message was not lost\./,
+      )
+      expect(screen.getByRole('alert')).not.toHaveTextContent(/reconnect/i)
+    },
+  )
+
   it.each([
     { code: 'QUOTA_EXHAUSTED', withRetry: true },
     { code: 'THREAD_TOO_LARGE', withRetry: true },
@@ -194,6 +245,29 @@ describe('StreamErrorBanner', () => {
     },
   )
 
+  it('explains a reply this device could not store without offering to resend it', () => {
+    render(
+      <StreamErrorBanner
+        error={{
+          code: 'LOCAL_SAVE_FAILED',
+          message: 'This chat could not be saved on this device.',
+        }}
+        isDarkMode={false}
+        onDismiss={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This chat could not be saved on this device',
+    )
+    expect(screen.getByRole('alert')).not.toHaveTextContent(
+      'Connection problem',
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Resend message' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('counts down a requested wait before allowing a resend', async () => {
     vi.useFakeTimers()
     try {
@@ -211,9 +285,11 @@ describe('StreamErrorBanner', () => {
           onRetry={onRetry}
         />,
       )
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        'Too many requests right now',
-      )
+      const alert = screen.getByRole('alert')
+      expect(alert).toHaveTextContent('Too many requests right now')
+      // The countdown changes every second, so it stays out of what is
+      // announced.
+      expect(alert).not.toHaveTextContent('Resend in')
       const retry = screen.getByRole('button', { name: 'Resend in 3s' })
       expect(retry).toBeDisabled()
       fireEvent.click(retry)

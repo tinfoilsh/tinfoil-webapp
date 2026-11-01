@@ -80,12 +80,4 @@ describe('ChatInput attachments', () => {
     expect(file.name).toMatch(/^pasted-text-.*\.txt$/)
     expect(await file.text()).toBe(pastedText)
   })
-
-  it('offers the files the session accepts', () => {
-    signInWithComposer()
-    const { container } = renderChatInput({ handleDocumentUpload: vi.fn() })
-    expect(
-      container.querySelector('input[type="file"]')?.getAttribute('accept'),
-    ).toBe('.png,.jpg,.pdf')
-  })
 })

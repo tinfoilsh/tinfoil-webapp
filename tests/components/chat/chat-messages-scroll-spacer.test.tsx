@@ -87,7 +87,7 @@ function setScrollLayout(
 ) {
   Object.defineProperties(container, {
     scrollHeight: { configurable: true, value: layout.scrollHeight },
-    scrollTop: { configurable: true, value: layout.scrollTop },
+    scrollTop: { configurable: true, writable: true, value: layout.scrollTop },
     clientHeight: { configurable: true, value: layout.clientHeight },
   })
   Object.defineProperty(spacer, 'offsetHeight', {
@@ -97,6 +97,63 @@ function setScrollLayout(
 }
 
 describe('ChatMessages scroll spacer', () => {
+  it('anchors a new prompt once, without chasing the streamed reply', () => {
+    const initial = [
+      message('user', 'old-user'),
+      message('assistant', 'old-assistant'),
+    ]
+    const { container, rerender } = render(conversation(initial))
+    const scroller = container.querySelector<HTMLElement>(
+      '[data-scroll-container="main"]',
+    )!
+    scroller.scrollTop = 400
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function (this: HTMLElement) {
+        return new DOMRect(0, this === scroller ? 100 : 900, 500, 70)
+      },
+    )
+    const scroll = vi.spyOn(scroller, 'scrollTo').mockImplementation(() => {
+      expect(scroller.querySelector('[data-spacer]')).toBeInTheDocument()
+    })
+    const sent = [...initial, message('user', 'active-user')]
+    rerender(conversation(sent, { isStreamingResponse: true }))
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({
+      top: 1184,
+      behavior: 'smooth',
+    })
+    const streaming = [...sent, message('assistant', 'active-assistant')]
+    rerender(conversation(streaming, { isStreamingResponse: true }))
+    rerender(
+      conversation(
+        [
+          ...sent,
+          { ...streaming.at(-1)!, content: 'The answer keeps growing' },
+        ],
+        { isStreamingResponse: true },
+      ),
+    )
+    rerender(conversation(streaming))
+    expect(scroll).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not anchor again when older history is prepended', () => {
+    const current = [message('user', 'active-user')]
+    const { container, rerender } = render(conversation(current))
+    const scroller = container.querySelector<HTMLElement>(
+      '[data-scroll-container="main"]',
+    )!
+    const scroll = vi.spyOn(scroller, 'scrollTo')
+    rerender(
+      conversation([
+        message('user', 'old-user'),
+        message('assistant', 'old-assistant'),
+        ...current,
+      ]),
+    )
+    expect(scroll).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-spacer]')).not.toBeInTheDocument()
+  })
+
   it('keeps the prompt anchor stable while a long response streams', () => {
     const initialMessages = [
       message('user', 'old-user'),

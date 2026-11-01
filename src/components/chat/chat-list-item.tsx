@@ -123,7 +123,7 @@ function ChatSelectionControl({
   children: React.ReactNode
 }) {
   const className =
-    'min-w-0 flex-1 cursor-pointer rounded-md pr-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong'
+    'min-w-0 flex-1 cursor-pointer rounded-md pr-2 text-left after:absolute after:inset-0 after:rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong'
   const ariaCurrent = isSelected ? 'page' : undefined
 
   if (href) {
@@ -338,7 +338,7 @@ export function ChatListItem({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       className={cn(
-        'group flex w-full items-center justify-between rounded-lg border border-transparent px-3 py-2 text-left text-sm transition-colors hover:border-border-subtle',
+        'group relative flex w-full items-center justify-between rounded-lg border border-transparent px-3 py-2 text-left text-sm transition-colors hover:border-border-subtle',
         isDraggable && 'cursor-grab',
         isDragging && 'opacity-50',
         isSelected
@@ -455,7 +455,7 @@ export function ChatListItem({
       )}
 
       {!isEditing && (
-        <div className="flex flex-shrink-0 items-center gap-1.5">
+        <div className="flex flex-shrink-0 items-center gap-1.5 [&_button]:relative [&_button]:z-10">
           <div className="pointer-events-none hidden items-center opacity-0 transition-opacity md:flex md:w-0 md:overflow-hidden md:group-focus-within:pointer-events-auto md:group-focus-within:w-auto md:group-focus-within:opacity-100 md:group-hover:pointer-events-auto md:group-hover:w-auto md:group-hover:opacity-100">
             {showDesktopPinAction && canTogglePin && onTogglePin && (
               <button

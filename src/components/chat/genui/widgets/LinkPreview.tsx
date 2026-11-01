@@ -1,15 +1,50 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { Favicon } from '@/components/ui/favicon'
+import {
+  linkMetadataOf,
+  lookupLinkMetadata,
+  type LinkMetadata as ResolvedMetadata,
+} from '@/services/harness/link-metadata'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { TfExternalLink } from '@tinfoilsh/tinfoil-icons'
+import { useEffect, useState } from 'react'
 import { defineGenUIWidget } from '../types'
 import type { RenderLinkPreviewArgs as Props } from '../widget-args'
 
-interface ResolvedMetadata {
-  title: string | null
-  description: string | null
-  image: string | null
-  siteName: string | null
+// Pages already read, so a preview drawn again does not read its page again.
+const LINK_METADATA_CACHE_MAX_ENTRIES = 100
+const LINK_METADATA = new Map<string, Promise<ResolvedMetadata | null>>()
+
+function readLinkMetadata(url: string): Promise<ResolvedMetadata | null> {
+  const cached = LINK_METADATA.get(url)
+  if (cached) return cached
+  if (LINK_METADATA.size >= LINK_METADATA_CACHE_MAX_ENTRIES) {
+    const oldest = LINK_METADATA.keys().next().value
+    if (oldest !== undefined) LINK_METADATA.delete(oldest)
+  }
+  const request = lookupLinkMetadata(url).catch(() => {
+    LINK_METADATA.delete(url)
+    return null
+  })
+  LINK_METADATA.set(url, request)
+  return request
+}
+
+// A preview stored without its page's details, as older chats keep it, reads
+// them when shown. A failure leaves the leaner card.
+function useLinkMetadata(url: string, wanted: boolean) {
+  const [metadata, setMetadata] = useState<ResolvedMetadata | null>(null)
+  useEffect(() => {
+    if (!wanted) return
+    let cancelled = false
+    void readLinkMetadata(url).then((read) => {
+      if (!cancelled) setMetadata(read)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [url, wanted])
+  return wanted ? metadata : null
 }
 
 function getDomain(url: string): string {
@@ -23,8 +58,11 @@ function getDomain(url: string): string {
 function LinkPreview({
   url,
   title,
-  metadata,
-}: Props & { metadata?: ResolvedMetadata }) {
+  metadata: stored,
+  readPage,
+}: Props & { metadata?: ResolvedMetadata; readPage: boolean }) {
+  const read = useLinkMetadata(url, readPage)
+  const metadata = stored ?? read
   const resolvedTitle = metadata?.title ?? title
   const resolvedDescription = metadata?.description
   const resolvedImage = metadata?.image
@@ -82,7 +120,10 @@ export const widget = defineGenUIWidget({
   render: (args, ctx) => (
     <LinkPreview
       {...args}
-      metadata={ctx.result as ResolvedMetadata | undefined}
+      metadata={
+        ctx.result === undefined ? undefined : linkMetadataOf(ctx.result)
+      }
+      readPage={ctx.result === undefined && !ctx.isStreaming}
     />
   ),
 })

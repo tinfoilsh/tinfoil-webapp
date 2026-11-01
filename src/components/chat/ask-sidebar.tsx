@@ -1,12 +1,14 @@
 import { cn } from '@/components/ui/utils'
 import { findSelectableModel, type BaseModel } from '@/config/models'
+import { speakText } from '@/services/harness/speech'
 import { TfBoxX, TfChat2 } from '@tinfoilsh/tinfoil-icons'
-import { memo, useRef } from 'react'
+import { memo, useCallback, useRef } from 'react'
 import { LoadingDots } from '../loading-dots'
 import { CONSTANTS } from './constants'
 import type { SidebarChatState } from './hooks/use-sidebar-chat'
 import { MessageRendererHost } from './message-renderer-host'
 import { QuoteSelectionPopover } from './quote-selection-popover'
+import { SpeechProvider } from './speech-context'
 import type { AIModel, Message } from './types'
 
 type AskSidebarProps = {
@@ -64,9 +66,19 @@ export function AskSidebar({
   const sidebarScrollRef = useRef<HTMLDivElement>(null)
 
   const showLoadingDots = isWaitingForResponse
+  // An ask's thread is not kept, so the harness reads an answer's text as it
+  // reads text a user selected.
+  const speak = useCallback(
+    (messageId: string, signal: AbortSignal) =>
+      speakText(
+        messages.find((message) => message.id === messageId)?.content ?? '',
+        signal,
+      ),
+    [messages],
+  )
 
   return (
-    <>
+    <SpeechProvider speak={speak}>
       <div
         className={cn(
           'fixed right-0 top-0 z-40 flex h-full flex-col border-l border-border-subtle bg-surface-chat-background font-aeonik transition-transform duration-200 ease-in-out',
@@ -142,6 +154,6 @@ export function AskSidebar({
           onClick={onClose}
         />
       )}
-    </>
+    </SpeechProvider>
   )
 }

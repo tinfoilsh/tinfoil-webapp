@@ -1,4 +1,10 @@
-function getChatContentBottomScrollTop(
+export function getChatSpacerHeight(container: HTMLElement): number {
+  return (
+    container.querySelector<HTMLElement>('[data-spacer]')?.offsetHeight ?? 0
+  )
+}
+
+export function getChatContentBottomScrollTop(
   scrollHeight: number,
   clientHeight: number,
   spacerHeight: number,

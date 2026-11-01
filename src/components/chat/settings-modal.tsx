@@ -12,30 +12,26 @@ import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
 import {
-  buildChatExport,
-  type AttachmentBytesFetcher,
-} from '@/services/chat-export/export-archive'
-import { collectChatExport } from '@/services/chat-export/export-chats'
-import { isZipFile, readExportFiles } from '@/services/chat-import/export-files'
-import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
-import {
-  parseLocalTinfoilExportForAccess,
-  PremiumProjectImportRequiredError,
-} from '@/services/chat-import/local-tinfoil-import'
-import {
+  exportArchive,
   exportClaudeProjects,
   ImportSequenceError,
   importStatus,
   runImports,
+  type ImportSequenceOptions,
   type ImportSequenceResult,
   type ImportStatusResponse,
+  type ImportTarget,
 } from '@/services/harness/archives'
 import {
-  localThreadStore,
-  upgradeThreads,
-} from '@/services/harness/local-threads'
+  describeArchiveError,
+  describeImportFailure,
+} from '@/services/harness/import-failure-copy'
 import { deleteAllProjects } from '@/services/harness/projects'
-import { useHarness, useProfileSetting } from '@/services/harness/provider'
+import {
+  reportProfileError,
+  useHarness,
+  useProfileSetting,
+} from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
 import { useLocalChatsSetting } from '@/services/harness/storage-mode'
 import { validateCurrentPrimaryKey } from '@/services/keys/cloud-key-preflight'
@@ -52,12 +48,6 @@ import {
   requestExplicitSignout,
 } from '@/utils/auth-signout-intent'
 import {
-  parseChatGPTConversations,
-  parseClaudeConversations,
-  type ChatGPTConversation,
-  type ClaudeConversation,
-} from '@/utils/chat-import-parsers'
-import {
   recordCloudSyncPreference,
   setLocalOnlyModeEnabled,
 } from '@/utils/cloud-sync-settings'
@@ -71,7 +61,6 @@ import {
   RESPONSE_LANGUAGES,
   SYSTEM_RESPONSE_LANGUAGE,
 } from '@/utils/response-language'
-import { generateReverseId } from '@/utils/reverse-id'
 import {
   hideSignoutProgress,
   showSignoutProgress,
@@ -117,6 +106,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { BsQrCode } from 'react-icons/bs'
 import { PiSpinner } from 'react-icons/pi'
 import QRCode from 'react-qr-code'
+import { CloudSyncHealthCard } from './cloud-sync-health-card'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
@@ -128,8 +118,6 @@ import { SafeguardsSettings } from './safeguards-settings'
 import {
   canDeleteAllProjects,
   canTransferProjectData,
-  countExcludedProjectChats,
-  filterExportableChats,
 } from './settings-project-policy'
 import type { Chat } from './types'
 
@@ -142,13 +130,30 @@ const CHARS = '0123456789ABCDEF!@#$%^&*()_+<>?/'
 
 const DELETE_ALL_CHATS_CONFIRM_PHRASE = 'delete all chats'
 const DELETE_ALL_PROJECTS_CONFIRM_PHRASE = 'delete all projects'
+const ZIP_MIME_TYPE = 'application/zip'
+const MAX_LISTED_IMPORT_WARNINGS = 3
+// The part of a file's share of the progress bar that its cloud job fills
+// while it is processed before the next file is uploaded.
+const IMPORT_PROCESSING_SHARE = 0.5
+// The tabs of settings the profile holds, which the chat service cannot
+// save while the account's key is refused.
+const PROFILE_SETTINGS_TABS: readonly SettingsTab[] = [
+  'general',
+  'chat',
+  'personalization',
+  'prompts',
+]
 
 interface ImportResult {
   jobId?: string
   success: boolean
   chatsImported: number
   projectsImported: number
+  // Chats this device held already, which were kept as they were.
+  skipped?: number
   errors: string[]
+  // What the chat service could not import as it was.
+  warnings?: string[]
   pending?: boolean
   /** The enclave job ended without completing (distinct from per-chat errors). */
   failed?: boolean
@@ -161,7 +166,7 @@ interface ImportResult {
  * device, but a job that has already failed must not be announced as
  * started.
  */
-export function describeOffDeviceImportKickoff(
+export function describeImportKickoff(
   status: ImportStatusResponse,
   sourceLabel: string,
 ): ImportResult {
@@ -170,9 +175,14 @@ export function describeOffDeviceImportKickoff(
   return {
     jobId: status.jobId,
     success: !failed,
-    chatsImported: status.imported,
-    projectsImported: 0,
+    // The job counts each kind it stores; without the counts every item
+    // is a chat.
+    chatsImported: status.counts
+      ? (status.counts.chat?.imported ?? 0)
+      : status.imported,
+    projectsImported: status.counts?.project?.imported ?? 0,
     errors: status.errors ?? [],
+    warnings: status.warnings,
     pending,
     failed,
     message: failed
@@ -193,15 +203,25 @@ export function describeOffDeviceImportKickoff(
  * counted, and a failure names its file and how many files were never
  * started.
  */
-export function describeOffDeviceImportOutcome(
+export function describeImportOutcome(
   outcome: ImportSequenceResult,
   fileNames: readonly string[],
   sourceLabel: string,
 ): ImportResult {
-  const kickoff = describeOffDeviceImportKickoff(outcome.status, sourceLabel)
-  const chatsImported = outcome.importedBefore + kickoff.chatsImported
+  const { warnings, skipped } = outcome
+  if (!outcome.status)
+    return {
+      success: true,
+      chatsImported: outcome.imported,
+      projectsImported: 0,
+      skipped,
+      errors: [],
+      warnings,
+    }
+  const kickoff = describeImportKickoff(outcome.status, sourceLabel)
+  const chatsImported = outcome.imported + kickoff.chatsImported
   if (!outcome.interrupted && !kickoff.failed) {
-    return { ...kickoff, chatsImported }
+    return { ...kickoff, chatsImported, skipped, warnings }
   }
   const explanation = outcome.interrupted
     ? 'The import stopped before it finished. Chats already imported were kept; select this file again to continue.'
@@ -211,22 +231,27 @@ export function describeOffDeviceImportOutcome(
     failed: true,
     pending: false,
     chatsImported,
-    projectsImported: 0,
+    projectsImported: kickoff.projectsImported,
+    skipped,
     errors: fileFailureErrors(fileNames, outcome.fileIndex, explanation),
+    warnings,
   }
 }
 
 /**
- * Panel state for an import that threw. When a later file of a split
- * export fails, the chats earlier files imported are still counted and
- * the failing file is named.
+ * Panel state for an import that threw. The chats imported and the
+ * warnings reported before it threw are still shown, and when a later file
+ * of a split export fails the failing file is named.
  */
-export function describeOffDeviceImportError(
+export function describeImportError(
   err: unknown,
   fileNames: readonly string[],
 ): ImportResult {
-  const message = err instanceof Error ? err.message : 'Failed to start import'
-  if (!(err instanceof ImportSequenceError) || fileNames.length < 2) {
+  const message =
+    describeArchiveError(
+      err instanceof ImportSequenceError ? err.cause : err,
+    ) ?? (err instanceof Error ? err.message : 'Failed to start import')
+  if (!(err instanceof ImportSequenceError)) {
     return {
       success: false,
       chatsImported: 0,
@@ -236,9 +261,13 @@ export function describeOffDeviceImportError(
   }
   return {
     success: false,
-    chatsImported: err.importedBefore,
+    chatsImported: err.imported,
     projectsImported: 0,
-    errors: fileFailureErrors(fileNames, err.fileIndex, message),
+    errors:
+      fileNames.length < 2
+        ? [message]
+        : fileFailureErrors(fileNames, err.fileIndex, message),
+    warnings: err.warnings,
   }
 }
 
@@ -258,10 +287,8 @@ function fileFailureErrors(
 }
 
 // The chat service receives each file of an export in one request, so an
-// upload advances a file at a time. An import on this device counts the
-// chats it stores.
-export type ImportProgress =
-  | { type: 'chats'; current: number; total: number }
+// upload advances a file at a time. `percent` is of the whole import.
+export type ImportProgress = { percent: number } & (
   | {
       type: 'upload'
       file: number
@@ -276,29 +303,40 @@ export type ImportProgress =
       imported: number
       total: number
     }
+  // Chats for this device arrive once the chat service has a file.
+  | {
+      type: 'storing'
+      file: number
+      files: number
+      stored: number
+    }
+)
 
 export function describeImportProgress(progress: ImportProgress): {
   title: string
   detail: string
   percent: number
 } {
+  if (progress.type === 'storing') {
+    const { file, files, stored, percent } = progress
+    return {
+      title:
+        files > 1
+          ? `Importing file ${file} of ${files}...`
+          : 'Importing chats...',
+      detail: `${stored} chat${stored !== 1 ? 's' : ''} imported so far`,
+      percent,
+    }
+  }
   if (progress.type === 'processing') {
-    const { file, files, imported, total } = progress
+    const { file, files, imported, total, percent } = progress
     return {
       title: `Importing file ${file} of ${files}...`,
       detail: `${total > 0 ? `${imported} of ${total} chats` : 'Reading export'}. Keep this page open until every file has started.`,
-      percent: total > 0 ? (imported / total) * 100 : 0,
+      percent,
     }
   }
-  if (progress.type === 'chats') {
-    return {
-      title: `Importing ${progress.type}...`,
-      detail: `${progress.current} of ${progress.total}`,
-      percent:
-        progress.total > 0 ? (progress.current / progress.total) * 100 : 0,
-    }
-  }
-  const { file, files, uploadedBytes, totalBytes } = progress
+  const { file, files, uploadedBytes, totalBytes, percent } = progress
   return {
     title:
       files > 1
@@ -308,8 +346,84 @@ export function describeImportProgress(progress: ImportProgress): {
       files > 1
         ? `${formatFileSize(uploadedBytes)} of ${formatFileSize(totalBytes)} uploaded`
         : formatFileSize(totalBytes),
-    percent: totalBytes > 0 ? (uploadedBytes / totalBytes) * 100 : 0,
+    percent,
   }
+}
+
+/**
+ * Reports the progress of an import split across files as one bar that
+ * never moves back. Each file fills a share of the bar by its size: its
+ * upload fills that share, except the part its cloud job fills when the job
+ * is processed before the next file is uploaded.
+ */
+export function importProgressReporter(
+  files: readonly File[],
+  target: ImportTarget,
+  report: (progress: ImportProgress) => void,
+): Pick<ImportSequenceOptions, 'onUpload' | 'onStored' | 'onProcessing'> {
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+  const bytesBefore = files.map((_, index) =>
+    files.slice(0, index).reduce((sum, file) => sum + file.size, 0),
+  )
+  const percent = (fileIndex: number, fileDone: number) =>
+    totalBytes > 0
+      ? ((bytesBefore[fileIndex] + files[fileIndex].size * fileDone) /
+          totalBytes) *
+        100
+      : 0
+  const uploadShare = (fileIndex: number) =>
+    target === 'cloud' && fileIndex < files.length - 1
+      ? 1 - IMPORT_PROCESSING_SHARE
+      : 1
+  return {
+    onUpload: (fileIndex) =>
+      report({
+        type: 'upload',
+        file: fileIndex + 1,
+        files: files.length,
+        uploadedBytes: bytesBefore[fileIndex],
+        totalBytes,
+        percent: percent(fileIndex, 0),
+      }),
+    onStored: (fileIndex, stored) =>
+      report({
+        type: 'storing',
+        file: fileIndex + 1,
+        files: files.length,
+        stored,
+        percent: percent(fileIndex, uploadShare(fileIndex)),
+      }),
+    onProcessing: (fileIndex, status) => {
+      const processed = status.total > 0 ? status.imported / status.total : 0
+      report({
+        type: 'processing',
+        file: fileIndex + 1,
+        files: files.length,
+        imported: status.imported,
+        total: status.total,
+        percent: percent(
+          fileIndex,
+          1 - IMPORT_PROCESSING_SHARE * (1 - processed),
+        ),
+      })
+    },
+  }
+}
+
+// The chats and projects an import stored, as its toast names them.
+function describeImportedItems({
+  chatsImported,
+  projectsImported,
+}: ImportResult): string {
+  const chats = `${chatsImported} chat${chatsImported !== 1 ? 's' : ''}`
+  const projects = `${projectsImported} project${projectsImported !== 1 ? 's' : ''}`
+  if (projectsImported === 0) return chats
+  return chatsImported === 0 ? projects : `${chats} and ${projects}`
+}
+
+// The chats an import left as this device held them.
+function describeSkippedChats(skipped: number): string {
+  return `${skipped} chat${skipped !== 1 ? 's' : ''} already on this device ${skipped !== 1 ? 'were' : 'was'} skipped.`
 }
 
 export function importResultTitle(result: ImportResult): string {
@@ -688,7 +802,7 @@ export function SettingsModal({
     usePromptLibrary()
   const { toast } = useToast()
   // Without cloud sync every chat and setting stays on this device.
-  const { api, profile, keyReady, cloud: cloudSyncEnabled } = useHarness()
+  const { api, profile, keyLocked, cloud: cloudSyncEnabled } = useHarness()
 
   const { refresh: refreshProjects } = useProjects({ autoLoad: false })
   // Encryption key management state
@@ -707,6 +821,7 @@ export function SettingsModal({
   >('unverified')
   const passkeyRefreshSeqRef = useRef(0)
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Structured personalization fields, as the profile holds them. Edits
@@ -760,7 +875,7 @@ export function SettingsModal({
   )
 
   const [webSearchAvailable, setWebSearchAvailable] = useProfileSetting(
-    'webSearchEnabled',
+    'webSearchAvailable',
     true,
   )
 
@@ -788,6 +903,7 @@ export function SettingsModal({
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     initialTab ?? 'account',
   )
+  const profileLocked = keyLocked && PROFILE_SETTINGS_TABS.includes(activeTab)
 
   // Update active tab when initialTab prop changes (e.g., opening to a specific tab)
   useEffect(() => {
@@ -845,9 +961,7 @@ export function SettingsModal({
   const claudeConversationsFileInputRef = useRef<HTMLInputElement>(null)
   const claudeProjectsFileInputRef = useRef<HTMLInputElement>(null)
   const tinfoilFileInputRef = useRef<HTMLInputElement>(null)
-  const localTinfoilImportAbortControllerRef = useRef<AbortController | null>(
-    null,
-  )
+  const importAbortControllerRef = useRef<AbortController | null>(null)
 
   // Export state
   const [isExporting, setIsExporting] = useState(false)
@@ -855,8 +969,9 @@ export function SettingsModal({
   const [exportType, setExportType] = useState<'chats' | 'projects' | null>(
     null,
   )
+  // What the last projects export did, shown under its button.
   const [projectExportResult, setProjectExportResult] = useState<{
-    error: string
+    message: string
   } | null>(null)
 
   // Danger zone state
@@ -887,11 +1002,6 @@ export function SettingsModal({
     'skeptical',
     'optimistic',
   ]
-
-  // Closing the settings discards unsaved personalization edits.
-  useEffect(() => {
-    if (!isOpen) setPersonalizationEdits({})
-  }, [isOpen])
 
   const refreshPasskeyBundles = useCallback(async () => {
     // Latest-wins sequencing: overlapping refreshes (panel-open effect
@@ -947,15 +1057,26 @@ export function SettingsModal({
   ])
 
   // Saves personalization details with whether personalization is on. The
-  // edits stay shown until the profile holds them.
+  // edits stay shown until the profile holds them, and an edit made while
+  // the save is in flight stays unsaved.
   const savePersonalizationSettings = (
     details: PersonalizationDetails,
     isEnabled: boolean,
   ) => {
     void api
       .updateProfile({ ...details, isUsingPersonalization: isEnabled })
-      .then(() => setPersonalizationEdits({}))
-      .catch(reportHarnessError)
+      .then(() =>
+        setPersonalizationEdits((edits) =>
+          Object.fromEntries(
+            Object.entries(edits).filter(
+              ([field, value]) =>
+                JSON.stringify(value) !==
+                JSON.stringify(details[field as keyof PersonalizationDetails]),
+            ),
+          ),
+        ),
+      )
+      .catch(reportProfileError)
   }
 
   // Handle individual field changes. Edits are buffered locally and only
@@ -1004,7 +1125,7 @@ export function SettingsModal({
     if (!isClient) return
     void api
       .updateProfile({ isUsingPersonalization: enabled })
-      .catch(reportHarnessError)
+      .catch(reportProfileError)
   }
 
   const handleClearPersonalization = () => {
@@ -1160,52 +1281,50 @@ export function SettingsModal({
     }
   }, [signOut])
 
+  // Chats imported without cloud sync, or signed out, are kept on this
+  // device (in this tab when signed out). Claude's project files always go to
+  // the cloud, which keeps projects.
+  const importsOnDevice = !cloudSyncEnabled
+  const importTarget: ImportTarget = importsOnDevice ? 'device' : 'cloud'
+
+  // An action that finished stays reported as done when the chat list
+  // cannot reload after it; the list shows its own failure.
+  const refreshChatsAfter = async (action: string) => {
+    try {
+      await onChatsUpdated?.()
+    } catch (cause) {
+      logError('Failed to refresh chats', cause, {
+        component: 'SettingsModal',
+        action,
+      })
+    }
+  }
+
   // Imports upload the original export to the chat service, which converts
-  // and stores it off device and emails the user when a long job finishes.
-  // An export split across files runs as a sequence of jobs, each finishing
-  // before the next file is uploaded.
+  // it. Chats for this device come back and are stored here; cloud data is
+  // stored off device, and the user is emailed when a long job finishes. An
+  // export split across files is uploaded a file at a time, each cloud job
+  // finishing before the next file is uploaded.
   const importFiles = async (
     source: ImportSection,
     files: readonly File[],
     sourceLabel: string,
+    target: ImportTarget = importTarget,
   ) => {
     if (files.length === 0) return
-    const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
-    const bytesBefore = files.map((_, index) =>
-      files.slice(0, index).reduce((sum, file) => sum + file.size, 0),
-    )
     const fileNames = files.map((file) => file.name)
     setIsImporting(true)
     setImportSource(source)
     setImportResult(null)
-    localTinfoilImportAbortControllerRef.current?.abort()
+    importAbortControllerRef.current?.abort()
     const controller = new AbortController()
-    localTinfoilImportAbortControllerRef.current = controller
+    importAbortControllerRef.current = controller
     try {
-      const outcome = await runImports(source, files, {
+      const outcome = await runImports(target, files, {
         signal: controller.signal,
-        onUpload: (fileIndex) =>
-          setImportProgress({
-            type: 'upload',
-            file: fileIndex + 1,
-            files: files.length,
-            uploadedBytes: bytesBefore[fileIndex],
-            totalBytes,
-          }),
-        onProcessing: (fileIndex, status) =>
-          setImportProgress({
-            type: 'processing',
-            file: fileIndex + 1,
-            files: files.length,
-            imported: status.imported,
-            total: status.total,
-          }),
+        ...importProgressReporter(files, target, setImportProgress),
       })
-      const result = describeOffDeviceImportOutcome(
-        outcome,
-        fileNames,
-        sourceLabel,
-      )
+      const result = describeImportOutcome(outcome, fileNames, sourceLabel)
       setImportResult(result)
       if (result.failed) {
         toast({
@@ -1215,24 +1334,34 @@ export function SettingsModal({
         })
       } else if (result.pending) {
         toast({ title: 'Import started', description: result.message })
+      } else {
+        toast({
+          title: 'Import complete',
+          description: `Imported ${describeImportedItems(result)} from ${sourceLabel}${result.skipped ? `. ${describeSkippedChats(result.skipped)}` : ''}`,
+        })
       }
-      if (!result.pending || result.chatsImported > 0) {
-        await onChatsUpdated?.()
-        await refreshProjects()
+      if (
+        !result.pending ||
+        result.chatsImported > 0 ||
+        result.projectsImported > 0
+      ) {
+        await refreshChatsAfter('importFiles')
+        if (target === 'cloud') await refreshProjects()
       }
     } catch (cause) {
-      if (controller.signal.aborted) return
-      const result = describeOffDeviceImportError(cause, fileNames)
+      // An account change ends the import.
+      if (controller.signal.aborted || api.lifetime.signal.aborted) return
+      const result = describeImportError(cause, fileNames)
       setImportResult(result)
       toast({
         title: 'Import failed',
         description: `Could not start the ${sourceLabel} import`,
         variant: 'destructive',
       })
-      if (result.chatsImported > 0) await onChatsUpdated?.()
+      if (result.chatsImported > 0) await refreshChatsAfter('importFiles')
     } finally {
-      if (localTinfoilImportAbortControllerRef.current === controller) {
-        localTinfoilImportAbortControllerRef.current = null
+      if (importAbortControllerRef.current === controller) {
+        importAbortControllerRef.current = null
         setIsImporting(false)
         setImportProgress(null)
       }
@@ -1242,7 +1371,7 @@ export function SettingsModal({
   const checkImportProgress = async (jobId: string) => {
     try {
       const status = await importStatus(jobId)
-      setImportResult(describeOffDeviceImportKickoff(status, 'archive'))
+      setImportResult(describeImportKickoff(status, 'archive'))
       if (status.status === 'completed' || status.status === 'partial') {
         await onChatsUpdated?.()
         await refreshProjects()
@@ -1252,244 +1381,13 @@ export function SettingsModal({
     }
   }
 
-  // Chats kept on this device are imported in the browser, as on main: an
-  // export is parsed here and its chats are stored on this device (in this
-  // tab when signed out). With cloud sync the chat service imports it.
-  const importsOnDevice = !cloudSyncEnabled
-
-  const generateChatId = (createdAt?: Date) => {
-    const timestampMs = createdAt?.getTime() || Date.now()
-    return generateReverseId(timestampMs).id
-  }
-
-  const getParseOptions = () => ({
-    generateChatId,
-  })
-
-  // An import on this device ends with the modal or the account.
-  const startDeviceImport = (source: ImportSection) => {
-    setImportSource(source)
-    setIsImporting(true)
-    setImportResult(null)
-    localTinfoilImportAbortControllerRef.current?.abort()
-    const controller = new AbortController()
-    localTinfoilImportAbortControllerRef.current = controller
-    return {
-      controller,
-      signal: AbortSignal.any([controller.signal, api.lifetime.signal]),
-    }
-  }
-
-  const finishDeviceImport = (controller: AbortController) => {
-    if (localTinfoilImportAbortControllerRef.current !== controller) return
-    localTinfoilImportAbortControllerRef.current = null
-    setIsImporting(false)
-    setImportProgress(null)
-  }
-
-  const saveImportedChats = async (
-    chats: Chat[],
-    signal: AbortSignal,
-  ): Promise<{ imported: number; errors: string[] }> => {
-    setImportProgress({ current: 0, total: chats.length, type: 'chats' })
-    const store = localThreadStore(api.userId ? 'device' : 'tab')
-    // An imported chat is in the previous client's format, which the harness
-    // upgrades the way it upgrades that client's rows. It is dated by its
-    // import, as that client dated a saved chat.
-    const updatedAt = new Date().toISOString()
-    const threads = await upgradeThreads(
-      chats.map((chat) => ({ ...chat, updatedAt, isLocalOnly: true })),
-    )
-    signal.throwIfAborted()
-
-    let imported = 0
-    const errors: string[] = []
-
-    for (let i = 0; i < chats.length; i++) {
-      signal.throwIfAborted()
-      try {
-        const thread = threads[i]
-        if (!thread || !(await store.update(thread.id, () => thread)))
-          throw new Error('The chat was not saved')
-        imported++
-      } catch {
-        signal.throwIfAborted()
-        errors.push(`Failed to save "${chats[i].title}" locally`)
-      }
-      setImportProgress({
-        current: i + 1,
-        total: chats.length,
-        type: 'chats',
-      })
-    }
-
-    return { imported, errors }
-  }
-
-  const importChatGPT = async (files: File[]) => {
-    if (!importsOnDevice) {
-      await importFiles('chatgpt', files, 'ChatGPT')
-      return
-    }
-    const { controller, signal } = startDeviceImport('chatgpt')
-
-    try {
-      const data = await readExportFiles<ChatGPTConversation>(
-        files,
-        'ChatGPT conversations',
-      )
-
-      const chats = parseChatGPTConversations(data, getParseOptions())
-      const { imported, errors } = await saveImportedChats(chats, signal)
-
-      setImportResult({
-        success: errors.length === 0,
-        chatsImported: imported,
-        projectsImported: 0,
-        errors,
-      })
-
-      void onChatsUpdated?.()
-
-      toast({
-        title: 'Import complete',
-        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from ChatGPT`,
-      })
-    } catch (err) {
-      if (signal.aborted) return
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: 'Import failed',
-        description: 'Could not parse the ChatGPT export file',
-        variant: 'destructive',
-      })
-    } finally {
-      finishDeviceImport(controller)
-    }
-  }
-
-  const importClaudeConversations = async (files: File[]) => {
-    if (!importsOnDevice) {
-      await importFiles('claude', files, 'Claude')
-      return
-    }
-    const { controller, signal } = startDeviceImport('claude')
-
-    try {
-      const data = await readExportFiles<ClaudeConversation>(
-        files,
-        'Claude conversations',
-      )
-
-      const chats = parseClaudeConversations(data, getParseOptions())
-      const { imported, errors } = await saveImportedChats(chats, signal)
-
-      setImportResult({
-        success: errors.length === 0,
-        chatsImported: imported,
-        projectsImported: 0,
-        errors,
-      })
-
-      void onChatsUpdated?.()
-
-      toast({
-        title: 'Import complete',
-        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from Claude`,
-      })
-    } catch (err) {
-      if (signal.aborted) return
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: 'Import failed',
-        description: 'Could not parse the Claude export file',
-        variant: 'destructive',
-      })
-    } finally {
-      finishDeviceImport(controller)
-    }
-  }
-
   const handleImportTinfoil = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
-
-    if (!importsOnDevice) {
-      await importFiles('tinfoil', [file], 'Tinfoil')
-      return
-    }
-    const { controller, signal } = startDeviceImport('tinfoil')
-
-    try {
-      const { chats, skippedProjectChats } =
-        await parseLocalTinfoilExportForAccess(
-          file,
-          {
-            ...getParseOptions(),
-            signal,
-          },
-          Boolean(isPremium),
-        )
-      const { imported, errors } = await saveImportedChats(chats, signal)
-      const projectErrors =
-        skippedProjectChats > 0
-          ? [
-              `Skipped ${skippedProjectChats} project chat${skippedProjectChats === 1 ? '' : 's'}. Premium is required to import project chats.`,
-            ]
-          : []
-      const importErrors = [...errors, ...projectErrors]
-
-      setImportResult({
-        success: importErrors.length === 0,
-        chatsImported: imported,
-        projectsImported: 0,
-        errors: importErrors,
-      })
-
-      void onChatsUpdated?.()
-
-      toast({
-        title:
-          skippedProjectChats > 0
-            ? 'Chats imported; project chats skipped'
-            : 'Import complete',
-        description:
-          skippedProjectChats > 0
-            ? `Imported ${imported} chat${imported !== 1 ? 's' : ''}. Premium is required to import the ${skippedProjectChats} project chat${skippedProjectChats === 1 ? '' : 's'}.`
-            : `Imported ${imported} chat${imported !== 1 ? 's' : ''} from Tinfoil`,
-      })
-    } catch (err) {
-      if (signal.aborted) return
-      const projectOnly = err instanceof PremiumProjectImportRequiredError
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: projectOnly ? 'Premium required' : 'Import failed',
-        description: projectOnly
-          ? err.message
-          : 'Could not parse the Tinfoil export file',
-        variant: 'destructive',
-      })
-    } finally {
-      finishDeviceImport(controller)
-    }
+    await importFiles('tinfoil', [file], 'Tinfoil')
   }
 
   // File pickers only stage the selection; the import runs once the user
@@ -1504,7 +1402,11 @@ export function SettingsModal({
     if (
       kind === 'claude-conversations' &&
       !isPremium &&
-      selected.some((file) => isZipFile(file))
+      selected.some(
+        (file) =>
+          file.name.toLowerCase().endsWith('.zip') ||
+          file.type === ZIP_MIME_TYPE,
+      )
     ) {
       toast({
         title: 'Premium required',
@@ -1558,8 +1460,6 @@ export function SettingsModal({
     })
   }
 
-  // Claude's project files are always imported by the chat service, which
-  // keeps projects; it reads them as a Claude export.
   const runStagedImport = async (source: ImportSourceKey) => {
     const staged = stagedImports[source]
     if (!staged) return
@@ -1567,13 +1467,13 @@ export function SettingsModal({
     clearStagedImport(source)
     switch (kind) {
       case 'chatgpt':
-        await importChatGPT(files)
+        await importFiles('chatgpt', files, 'ChatGPT')
         break
       case 'claude-projects':
-        await importFiles('claude', files, 'Claude')
+        await importFiles('claude', files, 'Claude', 'cloud')
         break
       case 'claude-conversations':
-        await importClaudeConversations(files)
+        await importFiles('claude', files, 'Claude')
         break
     }
   }
@@ -1616,9 +1516,10 @@ export function SettingsModal({
   // outcome appear inside the box the user is importing from.
   const renderImportStatus = (source: ImportSection) => {
     if (importSource !== source) return null
-    // An import on this device shows its progress once it stores chats.
-    if (isImporting && !importProgress && importsOnDevice) return null
     if (isImporting) {
+      // A file's upload reports no progress until the chat service answers,
+      // so the bar moves without a value meanwhile.
+      const isUploading = !importProgress || importProgress.type === 'upload'
       const { title, detail, percent } = describeImportProgress(
         importProgress ?? {
           type: 'upload',
@@ -1626,6 +1527,7 @@ export function SettingsModal({
           files: 1,
           uploadedBytes: 0,
           totalBytes: 0,
+          percent: 0,
         },
       )
       return (
@@ -1653,8 +1555,13 @@ export function SettingsModal({
             </div>
           </div>
           <div
+            role="progressbar"
+            aria-label="Import progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={isUploading ? undefined : Math.round(percent)}
             className={cn(
-              'mt-3 h-2 overflow-hidden rounded-full',
+              'mt-3 flex h-2 overflow-hidden rounded-full',
               isDarkMode ? 'bg-surface-sidebar' : 'bg-surface-chat',
             )}
           >
@@ -1662,6 +1569,9 @@ export function SettingsModal({
               className="h-full bg-brand-accent-light transition-all"
               style={{ width: `${percent}%` }}
             />
+            {isUploading && (
+              <div className="h-full flex-1 animate-pulse bg-brand-accent-light/40" />
+            )}
           </div>
         </div>
       )
@@ -1714,6 +1624,11 @@ export function SettingsModal({
                 {importResult.projectsImported > 0 &&
                   `${importResult.projectsImported} project${importResult.projectsImported !== 1 ? 's' : ''} imported`}
               </div>
+              {!!importResult.skipped && (
+                <div className="font-aeonik-fono text-xs text-content-muted">
+                  {describeSkippedChats(importResult.skipped)}
+                </div>
+              )}
               {importResult.pending && importResult.jobId && (
                 <button
                   type="button"
@@ -1730,6 +1645,24 @@ export function SettingsModal({
                   ))}
                   {importResult.errors.length > 3 && (
                     <div>+{importResult.errors.length - 3} more errors</div>
+                  )}
+                </div>
+              )}
+              {importResult.warnings && importResult.warnings.length > 0 && (
+                <div className="mt-2 font-aeonik-fono text-xs text-content-muted">
+                  {importResult.warnings
+                    .slice(0, MAX_LISTED_IMPORT_WARNINGS)
+                    .map((warning, i) => (
+                      <div key={i}>{warning}</div>
+                    ))}
+                  {importResult.warnings.length >
+                    MAX_LISTED_IMPORT_WARNINGS && (
+                    <div>
+                      +
+                      {importResult.warnings.length -
+                        MAX_LISTED_IMPORT_WARNINGS}{' '}
+                      more warnings
+                    </div>
                   )}
                 </div>
               )}
@@ -1752,117 +1685,53 @@ export function SettingsModal({
     return null
   }
 
-  // Export chats as conversations.json, or a ZIP holding their images
-  const downloadChats = async (
-    chatsToExport: Chat[],
-    fetchAttachmentBytes: AttachmentBytesFetcher,
-    signal: AbortSignal,
-  ) => {
-    signal.throwIfAborted()
-    if (chatsToExport.length === 0) {
-      toast({
-        title: 'No chats to export',
-        description: 'You have no chats to export yet.',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    setIsExporting(true)
-    setExportType('chats')
-
-    try {
-      // One binary attachment is fetched at a time so the browser never
-      // holds every attachment's bytes in memory at once.
-      const archive = await buildChatExport(chatsToExport, fetchAttachmentBytes)
-      signal.throwIfAborted()
-      const blob =
-        typeof archive.data === 'string'
-          ? new Blob([archive.data], { type: archive.mimeType })
-          : new Blob([new Uint8Array(archive.data)], {
-              type: archive.mimeType,
-            })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = archive.filename
-      document.body.appendChild(a)
-      try {
-        signal.throwIfAborted()
-        a.click()
-      } finally {
-        document.body.removeChild(a)
-        window.URL.revokeObjectURL(url)
-      }
-
-      signal.throwIfAborted()
-      toast({
-        title: 'Export complete',
-        description: `Exported ${chatsToExport.length} conversation${chatsToExport.length !== 1 ? 's' : ''} successfully.`,
-      })
-    } catch (error) {
-      if (signal.aborted) return
-      logError('Failed to create conversations export', error, {
-        component: 'SettingsModal',
-        action: 'downloadChats',
-      })
-      toast({
-        title: 'Export failed',
-        description: 'Failed to download conversations. Please try again.',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsExporting(false)
-      setExportType(null)
-    }
-  }
-
-  // Exports the chats kept on this device and, with cloud sync, the stored
-  // chats. An account change ends the export without a download.
+  // The chat service exports the chats kept on this device (in this tab when
+  // signed out) and, with cloud sync, the stored chats. An account change
+  // ends the export without a download.
   const handleExportAllChats = async () => {
-    const signal = api.lifetime.signal
     setIsPreparingExport(true)
     setExportType('chats')
-
     try {
-      const source = await collectChatExport(api, {
+      const exported = await exportArchive('conversations', {
         cloud: cloudSyncEnabled,
-        signal,
+        signal: api.lifetime.signal,
+        onProgress: () => {
+          setIsPreparingExport(false)
+          setIsExporting(true)
+        },
       })
-      const hasPremiumProjectAccess = Boolean(isPremium)
-      const exportableChats = filterExportableChats(
-        source.chats,
-        hasPremiumProjectAccess,
-      )
-      const excludedProjectChats = countExcludedProjectChats(
-        source.chats,
-        hasPremiumProjectAccess,
-      )
-
-      setIsPreparingExport(false)
-      if (excludedProjectChats > 0) {
+      if (!exported) {
         toast({
-          title: 'Project chats not included',
-          description: `${excludedProjectChats} project chat${excludedProjectChats === 1 ? '' : 's'} could not be exported. Premium is required to export project chats.`,
+          title: 'No chats to export',
+          description: 'You have no chats to export yet.',
+          variant: 'destructive',
         })
-      }
-      await downloadChats(exportableChats, source.fetchAttachmentBytes, signal)
-    } catch (error) {
-      if (signal.aborted) {
-        setIsPreparingExport(false)
-        setExportType(null)
         return
       }
-      logError('Failed to prepare chats for export', error, {
+      const { chats: exportedChats } = exported
+      toast({
+        title: 'Export complete',
+        description:
+          exportedChats === undefined
+            ? 'Your chats were exported.'
+            : `Exported ${exportedChats} conversation${exportedChats !== 1 ? 's' : ''} successfully.`,
+      })
+    } catch (error) {
+      if (api.lifetime.signal.aborted) return
+      logError('Failed to export chats', error, {
         component: 'SettingsModal',
         action: 'handleExportAllChats',
       })
       toast({
         title: 'Export failed',
-        description: 'Failed to prepare chats for export. Please try again.',
+        description:
+          describeArchiveError(error) ??
+          'Failed to export chats. Please try again.',
         variant: 'destructive',
       })
+    } finally {
       setIsPreparingExport(false)
+      setIsExporting(false)
       setExportType(null)
     }
   }
@@ -1877,7 +1746,7 @@ export function SettingsModal({
     try {
       const { cloudDeletionCompleted } = await onDeleteAllChats()
       onAllChatsDeleted?.()
-      await onChatsUpdated?.()
+      await refreshChatsAfter('handleDeleteAllChats')
       setShowDeleteAllChatsConfirm(false)
       setDeleteAllChatsConfirmText('')
       toast(
@@ -1917,13 +1786,16 @@ export function SettingsModal({
       return
     setIsDeletingAllProjects(true)
     try {
-      await deleteAllProjects(api)
+      const { deleted } = await deleteAllProjects(api)
       onAllProjectsDeleted?.()
       await refreshProjects()
-      await onChatsUpdated?.()
+      await refreshChatsAfter('handleDeleteAllProjects')
       setShowDeleteAllProjectsConfirm(false)
       setDeleteAllProjectsConfirmText('')
-      toast({ title: 'All projects deleted' })
+      toast({
+        title: 'All projects deleted',
+        description: `Deleted ${deleted} ${deleted === 1 ? 'project' : 'projects'}.`,
+      })
     } catch (cause) {
       toast({
         title: 'Delete failed',
@@ -1941,11 +1813,31 @@ export function SettingsModal({
     setExportType('projects')
     setProjectExportResult(null)
     try {
-      await exportClaudeProjects()
-    } catch (cause) {
+      const { projects, documents } = await exportClaudeProjects()
       setProjectExportResult({
-        error:
-          cause instanceof Error ? cause.message : 'Unable to export projects.',
+        message: `Exported ${projects} project${projects !== 1 ? 's' : ''} and ${documents} document${documents !== 1 ? 's' : ''}.`,
+      })
+      toast(
+        projects === 0
+          ? {
+              title: 'No projects exported',
+              description: 'You have no projects to export yet.',
+              variant: 'destructive',
+            }
+          : {
+              title: 'Export complete',
+              description: `Exported ${projects} project${projects !== 1 ? 's' : ''} for Claude.`,
+            },
+      )
+    } catch (cause) {
+      const message =
+        describeArchiveError(cause) ??
+        (cause instanceof Error ? cause.message : 'Unable to export projects.')
+      setProjectExportResult({ message })
+      toast({
+        title: 'Export failed',
+        description: message,
+        variant: 'destructive',
       })
     } finally {
       setIsExporting(false)
@@ -1964,8 +1856,8 @@ export function SettingsModal({
 
   useEffect(() => {
     return () => {
-      const abortController = localTinfoilImportAbortControllerRef.current
-      localTinfoilImportAbortControllerRef.current = null
+      const abortController = importAbortControllerRef.current
+      importAbortControllerRef.current = null
       abortController?.abort()
     }
   }, [])
@@ -1974,6 +1866,7 @@ export function SettingsModal({
   useEffect(() => {
     if (!isOpen) {
       setIsQRCodeExpanded(false)
+      setShowSignOutConfirm(false)
       setShowDeleteAllChatsConfirm(false)
       setDeleteAllChatsConfirmText('')
       setShowDeleteAllProjectsConfirm(false)
@@ -2097,7 +1990,8 @@ ${encryptionKey.replace('key_', '')}
                   <button
                     type="button"
                     onClick={handleSavePersonalization}
-                    className="rounded-lg bg-brand-accent-dark px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+                    disabled={profileLocked}
+                    className="rounded-lg bg-brand-accent-dark px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -2119,6 +2013,11 @@ ${encryptionKey.replace('key_', '')}
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
+                aria-label={
+                  item.id === 'cloud-sync' && keyLocked
+                    ? `${item.label} (needs attention)`
+                    : undefined
+                }
                 className={cn(
                   'flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
                   activeTab === item.id
@@ -2132,6 +2031,13 @@ ${encryptionKey.replace('key_', '')}
                   <item.icon className="h-4 w-4" aria-hidden="true" />
                 )}
                 {item.label}
+                {item.id === 'cloud-sync' && keyLocked && (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
             ))}
           </nav>
@@ -2148,6 +2054,11 @@ ${encryptionKey.replace('key_', '')}
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
+                aria-label={
+                  item.id === 'cloud-sync' && keyLocked
+                    ? `${item.label} (needs attention)`
+                    : undefined
+                }
                 className={cn(
                   'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                   activeTab === item.id
@@ -2161,6 +2072,13 @@ ${encryptionKey.replace('key_', '')}
                   <item.icon className="h-5 w-5" aria-hidden="true" />
                 )}
                 {item.label}
+                {item.id === 'cloud-sync' && keyLocked && (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
             ))}
           </nav>
@@ -2179,7 +2097,8 @@ ${encryptionKey.replace('key_', '')}
                 hasUnsavedPersonalization && (
                   <button
                     onClick={handleSavePersonalization}
-                    className="rounded-lg bg-brand-accent-dark px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+                    disabled={profileLocked}
+                    className="rounded-lg bg-brand-accent-dark px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -2198,7 +2117,16 @@ ${encryptionKey.replace('key_', '')}
           {/* Content */}
           <div className="relative flex-1 overflow-y-auto p-6">
             <TextureGrid />
-            <div className="relative z-10 space-y-6">
+            {profileLocked && (
+              <p className="relative z-10 mb-6 rounded-lg border border-orange-500/30 bg-orange-500/10 p-4 font-aeonik-fono text-xs text-content-secondary">
+                Unlock your encryption key in Cloud Sync to change these
+                settings.
+              </p>
+            )}
+            <fieldset
+              disabled={profileLocked}
+              className="relative z-10 min-w-0 space-y-6 disabled:opacity-60"
+            >
               {/* General Tab */}
               {activeTab === 'general' && (
                 <>
@@ -2496,6 +2424,7 @@ ${encryptionKey.replace('key_', '')}
                           <label className="relative inline-flex cursor-pointer items-center">
                             <input
                               type="checkbox"
+                              aria-label="Web Search"
                               checked={webSearchAvailable}
                               onChange={(e) => {
                                 const newValue = e.target.checked
@@ -2978,9 +2907,9 @@ ${encryptionKey.replace('key_', '')}
                           <div className="font-aeonik-fono text-xs text-content-muted">
                             {!cloudSyncEnabled
                               ? 'Turn on Cloud Sync to back up and access your data across devices.'
-                              : keyReady
-                                ? 'End-to-end encrypted. Only you can access your chats and data.'
-                                : 'Unlock your encryption key to access your saved chats.'}
+                              : keyLocked
+                                ? 'Unlock your encryption key to access your saved chats.'
+                                : 'End-to-end encrypted. Only you can access your chats and data.'}
                           </div>
                         </div>
                         <label className="relative inline-flex cursor-pointer items-center">
@@ -2996,19 +2925,21 @@ ${encryptionKey.replace('key_', '')}
                           <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
                         </label>
                       </div>
-                      {cloudSyncEnabled && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsOpen(false)
-                            onCloudSyncSetupClick?.()
-                          }}
-                          className="mt-3 rounded-site-control border border-border-subtle px-3 py-1.5 text-sm text-content-primary transition-colors hover:bg-surface-chat"
-                        >
-                          {keyReady ? 'Manage key' : 'Unlock'}
-                        </button>
-                      )}
                     </div>
+                    {keyLocked && (
+                      <CloudSyncHealthCard
+                        isDarkMode={isDarkMode}
+                        reason={encryptionKey ? 'key-mismatch' : 'key-recovery'}
+                        onRecoverClick={
+                          onCloudSyncSetupClick
+                            ? () => {
+                                setIsOpen(false)
+                                onCloudSyncSetupClick()
+                              }
+                            : undefined
+                        }
+                      />
+                    )}
                     <NativeBackupExport
                       available={Boolean(
                         isSignedIn &&
@@ -3640,130 +3571,129 @@ ${encryptionKey.replace('key_', '')}
                       </div>
 
                       {/* Delete all projects remains available for account data control. */}
-                      {cloudSyncEnabled &&
-                        canDeleteAllProjects(Boolean(isSignedIn)) && (
-                          <div
-                            className={cn(
-                              'rounded-lg border border-border-subtle p-4',
-                              isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                            )}
-                          >
-                            <div className="space-y-3">
-                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                                <div>
-                                  <div className="font-aeonik text-sm font-medium text-content-primary">
-                                    Delete all projects
-                                  </div>
-                                  <div className="font-aeonik-fono text-xs text-content-muted">
-                                    Permanently delete every project and its
-                                    documents. Chats inside projects will be
-                                    detached but kept. This cannot be undone.
-                                  </div>
+                      {canDeleteAllProjects(Boolean(isSignedIn)) && (
+                        <div
+                          className={cn(
+                            'rounded-lg border border-border-subtle p-4',
+                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                          )}
+                        >
+                          <div className="space-y-3">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                              <div>
+                                <div className="font-aeonik text-sm font-medium text-content-primary">
+                                  Delete all projects
                                 </div>
-                                {!showDeleteAllProjectsConfirm && (
-                                  <button
-                                    onClick={() =>
-                                      setShowDeleteAllProjectsConfirm(true)
-                                    }
-                                    className={cn(
-                                      'flex w-full shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-52',
-                                      isDarkMode
-                                        ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                        : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                                    )}
-                                  >
-                                    <TfTrash
-                                      className="h-4 w-4 shrink-0"
-                                      aria-hidden="true"
-                                    />
-                                    Delete all projects
-                                  </button>
-                                )}
+                                <div className="font-aeonik-fono text-xs text-content-muted">
+                                  Permanently delete every project and its
+                                  documents. Chats inside projects will be
+                                  detached but kept. This cannot be undone.
+                                </div>
                               </div>
-                              {showDeleteAllProjectsConfirm && (
-                                <div className="space-y-2">
-                                  <label className="block">
-                                    <span className="font-aeonik-fono text-xs text-content-muted">
-                                      Type{' '}
-                                      <code className="font-mono text-content-primary">
-                                        {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
-                                      </code>{' '}
-                                      to confirm.
-                                    </span>
-                                    <input
-                                      type="text"
-                                      autoComplete="off"
-                                      autoCorrect="off"
-                                      autoCapitalize="off"
-                                      spellCheck={false}
-                                      value={deleteAllProjectsConfirmText}
-                                      onChange={(e) =>
-                                        setDeleteAllProjectsConfirmText(
-                                          e.target.value,
-                                        )
-                                      }
-                                      disabled={isDeletingAllProjects}
-                                      placeholder={
-                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                      }
-                                      className={cn(
-                                        'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
-                                        isDarkMode
-                                          ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                          : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
-                                      )}
-                                    />
-                                  </label>
-                                  <div className="flex flex-col gap-2 sm:flex-row">
-                                    <button
-                                      onClick={handleDeleteAllProjects}
-                                      disabled={
-                                        isDeletingAllProjects ||
-                                        deleteAllProjectsConfirmText
-                                          .trim()
-                                          .toLowerCase() !==
-                                          DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                      }
-                                      className={cn(
-                                        'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                                        isDarkMode
-                                          ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
-                                          : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
-                                      )}
-                                    >
-                                      {isDeletingAllProjects && (
-                                        <PiSpinner
-                                          className="h-4 w-4 animate-spin"
-                                          aria-hidden="true"
-                                        />
-                                      )}
-                                      <span>
-                                        {isDeletingAllProjects
-                                          ? 'Requesting…'
-                                          : 'Yes, delete all my projects'}
-                                      </span>
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        setShowDeleteAllProjectsConfirm(false)
-                                        setDeleteAllProjectsConfirmText('')
-                                      }}
-                                      disabled={isDeletingAllProjects}
-                                      className={cn(
-                                        'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                        isDarkMode
-                                          ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
-                                          : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
-                                      )}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
+                              {!showDeleteAllProjectsConfirm && (
+                                <button
+                                  onClick={() =>
+                                    setShowDeleteAllProjectsConfirm(true)
+                                  }
+                                  className={cn(
+                                    'flex w-full shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-52',
+                                    isDarkMode
+                                      ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                      : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                                  )}
+                                >
+                                  <TfTrash
+                                    className="h-4 w-4 shrink-0"
+                                    aria-hidden="true"
+                                  />
+                                  Delete all projects
+                                </button>
                               )}
                             </div>
+                            {showDeleteAllProjectsConfirm && (
+                              <div className="space-y-2">
+                                <label className="block">
+                                  <span className="font-aeonik-fono text-xs text-content-muted">
+                                    Type{' '}
+                                    <code className="font-mono text-content-primary">
+                                      {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
+                                    </code>{' '}
+                                    to confirm.
+                                  </span>
+                                  <input
+                                    type="text"
+                                    autoComplete="off"
+                                    autoCorrect="off"
+                                    autoCapitalize="off"
+                                    spellCheck={false}
+                                    value={deleteAllProjectsConfirmText}
+                                    onChange={(e) =>
+                                      setDeleteAllProjectsConfirmText(
+                                        e.target.value,
+                                      )
+                                    }
+                                    disabled={isDeletingAllProjects}
+                                    placeholder={
+                                      DELETE_ALL_PROJECTS_CONFIRM_PHRASE
+                                    }
+                                    className={cn(
+                                      'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
+                                      isDarkMode
+                                        ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                        : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
+                                    )}
+                                  />
+                                </label>
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                  <button
+                                    onClick={handleDeleteAllProjects}
+                                    disabled={
+                                      isDeletingAllProjects ||
+                                      deleteAllProjectsConfirmText
+                                        .trim()
+                                        .toLowerCase() !==
+                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
+                                    }
+                                    className={cn(
+                                      'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                      isDarkMode
+                                        ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
+                                        : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
+                                    )}
+                                  >
+                                    {isDeletingAllProjects && (
+                                      <PiSpinner
+                                        className="h-4 w-4 animate-spin"
+                                        aria-hidden="true"
+                                      />
+                                    )}
+                                    <span>
+                                      {isDeletingAllProjects
+                                        ? 'Requesting…'
+                                        : 'Yes, delete all my projects'}
+                                    </span>
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setShowDeleteAllProjectsConfirm(false)
+                                      setDeleteAllProjectsConfirmText('')
+                                    }}
+                                    disabled={isDeletingAllProjects}
+                                    className={cn(
+                                      'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                      isDarkMode
+                                        ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
+                                        : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
+                                    )}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </div>
+                      )}
                     </>
                   </div>
 
@@ -4110,7 +4040,7 @@ ${encryptionKey.replace('key_', '')}
                       )}
                     >
                       <div className="font-aeonik-fono text-xs text-content-muted">
-                        Export all your conversations as a JSON file. This
+                        Export all your conversations as a ZIP archive. This
                         format can be re-imported into Tinfoil Chat.
                       </div>
                       <button
@@ -4145,7 +4075,7 @@ ${encryptionKey.replace('key_', '')}
                   </div>
 
                   {/* Export Projects (premium only) */}
-                  {cloudSyncEnabled && isPremium && (
+                  {isSignedIn && isPremium && (
                     <div className="space-y-3">
                       <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                         Export Projects for Claude
@@ -4196,7 +4126,7 @@ ${encryptionKey.replace('key_', '')}
                             className="space-y-1 font-aeonik-fono text-xs text-content-muted"
                             role="status"
                           >
-                            <div>{projectExportResult.error}</div>
+                            <div>{projectExportResult.message}</div>
                           </div>
                         )}
                       </div>
@@ -4241,7 +4171,15 @@ ${encryptionKey.replace('key_', '')}
                             </div>
                           </div>
                           <button
-                            onClick={() => void handleSignOut()}
+                            onClick={() => {
+                              if (
+                                !cloudSyncEnabled ||
+                                localChatsEnabled ||
+                                chats?.some((chat) => chat.isLocalOnly)
+                              )
+                                setShowSignOutConfirm(true)
+                              else void handleSignOut()
+                            }}
                             disabled={isSigningOut}
                             className={cn(
                               'flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
@@ -4465,10 +4403,76 @@ ${encryptionKey.replace('key_', '')}
                   </div>
                 </>
               )}
-            </div>
+            </fieldset>
           </div>
         </div>
       </Dialog.Panel>
+      {showSignOutConfirm && (
+        <Dialog
+          open={showSignOutConfirm}
+          onClose={() => setShowSignOutConfirm(false)}
+          autoFocus
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+        >
+          <Dialog.Panel className="mx-4 w-full max-w-sm rounded-site-lg border border-border-subtle bg-surface-card p-6 shadow-xl">
+            <Dialog.Title
+              as="h3"
+              className="font-aeonik text-lg font-medium text-content-primary"
+            >
+              Sign Out
+            </Dialog.Title>
+            <div className="mt-3 space-y-2 text-sm text-content-secondary">
+              <p>
+                {!cloudSyncEnabled
+                  ? 'All local data will be cleared.'
+                  : passkeyActive
+                    ? 'All local data will be cleared. You can recover your cloud chats by signing back in.'
+                    : 'All local data will be cleared. You will need your encryption key to recover your cloud chats.'}
+              </p>
+              <p className="font-medium text-orange-500">
+                Your local chats will be deleted forever.
+              </p>
+            </div>
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowSignOutConfirm(false)}
+                className={cn(
+                  'flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
+                  isDarkMode
+                    ? 'border-border-strong bg-surface-chat text-content-primary hover:bg-surface-chat/80'
+                    : 'border-border-subtle bg-white text-content-primary hover:bg-gray-50',
+                )}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSignOutConfirm(false)
+                  void handleSignOut()
+                }}
+                disabled={isSigningOut}
+                className={cn(
+                  'flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
+                  'disabled:cursor-not-allowed disabled:opacity-70',
+                  isDarkMode
+                    ? 'border-red-500/30 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                    : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
+                )}
+              >
+                {isSigningOut && (
+                  <PiSpinner
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                )}
+                {isSigningOut ? 'Signing out...' : 'Sign Out'}
+              </button>
+            </div>
+          </Dialog.Panel>
+        </Dialog>
+      )}
     </Dialog>
   )
 }

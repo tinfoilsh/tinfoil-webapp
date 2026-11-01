@@ -98,6 +98,12 @@ export class HarnessClient {
     for (let attempt = 0; attempt < 2; attempt++) {
       signal?.throwIfAborted()
       const headers = new Headers()
+      if (typeof navigator !== 'undefined') {
+        const locales = navigator.languages?.length
+          ? navigator.languages
+          : [navigator.language]
+        headers.set('Accept-Language', locales.join(','))
+      }
       if (typeof body === 'string')
         headers.set('Content-Type', 'application/json')
       if (token) headers.set('Authorization', `Bearer ${token}`)
@@ -185,6 +191,15 @@ export class HarnessClient {
     signal?: AbortSignal,
   ): Promise<Blob> {
     return (await this.request(path, JSON.stringify(input), signal)).blob()
+  }
+  // A multipart request whose response body the caller reads as it arrives,
+  // such as an archive.
+  async multipart(
+    path: HarnessRoute,
+    form: FormData,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    return this.request(path, form, signal)
   }
   // A response whose body the caller reads as it arrives, such as read-aloud
   // audio. Aborting the signal ends the body; the caller cancels it when it

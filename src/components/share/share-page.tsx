@@ -3,6 +3,7 @@
 import { initializeRenderers } from '@/components/chat/renderers/client'
 import { SharedChatView } from '@/components/chat/shared-chat-view'
 import type { BaseModel } from '@/config/models'
+import { ERROR_CODES } from '@/services/harness/protocol'
 import { useHarness } from '@/services/harness/provider'
 import { openShare } from '@/services/harness/shares'
 import { HarnessError } from '@/services/harness/sse'
@@ -20,6 +21,36 @@ type LoadingState = 'loading' | 'unsupported' | 'error' | 'success'
 const V2_SHARE_FRAGMENT = /^v2:([0-9a-f]{64})$/
 const UNSUPPORTED_SHARE_LINK_MESSAGE =
   'This share link uses an unsupported format. Ask the sender to create a new link.'
+// What a shared chat renders with until the session names its models.
+const SHARED_CHAT_MODEL: BaseModel = {
+  id: '',
+  label: 'Shared chat',
+  shortLabel: 'Shared chat',
+  description: '',
+  icon: '',
+  badges: [],
+  reasoning: null,
+  deprecated: false,
+}
+// The status with which the sync service refuses to decrypt a share.
+const SHARE_DECRYPT_REFUSED_STATUS = 400
+
+// Why the harness could not open a share: the share store has none, the
+// sync service could not decrypt it with the link's key, or the harness
+// refused what it decrypted.
+function shareErrorMessage(error: unknown): string {
+  if (error instanceof HarnessError) {
+    if (error.code === ERROR_CODES.threadNotFound)
+      return 'This shared chat does not exist or has been deleted'
+    if (
+      error.code === ERROR_CODES.upstreamRefused &&
+      error.detail.status === SHARE_DECRYPT_REFUSED_STATUS
+    )
+      return 'Failed to decrypt chat data'
+    if (error.code === ERROR_CODES.badRequest) return 'Invalid chat data format'
+  }
+  return 'Failed to load shared chat'
+}
 
 export default function SharePage({ chatId }: { chatId?: string }) {
   const { session } = useHarness()
@@ -27,7 +58,7 @@ export default function SharePage({ chatId }: { chatId?: string }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [chatData, setChatData] = useState<SharedThread | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
-  const [model, setModel] = useState<BaseModel | null>(null)
+  const model = session?.models[0] ?? SHARED_CHAT_MODEL
 
   useEffect(() => {
     initializeRenderers()
@@ -63,6 +94,8 @@ export default function SharePage({ chatId }: { chatId?: string }) {
   }, [])
 
   useEffect(() => {
+    // A share that finishes loading after the link changed is not shown.
+    let cancelled = false
     const loadData = async () => {
       if (!chatId) {
         setErrorMessage('No chat ID provided')
@@ -83,31 +116,21 @@ export default function SharePage({ chatId }: { chatId?: string }) {
 
       try {
         const parsed = await openShare(chatId, shareKeyHex)
-        const chatModel = session?.models[0] ?? {
-          id: '',
-          label: 'Shared chat',
-          shortLabel: 'Shared chat',
-          description: '',
-          icon: '',
-          badges: [],
-          reasoning: null,
-          deprecated: false,
-        }
+        if (cancelled) return
         setChatData(parsed)
-        setModel(chatModel)
         setLoadingState('success')
       } catch (error) {
-        setErrorMessage(
-          error instanceof HarnessError && error.code === 'THREAD_NOT_FOUND'
-            ? 'This shared chat does not exist or has been deleted'
-            : 'Failed to load shared chat',
-        )
+        if (cancelled) return
+        setErrorMessage(shareErrorMessage(error))
         setLoadingState('error')
       }
     }
 
     loadData()
-  }, [session, chatId])
+    return () => {
+      cancelled = true
+    }
+  }, [chatId])
 
   const formatDate = (timestamp: string) => {
     return new Date(timestamp).toLocaleDateString(undefined, {
@@ -156,12 +179,7 @@ export default function SharePage({ chatId }: { chatId?: string }) {
     )
   }
 
-  if (
-    loadingState === 'error' ||
-    loadingState === 'unsupported' ||
-    !chatData ||
-    !model
-  ) {
+  if (loadingState === 'error' || loadingState === 'unsupported' || !chatData) {
     return (
       <>
         {sharePreviewHead}

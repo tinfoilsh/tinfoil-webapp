@@ -67,13 +67,14 @@ describe('project sidebar layout', () => {
     vi.clearAllMocks()
   })
 
-  it('orders project chats by update time with creation time as the fallback', () => {
+  it('orders project chats by conversation activity instead of rename time', () => {
     const chats = [
       {
         id: 'old',
         title: 'Older chat',
         messageCount: 2,
         createdAt: new Date('2026-09-01T12:00:00Z'),
+        updatedAt: '2030-01-01T00:00:00Z',
       },
       {
         id: 'updated',
@@ -81,6 +82,7 @@ describe('project sidebar layout', () => {
         messageCount: 2,
         createdAt: new Date('2026-09-01T12:00:00Z'),
         updatedAt: '2026-09-03T12:00:00Z',
+        activityAt: '2026-09-03T12:00:00Z',
       },
       {
         id: 'created',

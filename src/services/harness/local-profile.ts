@@ -12,6 +12,7 @@ import {
   SETTINGS_SELECTED_MODEL,
   SETTINGS_THEME_MODE,
   SETTINGS_THINKING_ENABLED,
+  SETTINGS_WEB_SEARCH_AVAILABLE,
   SETTINGS_WEB_SEARCH_ENABLED,
   USER_PREFS_ADDITIONAL_CONTEXT,
   USER_PREFS_CUSTOM_PROMPT_ENABLED,
@@ -21,6 +22,7 @@ import {
   USER_PREFS_FAVORITE_PROMPT_PRESETS,
   USER_PREFS_LANGUAGE,
   USER_PREFS_LOCAL_PROFILE,
+  USER_PREFS_LOCAL_PROFILE_CHANGES,
   USER_PREFS_NICKNAME,
   USER_PREFS_PERSONALIZATION_ENABLED,
   USER_PREFS_PROFESSION,
@@ -87,6 +89,7 @@ function previousClientSettings(): LocalProfile {
     reasoningEffort: text(SETTINGS_REASONING_EFFORT),
     thinkingEnabled: flag(SETTINGS_THINKING_ENABLED),
     webSearchEnabled: flag(SETTINGS_WEB_SEARCH_ENABLED),
+    webSearchAvailable: flag(SETTINGS_WEB_SEARCH_AVAILABLE),
     piiCheckEnabled: flag(SETTINGS_PII_CHECK_ENABLED),
     genUIEnabled: flag(SETTINGS_GENUI_ENABLED),
     themeMode: text(SETTINGS_THEME_MODE),
@@ -142,5 +145,33 @@ export function saveLocalProfile(
     ...patch,
   })
   write(profile)
+  if (!replace) {
+    try {
+      localStorage.setItem(
+        USER_PREFS_LOCAL_PROFILE_CHANGES,
+        JSON.stringify([
+          ...new Set([...localProfileChanges(), ...Object.keys(patch)]),
+        ]),
+      )
+    } catch (error) {
+      logError('Failed to save local settings changes', error, {
+        component: 'localProfile',
+        action: 'saveLocalProfile',
+      })
+    }
+  }
   return profile
+}
+
+export function localProfileChanges(): string[] {
+  const fields = parseJSON(
+    localStorage.getItem(USER_PREFS_LOCAL_PROFILE_CHANGES),
+  )
+  return Array.isArray(fields)
+    ? fields.filter((field): field is string => typeof field === 'string')
+    : []
+}
+
+export function clearLocalProfileChanges() {
+  localStorage.removeItem(USER_PREFS_LOCAL_PROFILE_CHANGES)
 }
