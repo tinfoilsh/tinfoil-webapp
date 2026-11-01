@@ -204,7 +204,7 @@ it('lists a new chat on this device as Untitled once it is sent', async () => {
   runs.end()
 })
 
-it('lists a new stored chat while its first reply streams, then once', async () => {
+it('lists a new stored chat before the server responds and updates it in place', async () => {
   signIn({ cloud: true })
   const runs = scriptRuns()
   let listed: ThreadSummary[] = []
@@ -217,6 +217,15 @@ it('lists a new stored chat while its first reply streams, then once', async () 
   await send('Explain this to me')
   await waitFor(() => expect(runs.turns).toHaveLength(1))
   const threadId = runs.turns[0].threadId!
+  const pending = screen.getByRole('link', { name: /^Untitled/ })
+  expect(pending).toHaveAttribute('href', `/chat/${threadId}`)
+  expect(pending).toHaveAttribute('aria-current', 'page')
+  expect(within(pending).getByText('Saving conversation')).toBeInTheDocument()
+  fireEvent.click(pending)
+  expect(screen.getByText('Explain this to me')).toBeInTheDocument()
+  expect(
+    client.post.mock.calls.filter(([path]) => path === '/v1/threads/get'),
+  ).toEqual([])
   const started = '2026-10-22T12:00:00Z'
   const created = summaryOf(
     cloudChat(threadId, PLACEHOLDER_CHAT_TITLE, started, {
@@ -243,6 +252,7 @@ it('lists a new stored chat while its first reply streams, then once', async () 
   )
   await screen.findByText('Here it is.')
   const untitled = await row('Untitled')
+  expect(untitled).toBe(pending)
   expect(untitled).toHaveAttribute('href', `/chat/${threadId}`)
   expect(untitled).toHaveAttribute('aria-current', 'page')
   expect(within(untitled).getByText('Generating response')).toBeInTheDocument()

@@ -1,10 +1,12 @@
+import { DEFAULT_CHAT_TITLE } from '@/constants/chat'
+import { localSummary } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
-import type { Frame, Turn } from '@/services/harness/types'
+import type { Frame, ThreadSummary, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from './thread-fixture'
+import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
 resetChatStoresAroundEachTest()
 
@@ -15,6 +17,129 @@ function gate() {
   })
   return { promise, resolve }
 }
+
+it.each([
+  { name: 'cloud', local: false, temporary: false, projectId: null },
+  { name: 'project', local: false, temporary: false, projectId: 'project-1' },
+  { name: 'local', local: true, temporary: false, projectId: null },
+  { name: 'temporary', local: false, temporary: true, projectId: null },
+])(
+  'shows the correct sidebar entry for a $name chat throughout its first send',
+  async ({ local, temporary, projectId }) => {
+    signIn({ cloud: true })
+    const accepted = gate()
+    const titled = gate()
+    const saved: ThreadSummary[] = []
+    client.post.mockImplementation(async (path) => {
+      if (path === '/v1/threads/list')
+        return { threads: [...saved], nextCursor: null }
+      throw new Error(`Unexpected ${path}`)
+    })
+    client.events.mockImplementation(async function* (
+      _path: string,
+      input: Turn,
+    ): AsyncGenerator<Frame> {
+      await accepted.promise
+      yield {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          threadId: input.threadId!,
+          runId: 'new-chat-run',
+          instance: 'instance-1',
+        },
+      }
+      await titled.promise
+      const thread = storedThread(input.threadId!, {
+        title: 'Generated conversation title',
+        titleState: 'generated',
+        projectId,
+        messages: [
+          {
+            id: input.clientRequestId,
+            role: 'user',
+            content: input.content,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      })
+      const summary = localSummary(thread)
+      if (!local && !temporary) saved.push(summary)
+      yield {
+        id: 1,
+        event: {
+          type: 'STATE_SNAPSHOT',
+          snapshot: { thread: summary, queue: [], rateLimit: { kind: null } },
+        },
+      }
+      yield {
+        id: 2,
+        event: {
+          type: 'RUN_FINISHED',
+          threadId: input.threadId!,
+          runId: 'new-chat-run',
+          metadata: input.local ? { thread } : {},
+        },
+      }
+    })
+    const { result } = renderHook(() =>
+      useThread(null, projectId, { newChatLocal: local }),
+    )
+    await waitFor(() => expect(result.current.loadingChats).toBe(false))
+    if (temporary) act(() => result.current.setTemporary(true))
+    expect(result.current.chats).toEqual([])
+    let sending: Promise<boolean> | undefined
+    try {
+      act(() => {
+        sending = result.current.send({ content: 'My first question' })
+      })
+      const id = result.current.chat.id
+      const firstMessageAt = result.current.chat.messages[0].timestamp
+      expect(id).not.toBe('')
+      expect(result.current.chats).toEqual(
+        temporary
+          ? []
+          : [
+              expect.objectContaining({
+                id,
+                title: DEFAULT_CHAT_TITLE,
+                titleState: 'placeholder',
+                pendingSave: true,
+                isLocalOnly: local,
+                projectId: projectId ?? undefined,
+                createdAt: firstMessageAt,
+              }),
+            ],
+      )
+      await act(() => result.current.refresh())
+      expect(result.current.chats.map((chat) => chat.id)).toEqual(
+        temporary ? [] : [id],
+      )
+      await act(async () => accepted.resolve())
+      await waitFor(() => expect(result.current.status).toBe('streaming'))
+      expect(result.current.chats.map((chat) => chat.id)).toEqual(
+        temporary ? [] : [id],
+      )
+      await act(async () => {
+        titled.resolve()
+        await sending
+      })
+      await waitFor(() =>
+        expect(
+          result.current.chats.map(({ id, title }) => ({ id, title })),
+        ).toEqual(
+          temporary ? [] : [{ id, title: 'Generated conversation title' }],
+        ),
+      )
+    } finally {
+      await act(async () => {
+        accepted.resolve()
+        titled.resolve()
+        await sending
+      })
+    }
+  },
+)
 
 it('keeps the run receipt when an early stop is refused, so reopening rejoins it', async () => {
   signIn()

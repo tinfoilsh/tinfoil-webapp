@@ -531,6 +531,7 @@ export function ChatInterface({
     )
   }
   const handleChatSelect = (id: string) => {
+    if (id === currentChat.id && currentChat.pendingSave) return
     const selection = Symbol()
     selectionNavigation.current = selection
     const isLocalOnly =
