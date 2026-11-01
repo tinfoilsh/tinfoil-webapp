@@ -377,14 +377,15 @@ describe('local chats of a signed-in account without cloud sync', () => {
       sending = result.current.send({ content: 'Hi' })
     })
 
-    await waitFor(() => expect(result.current.chats).toHaveLength(1))
-    const threadId = turn().threadId!
+    expect(result.current.chats).toHaveLength(1)
+    const threadId = result.current.chat.id
     expect(result.current.chats[0]).toMatchObject({
       id: threadId,
       title: DEFAULT_CHAT_TITLE,
       isLocalOnly: true,
       messageCount: 1,
     })
+    await waitFor(() => expect(client.events).toHaveBeenCalledTimes(1))
     expect(result.current.chat.pendingSave).toBe(false)
     expect((await stored(threadId))?.messages).toEqual([
       {

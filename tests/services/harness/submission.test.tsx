@@ -10,6 +10,8 @@ import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
 resetChatStoresAroundEachTest()
 
+const RECORD_VERSION = 1
+
 function gate() {
   let resolve!: () => void
   const promise = new Promise<void>((done) => {
@@ -58,7 +60,7 @@ it.each([
           {
             id: input.clientRequestId,
             role: 'user',
-            content: input.content,
+            content: input.content ?? '',
             createdAt: new Date().toISOString(),
           },
         ],
@@ -78,7 +80,9 @@ it.each([
           type: 'RUN_FINISHED',
           threadId: input.threadId!,
           runId: 'new-chat-run',
-          metadata: input.local ? { thread } : {},
+          metadata: input.local
+            ? { thread: { ...thread, recordVersion: RECORD_VERSION } }
+            : {},
         },
       }
     })
