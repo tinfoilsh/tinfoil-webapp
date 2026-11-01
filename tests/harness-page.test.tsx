@@ -1,4 +1,4 @@
-import type { Frame, Thread, Turn } from '@/services/harness/types'
+import type { Frame, Message, Thread, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -26,55 +26,75 @@ const started: Frame = {
   id: 0,
   event: { type: 'RUN_STARTED', threadId: thread.id, runId: 'run-1' },
 }
+const answered: Message[] = [
+  {
+    id: 'u',
+    role: 'user',
+    content: 'private question',
+    createdAt: thread.createdAt,
+  },
+  {
+    id: 'a',
+    role: 'assistant',
+    createdAt: thread.createdAt,
+    timeline: [{ id: 'text', type: 'content', content: 'private answer' }],
+  },
+]
 const messages: Frame = {
   id: 1,
-  event: {
-    type: 'MESSAGES_SNAPSHOT',
-    messages: [
-      {
-        id: 'u',
-        role: 'user',
-        content: 'private question',
-        createdAt: thread.createdAt,
-      },
-      {
-        id: 'a',
-        role: 'assistant',
-        createdAt: thread.createdAt,
-        timeline: [{ id: 'text', type: 'content', content: 'private answer' }],
-      },
-    ],
-  },
+  event: { type: 'MESSAGES_SNAPSHOT', messages: answered },
 }
-const finished: Frame = {
+const finished = {
   id: 2,
-  event: { type: 'RUN_FINISHED', threadId: thread.id, runId: 'run-1' },
-}
+  event: {
+    type: 'RUN_FINISHED',
+    threadId: thread.id,
+    runId: 'run-1',
+  },
+} satisfies Frame
 beforeEach(() => {
   signIn({
     userId: null,
     session: { ...testSession, widgets: ['render_chart'] },
   })
 })
-it('runs a signed-out first turn as a local thread with its preset and keeps it in the tab', async () => {
-  client.events.mockImplementation(async function* () {
+it('runs a signed-out first turn as a new device chat with its preset and keeps it in the tab', async () => {
+  client.events.mockImplementation(async function* (
+    _path: string,
+    input: Turn,
+  ) {
     yield started
     yield messages
-    yield finished
+    yield {
+      ...finished,
+      event: {
+        ...finished.event,
+        metadata: {
+          thread: {
+            ...thread,
+            id: input.threadId,
+            presetId: input.presetId,
+            messages: answered,
+          },
+        },
+      },
+    }
   })
   const { result } = renderHook(() => useThread(null, 'project-1'))
-  act(() => result.current.setPresetId('builtin:tutor'))
+  await act(() => result.current.selectPreset('builtin:tutor'))
   await act(() => result.current.send({ content: 'private question' }))
   const input = client.events.mock.calls[0][1] as Turn
-  expect(input).toMatchObject({
-    content: 'private question',
-    local: true,
+  expect(input).toEqual({
+    clientRequestId: expect.any(String),
+    threadId: expect.stringMatching(/^\d{13}_[0-9a-f-]{36}$/),
+    kind: 'send',
     widgets: ['render_chart'],
-    thread: { presetId: 'builtin:tutor', messages: [] },
+    options: { model: 'test-model', timezone: expect.any(String) },
+    content: 'private question',
+    presetId: 'builtin:tutor',
+    local: true,
+    profile: {},
   })
-  expect(input).not.toHaveProperty('key')
-  expect(input).not.toHaveProperty('projectId')
-  expect(input.clientRequestId).toBeTruthy()
   expect(result.current.chat.messages.map((m) => m.content)).toEqual([
     'private question',
     'private answer',
@@ -84,12 +104,9 @@ it('runs a signed-out first turn as a local thread with its preset and keeps it 
     sessionStorage.getItem('tinfoil-sync-session-chats') ?? '[]',
   )
   expect(saved).toMatchObject({
-    id: 'thread-1',
-    presetId: 'builtin:tutor',
-    messages: [
-      { id: 'u', content: 'private question' },
-      { id: 'a', content: 'private answer' },
-    ],
+    id: input.threadId,
+    thread: { presetId: 'builtin:tutor' },
+    messages: answered,
   })
   expect(localStorage.length).toBe(0)
 })
@@ -105,29 +122,46 @@ it('retries an ambiguous initial request with its original nonce and input', asy
     })
   const { result } = renderHook(() => useThread())
   await act(() => result.current.send({ content: 'private question' }))
-  expect(result.current.error).toBe('connection closed')
+  expect(result.current.status).toBe('error')
+  expect(result.current.error).toBe(
+    'The connection closed. Reconnect to continue.',
+  )
   await act(() => result.current.reconnect())
   expect(client.events.mock.calls[1][1]).toEqual(client.events.mock.calls[0][1])
   expect(result.current.chat.messages).toHaveLength(2)
 })
-it('reattaches an accepted turn by run id and last event cursor', async () => {
+it('rejoins an accepted turn by its run when its stream drops', async () => {
+  const chunk = (id: number, delta: string): Frame => ({
+    id,
+    event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a', delta },
+  })
   client.events
     .mockImplementationOnce(async function* () {
       yield started
       yield messages
+      yield chunk(2, ', and more')
       throw new TypeError('connection closed')
     })
     .mockImplementationOnce(async function* () {
-      yield finished
+      yield started
+      yield messages
+      yield chunk(2, ', and more')
+      yield chunk(3, ', and the end')
+      yield { ...finished, id: 4 }
     })
   const { result } = renderHook(() => useThread())
   await act(() => result.current.send({ content: 'private question' }))
-  await act(() => result.current.reconnect())
-  expect(client.events.mock.calls[1][0]).toBe('/v1/threads/follow')
-  expect(client.events.mock.calls[1][1]).toMatchObject({
-    threadId: 'thread-1',
-    runId: 'run-1',
-  })
-  expect(client.events.mock.calls[1][3]).toBe(1)
-  expect(result.current.chat.messages).toHaveLength(2)
+  expect(client.events.mock.calls[1]).toEqual([
+    '/v1/threads/follow',
+    {
+      threadId: (client.events.mock.calls[0][1] as Turn).threadId,
+      runId: 'run-1',
+    },
+    expect.any(AbortSignal),
+  ])
+  expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+    'private question',
+    'private answer, and more, and the end',
+  ])
+  expect(result.current.status).toBe('idle')
 })

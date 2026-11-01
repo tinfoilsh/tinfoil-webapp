@@ -2,24 +2,11 @@ import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { TfBoxX, TfChevronLeft, TfChevronRight } from '@tinfoilsh/tinfoil-icons'
 import { useCallback, useEffect, useState } from 'react'
-import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
+import type { RenderImageArgs } from '../widget-args'
 
-const imageSchema = z.object({
-  url: z.string(),
-  alt: z.string().optional(),
-  caption: z.string().optional(),
-  link: z.string().optional(),
-})
-
-const schema = z.object({
-  images: z.array(imageSchema).min(1),
-  title: z.string().optional(),
-  aspectRatio: z.enum(['square', 'video', 'auto']).optional(),
-})
-
-type ImageWidgetArgs = z.infer<typeof schema>
-type ImageItem = z.infer<typeof imageSchema>
+type ImageWidgetArgs = RenderImageArgs
+type ImageItem = RenderImageArgs['images'][number]
 
 interface LightboxState {
   open: boolean
@@ -319,6 +306,5 @@ function ImageGalleryRoot({ images, title, aspectRatio }: ImageWidgetArgs) {
 
 export const widget = defineGenUIWidget({
   name: 'render_image',
-  schema,
   render: (args: ImageWidgetArgs) => <ImageGalleryRoot {...args} />,
 })

@@ -1,9 +1,6 @@
 import { HarnessClient } from '@/services/harness/client'
-import {
-  applyPatch,
-  initialChat,
-  reduceEvent,
-} from '@/services/harness/reducer'
+import type { HarnessRoute } from '@/services/harness/protocol'
+import { initialChat, reduceEvent } from '@/services/harness/reducer'
 import { HarnessError, readEvents } from '@/services/harness/sse'
 import type { Frame, Message, TimelineBlock } from '@/services/harness/types'
 import { describe, expect, it, vi } from 'vitest'
@@ -177,7 +174,7 @@ describe('harness reducer', () => {
   })
   it('keeps thinking, text, tools and progress in order and marks cancelled partial output', () => {
     let state = initialChat()
-    for (const event of [
+    const events: Frame['event'][] = [
       {
         type: 'REASONING_MESSAGE_CHUNK',
         messageId: 'm-reasoning',
@@ -201,8 +198,8 @@ describe('harness reducer', () => {
         patch: [{ op: 'add' as const, path: '/output/-', value: '1' }],
       },
       { type: 'RUN_FINISHED', metadata: { cancelled: true } },
-    ])
-      state = reduceEvent(state, { event })
+    ]
+    for (const event of events) state = reduceEvent(state, { event })
     expect(state.messages[0].timeline?.map((b) => b.type)).toEqual([
       'thinking',
       'content',
@@ -211,27 +208,133 @@ describe('harness reducer', () => {
     expect(state.messages[0].timeline?.[2].progress).toEqual(['1'])
     expect(state.messages[0].isInterrupted).toBe(true)
   })
-  it('applies queue patches atomically with JSON pointer escaping', () => {
-    const original = { queue: [{ id: 'a' }], 'a/b': { '~': 1 } }
-    expect(
-      applyPatch(original, [
-        { op: 'test', path: '/a~1b/~0', value: 1 },
-        { op: 'copy', from: '/queue/0', path: '/queue/-' },
-        { op: 'replace', path: '/queue/1/id', value: 'b' },
-        { op: 'move', from: '/queue/0', path: '/queue/1' },
-        { op: 'remove', path: '/a~1b' },
-      ]),
-    ).toEqual({ queue: [{ id: 'b' }, { id: 'a' }] })
+  it('applies the queue and title changes a run sends, and refuses others', () => {
+    const summary = {
+      id: 't',
+      title: 'New Chat',
+      titleState: 'placeholder',
+      createdAt: 't0',
+      updatedAt: 't0',
+      model: 'test-model',
+      projectId: null,
+      pinned: false,
+      webSearchEnabled: true,
+      messageCount: 1,
+      activeRun: null,
+    } as const
+    let state = reduceEvent(initialChat(), {
+      id: 0,
+      event: { type: 'RUN_STARTED', runId: 'r', threadId: 't' },
+    })
+    state = reduceEvent(state, {
+      id: 1,
+      event: {
+        type: 'STATE_SNAPSHOT',
+        snapshot: {
+          thread: summary,
+          queue: [{ queueId: 'q1', content: 'first' }],
+        },
+      },
+    })
+    const before = state
+    state = reduceEvent(state, {
+      id: 2,
+      event: {
+        type: 'STATE_DELTA',
+        delta: [
+          {
+            op: 'add',
+            path: '/queue/-',
+            value: { queueId: 'q2', content: 'second' },
+          },
+          { op: 'replace', path: '/thread/title', value: 'Named' },
+          { op: 'replace', path: '/thread/titleState', value: 'generated' },
+        ],
+      },
+    })
+    expect(state.snapshot).toEqual({
+      thread: { ...summary, title: 'Named', titleState: 'generated' },
+      queue: [
+        { queueId: 'q1', content: 'first' },
+        { queueId: 'q2', content: 'second' },
+      ],
+    })
+    expect(before.snapshot).toEqual({
+      thread: summary,
+      queue: [{ queueId: 'q1', content: 'first' }],
+    })
+    state = reduceEvent(state, {
+      id: 3,
+      event: {
+        type: 'STATE_DELTA',
+        delta: [{ op: 'replace', path: '/queue', value: [] }],
+      },
+    })
+    expect(state.snapshot.queue).toEqual([])
     expect(() =>
-      applyPatch(original, [
-        { op: 'remove', path: '/queue/0' },
-        { op: 'remove', path: '/missing' },
-      ]),
+      reduceEvent(state, {
+        id: 4,
+        event: {
+          type: 'STATE_DELTA',
+          delta: [{ op: 'remove', path: '/queue/0' }] as never,
+        },
+      }),
     ).toThrow(HarnessError)
-    expect(original.queue).toEqual([{ id: 'a' }])
+  })
+  it('leaves the snapshot as it was when a later change of a delta is refused', () => {
+    const state = reduceEvent(initialChat(), {
+      id: 0,
+      event: {
+        type: 'STATE_SNAPSHOT',
+        snapshot: {
+          thread: null,
+          queue: [{ queueId: 'q1', content: 'first' }],
+        },
+      },
+    })
+    const before = structuredClone(state.snapshot)
+
     expect(() =>
-      applyPatch({}, [{ op: 'add', path: '/__proto__/polluted', value: true }]),
+      reduceEvent(state, {
+        id: 1,
+        event: {
+          type: 'STATE_DELTA',
+          delta: [
+            {
+              op: 'add',
+              path: '/queue/-',
+              value: { queueId: 'q2', content: 'second' },
+            },
+            { op: 'remove', path: '/queue/0' },
+          ] as never,
+        },
+      }),
     ).toThrow(HarnessError)
+
+    expect(state.snapshot).toEqual(before)
+  })
+  it('leaves the state a frame was applied to as it was', () => {
+    const started = reduceEvent(initialChat(), {
+      id: 0,
+      event: { type: 'RUN_STARTED', runId: 'r', threadId: 't' },
+    })
+    const first = reduceEvent(started, {
+      id: 1,
+      event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'm', delta: 'Hello' },
+    })
+    const second = reduceEvent(first, {
+      id: 2,
+      event: { type: 'TEXT_MESSAGE_CHUNK', messageId: 'm', delta: ' there' },
+    })
+
+    expect(first.messages[0].timeline).toEqual([
+      { id: 'm_content_0', type: 'content', content: 'Hello' },
+    ])
+    expect(second.messages[0].timeline).toEqual([
+      { id: 'm_content_0', type: 'content', content: 'Hello there' },
+    ])
+    expect(started.messages).toEqual([])
+    expect(first.cursors).toEqual({ r: 1 })
   })
 })
 
@@ -367,8 +470,8 @@ describe('attested harness transport', () => {
       vi.fn().mockResolvedValueOnce('first').mockResolvedValueOnce('second'),
       () => secure,
     )
-    await client.session()
-    await client.session()
+    await client.post('/v1/session', {})
+    await client.post('/v1/session', {})
     expect(
       secure.fetch.mock.calls.map((call) =>
         new Headers(call[1].headers).get('Authorization'),
@@ -383,7 +486,9 @@ describe('attested harness transport', () => {
       vi.fn().mockResolvedValueOnce('old').mockResolvedValueOnce(null),
       () => secure,
     )
-    await expect(client.session()).rejects.toMatchObject({ status: 401 })
+    await expect(client.post('/v1/session', {})).rejects.toMatchObject({
+      status: 401,
+    })
     expect(secure.fetch).toHaveBeenCalledTimes(1)
   })
   it('uses the same verified connection for multipart, binary, and follow requests', async () => {
@@ -412,16 +517,15 @@ describe('attested harness transport', () => {
         headers: { 'Content-Type': 'text/event-stream' },
       }),
     )
-    for await (const frame of client.events(
-      '/v1/threads/follow',
-      { threadId: 't', runId: 'r' },
-      undefined,
-      0,
-    ))
+    for await (const frame of client.events('/v1/threads/follow', {
+      threadId: 't',
+      runId: 'r',
+    }))
       expect(frame.event.type).toBe('RUN_FINISHED')
-    expect(
-      new Headers(secure.fetch.mock.calls[2][1].headers).get('Last-Event-ID'),
-    ).toBe('0')
+    expect(JSON.parse(secure.fetch.mock.calls[2][1].body)).toEqual({
+      threadId: 't',
+      runId: 'r',
+    })
   })
   it('abandons an attestation that stalls and verifies again with a new client', async () => {
     vi.useFakeTimers()
@@ -469,9 +573,9 @@ describe('attested harness transport', () => {
       '/v1/../session',
       '/v1/session?key=secret',
     ])
-      await expect(client.post(path, { key: 'cek' })).rejects.toBeInstanceOf(
-        HarnessError,
-      )
+      await expect(
+        client.post(path as HarnessRoute, { key: 'cek' }),
+      ).rejects.toBeInstanceOf(HarnessError)
     expect(secure.fetch).not.toHaveBeenCalled()
     expect(
       () =>

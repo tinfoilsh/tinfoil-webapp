@@ -3,6 +3,7 @@ import { GenUIToolCallRenderer } from '@/components/chat/genui/GenUIToolCallRend
 import { GENUI_WIDGETS_BY_NAME } from '@/components/chat/genui/registry'
 import { ArtifactRetryError } from '@/components/chat/genui/retry'
 import type { GenUIRenderContext } from '@/components/chat/genui/types'
+import type { WidgetArgs } from '@/components/chat/genui/widget-args'
 import {
   artifactPreviewTargetsEqual,
   OPEN_ARTIFACT_PREVIEW_EVENT,
@@ -231,7 +232,7 @@ describe('GenUIToolCallRenderer', () => {
     expect(screen.queryByText(/private-markup/)).not.toBeInTheDocument()
   })
 
-  it('distinguishes invalid JSON, schema validation, and unknown widgets', () => {
+  it('distinguishes invalid JSON and unknown widgets', () => {
     const { rerender } = render(
       <GenUIToolCallRenderer
         isStreaming={false}
@@ -247,43 +248,40 @@ describe('GenUIToolCallRenderer', () => {
     rerender(
       <GenUIToolCallRenderer
         isStreaming={false}
-        toolCalls={[
-          {
-            id: 'two',
-            name: 'render_chart',
-            arguments: '{"type":"invalid","data":[]}',
-          },
-        ]}
-      />,
-    )
-    expect(screen.getByText(/failed schema validation/)).toBeInTheDocument()
-
-    rerender(
-      <GenUIToolCallRenderer
-        isStreaming={false}
         toolCalls={[{ id: 'three', name: 'render_unknown', arguments: '{}' }]}
       />,
     )
     expect(screen.getByText('Component unavailable')).toBeInTheDocument()
   })
 
-  it('shows schema-invalid complete JSON while continuation is streaming', () => {
-    render(
-      <GenUIToolCallRenderer
-        isStreaming
-        toolCalls={[
-          {
-            id: 'one',
-            name: 'render_chart',
-            arguments: '{"type":"invalid","data":[]}',
-          },
-        ]}
-      />,
-    )
+  // The fields each declaration requires and nothing else.
+  const requiredOnly: { [Name in keyof WidgetArgs]: WidgetArgs[Name] } = {
+    render_stat_cards: { stats: [{ label: 'Users', value: 3 }] },
+    render_timeline: { events: [{ date: '2026', title: 'Launch' }] },
+    render_chart: { type: 'bar', data: [{ label: 'A', value: 1 }] },
+    render_image: { images: [{ url: 'https://example.com/a.png' }] },
+    render_link_preview: { url: 'https://example.com', title: 'Example' },
+    render_artifact_preview: { source: { type: 'markdown', markdown: '# Hi' } },
+    render_clock: {},
+    render_recipe_card: { title: 'Soup' },
+    render_message_compose: { variants: [{ label: 'Short', body: 'Hi' }] },
+    render_sports_data: { kind: 'standings' },
+    render_map: { locations: [{ name: 'Paris' }] },
+  }
 
-    expect(screen.getByText(/failed schema validation/)).toBeInTheDocument()
-    expect(screen.queryByText(/Generating chart/)).not.toBeInTheDocument()
-  })
+  it.each(Object.entries(requiredOnly))(
+    'renders %s without its optional fields',
+    (name, args) => {
+      render(
+        <GenUIToolCallRenderer
+          isStreaming={false}
+          toolCalls={[{ id: 'one', name, arguments: JSON.stringify(args) }]}
+        />,
+      )
+      expect(screen.queryByText(/Couldn.t display/)).not.toBeInTheDocument()
+      expect(logErrorMock).not.toHaveBeenCalled()
+    },
+  )
 
   it('keeps widget retry repeatable and exposes full regeneration separately', async () => {
     let rejectRetry!: (error: ArtifactRetryError) => void

@@ -2,7 +2,6 @@ import { ChatSidebar } from '@/components/chat/chat-sidebar'
 import { DragProvider } from '@/components/chat/drag-context'
 import type { Chat } from '@/components/chat/types'
 import {
-  SETTINGS_CLOUD_SYNC_ENABLED,
   SETTINGS_LOCAL_ONLY_MODE_ENABLED,
   UI_SIDEBAR_ACTIVE_TAB,
 } from '@/constants/storage-keys'
@@ -16,6 +15,7 @@ import {
 } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { signIn } from '../../harness-fixture'
 
 const auth = vi.hoisted(() => ({ isSignedIn: true }))
 vi.mock('@clerk/react', () => ({
@@ -159,7 +159,7 @@ describe('chat sidebar storage modes', () => {
   })
 
   it('lists only synced chats with cloud sync until local chats are enabled', () => {
-    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+    signIn({ cloud: true })
     localStorage.setItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED, 'false')
     render(<Sidebar />)
 
@@ -174,7 +174,7 @@ describe('chat sidebar storage modes', () => {
   })
 
   it('starts new chats on the device from the Local tab', () => {
-    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+    signIn({ cloud: true })
     localStorage.setItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED, 'true')
     const createNewChat = vi.fn()
     const { rerender } = render(<Sidebar createNewChat={createNewChat} />)
@@ -208,7 +208,7 @@ describe('chat sidebar storage modes', () => {
   })
 
   it('starts a synced chat when local chats are off but a blank local chat is open', () => {
-    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+    signIn({ cloud: true })
     localStorage.setItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED, 'false')
     const createNewChat = vi.fn()
     render(
@@ -224,7 +224,7 @@ describe('chat sidebar storage modes', () => {
   })
 
   it('turns on local chats for an account that already has some', () => {
-    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+    signIn({ cloud: true })
     render(<Sidebar />)
 
     expect(localStorage.getItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED)).toBe('true')
@@ -234,7 +234,7 @@ describe('chat sidebar storage modes', () => {
   })
 
   it('offers no way to move or pin a device chat without the transfer routes', () => {
-    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+    signIn({ cloud: true })
     localStorage.setItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED, 'true')
     sessionStorage.setItem(UI_SIDEBAR_ACTIVE_TAB, 'local')
     sidebarProjects.list = [{ id: 'project-1', name: 'Garden' }]
@@ -257,7 +257,7 @@ describe('chat sidebar storage modes', () => {
 
   describe('with the transfer routes', () => {
     function renderMovable(tab: 'cloud' | 'local') {
-      localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+      signIn({ cloud: true })
       localStorage.setItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED, 'true')
       sessionStorage.setItem(UI_SIDEBAR_ACTIVE_TAB, tab)
       const onConvertChatToCloud = vi.fn(async () => true)

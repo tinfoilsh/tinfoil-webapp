@@ -13,8 +13,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { coerceArray, type ChartRow } from '../input-coercion'
-import type { ChartArgs } from './Chart'
+import type { RenderChartArgs } from '../widget-args'
+
+type ChartRow = RenderChartArgs['data'][number]
 
 const DEFAULT_PIE_COLORS = [
   '#3b82f6',
@@ -177,8 +178,8 @@ export default function ChartView({
   yKey,
   title,
   color,
-}: ChartArgs) {
-  const rows = coerceArray<ChartRow>(data)
+}: RenderChartArgs) {
+  const rows = data
   const keys = inferChartKeys(rows, xKey, yKey)
   const seriesColor = color ?? DEFAULT_SERIES_COLOR
   let chart: JSX.Element

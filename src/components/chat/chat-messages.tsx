@@ -27,6 +27,7 @@ import { MessageRendererHost } from './message-renderer-host'
 import { PrintableChat } from './PrintableChat'
 import type { PromptPreset } from './prompts/types'
 import { StreamingTracerDot } from './renderers/components/StreamingTracerDot'
+import { SpeechProvider, type Speak } from './speech-context'
 import type { Attachment, LabelType, Message } from './types'
 import { WelcomeScreen } from './WelcomeScreen'
 
@@ -73,6 +74,7 @@ type ChatMessagesProps = {
   // it, and the text of a document whose message does not carry it.
   loadImage?: (attachment: Attachment, signal: AbortSignal) => Promise<Blob>
   loadDocumentText?: LoadDocumentText
+  speak?: Speak
   // The chat keeps its images only while the page is open.
   imagesUnsaved?: boolean
   showScrollButton?: boolean
@@ -84,8 +86,6 @@ type ChatMessagesProps = {
   setThinkingEnabled?: (enabled: boolean) => void
   autoIntelligence: AutoIntelligenceLevelId
   setAutoIntelligence: (level: AutoIntelligenceLevelId) => void
-  codeExecutionEnabled?: boolean
-  onCodeExecutionToggle?: () => void
   isTemporaryMode?: boolean
   activePromptPreset?: PromptPreset | null
   onOpenPromptLibrary?: () => void
@@ -276,6 +276,7 @@ export function ChatMessages({
   onRetryToolCall,
   loadImage,
   loadDocumentText,
+  speak,
   imagesUnsaved = false,
   showScrollButton,
   webSearchEnabled,
@@ -286,8 +287,6 @@ export function ChatMessages({
   setThinkingEnabled,
   autoIntelligence,
   setAutoIntelligence,
-  codeExecutionEnabled,
-  onCodeExecutionToggle,
   isTemporaryMode,
   activePromptPreset,
   onOpenPromptLibrary,
@@ -444,8 +443,6 @@ export function ChatMessages({
             setThinkingEnabled={setThinkingEnabled}
             autoIntelligence={autoIntelligence}
             setAutoIntelligence={setAutoIntelligence}
-            codeExecutionEnabled={codeExecutionEnabled}
-            onCodeExecutionToggle={onCodeExecutionToggle}
             isTemporaryMode={isTemporaryMode}
             activePromptPreset={activePromptPreset}
             onOpenPromptLibrary={onOpenPromptLibrary}
@@ -471,63 +468,65 @@ export function ChatMessages({
       loadImage={loadImage}
     >
       <DocumentTextProvider load={loadDocumentText}>
-        {/* Not a live region: ChatAnnouncer reads each finished response once.
+        <SpeechProvider speak={readOnly ? undefined : speak}>
+          {/* Not a live region: ChatAnnouncer reads each finished response once.
           role="log" implies aria-live="polite", which would read the
           response (and every message of a newly opened chat) a second time. */}
-        <div
-          role="log"
-          aria-label="Conversation"
-          aria-live="off"
-          aria-busy={isStreamingResponse}
-          className="mx-auto w-full min-w-0 px-0 pb-6 pt-6 font-chat md:px-4"
-        >
-          <UnsavedImagesProvider value={imagesUnsaved}>
-            {messages.map((message, index) => (
-              <ChatMessage
-                key={message.id ?? `${chatId}-${index}`}
-                message={message}
-                messageIndex={index}
-                model={currentModel}
+          <div
+            role="log"
+            aria-label="Conversation"
+            aria-live="off"
+            aria-busy={isStreamingResponse}
+            className="mx-auto w-full min-w-0 px-0 pb-6 pt-6 font-chat md:px-4"
+          >
+            <UnsavedImagesProvider value={imagesUnsaved}>
+              {messages.map((message, index) => (
+                <ChatMessage
+                  key={message.id ?? `${chatId}-${index}`}
+                  message={message}
+                  messageIndex={index}
+                  model={currentModel}
+                  isDarkMode={isDarkMode}
+                  isLastMessage={index === messages.length - 1}
+                  isStreaming={
+                    index === messages.length - 1 && isStreamingResponse
+                  }
+                  activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
+                    message,
+                    activeArtifactToolCallId,
+                  )}
+                  hideActions={readOnly}
+                  {...messageActions}
+                />
+              ))}
+            </UnsavedImagesProvider>
+            {showLoadingPlaceholder && (
+              <LoadingMessage
                 isDarkMode={isDarkMode}
-                isLastMessage={index === messages.length - 1}
-                isStreaming={
-                  index === messages.length - 1 && isStreamingResponse
-                }
-                activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
-                  message,
-                  activeArtifactToolCallId,
-                )}
-                hideActions={readOnly}
-                {...messageActions}
+                isRetrying={loadingState === 'retrying'}
+                retryInfo={retryInfo}
               />
-            ))}
-          </UnsavedImagesProvider>
-          {showLoadingPlaceholder && (
-            <LoadingMessage
-              isDarkMode={isDarkMode}
-              isRetrying={loadingState === 'retrying'}
-              retryInfo={retryInfo}
-            />
-          )}
-          {/* Spacer allows scrollIntoView to bring user message to top of viewport.
+            )}
+            {/* Spacer allows scrollIntoView to bring user message to top of viewport.
           Subtracts the composer height (set on the scroll container as
           --input-area-height) so the total over-scroll is just enough for the
           fade above the input area, not a full 70dvh of empty space. */}
-          {showSpacer && (
-            <div
-              ref={spacerRef}
-              data-spacer
-              className="flex-shrink-0"
-              style={{
-                height: `max(0px, calc(70dvh - var(--input-area-height, 0px) - ${CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px))`,
-              }}
-              aria-hidden="true"
-            />
-          )}
-          {printRequested && (
-            <PrintableChat messages={messages} printRef={printRef} />
-          )}
-        </div>
+            {showSpacer && (
+              <div
+                ref={spacerRef}
+                data-spacer
+                className="flex-shrink-0"
+                style={{
+                  height: `max(0px, calc(70dvh - var(--input-area-height, 0px) - ${CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px))`,
+                }}
+                aria-hidden="true"
+              />
+            )}
+            {printRequested && (
+              <PrintableChat messages={messages} printRef={printRef} />
+            )}
+          </div>
+        </SpeechProvider>
       </DocumentTextProvider>
     </ImageGalleryProvider>
   )

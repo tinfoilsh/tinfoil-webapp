@@ -1,8 +1,7 @@
 import {
-  getAutoDisplayName,
+  findSelectableModel,
   getAutoIntelligenceLevels,
   getSelectedModelLabel,
-  isAutoModelId,
   type AutoIntelligenceLevelId,
   type BaseModel,
 } from '@/config/models'
@@ -31,7 +30,7 @@ export function ModelSelectorTriggerLabel({
 
   return (
     <>
-      {isAutoModelId(selectedModel) ? (
+      {findSelectableModel(selectedModel, models)?.auto ? (
         <span className="grid whitespace-nowrap text-right text-xs font-medium">
           {getAutoIntelligenceLevels().map((level) => {
             const isCurrent = level.id === autoIntelligence
@@ -41,7 +40,7 @@ export function ModelSelectorTriggerLabel({
                 aria-hidden={!isCurrent}
                 className={`col-start-1 row-start-1 ${isCurrent ? '' : 'invisible'}`}
               >
-                {getAutoDisplayName(level.id)}
+                {level.displayLabel}
               </span>
             )
           })}

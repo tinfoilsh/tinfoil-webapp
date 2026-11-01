@@ -1,16 +1,13 @@
-import {
-  localThreadStore,
-  type LocalThread,
-} from '@/services/harness/local-threads'
+import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
-import type { ThreadSummary } from '@/services/harness/types'
+import type { StoredThread, ThreadSummary } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from './thread-fixture'
+import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/utils/error-handling', () => ({
@@ -39,78 +36,14 @@ function summary(id: string, title: string): ThreadSummary {
   }
 }
 
-// The harness's transcript of a stored chat: attachments carry their
-// content and no keys, and server bookkeeping is gone.
-function transcript() {
-  return {
-    id: CHAT_ID,
-    title: 'Garden plans',
-    titleState: 'manual',
-    createdAt: '2026-04-01T09:00:00Z',
-    updatedAt: '2026-04-01T09:05:00Z',
-    model: 'test-model',
-    pinned: true,
-    presetId: null,
-    webSearchEnabled: false,
-    codeExecutionAccessToken: 'c'.repeat(64),
-    messages: [
-      {
-        id: 'u1',
-        role: 'user',
-        createdAt: '2026-04-01T09:00:00Z',
-        timestamp: '2026-04-01T09:00:00Z',
-        content: 'Look at these',
-        attachments: [
-          {
-            id: 'a'.repeat(36),
-            type: 'image',
-            fileName: 'bed.png',
-            mimeType: 'image/png',
-            thumbnailBase64: 'dGh1bWI=',
-            base64: 'aW1hZ2U=',
-          },
-          {
-            id: 'b'.repeat(36),
-            type: 'document',
-            fileName: 'plan.pdf',
-            mimeType: 'application/pdf',
-            textContent: 'Plant tomatoes',
-            pages: [
-              {
-                page: 1,
-                text: 'Plant tomatoes',
-                image: 'cGFnZQ==',
-                is_scanned: false,
-              },
-            ],
-          },
-        ],
-      },
-      {
-        id: 'r1',
-        role: 'assistant',
-        createdAt: '2026-04-01T09:00:02Z',
-        content: 'Nice beds',
-        thoughts: 'Looking',
-        model: 'test-model',
-        timeline: [
-          { id: 'r1_thinking_0', type: 'thinking', content: 'Looking' },
-          { id: 'r1_content_1', type: 'content', content: 'Nice beds' },
-        ],
-      },
-    ],
-  }
-}
-
-const deviceCopy: LocalThread = {
-  id: CHAT_ID,
+// The harness's transcript of a stored chat: the thread, with every
+// attachment's content inline.
+const deviceCopy: StoredThread = storedThread(CHAT_ID, {
   title: 'Garden plans',
   titleState: 'manual',
-  createdAt: '2026-04-01T09:00:00Z',
   updatedAt: '2026-04-01T09:05:00Z',
-  model: 'test-model',
   webSearchEnabled: false,
-  codeExecutionAccessToken: 'c'.repeat(64),
+  lastRequestId: 'request-1',
   messages: [
     {
       id: 'u1',
@@ -120,17 +53,19 @@ const deviceCopy: LocalThread = {
       attachments: [
         {
           id: 'a'.repeat(36),
-          type: 'image',
+          kind: 'image',
           fileName: 'bed.png',
           mimeType: 'image/png',
-          thumbnailBase64: 'dGh1bWI=',
+          size: 5,
+          thumbnail: 'dGh1bWI=',
           base64: 'aW1hZ2U=',
         },
         {
           id: 'b'.repeat(36),
-          type: 'document',
+          kind: 'document',
           fileName: 'plan.pdf',
           mimeType: 'application/pdf',
+          size: 14,
           textContent: 'Plant tomatoes',
           pages: [
             {
@@ -147,7 +82,6 @@ const deviceCopy: LocalThread = {
       id: 'r1',
       role: 'assistant',
       createdAt: '2026-04-01T09:00:02Z',
-      content: 'Nice beds',
       model: 'test-model',
       timeline: [
         { id: 'r1_thinking_0', type: 'thinking', content: 'Looking' },
@@ -155,7 +89,8 @@ const deviceCopy: LocalThread = {
       ],
     },
   ],
-}
+})
+const transcript = () => structuredClone(deviceCopy)
 
 const stored = (id: string) => localThreadStore('device').get(id)
 const posted = () =>
@@ -165,9 +100,11 @@ const transfers = () => posted().filter(([path]) => path !== '/v1/threads/list')
 async function renderThreads(cloud: ThreadSummary[]) {
   const hook = renderHook(() => useThread())
   await waitFor(() =>
-    expect(hook.result.current.threads.map((t) => t.id)).toEqual(
-      cloud.map((t) => t.id),
-    ),
+    expect(
+      hook.result.current.chats
+        .filter((chat) => !chat.isLocalOnly)
+        .map((chat) => chat.id),
+    ).toEqual(cloud.map((t) => t.id)),
   )
   return hook
 }
@@ -198,7 +135,11 @@ describe('moving a stored chat to this device', () => {
       ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
     ])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
-    expect(result.current.threads.map((t) => t.id)).toEqual([OTHER_ID])
+    expect(
+      result.current.chats
+        .filter((chat) => !chat.isLocalOnly)
+        .map((chat) => chat.id),
+    ).toEqual([OTHER_ID])
     expect(
       result.current.chats.map((chat) => [chat.id, chat.isLocalOnly ?? false]),
     ).toEqual([
@@ -211,10 +152,10 @@ describe('moving a stored chat to this device', () => {
     signIn({ cloud: true })
     const cloud = [summary(CHAT_ID, 'Garden plans')]
     const refusal = new HarnessError(
-      { code: 'UPSTREAM_REFUSED', message: 'Sync is unavailable' },
-      503,
+      { code: 'KEY_MISMATCH', message: 'The chat is sealed with another key' },
+      409,
     )
-    let copied: LocalThread | null = null
+    let copied: StoredThread | null = null
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
@@ -234,35 +175,50 @@ describe('moving a stored chat to this device', () => {
     expect(copied).toEqual(deviceCopy)
     expect(await stored(CHAT_ID)).toBeNull()
     expect(await localThreadStore('device').list()).toEqual([])
-    expect(result.current.threads.map((t) => t.id)).toEqual([CHAT_ID])
+    expect(
+      result.current.chats
+        .filter((chat) => !chat.isLocalOnly)
+        .map((chat) => chat.id),
+    ).toEqual([CHAT_ID])
     expect(result.current.chats.some((chat) => chat.isLocalOnly)).toBe(false)
   })
 
-  it('keeps the device copy when the deletion of the cloud copy may have committed', async () => {
-    signIn({ cloud: true })
-    const cloud = [summary(CHAT_ID, 'Garden plans')]
-    // The connection drops after the request was sent, so the harness may
-    // have deleted the cloud copy.
-    const dropped = new TypeError('Failed to fetch')
-    client.post.mockImplementation(async (path: string) => {
-      if (path === '/v1/threads/list')
-        return { threads: cloud, nextCursor: null }
-      if (path === '/v1/threads/transcript') return { thread: transcript() }
-      if (path === '/v1/threads/delete') throw dropped
-      throw new Error(`Unexpected ${path}`)
-    })
-    const { result } = await renderThreads(cloud)
+  // The connection drops after the request was sent, or sync's outcome is
+  // unknown, so the harness may have deleted the cloud copy.
+  it.each([
+    ['a dropped connection', new TypeError('Failed to fetch')],
+    [
+      'a server error',
+      new HarnessError(
+        { code: 'SYNC_OUTCOME_UNKNOWN', message: 'Sync did not answer' },
+        503,
+      ),
+    ],
+  ])(
+    'keeps the device copy after %s deleting the cloud copy',
+    async (_, failure) => {
+      signIn({ cloud: true })
+      const cloud = [summary(CHAT_ID, 'Garden plans')]
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/list')
+          return { threads: cloud, nextCursor: null }
+        if (path === '/v1/threads/transcript') return { thread: transcript() }
+        if (path === '/v1/threads/delete') throw failure
+        throw new Error(`Unexpected ${path}`)
+      })
+      const { result } = await renderThreads(cloud)
 
-    await expect(act(() => result.current.moveToDevice(CHAT_ID))).rejects.toBe(
-      dropped,
-    )
+      await expect(
+        act(() => result.current.moveToDevice(CHAT_ID)),
+      ).rejects.toBe(failure)
 
-    expect(transfers()).toEqual([
-      ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
-      ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
-    ])
-    expect(await stored(CHAT_ID)).toEqual(deviceCopy)
-  })
+      expect(transfers()).toEqual([
+        ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
+        ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
+      ])
+      expect(await stored(CHAT_ID)).toEqual(deviceCopy)
+    },
+  )
 
   it('leaves a chat in the cloud when the harness cannot read its attachments', async () => {
     signIn({ cloud: true })
@@ -290,7 +246,11 @@ describe('moving a stored chat to this device', () => {
       ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
     ])
     expect(await stored(CHAT_ID)).toBeNull()
-    expect(result.current.threads.map((t) => t.id)).toEqual([CHAT_ID])
+    expect(
+      result.current.chats
+        .filter((chat) => !chat.isLocalOnly)
+        .map((chat) => chat.id),
+    ).toEqual([CHAT_ID])
   })
 
   it('reopens the open chat from this device', async () => {
@@ -426,7 +386,7 @@ describe('moving a chat from this device to the cloud', () => {
       expect(result.current.chats.map((chat) => chat.id)).toEqual([CHAT_ID]),
     )
 
-    let original: LocalThread | undefined
+    let original: StoredThread | undefined
     await act(async () => {
       original = await result.current.moveToCloud(CHAT_ID)
     })
@@ -437,22 +397,17 @@ describe('moving a chat from this device to the cloud', () => {
         {
           key: KEY,
           threadId: CHAT_ID,
-          thread: {
-            title: 'Garden plans',
-            titleState: 'manual',
-            createdAt: '2026-04-01T09:00:00Z',
-            model: 'test-model',
-            presetId: null,
-            webSearchEnabled: false,
-            codeExecutionAccessToken: 'c'.repeat(64),
-            messages: deviceCopy.messages,
-          },
+          thread: deviceCopy,
         },
       ],
     ])
     expect(original).toEqual(deviceCopy)
     expect(await stored(CHAT_ID)).toBeNull()
-    expect(result.current.threads).toEqual([imported])
+    expect(
+      result.current.chats
+        .filter((chat) => !chat.isLocalOnly)
+        .map((chat) => chat.id),
+    ).toEqual([imported.id])
     expect(result.current.chats.map((chat) => chat.isLocalOnly)).toEqual([
       undefined,
     ])
@@ -478,7 +433,7 @@ describe('moving a chat from this device to the cloud', () => {
 
     expect(transfers().map(([path]) => path)).toEqual(['/v1/threads/import'])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
-    expect(result.current.threads).toEqual([])
+    expect(result.current.chats.filter((chat) => !chat.isLocalOnly)).toEqual([])
   })
 
   it('deletes the cloud copy again when the device copy cannot be deleted', async () => {
@@ -503,7 +458,7 @@ describe('moving a chat from this device to the cloud', () => {
       ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
     ])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
-    expect(result.current.threads).toEqual([])
+    expect(result.current.chats.filter((chat) => !chat.isLocalOnly)).toEqual([])
   })
 
   it('refuses while a reply to the chat streams on this device', async () => {
@@ -548,6 +503,154 @@ describe('moving a chat from this device to the cloud', () => {
       await sending
     })
     expect((await stored(CHAT_ID))?.id).toBe(CHAT_ID)
+  })
+
+  describe('after a turn of the chat ended without its reply', () => {
+    beforeEach(async () => {
+      signIn({ cloud: true })
+      await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/list')
+          return { threads: [], nextCursor: null }
+        if (path === '/v1/threads/import') return imported
+        if (path === '/v1/threads/get')
+          return { ...imported, hasOlder: false, messages: [] }
+        throw new Error(`Unexpected ${path}`)
+      })
+    })
+    async function openDeviceChat() {
+      const hook = renderHook(() => useThread(CHAT_ID, null, { local: true }))
+      await waitFor(() =>
+        expect(hook.result.current.chat.messages).toHaveLength(2),
+      )
+      return hook
+    }
+    async function movesToCloud(result: {
+      current: ReturnType<typeof useThread>
+    }) {
+      const before = transfers().length
+      await act(() => result.current.moveToCloud(CHAT_ID))
+      expect(
+        transfers()
+          .slice(before)
+          .map(([path]) => path),
+      ).toEqual(['/v1/threads/import', '/v1/threads/get'])
+      expect(await stored(CHAT_ID)).toBeNull()
+    }
+
+    it('moves the chat once a turn queued behind its reply is removed', async () => {
+      let finishReply!: () => void
+      const replying = new Promise<void>((resolve) => {
+        finishReply = resolve
+      })
+      let endQueued!: () => void
+      const queued = new Promise<void>((resolve) => {
+        endQueued = resolve
+      })
+      const answer = client.post.getMockImplementation()!
+      client.post.mockImplementation(
+        async (path: string, ...rest: unknown[]) =>
+          path === '/v1/threads/queue/remove' ? {} : answer(path, ...rest),
+      )
+      client.events
+        .mockImplementationOnce(async function* () {
+          yield {
+            id: 0,
+            event: { type: 'RUN_STARTED', threadId: CHAT_ID, runId: 'run-1' },
+          }
+          await replying
+          yield {
+            id: 1,
+            event: { type: 'RUN_FINISHED', threadId: CHAT_ID, runId: 'run-1' },
+          }
+        })
+        .mockImplementationOnce(async function* () {
+          yield {
+            id: 0,
+            event: {
+              type: 'STATE_DELTA',
+              runId: 'queued-1',
+              delta: [
+                {
+                  op: 'add',
+                  path: '/queue/-',
+                  value: { queueId: 'queued-1', content: 'And then?' },
+                },
+              ],
+            },
+          }
+          await queued
+          yield {
+            id: 1,
+            event: {
+              type: 'RUN_FINISHED',
+              threadId: CHAT_ID,
+              runId: 'queued-1',
+              metadata: { cancelled: true },
+            },
+          }
+        })
+      const { result } = await openDeviceChat()
+      let replied: Promise<unknown> | undefined
+      act(() => {
+        replied = result.current.send({ content: 'More?' })
+      })
+      await waitFor(() => expect(result.current.running).toBe(true))
+      let queuedTurn: Promise<unknown> | undefined
+      act(() => {
+        queuedTurn = result.current.send({ content: 'And then?' })
+      })
+      await waitFor(() =>
+        expect(result.current.queue).toEqual([
+          { id: 'queued-1', text: 'And then?' },
+        ]),
+      )
+
+      await act(() => result.current.removeQueued('queued-1'))
+
+      expect(transfers()).toEqual([
+        [
+          '/v1/threads/queue/remove',
+          { threadId: CHAT_ID, queueId: 'queued-1' },
+        ],
+      ])
+      await act(async () => {
+        endQueued()
+        await queuedTurn
+        finishReply()
+        await replied
+      })
+
+      expect(result.current.running).toBe(false)
+      await movesToCloud(result)
+    })
+
+    it('moves the chat once its reply could not be rejoined', async () => {
+      const dropped = async function* (): AsyncGenerator<{
+        id: number
+        event: { type: string; threadId: string; runId: string }
+      }> {
+        throw new TypeError('network error')
+      }
+      client.events
+        .mockImplementationOnce(async function* () {
+          yield {
+            id: 0,
+            event: { type: 'RUN_STARTED', threadId: CHAT_ID, runId: 'run-1' },
+          }
+          throw new TypeError('network error')
+        })
+        .mockImplementationOnce(dropped)
+      const { result } = await openDeviceChat()
+
+      await act(() => result.current.send({ content: 'More?' }))
+
+      expect(client.events).toHaveBeenCalledTimes(2)
+      expect(
+        result.current.chats.find((chat) => chat.id === CHAT_ID)?.activeRun,
+      ).toBeFalsy()
+      await movesToCloud(result)
+    })
   })
 
   it('changes nothing in the open chat until its move ends', async () => {
@@ -708,7 +811,7 @@ describe('moving a chat from this device to the cloud', () => {
       throw new Error(`Unexpected ${path}`)
     })
     const { result } = await renderThreads([])
-    let original: LocalThread | undefined
+    let original: StoredThread | undefined
     await act(async () => {
       original = await result.current.moveToCloud(CHAT_ID)
     })
@@ -722,7 +825,7 @@ describe('moving a chat from this device to the cloud', () => {
       ['/v1/threads/delete', CHAT_ID],
     ])
     expect(await stored(CHAT_ID)).toEqual(deviceCopy)
-    expect(result.current.threads).toEqual([])
+    expect(result.current.chats.filter((chat) => !chat.isLocalOnly)).toEqual([])
     expect(result.current.chats.map((chat) => chat.id)).toEqual([CHAT_ID])
   })
 })

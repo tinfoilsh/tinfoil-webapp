@@ -11,7 +11,7 @@ import {
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
-import { stubSafeguardFlags } from './chat-interface-fixture'
+import { refuseFetch } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
@@ -105,7 +105,7 @@ async function moreActions() {
 
 beforeEach(() => {
   authTokenManager.initialize(async () => 'clerk-jwt')
-  stubSafeguardFlags()
+  refuseFetch()
   chatPage.router.replace.mockClear()
 })
 
@@ -183,5 +183,54 @@ describe('message actions on the chat page', () => {
       { key: KEY, threadId: THREAD_ID, messageId: 'a1' },
       expect.any(AbortSignal),
     )
+  })
+})
+
+describe('attachments on the chat page', () => {
+  it('sends what an upload returned, never the picked file, in the message that uses it', async () => {
+    open()
+    await screen.findByText('Hello there')
+    const bytes = new Uint8Array([137, 80, 78, 71])
+    const descriptor = {
+      id: 'att_door',
+      kind: 'image',
+      fileName: 'door.png',
+      mimeType: 'image/png',
+      size: 4,
+      thumbnail: 'dGh1bWI=',
+      base64: 'bW9kZWwtY29weQ==',
+    }
+    client.upload.mockResolvedValueOnce({ attachment: descriptor })
+    client.events.mockImplementation(async function* () {
+      yield {
+        id: 0,
+        event: { type: 'RUN_FINISHED', threadId: THREAD_ID, runId: 'run-2' },
+      }
+    })
+
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: { files: [new File([bytes], 'door.png', { type: 'image/png' })] },
+    })
+    await waitFor(() =>
+      expect(
+        document.querySelector('img[src="data:image/png;base64,dGh1bWI="]'),
+      ).not.toBeNull(),
+    )
+    const composer = screen.getByRole('textbox', { name: /message/i })
+    fireEvent.change(composer, { target: { value: 'What door?' } })
+    fireEvent.submit(composer.closest('form')!)
+    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+
+    expect(client.upload).toHaveBeenCalledExactlyOnceWith(
+      '/v1/attachments/upload',
+      expect.any(File),
+      {},
+      expect.any(AbortSignal),
+    )
+    expect(client.events.mock.calls[0][1]).toMatchObject({
+      threadId: THREAD_ID,
+      content: 'What door?',
+    })
+    expect(client.events.mock.calls[0][1].attachments).toEqual([descriptor])
   })
 })

@@ -1,8 +1,5 @@
 import { GenUIToolCallRenderer } from '@/components/chat/genui/GenUIToolCallRenderer'
-import { renderGenUIResolved } from '@/components/chat/genui/render'
 import { cn } from '@/components/ui/utils'
-import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
-import { DAILY_RATE_LIMIT_MESSAGE } from '@/constants/rate-limits'
 import {
   ArrowUturnLeftIcon,
   ForwardIcon,
@@ -11,7 +8,6 @@ import {
 import {
   TfBoxCheckmark,
   TfChevronDown,
-  TfClock,
   TfCopy,
   TfFork,
   TfLockLocked,
@@ -20,7 +16,6 @@ import {
   TfWriting,
 } from '@tinfoilsh/tinfoil-icons'
 import React, { memo, useState, type JSX } from 'react'
-import { hasMessageAttachments } from '../../attachment-helpers'
 import { ConfirmDialog } from '../../components/confirm-dialog'
 import { CONSTANTS } from '../../constants'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
@@ -33,7 +28,6 @@ import {
   type MessageOverflowMenuItem,
 } from '../components/MessageOverflowMenu'
 import { ReadAloudButton } from '../components/ReadAloudButton'
-import { SourcesButton } from '../components/SourcesButton'
 import { StreamingChunkedText } from '../components/StreamingChunkedText'
 import { StreamingContentWrapper } from '../components/StreamingContentWrapper'
 import { StreamingTracerDot } from '../components/StreamingTracerDot'
@@ -42,7 +36,6 @@ import { URLFetchProcess } from '../components/URLFetchProcess'
 import { WebSearchProcess } from '../components/WebSearchProcess'
 import { WorkProcess } from '../components/WorkProcess'
 import type { MessageRenderer, MessageRenderProps } from '../types'
-import { toDisplayTimeline } from './server-tool-blocks'
 import { isInvisibleBlock, segmentTimeline } from './timeline-segments'
 
 const hasVisibleAssistantMessage = (message: MessageRenderProps['message']) =>
@@ -84,7 +77,7 @@ const DefaultMessageComponent = ({
   onRetryToolCall,
 }: MessageRenderProps) => {
   const isUser = message.role === 'user'
-  const hasUserAttachments = isUser && hasMessageAttachments(message)
+  const hasUserAttachments = isUser && !!message.attachments?.length
   const enterToNewline = useEnterToNewline()
   const [isEditing, setIsEditing] = React.useState(false)
   const [editContent, setEditContent] = React.useState(message.content || '')
@@ -105,8 +98,6 @@ const DefaultMessageComponent = ({
     }
   }, [hideActions])
 
-  const isLimitError =
-    message.isRateLimitError || message.isHourlyRateLimitError
   const modelDisplayName = message.modelDisplayName?.trim()
   const showMetadata = hasVisibleAssistantMessage(message)
 
@@ -120,13 +111,9 @@ const DefaultMessageComponent = ({
     }
     return map.size > 0 ? map : undefined
   }, [message.annotations])
-  const isStreamingLastMessage = !!isStreaming && !!isLastMessage
   const displayTimeline = React.useMemo(
-    () =>
-      isUser
-        ? []
-        : toDisplayTimeline(message.timeline ?? [], isStreamingLastMessage),
-    [isUser, message.timeline, isStreamingLastMessage],
+    () => (isUser ? [] : (message.timeline ?? [])),
+    [isUser, message.timeline],
   )
   const timelineSegments = React.useMemo(
     () => segmentTimeline(displayTimeline),
@@ -138,17 +125,6 @@ const DefaultMessageComponent = ({
     typeof setTimeout
   > | null>(null)
   const hasInitialized = React.useRef(false)
-
-  // Track if thoughts have ever been shown during streaming to keep wrapper stable
-  const hasShownThoughts = React.useRef(false)
-  React.useEffect(() => {
-    if (
-      message.thoughts &&
-      (message.isThinking || (isLastMessage && isStreaming))
-    ) {
-      hasShownThoughts.current = true
-    }
-  }, [message.thoughts, message.isThinking, isLastMessage, isStreaming])
 
   // Track content changes to show/hide copy button during streaming
   React.useEffect(() => {
@@ -321,7 +297,7 @@ const DefaultMessageComponent = ({
     MessageOverflowMenuItem[]
   >(() => {
     const items: MessageOverflowMenuItem[] = []
-    if (onContinueAssistantMessage && !isLimitError) {
+    if (onContinueAssistantMessage) {
       items.push({
         label: 'Continue',
         ariaLabel: 'Continue response',
@@ -329,7 +305,7 @@ const DefaultMessageComponent = ({
         onSelect: handleContinue,
       })
     }
-    if (onEditAssistantMessage && !isLimitError) {
+    if (onEditAssistantMessage) {
       items.push({
         label: 'Edit',
         ariaLabel: 'Edit response',
@@ -360,7 +336,6 @@ const DefaultMessageComponent = ({
     onEditAssistantMessage,
     onForkMessage,
     onDeleteMessage,
-    isLimitError,
     handleContinue,
     handleStartEdit,
     handleFork,
@@ -407,9 +382,6 @@ const DefaultMessageComponent = ({
         <DocumentList
           messageIndex={messageIndex}
           attachments={message.attachments}
-          documents={message.documents}
-          documentContent={message.documentContent}
-          imageData={message.imageData}
         />
       )}
 
@@ -445,6 +417,7 @@ const DefaultMessageComponent = ({
                     isDarkMode={isDarkMode}
                     isThinking={block.isThinking}
                     thinkingDuration={block.duration}
+                    summary={block.summary}
                   />
                 </div>
               )
@@ -461,40 +434,6 @@ const DefaultMessageComponent = ({
                 </div>
               )
             case 'tool_call': {
-              const resolved = block.resolvedAt && block.resolution
-              if (resolved) {
-                let parsed: Record<string, unknown> | null = null
-                try {
-                  const raw = JSON.parse(block.arguments)
-                  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-                    parsed = raw as Record<string, unknown>
-                  }
-                } catch {
-                  // Ignore malformed args — renderResolved will receive null.
-                }
-                const stamp =
-                  parsed &&
-                  renderGenUIResolved(
-                    block.name,
-                    parsed,
-                    {
-                      text: block.resolution!.text,
-                      data: block.resolution!.data,
-                      resolvedAt: block.resolvedAt!,
-                    },
-                    { isDarkMode },
-                  )
-                if (stamp) {
-                  return (
-                    <div key={block.id} className="w-full px-4">
-                      {stamp}
-                    </div>
-                  )
-                }
-                // Fall through to the unresolved renderer below so the
-                // tool call still surfaces in the timeline (with retry)
-                // instead of disappearing silently.
-              }
               return (
                 <div key={block.id} className="w-full px-4">
                   <GenUIToolCallRenderer
@@ -504,6 +443,7 @@ const DefaultMessageComponent = ({
                         name: block.name,
                         arguments: block.arguments,
                         result: block.result,
+                        invalidArguments: block.invalidArguments,
                       },
                     ]}
                     isStreaming={!!isStreaming && !!isLastMessage}
@@ -641,7 +581,7 @@ const DefaultMessageComponent = ({
         </div>
       )}
 
-      {/* User message content (or assistant without timeline, e.g. rate limit errors) */}
+      {/* User message content (or assistant without timeline) */}
       {(message.content || hasUserAttachments) &&
         !(!isUser && message.timeline && message.timeline.length > 0) && (
           <>
@@ -654,126 +594,76 @@ const DefaultMessageComponent = ({
                     isUser ? 'max-w-[95%]' : 'w-full',
                     isUser &&
                       'rounded-site-lg bg-surface-message-user/90 px-4 py-2 shadow-sm backdrop-blur-sm',
-                    isLimitError &&
-                      'rounded-lg border-2 border-brand-accent-dark/30 bg-brand-accent-dark/5 px-4 py-3',
                   )}
                 >
-                  {message.isHourlyRateLimitError && (
-                    <div className="flex flex-col gap-3">
-                      <div className="flex items-center gap-2">
-                        <TfClock
-                          className="h-5 w-5 flex-shrink-0 text-brand-accent-dark dark:text-brand-accent-light"
-                          aria-hidden="true"
-                        />
-                        <span className="font-semibold text-brand-accent-dark dark:text-brand-accent-light">
-                          Hourly usage limit reached
-                        </span>
-                      </div>
-                      <p className="text-sm text-brand-accent-dark/70 dark:text-brand-accent-light/70">
-                        You&apos;ve reached your hourly usage limit. Please try
-                        again when the usage window resets.
-                      </p>
-                    </div>
-                  )}
-                  {message.isRateLimitError && (
-                    <div className="flex flex-col gap-3">
-                      <div className="flex items-center gap-2">
-                        <TfClock
-                          className="h-5 w-5 flex-shrink-0 text-brand-accent-dark dark:text-brand-accent-light"
-                          aria-hidden="true"
-                        />
-                        <span className="font-semibold text-brand-accent-dark dark:text-brand-accent-light">
-                          Daily rate limit reached
-                        </span>
-                      </div>
-                      <p className="text-sm text-brand-accent-dark/70 dark:text-brand-accent-light/70">
-                        {DAILY_RATE_LIMIT_MESSAGE}
-                      </p>
-                      <button
-                        type="button"
-                        className="w-fit rounded-md bg-brand-accent-dark px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
-                        onClick={() => {
-                          window.dispatchEvent(
-                            new CustomEvent(REQUEST_UPGRADE_EVENT),
-                          )
-                        }}
+                  <div className="relative">
+                    <div
+                      ref={isUser ? userMessageContentRef : undefined}
+                      style={
+                        isUser &&
+                        isUserMessageOverflowing &&
+                        !isUserMessageExpanded
+                          ? {
+                              maxHeight: USER_MESSAGE_MAX_HEIGHT,
+                              overflow: 'hidden',
+                            }
+                          : undefined
+                      }
+                    >
+                      <div
+                        className={cn(
+                          'prose w-full max-w-none text-base prose-pre:bg-transparent prose-pre:p-0',
+                          'text-content-primary prose-headings:text-content-primary prose-strong:text-content-primary prose-code:text-content-primary',
+                          'prose-a:text-blue-500 hover:prose-a:text-blue-600',
+                        )}
                       >
-                        Upgrade to Premium
-                      </button>
-                    </div>
-                  )}
-                  {!isLimitError && (
-                    <>
-                      <div className="relative">
-                        <div
-                          ref={isUser ? userMessageContentRef : undefined}
-                          style={
-                            isUser &&
-                            isUserMessageOverflowing &&
-                            !isUserMessageExpanded
-                              ? {
-                                  maxHeight: USER_MESSAGE_MAX_HEIGHT,
-                                  overflow: 'hidden',
-                                }
-                              : undefined
-                          }
-                        >
-                          <div
-                            className={cn(
-                              'prose w-full max-w-none text-base prose-pre:bg-transparent prose-pre:p-0',
-                              'text-content-primary prose-headings:text-content-primary prose-strong:text-content-primary prose-code:text-content-primary',
-                              'prose-a:text-blue-500 hover:prose-a:text-blue-600',
-                            )}
-                          >
-                            {!isUser && isStreaming && isLastMessage ? (
-                              <StreamingContentWrapper isStreaming={true}>
-                                <StreamingChunkedText
-                                  content={message.content}
-                                  isDarkMode={isDarkMode}
-                                  isUser={isUser}
-                                  isStreaming={isStreaming}
-                                  citationUrlTitles={citationUrlTitles}
-                                />
-                              </StreamingContentWrapper>
-                            ) : (
-                              <StreamingChunkedText
-                                content={message.content}
-                                isDarkMode={isDarkMode}
-                                isUser={isUser}
-                                isStreaming={isStreaming}
-                                citationUrlTitles={citationUrlTitles}
-                              />
-                            )}
-                          </div>
-                        </div>
-
-                        {isUser &&
-                          isUserMessageOverflowing &&
-                          !isUserMessageExpanded && (
-                            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-surface-message-user/90 to-transparent" />
-                          )}
-                      </div>
-
-                      {isUser && isUserMessageOverflowing && (
-                        <button
-                          onClick={() =>
-                            setIsUserMessageExpanded(!isUserMessageExpanded)
-                          }
-                          className="mt-1 flex w-full items-center justify-center gap-1 py-1 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
-                        >
-                          <span>
-                            {isUserMessageExpanded ? 'Show less' : 'Show more'}
-                          </span>
-                          <TfChevronDown
-                            aria-hidden="true"
-                            className={cn(
-                              'h-3 w-3 transition-transform',
-                              isUserMessageExpanded && 'rotate-180',
-                            )}
+                        {!isUser && isStreaming && isLastMessage ? (
+                          <StreamingContentWrapper isStreaming={true}>
+                            <StreamingChunkedText
+                              content={message.content}
+                              isDarkMode={isDarkMode}
+                              isUser={isUser}
+                              isStreaming={isStreaming}
+                              citationUrlTitles={citationUrlTitles}
+                            />
+                          </StreamingContentWrapper>
+                        ) : (
+                          <StreamingChunkedText
+                            content={message.content}
+                            isDarkMode={isDarkMode}
+                            isUser={isUser}
+                            isStreaming={isStreaming}
+                            citationUrlTitles={citationUrlTitles}
                           />
-                        </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {isUser &&
+                      isUserMessageOverflowing &&
+                      !isUserMessageExpanded && (
+                        <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-surface-message-user/90 to-transparent" />
                       )}
-                    </>
+                  </div>
+
+                  {isUser && isUserMessageOverflowing && (
+                    <button
+                      onClick={() =>
+                        setIsUserMessageExpanded(!isUserMessageExpanded)
+                      }
+                      className="mt-1 flex w-full items-center justify-center gap-1 py-1 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
+                    >
+                      <span>
+                        {isUserMessageExpanded ? 'Show less' : 'Show more'}
+                      </span>
+                      <TfChevronDown
+                        aria-hidden="true"
+                        className={cn(
+                          'h-3 w-3 transition-transform',
+                          isUserMessageExpanded && 'rotate-180',
+                        )}
+                      />
+                    </button>
                   )}
                 </div>
               </div>
@@ -986,22 +876,26 @@ const DefaultMessageComponent = ({
             }`}
           >
             {!hideActions && !isEditing && message.content && (
-              <>
-                {message.webSearch?.sources &&
-                  message.webSearch.sources.length > 0 &&
-                  !(isStreaming && isLastMessage) && (
-                    <SourcesButton sources={message.webSearch.sources} />
-                  )}
-                <MessageActions
+              <MessageActions
+                content={message.content}
+                isDarkMode={isDarkMode}
+              />
+            )}
+            {/* A chat that hides its actions may still be read aloud, as a
+                shared chat is. */}
+            {!isEditing &&
+              message.content &&
+              !isStreaming &&
+              !message.isThinking &&
+              !message.isError &&
+              message.id && (
+                <ReadAloudButton
+                  messageId={message.id}
                   content={message.content}
-                  isDarkMode={isDarkMode}
                 />
-                {!isStreaming &&
-                  !message.isThinking &&
-                  !message.isError &&
-                  !isLimitError && (
-                    <ReadAloudButton content={message.content} />
-                  )}
+              )}
+            {!hideActions && !isEditing && message.content && (
+              <>
                 {/* Regenerate button - only on last assistant message */}
                 {isLastMessage && onRegenerateMessage && messageIndex > 0 && (
                   <div className="group/regen relative">

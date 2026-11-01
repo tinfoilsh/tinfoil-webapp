@@ -11,7 +11,6 @@ const projectContext = vi.hoisted(() => ({
   uploadDocument: vi.fn(),
   removeDocument: vi.fn(),
   updateProject: vi.fn(),
-  updateProjectMemory: vi.fn(),
   deleteProject: vi.fn(),
   refreshDocuments: vi.fn(),
   addUploadingFile: vi.fn(),
@@ -37,10 +36,8 @@ const project: Project = {
   name: 'Research',
   description: '',
   systemInstructions: '',
-  memory: [],
   createdAt: '2026-09-01T12:00:00Z',
   updatedAt: '2026-09-01T12:00:00Z',
-  syncVersion: 1,
 }
 
 function renderSidebar(
@@ -54,7 +51,6 @@ function renderSidebar(
         isDarkMode={false}
         isClient
         pixelateSidebarChatTitles={false}
-        cloudSyncEnabled
         windowWidth={1200}
         project={project}
         onExitProject={vi.fn()}
@@ -98,5 +94,14 @@ describe('project sidebar layout', () => {
       screen.getAllByRole('listitem').map((row) => row.textContent),
     ).toEqual(['Recently updated', 'Recently created', 'Older chat'])
     expect(chats.map((chat) => chat.id)).toEqual(['old', 'updated', 'created'])
+  })
+})
+
+describe('project documents picker', () => {
+  it('offers the files the session takes as project documents', () => {
+    renderSidebar()
+    expect(
+      document.querySelector('input[type="file"]')?.getAttribute('accept'),
+    ).toBe('.pdf,.md,.txt')
   })
 })

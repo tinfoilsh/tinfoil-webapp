@@ -1,22 +1,20 @@
 'use client'
 
 import { cn } from '@/components/ui/utils'
-import { useSafeguards } from '@/hooks/use-safeguards'
 import { TfFlagFilled } from '@tinfoilsh/tinfoil-icons'
 
 interface SafeguardFlagBannerProps {
-  chatId: string
+  flagged: boolean
   isDarkMode: boolean
   onOpenSettings?: () => void
 }
 
 export function SafeguardFlagBanner({
-  chatId,
+  flagged,
   isDarkMode,
   onOpenSettings,
 }: SafeguardFlagBannerProps) {
-  const { flaggedChatIds } = useSafeguards()
-  if (!flaggedChatIds[chatId]) return null
+  if (!flagged) return null
 
   return (
     <div

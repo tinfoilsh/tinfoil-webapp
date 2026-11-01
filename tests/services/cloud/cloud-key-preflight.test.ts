@@ -91,7 +91,6 @@ describe('cloud-key-preflight', () => {
       const result = await validateCurrentPrimaryKey()
       expect(result.remoteState).toBe('unknown')
       expect(result.canWrite).toBe(false)
-      expect(result.probe).toBe('none')
       expect(mockKeyCurrent).not.toHaveBeenCalled()
     })
 
@@ -117,7 +116,6 @@ describe('cloud-key-preflight', () => {
 
       expect(result.remoteState).toBe('exists')
       expect(result.canWrite).toBe(true)
-      expect(result.needsAdoption).toBe(true)
     })
 
     it('allows writes when local KeyID matches enclave KeyID', async () => {
@@ -131,7 +129,6 @@ describe('cloud-key-preflight', () => {
       const result = await validateCurrentPrimaryKey()
       expect(result.remoteState).toBe('exists')
       expect(result.canWrite).toBe(true)
-      expect(result.needsAdoption).toBeFalsy()
     })
 
     it('blocks writes when local KeyID does not match the enclave KeyID', async () => {

@@ -1,4 +1,5 @@
 import { useHarness } from '@/services/harness/provider'
+import { searchChats } from '@/services/harness/search'
 import type { ThreadSummary } from '@/services/harness/types'
 import { useEffect, useState } from 'react'
 export function useChatSearch(
@@ -27,11 +28,7 @@ export function useChatSearch(
       return
     }
     const timer = setTimeout(() => {
-      void api
-        .post<{
-          results: (ThreadSummary & { score?: number })[]
-          indexing: boolean
-        }>('/v1/threads/search', { query, limit: 20 }, controller.signal)
+      void searchChats(api, query, controller.signal)
         .then((page) => {
           if (controller.signal.aborted) return
           setIsIndexing(page.indexing)

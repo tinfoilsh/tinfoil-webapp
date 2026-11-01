@@ -1,9 +1,13 @@
-import {
-  localThreadStore,
-  type LocalThread,
-} from '@/services/harness/local-threads'
+import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
-import type { Frame, Message, Turn } from '@/services/harness/types'
+import type {
+  AttachmentDescriptor,
+  Frame,
+  Message,
+  StoredThread,
+  ThreadMessage,
+  Turn,
+} from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -15,7 +19,11 @@ import {
   signIn as signInTo,
   testSession,
 } from '../../harness-fixture'
-import { rawRows, resetChatStoresAroundEachTest } from './thread-fixture'
+import {
+  rawRows,
+  resetChatStoresAroundEachTest,
+  storedThread,
+} from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({
   GENUI_WIDGETS: [{ name: 'render_chart' }],
@@ -69,43 +77,26 @@ function summary(threadId: string, title = 'New Chat') {
   } as const
 }
 
-function reply(
-  threadId: string,
-  window: Message[],
-  replyId: string,
-  text: string,
-  title = 'New Chat',
-) {
+// A device run's final event, which returns the whole thread.
+function finished(threadId: string, thread: StoredThread, runId = 'run-1') {
+  return {
+    type: 'RUN_FINISHED',
+    threadId,
+    runId,
+    metadata: { thread },
+  } satisfies Frame['event']
+}
+
+// A device run that shows its window and returns the thread.
+function deviceRun(threadId: string, thread: StoredThread, runId = 'run-1') {
   return frames(
-    { type: 'RUN_STARTED', threadId, runId: `run-${replyId}` },
-    { type: 'MESSAGES_SNAPSHOT', messages: window, hasOlder: false },
+    { type: 'RUN_STARTED', threadId, runId },
     {
-      type: 'STATE_SNAPSHOT',
-      snapshot: { thread: summary(threadId, title), queue: [] },
+      type: 'MESSAGES_SNAPSHOT',
+      messages: thread.messages as Message[],
+      hasOlder: false,
     },
-    {
-      type: 'TEXT_MESSAGE_CHUNK',
-      messageId: replyId,
-      delta: text,
-      timestamp: '2026-05-01T10:00:05Z',
-    },
-    {
-      type: 'RUN_FINISHED',
-      threadId,
-      runId: `run-${replyId}`,
-      metadata: {
-        messages: [
-          {
-            id: replyId,
-            model: 'test-model',
-            modelDisplayName: 'Test model',
-            usage: USAGE,
-            isError: false,
-            isInterrupted: false,
-          },
-        ],
-      },
-    },
+    finished(threadId, thread, runId),
   )
 }
 
@@ -113,74 +104,79 @@ const turn = (call = 0) => client.events.mock.calls[call][1] as Turn
 const stored = (id: string) => localThreadStore('device').get(id)
 
 const SEEDED_ID = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
-function seededThread(): LocalThread {
-  return {
-    id: SEEDED_ID,
+const SEEDED_MESSAGES: ThreadMessage[] = [
+  { id: 'u1', role: 'user', createdAt: 't1', content: 'first' },
+  {
+    id: 'a1',
+    role: 'assistant',
+    createdAt: 't2',
+    model: 'test-model',
+    timeline: [{ id: 'b1', type: 'content', content: 'first answer' }],
+  },
+  { id: 'u2', role: 'user', createdAt: 't3', content: 'second' },
+  {
+    id: 'a2',
+    role: 'assistant',
+    createdAt: 't4',
+    model: 'test-model',
+    timeline: [{ id: 'b2', type: 'content', content: 'second answer' }],
+  },
+]
+const seeded = (fields: Partial<StoredThread> = {}) =>
+  storedThread(SEEDED_ID, {
     title: 'Doors',
     titleState: 'generated',
-    createdAt: '2026-04-01T09:00:00Z',
     updatedAt: '2026-04-01T09:05:00Z',
-    model: 'test-model',
-    codeExecutionAccessToken: 'c'.repeat(64),
-    messages: [
-      { id: 'u1', role: 'user', createdAt: 't1', content: 'first' },
-      {
-        id: 'a1',
-        role: 'assistant',
-        createdAt: 't2',
-        content: 'first answer',
-        model: 'test-model',
-        timeline: [{ id: 'b1', type: 'content', content: 'first answer' }],
-      },
-      { id: 'u2', role: 'user', createdAt: 't3', content: 'second' },
-      {
-        id: 'a2',
-        role: 'assistant',
-        createdAt: 't4',
-        content: 'second answer',
-        model: 'test-model',
-        timeline: [{ id: 'b2', type: 'content', content: 'second answer' }],
-      },
-    ],
-  }
-}
-const wire = (message: LocalThread['messages'][number]): Message =>
-  message.role === 'assistant'
-    ? {
-        id: message.id,
-        role: 'assistant',
-        createdAt: message.createdAt,
-        model: message.model,
-        timeline: message.timeline,
-      }
-    : {
-        id: message.id,
-        role: 'user',
-        createdAt: message.createdAt,
-        content: message.content,
-      }
+    lastRequestId: 'request-0',
+    messages: SEEDED_MESSAGES,
+    ...fields,
+  })
 
 resetChatStoresAroundEachTest()
 
 describe('local chats of a signed-in account without cloud sync', () => {
-  it('sends a turn without a key and stores the merged transcript', async () => {
+  it('sends a turn without a key and stores the thread its run returns', async () => {
     const api = signIn('alice')
     expect(() => api.key()).toThrow(HarnessError)
+    let returned!: StoredThread
     client.events.mockImplementation((_path: string, input: Turn) => {
       const threadId = input.threadId!
+      returned = storedThread(threadId, {
+        title: 'Greeting',
+        titleState: 'generated',
+        createdAt: '2026-05-01T10:00:00Z',
+        updatedAt: '2026-05-01T10:00:06Z',
+        lastRequestId: input.clientRequestId,
+        contextUsage: { usedTokens: 30, limitTokens: 1000, percentage: 3 },
+        messages: [
+          {
+            id: input.clientRequestId,
+            role: 'user',
+            createdAt: '2026-05-01T10:00:01Z',
+            content: 'Hi there',
+          },
+          {
+            id: 'msg_reply',
+            role: 'assistant',
+            createdAt: '2026-05-01T10:00:03Z',
+            model: 'test-model',
+            modelDisplayName: 'Test model',
+            usage: USAGE,
+            timeline: [
+              {
+                id: 'msg_reply_content_0',
+                type: 'content',
+                content: 'Hello Sam',
+              },
+            ],
+          },
+        ],
+      })
       return frames(
         { type: 'RUN_STARTED', threadId, runId: 'run-1' },
         {
           type: 'MESSAGES_SNAPSHOT',
-          messages: [
-            {
-              id: 'msg_user',
-              role: 'user',
-              createdAt: '2026-05-01T10:00:01Z',
-              content: 'Hi there',
-              quote: undefined,
-            },
-          ],
+          messages: [returned.messages[0] as Message],
           hasOlder: false,
         },
         {
@@ -201,23 +197,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
             { op: 'replace', path: '/thread/titleState', value: 'generated' },
           ],
         },
-        {
-          type: 'RUN_FINISHED',
-          threadId,
-          runId: 'run-1',
-          metadata: {
-            messages: [
-              {
-                id: 'msg_reply',
-                model: 'test-model',
-                modelDisplayName: 'Test model',
-                usage: USAGE,
-                isError: false,
-                isInterrupted: false,
-              },
-            ],
-          },
-        },
+        finished(threadId, returned),
       )()
     })
     const { result } = renderHook(() => useThread())
@@ -226,64 +206,20 @@ describe('local chats of a signed-in account without cloud sync', () => {
     await act(() => result.current.send({ content: 'Hi there' }))
 
     const input = turn()
+    const threadId = input.threadId!
     expect(client.events.mock.calls[0][0]).toBe('/v1/threads/turn')
-    expect(input).not.toHaveProperty('key')
-    expect(input).not.toHaveProperty('ephemeral')
+    expect(threadId).toMatch(REVERSE_ID)
     expect(input).toEqual({
       clientRequestId: expect.any(String),
-      threadId: expect.stringMatching(REVERSE_ID),
+      threadId,
       kind: 'send',
       local: true,
       content: 'Hi there',
       widgets: ['render_chart'],
       options: { model: 'test-model', timezone: expect.any(String) },
-      profile: { nickname: 'Sam', traits: ['direct'] },
-      thread: {
-        title: 'New Chat',
-        titleState: 'placeholder',
-        createdAt: expect.any(String),
-        model: 'test-model',
-        presetId: null,
-        codeExecutionAccessToken: expect.stringMatching(/^[0-9a-f]{64}$/),
-        messages: [],
-      },
+      profile: PROFILE,
     })
-    const threadId = input.threadId!
-    expect(await stored(threadId)).toEqual({
-      id: threadId,
-      title: 'Greeting',
-      titleState: 'generated',
-      createdAt: input.thread!.createdAt,
-      updatedAt: expect.any(String),
-      model: 'test-model',
-      webSearchEnabled: true,
-      codeExecutionAccessToken: input.thread!.codeExecutionAccessToken,
-      contextUsage: { usedTokens: 30, limitTokens: 1000, percentage: 3 },
-      messages: [
-        {
-          id: 'msg_user',
-          role: 'user',
-          createdAt: '2026-05-01T10:00:01Z',
-          content: 'Hi there',
-        },
-        {
-          id: 'msg_reply',
-          role: 'assistant',
-          createdAt: '2026-05-01T10:00:03Z',
-          content: 'Hello Sam',
-          model: 'test-model',
-          modelDisplayName: 'Test model',
-          usage: USAGE,
-          timeline: [
-            {
-              id: 'msg_reply_content_0',
-              type: 'content',
-              content: 'Hello Sam',
-            },
-          ],
-        },
-      ],
-    })
+    expect(await stored(threadId)).toEqual(returned)
     expect(result.current.chat).toMatchObject({
       id: threadId,
       title: 'Greeting',
@@ -301,33 +237,37 @@ describe('local chats of a signed-in account without cloud sync', () => {
     )
   })
 
-  it('keeps a new local chat pending until its first save lands', async () => {
+  it('lists a new chat with its message as soon as it is sent', async () => {
     signIn('alice')
     let release!: () => void
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
+    let returned!: StoredThread
     client.events.mockImplementation(async function* (
       _path: string,
       input: Turn,
     ) {
       const threadId = input.threadId!
+      const question = {
+        id: input.clientRequestId,
+        role: 'user' as const,
+        createdAt: 't1',
+        content: 'Hi',
+      }
+      // The harness stamps the profile's default prompt and its settings.
+      returned = storedThread(threadId, {
+        title: 'Greeting',
+        titleState: 'generated',
+        model: 'deep-model',
+        presetId: 'user:quiet',
+        webSearchEnabled: false,
+        lastRequestId: input.clientRequestId,
+        messages: [question],
+      })
       yield { id: 0, event: { type: 'RUN_STARTED', threadId, runId: 'run-1' } }
       await held
-      yield {
-        id: 1,
-        event: {
-          type: 'MESSAGES_SNAPSHOT',
-          messages: [
-            { id: 'msg_user', role: 'user', createdAt: 't1', content: 'Hi' },
-          ],
-          hasOlder: false,
-        },
-      }
-      yield {
-        id: 2,
-        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
-      }
+      yield { id: 1, event: finished(threadId, returned) }
     })
     const { result } = renderHook(() => useThread())
     await waitFor(() => expect(result.current.model).toBe('test-model'))
@@ -336,22 +276,198 @@ describe('local chats of a signed-in account without cloud sync', () => {
       sending = result.current.send({ content: 'Hi' })
     })
 
-    await waitFor(() => expect(result.current.chat.id).toMatch(REVERSE_ID))
-    const threadId = result.current.chat.id
-    expect(result.current.chat.pendingSave).toBe(true)
-    expect(await stored(threadId)).toBeNull()
+    await waitFor(() => expect(result.current.chats).toHaveLength(1))
+    const threadId = turn().threadId!
+    expect(result.current.chats[0]).toMatchObject({
+      id: threadId,
+      title: 'New Chat',
+      isLocalOnly: true,
+      messageCount: 1,
+    })
+    expect(result.current.chat.pendingSave).toBe(false)
+    expect((await stored(threadId))?.messages).toEqual([
+      {
+        id: turn().clientRequestId,
+        role: 'user',
+        createdAt: expect.any(String),
+        content: 'Hi',
+      },
+    ])
+    // The harness makes the chat from its first turn.
+    expect(turn()).not.toHaveProperty('thread')
 
     await act(async () => {
       release()
       await sending
     })
 
-    expect(result.current.chat.pendingSave).toBe(false)
-    expect((await stored(threadId))?.messages.map((m) => m.id)).toEqual([
-      'msg_user',
-    ])
+    expect(await stored(threadId)).toEqual(returned)
   })
 
+  // A run that streams until released, and returns the thread with a third
+  // message and the title it generated.
+  function heldReply(fields: Partial<StoredThread> = {}) {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const returned = seeded({
+      title: 'Generated',
+      titleState: 'generated',
+      lastRequestId: 'request-1',
+      messages: [
+        ...SEEDED_MESSAGES,
+        { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
+      ],
+      ...fields,
+    })
+    client.events.mockImplementation(async function* () {
+      yield {
+        id: 0,
+        event: { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-1' },
+      }
+      await held
+      yield { id: 1, event: finished(SEEDED_ID, returned) }
+    })
+    return { returned, release }
+  }
+  // The harness applies a change of settings to the chat it is sent.
+  const applies = (fields: Partial<StoredThread>) =>
+    client.post.mockImplementationOnce(
+      async (_path: string, input: { thread: StoredThread }) => ({
+        thread: { ...input.thread, ...fields },
+      }),
+    )
+
+  it('keeps the settings the user changed while a reply streams over the run’s', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const { returned, release } = heldReply()
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    let sending!: Promise<boolean | undefined> | undefined
+    act(() => {
+      sending = result.current.send({ content: 'third' })
+    })
+    await waitFor(() => expect(result.current.running).toBe(true))
+
+    applies({ title: 'Mine', titleState: 'manual' })
+    await act(() => result.current.update(SEEDED_ID, { title: 'Mine' }))
+    applies({
+      presetId: 'user:research',
+      model: 'deep-model',
+      webSearchEnabled: false,
+    })
+    await act(() => result.current.selectPreset('user:research'))
+    await act(async () => {
+      release()
+      await sending
+    })
+
+    // The chat as kept with the message the run answers.
+    const kept = seeded({
+      updatedAt: expect.any(String),
+      messages: [
+        ...SEEDED_MESSAGES,
+        {
+          id: turn().clientRequestId,
+          role: 'user',
+          createdAt: expect.any(String),
+          content: 'third',
+        },
+      ],
+    })
+    expect(
+      client.post.mock.calls.map(([path, input]) => [path, input]),
+    ).toEqual([
+      [
+        '/v1/threads/update',
+        {
+          id: SEEDED_ID,
+          title: 'Mine',
+          profile: PROFILE,
+          local: true,
+          thread: kept,
+        },
+      ],
+      [
+        '/v1/threads/update',
+        {
+          id: SEEDED_ID,
+          presetId: 'user:research',
+          profile: PROFILE,
+          local: true,
+          thread: { ...kept, title: 'Mine', titleState: 'manual' },
+        },
+      ],
+    ])
+    expect(await stored(SEEDED_ID)).toEqual({
+      ...returned,
+      title: 'Mine',
+      titleState: 'manual',
+      presetId: 'user:research',
+      model: 'deep-model',
+      webSearchEnabled: false,
+    })
+    expect(result.current.chat.title).toBe('Mine')
+  })
+
+  it('lets a run keep its values over a change made before it started', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    applies({ presetId: 'user:research', model: 'deep-model' })
+    await act(() => result.current.selectPreset('user:research'))
+    expect(result.current.model).toBe('deep-model')
+    // The turn names another model, which the run's thread takes.
+    const { returned, release } = heldReply({
+      presetId: 'user:research',
+      model: 'test-model',
+    })
+    act(() => result.current.setModel('test-model'))
+
+    await act(async () => {
+      const sending = result.current.send({ content: 'third' })
+      release()
+      await sending
+    })
+
+    expect(turn().options?.model).toBe('test-model')
+    expect(await stored(SEEDED_ID)).toEqual(returned)
+  })
+
+  const QUESTION = {
+    id: 'msg_user',
+    role: 'user' as const,
+    createdAt: 't1',
+    content: 'Q',
+  }
+  const answered = (threadId: string) =>
+    storedThread(threadId, {
+      title: 'Answers',
+      titleState: 'generated',
+      messages: [
+        QUESTION,
+        {
+          id: 'msg_reply',
+          role: 'assistant',
+          createdAt: 't2',
+          model: 'test-model',
+          timeline: [
+            {
+              id: 'msg_reply_content_0',
+              type: 'content',
+              content: 'Long answer',
+            },
+          ],
+        },
+      ],
+    })
   function heldRun() {
     let release!: () => void
     const held = new Promise<void>((resolve) => {
@@ -367,9 +483,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
         id: 1,
         event: {
           type: 'MESSAGES_SNAPSHOT',
-          messages: [
-            { id: 'msg_user', role: 'user', createdAt: 't1', content: 'Q' },
-          ],
+          messages: [QUESTION],
           hasOlder: false,
         },
       }
@@ -383,48 +497,18 @@ describe('local chats of a signed-in account without cloud sync', () => {
         },
       }
       if (path === '/v1/threads/turn') await held
-      yield {
-        id: 3,
-        event: {
-          type: 'RUN_FINISHED',
-          threadId,
-          runId: 'run-1',
-          metadata: {
-            messages: [
-              {
-                id: 'msg_reply',
-                model: 'test-model',
-                modelDisplayName: 'Test model',
-                usage: USAGE,
-                isError: false,
-                isInterrupted: false,
-              },
-            ],
-          },
-        },
-      }
+      yield { id: 3, event: finished(threadId, answered(threadId)) }
     })
     return release
   }
-  const savedReply = [
-    { id: 'msg_user', role: 'user', createdAt: 't1', content: 'Q' },
-    {
-      id: 'msg_reply',
-      role: 'assistant',
-      createdAt: 't2',
-      content: 'Long answer',
-      model: 'test-model',
-      modelDisplayName: 'Test model',
-      usage: USAGE,
-      timeline: [
-        { id: 'msg_reply_content_0', type: 'content', content: 'Long answer' },
-      ],
-    },
-  ]
-  async function sendHeld() {
+  async function sendHeld(initialId: string | null = null) {
     const release = heldRun()
-    const hook = renderHook(() => useThread())
+    const hook = renderHook(() =>
+      useThread(initialId, null, { local: !!initialId }),
+    )
     await waitFor(() => expect(hook.result.current.model).toBe('test-model'))
+    if (initialId)
+      await waitFor(() => expect(hook.result.current.chat.id).toBe(initialId))
     let sending!: Promise<boolean | undefined> | undefined
     act(() => {
       sending = hook.result.current.send({ content: 'Q' })
@@ -451,15 +535,15 @@ describe('local chats of a signed-in account without cloud sync', () => {
 
     expect(result.current.chat.messages).toEqual([])
     expect(client.events).toHaveBeenCalledOnce()
-    expect((await stored(threadId))?.messages).toEqual(savedReply)
+    expect(await stored(threadId)).toEqual(answered(threadId))
   })
 
   it('lists a chat whose run streams here as active until the run ends', async () => {
     signIn('alice')
-    const { result, release, sending } = await sendHeld()
-    const threadId = result.current.chat.id
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const { result, release, sending } = await sendHeld(SEEDED_ID)
     const listed = () =>
-      result.current.chats.find((chat) => chat.id === threadId)
+      result.current.chats.find((chat) => chat.id === SEEDED_ID)
     await waitFor(() =>
       expect(listed()?.activeRun).toMatchObject({ runId: 'run-1' }),
     )
@@ -474,17 +558,35 @@ describe('local chats of a signed-in account without cloud sync', () => {
     await waitFor(() => expect(listed()?.activeRun).toBeNull())
   })
 
+  it('shows a chat the harness returned flagged as flagged, open and listed', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () =>
+      seeded({ flagged: true }),
+    )
+
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+
+    await waitFor(() => expect(result.current.chat.flagged).toBe(true))
+    await waitFor(() =>
+      expect(result.current.chats).toEqual([
+        expect.objectContaining({ id: SEEDED_ID, flagged: true }),
+      ]),
+    )
+  })
+
   it('rejoins a run when its chat is reopened', async () => {
     signIn('alice')
-    const { result, release, sending } = await sendHeld()
-    const threadId = result.current.chat.id
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const { result, release, sending } = await sendHeld(SEEDED_ID)
 
     act(() => result.current.newChat())
-    await act(() => result.current.open(threadId, { local: true }))
+    await act(() => result.current.open(SEEDED_ID, { local: true }))
 
     expect(client.events.mock.calls[1].slice(0, 2)).toEqual([
       '/v1/threads/follow',
-      { threadId, runId: 'run-1' },
+      { threadId: SEEDED_ID, runId: 'run-1' },
     ])
     await waitFor(() =>
       expect(result.current.chat.messages.map((m) => m.content)).toEqual([
@@ -496,7 +598,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
       release()
       await sending()
     })
-    expect((await stored(threadId))?.messages).toEqual(savedReply)
+    expect(await stored(SEEDED_ID)).toEqual(answered(SEEDED_ID))
   })
 
   function reloadDuringRun() {
@@ -509,64 +611,70 @@ describe('local chats of a signed-in account without cloud sync', () => {
         local: true,
       }),
     )
-    return localThreadStore('device').update(SEEDED_ID, () => seededThread())
+    return localThreadStore('device').update(SEEDED_ID, () => seeded())
   }
 
   it('keeps a run it could not reach, so reopening the chat rejoins it', async () => {
     signIn('alice')
     await reloadDuringRun()
+    const unreachable = async function* () {
+      throw new TypeError('Failed to fetch')
+    }
+    const question = {
+      id: 'u3',
+      role: 'user' as const,
+      createdAt: 't5',
+      content: 'third',
+    }
+    const returned = seeded({
+      messages: [
+        ...SEEDED_MESSAGES,
+        question,
+        {
+          id: 'a3',
+          role: 'assistant',
+          createdAt: 't6',
+          timeline: [
+            { id: 'a3_content_0', type: 'content', content: 'third answer' },
+          ],
+        },
+      ],
+    })
     client.events
-      .mockImplementationOnce(async function* () {
-        throw new TypeError('Failed to fetch')
-      })
+      .mockImplementationOnce(unreachable)
+      .mockImplementationOnce(unreachable)
       .mockImplementationOnce(
         frames(
+          { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-a3' },
           {
             type: 'MESSAGES_SNAPSHOT',
-            messages: [
-              ...seededThread().messages.map(wire),
-              { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
-            ],
+            messages: [...SEEDED_MESSAGES, question] as Message[],
             hasOlder: false,
           },
-          { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-a3' },
           {
             type: 'TEXT_MESSAGE_CHUNK',
             messageId: 'a3',
             delta: 'third answer',
             timestamp: 't6',
           },
-          { type: 'RUN_FINISHED', threadId: SEEDED_ID, runId: 'run-a3' },
+          { ...finished(SEEDED_ID, returned), runId: 'run-a3' },
         ),
       )
     const { result } = renderHook(() =>
       useThread(SEEDED_ID, null, { local: true }),
     )
-    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+    await waitFor(() => expect(client.events).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
     expect(result.current.error).toBe('')
     expect(sessionStorage.getItem('harness-run:alice')).not.toBeNull()
 
     await act(() => result.current.open(SEEDED_ID, { local: true }))
 
-    expect(client.events.mock.calls[1].slice(0, 2)).toEqual([
+    expect(client.events.mock.calls[2].slice(0, 2)).toEqual([
       '/v1/threads/follow',
       { threadId: SEEDED_ID, runId: 'run-a3' },
     ])
-    await waitFor(async () =>
-      expect((await stored(SEEDED_ID))?.messages.slice(4)).toEqual([
-        { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
-        {
-          id: 'a3',
-          role: 'assistant',
-          createdAt: 't6',
-          content: 'third answer',
-          timeline: [
-            { id: 'a3_content_0', type: 'content', content: 'third answer' },
-          ],
-        },
-      ]),
-    )
+    await waitFor(async () => expect(await stored(SEEDED_ID)).toEqual(returned))
     expect(sessionStorage.getItem('harness-run:alice')).toBeNull()
   })
 
@@ -575,8 +683,8 @@ describe('local chats of a signed-in account without cloud sync', () => {
     await reloadDuringRun()
     client.events.mockImplementationOnce(async function* () {
       throw new HarnessError(
-        { code: 'KEY_REQUIRED', message: 'A content key is required' },
-        401,
+        { code: 'RUN_NOT_FOUND', message: 'The run is not running here' },
+        404,
       )
     })
     const { result } = renderHook(() =>
@@ -588,6 +696,47 @@ describe('local chats of a signed-in account without cloud sync', () => {
     )
     expect(client.events).toHaveBeenCalledOnce()
     expect(result.current.error).toBe('')
+    expect(result.current.chat.messages).toHaveLength(4)
+  })
+
+  it('does not rejoin the run of a chat closed while it opened', async () => {
+    signIn('alice')
+    await reloadDuringRun()
+    const device = localThreadStore('device')
+    const read = device.get.bind(device)
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let reads = 0
+    let followRead!: () => void
+    const following = new Promise<void>((resolve) => {
+      followRead = resolve
+    })
+    vi.spyOn(device, 'get').mockImplementation(async (id) => {
+      // The second read is the one following the run reads the chat with.
+      if (++reads === 2) {
+        followRead()
+        await held
+      }
+      return read(id)
+    })
+    const { result } = renderHook(() => useThread())
+    let opening!: Promise<void>
+    act(() => {
+      opening = result.current.open(SEEDED_ID, { local: true })
+    })
+    await act(() => following)
+    expect(result.current.chat.messages).toHaveLength(4)
+
+    act(() => result.current.newChat())
+    await act(async () => {
+      release()
+      await opening
+    })
+
+    expect(result.current.chat.isBlankChat).toBe(true)
+    expect(client.events).not.toHaveBeenCalled()
   })
 
   it('leaves the next chat its own prompt when a late first send is dropped', async () => {
@@ -604,7 +753,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
     })
     const { result } = renderHook(() => useThread())
     await waitFor(() => expect(result.current.model).toBe('test-model'))
-    act(() => result.current.setPresetId('builtin:tutor'))
+    await act(() => result.current.selectPreset('builtin:tutor'))
     let sending: Promise<boolean | undefined> | undefined
     act(() => {
       sending = result.current.send({ content: 'Hi' })
@@ -621,28 +770,33 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(client.events).not.toHaveBeenCalled()
   })
 
-  it('sends the stored transcript with an edit and keeps the truncation', async () => {
+  it('sends the stored thread with an edit and stores the thread its run returns', async () => {
     signIn('alice')
-    await localThreadStore('device').update(SEEDED_ID, () => seededThread())
-    const [u1, a1] = seededThread().messages
-    client.events.mockImplementation(
-      reply(
-        SEEDED_ID,
-        [
-          wire(u1),
-          wire(a1),
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const [u1, a1] = SEEDED_MESSAGES
+    let returned!: StoredThread
+    client.events.mockImplementation((_path: string, input: Turn) => {
+      returned = seeded({
+        lastRequestId: input.clientRequestId,
+        messages: [
+          u1,
+          a1,
           {
-            id: 'msg_edit',
+            id: input.clientRequestId,
             role: 'user',
             createdAt: 't5',
             content: 'second, edited',
           },
+          {
+            id: 'msg_new',
+            role: 'assistant',
+            createdAt: 't6',
+            timeline: [{ id: 'b3', type: 'content', content: 'edited answer' }],
+          },
         ],
-        'msg_new',
-        'edited answer',
-        'Doors',
-      ),
-    )
+      })
+      return deviceRun(SEEDED_ID, returned)()
+    })
     const { result } = renderHook(() =>
       useThread(SEEDED_ID, null, { local: true }),
     )
@@ -661,128 +815,89 @@ describe('local chats of a signed-in account without cloud sync', () => {
       kind: 'edit',
       messageId: 'u2',
       local: true,
-      thread: { title: 'Doors', messages: seededThread().messages },
+      thread: seeded(),
     })
     expect(turn()).not.toHaveProperty('key')
-    const saved = await stored(SEEDED_ID)
-    expect(saved?.messages).toEqual([
-      u1,
-      a1,
-      {
-        id: 'msg_edit',
-        role: 'user',
-        createdAt: 't5',
-        content: 'second, edited',
-      },
-      {
-        id: 'msg_new',
-        role: 'assistant',
-        createdAt: '2026-05-01T10:00:05Z',
-        content: 'edited answer',
-        model: 'test-model',
-        modelDisplayName: 'Test model',
-        usage: USAGE,
-        timeline: [
-          {
-            id: 'msg_new_content_0',
-            type: 'content',
-            content: 'edited answer',
-          },
-        ],
-      },
-    ])
-    expect(saved?.title).toBe('Doors')
+    expect(await stored(SEEDED_ID)).toEqual(returned)
   })
 
-  it('keeps image bytes across a reload and sends them with the next turn', async () => {
+  it("sends an image's model copy, and keeps the picked file apart to show", async () => {
     signIn('alice')
     const bytes = new Uint8Array([137, 80, 78, 71])
-    const base64 = btoa(String.fromCharCode(...bytes))
-    const view = {
+    const original = btoa(String.fromCharCode(...bytes))
+    const modelCopy = 'bW9kZWwtY29weQ=='
+    const view: AttachmentDescriptor = {
       id: 'att_door',
       kind: 'image',
       fileName: 'door.png',
-      mimeType: 'image/png',
+      mimeType: 'image/jpeg',
       size: 4,
       thumbnail: 'dGh1bWI=',
-      pages: null,
-      status: 'ready',
     }
     client.upload.mockResolvedValue({
-      ...view,
-      descriptor: {
-        id: 'att_door',
-        type: 'image',
-        fileName: 'door.png',
-        mimeType: 'image/png',
-        fileSize: 4,
-        thumbnailBase64: 'dGh1bWI=',
-      },
+      attachment: { ...view, base64: modelCopy },
     })
     client.events.mockImplementation((_path: string, input: Turn) =>
-      reply(
+      deviceRun(
         input.threadId!,
-        [
-          {
-            id: 'msg_photo',
-            role: 'user',
-            createdAt: 't1',
-            content: 'What door?',
-            attachments: [{ ...view, description: 'A red door' }],
-          },
-        ],
-        'msg_answer',
-        'A red one',
+        storedThread(input.threadId!, {
+          messages: [
+            {
+              id: input.clientRequestId,
+              role: 'user',
+              createdAt: 't1',
+              content: 'What door?',
+              attachments: [{ ...view, description: 'A red door' }],
+            },
+            {
+              id: 'msg_answer',
+              role: 'assistant',
+              createdAt: 't2',
+              timeline: [{ id: 'b1', type: 'content', content: 'A red one' }],
+            },
+          ],
+        }),
       )(),
     )
     const first = renderHook(() => useThread())
     await waitFor(() => expect(first.result.current.model).toBe('test-model'))
 
-    let uploaded: unknown
+    let uploaded!: AttachmentDescriptor
     await act(async () => {
       uploaded = await first.result.current.upload(
         new File([bytes], 'door.png', { type: 'image/png' }),
       )
     })
-    expect(uploaded).toEqual(view)
+    expect(uploaded).toEqual({ ...view, base64: modelCopy })
     expect(client.upload).toHaveBeenCalledExactlyOnceWith(
       '/v1/attachments/upload',
       expect.any(File),
-      { local: 'true' },
+      {},
       expect.any(AbortSignal),
     )
     await act(() =>
       first.result.current.send({
         content: 'What door?',
-        attachments: ['att_door'],
+        attachments: [uploaded],
       }),
     )
     const threadId = turn().threadId!
-    expect(turn().attachments).toEqual(['att_door'])
-    const descriptor = {
-      id: 'att_door',
-      type: 'image',
-      fileName: 'door.png',
-      mimeType: 'image/png',
-      fileSize: 4,
-      thumbnailBase64: 'dGh1bWI=',
-      description: 'A red door',
-      base64,
-    }
-    expect((await stored(threadId))?.messages[0].attachments).toEqual([
-      descriptor,
-    ])
-    expect(await rawRows('attachmentPayloads')).toEqual([
+    expect(turn().attachments).toEqual([{ ...view, base64: modelCopy }])
+    const kept = { ...view, description: 'A red door', base64: modelCopy }
+    expect((await stored(threadId))?.messages[0].attachments).toEqual([kept])
+    expect(await rawRows('attachmentOriginals')).toEqual([
       {
-        id: `${threadId}:att_door`,
         chatId: threadId,
-        base64,
-        thumbnailBase64: 'dGh1bWI=',
+        attachmentId: 'att_door',
+        base64: original,
+        mimeType: 'image/png',
       },
     ])
     first.unmount()
 
-    client.events.mockImplementation(reply(threadId, [], 'msg_more', 'More'))
+    client.events.mockImplementation(
+      deviceRun(threadId, storedThread(threadId)),
+    )
     const reloaded = renderHook(() =>
       useThread(threadId, null, { local: true }),
     )
@@ -792,14 +907,93 @@ describe('local chats of a signed-in account without cloud sync', () => {
     const image = await reloaded.result.current.loadImage(
       reloaded.result.current.chat.messages[0].attachments![0],
     )
+    expect(image.type).toBe('image/png')
     expect(new Uint8Array(await image.arrayBuffer())).toEqual(bytes)
 
     await act(() => reloaded.result.current.send({ content: 'And now?' }))
 
-    expect(turn(1).thread?.messages[0].attachments).toEqual([descriptor])
+    expect(turn(1).thread?.messages[0].attachments).toEqual([kept])
   })
 
-  it('opens a chat the previous client stored and sends it upgraded', async () => {
+  it('sends the stored chat with every image it holds', async () => {
+    signIn('alice')
+    const photos = ['p1', 'p2', 'p3', 'p4'].map((id): ThreadMessage => ({
+      id,
+      role: 'user',
+      createdAt: 't1',
+      content: 'Look',
+      attachments: [
+        {
+          id: `att_${id}`,
+          kind: 'image',
+          fileName: `${id}.jpg`,
+          mimeType: 'image/jpeg',
+          size: 5,
+          base64: btoa(id),
+        },
+      ],
+    }))
+    await localThreadStore('device').update(SEEDED_ID, () =>
+      seeded({ messages: photos }),
+    )
+    client.events.mockImplementation(
+      deviceRun(SEEDED_ID, seeded({ messages: photos })),
+    )
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+    await act(() => result.current.send({ content: 'Which is best?' }))
+
+    expect(turn().thread).toEqual(seeded({ messages: photos }))
+  })
+
+  it("shows an image's model copy when this device has no original, and deletes an original with its message", async () => {
+    signIn('alice')
+    const photo: AttachmentDescriptor = {
+      id: 'att_photo',
+      kind: 'image',
+      fileName: 'photo.png',
+      mimeType: 'image/jpeg',
+      size: 5,
+      thumbnail: 'dGh1bWI=',
+      base64: 'bW9kZWw=',
+    }
+    const messages = SEEDED_MESSAGES.map((message) =>
+      message.id === 'u2' ? { ...message, attachments: [photo] } : message,
+    )
+    await localThreadStore('device').update(SEEDED_ID, () =>
+      seeded({ messages }),
+    )
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+    const image = await result.current.loadImage(
+      result.current.chat.messages[2].attachments![0],
+    )
+    expect(image.type).toBe('image/jpeg')
+    expect(await image.text()).toBe('model')
+
+    await localThreadStore('device').update(
+      SEEDED_ID,
+      (thread) => thread,
+      new Map([
+        ['att_photo', { base64: 'b3JpZ2luYWw=', mimeType: 'image/png' }],
+      ]),
+    )
+    expect(await rawRows('attachmentOriginals')).toHaveLength(1)
+    client.post.mockResolvedValueOnce({
+      thread: seeded({ messages: messages.filter((m) => m.id !== 'u2') }),
+    })
+    await act(() => result.current.deleteMessage(2))
+
+    expect(await rawRows('attachmentOriginals')).toEqual([])
+  })
+
+  it('upgrades a chat the previous client stored through the harness, and sends it upgraded', async () => {
     signIn('alice')
     await indexedDBStorage.saveChat({
       id: SEEDED_ID,
@@ -818,57 +1012,125 @@ describe('local chats of a signed-in account without cloud sync', () => {
           role: 'assistant',
           content: 'A cat',
           timestamp: new Date('2026-01-01T00:00:02.000Z'),
+        },
+      ],
+    })
+    const upgraded = storedThread(SEEDED_ID, {
+      title: 'Cats',
+      titleState: 'generated',
+      messages: [
+        {
+          id: `${SEEDED_ID}-message-0`,
+          role: 'user',
+          createdAt: '2026-01-01T00:00:01Z',
+          content: 'Look at this',
+          attachments: [
+            {
+              id: `${SEEDED_ID}-message-0-attachment-0`,
+              kind: 'image',
+              fileName: 'image-0',
+              mimeType: 'image/jpeg',
+              size: 3,
+              base64: 'aW1n',
+            },
+          ],
+        },
+        {
+          id: `${SEEDED_ID}-message-1`,
+          role: 'assistant',
+          createdAt: '2026-01-01T00:00:02Z',
           timeline: [
             {
-              type: 'web_search',
-              id: 'search',
-              state: { query: 'cats', status: 'completed', sources: [] },
+              id: `${SEEDED_ID}-message-1-content`,
+              type: 'content',
+              content: 'A cat',
             },
-            { type: 'content', id: 'text', content: 'A cat' },
           ],
         },
       ],
     })
-    client.events.mockImplementation(reply(SEEDED_ID, [], 'msg_next', 'Yes'))
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/upgrade') return { threads: [upgraded] }
+      throw new Error(`Unexpected ${path}`)
+    })
+    client.events.mockImplementation(deviceRun(SEEDED_ID, upgraded))
     const { result } = renderHook(() =>
       useThread(SEEDED_ID, null, { local: true }),
     )
 
-    await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))
-    const [question, answer] = result.current.chat.messages
-    expect(question.content).toBe('Look at this')
-    expect(question.attachments).toEqual([
-      expect.objectContaining({
-        id: `${SEEDED_ID}-message-0-attachment-0`,
-        type: 'image',
-        base64: 'aW1n',
-      }),
-    ])
-    expect(answer.content).toBe('A cat')
-    expect(answer.timeline).toEqual([
-      expect.objectContaining({
-        type: 'tool_call',
-        name: 'web_search',
-        arguments: '{"query":"cats"}',
-      }),
-      expect.objectContaining({ type: 'content', content: 'A cat' }),
-    ])
+    await waitFor(() =>
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+        'Look at this',
+        'A cat',
+      ]),
+    )
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/upgrade',
+      {
+        threads: [
+          expect.objectContaining({
+            id: SEEDED_ID,
+            title: 'Cats',
+            messages: [
+              expect.objectContaining({
+                content: 'Look at this',
+                imageData: [{ base64: 'aW1n', mimeType: 'image/jpeg' }],
+              }),
+              expect.objectContaining({ content: 'A cat' }),
+            ],
+          }),
+        ],
+      },
+      expect.any(AbortSignal),
+    )
 
     await act(() => result.current.send({ content: 'Sure?' }))
 
-    expect(turn().thread?.messages.map((message) => message.id)).toEqual([
-      `${SEEDED_ID}-message-0`,
-      `${SEEDED_ID}-message-1`,
+    expect(turn().thread).toEqual(upgraded)
+  })
+
+  it("shows the messages before a run's window from the copy on this device", async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const [, , u2, a2] = SEEDED_MESSAGES
+    const question = {
+      id: 'u3',
+      role: 'user' as const,
+      createdAt: 't5',
+      content: 'third',
+    }
+    client.events.mockImplementation(
+      frames(
+        { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-1' },
+        {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [u2, a2, question] as Message[],
+          hasOlder: true,
+        },
+        finished(
+          SEEDED_ID,
+          seeded({ messages: [...SEEDED_MESSAGES, question] }),
+        ),
+      ),
+    )
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    await act(() => result.current.send({ content: 'third' }))
+    expect(result.current.hasOlder).toBe(true)
+
+    await act(() => result.current.older())
+
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+      'u3',
     ])
-    expect(turn().thread?.messages[0].attachments).toEqual([
-      {
-        id: `${SEEDED_ID}-message-0-attachment-0`,
-        type: 'image',
-        fileName: 'image-0',
-        mimeType: 'image/jpeg',
-        base64: 'aW1n',
-      },
-    ])
+    expect(result.current.hasOlder).toBe(false)
+    expect(client.post).not.toHaveBeenCalled()
   })
 
   it('cancels and removes queued turns without sending a key', async () => {
@@ -936,28 +1198,24 @@ describe('local chats of a signed-in account without cloud sync', () => {
 })
 
 describe('stored local chat changes', () => {
+  const PHOTO: AttachmentDescriptor = {
+    id: 'att_photo',
+    kind: 'image',
+    fileName: 'photo.png',
+    mimeType: 'image/png',
+    size: 5,
+    thumbnail: 'dGh1bWI=',
+    base64: 'cGhvdG8=',
+  }
+  const withPhoto = () =>
+    seeded({
+      messages: SEEDED_MESSAGES.map((message) =>
+        message.id === 'u2' ? { ...message, attachments: [PHOTO] } : message,
+      ),
+    })
   async function openSeeded() {
     signIn('alice')
-    await localThreadStore('device').update(SEEDED_ID, () => ({
-      ...seededThread(),
-      messages: seededThread().messages.map((message) =>
-        message.id === 'u2'
-          ? {
-              ...message,
-              attachments: [
-                {
-                  id: 'att_photo',
-                  type: 'image' as const,
-                  fileName: 'photo.png',
-                  mimeType: 'image/png',
-                  thumbnailBase64: 'dGh1bWI=',
-                  base64: 'cGhvdG8=',
-                },
-              ],
-            }
-          : message,
-      ),
-    }))
+    await localThreadStore('device').update(SEEDED_ID, withPhoto)
     const hook = renderHook(() => useThread(SEEDED_ID, null, { local: true }))
     await waitFor(() =>
       expect(hook.result.current.chat.messages).toHaveLength(4),
@@ -965,56 +1223,131 @@ describe('stored local chat changes', () => {
     return hook
   }
 
-  it('renames a chat on the device as a manual title', async () => {
+  // The harness's answer to a change of the chat this device sent, which
+  // leaves image bytes out.
+  const withoutBytes = (thread: StoredThread): StoredThread => ({
+    ...thread,
+    messages: thread.messages.map((message) =>
+      message.attachments
+        ? {
+            ...message,
+            attachments: message.attachments.map(
+              ({ base64: _, ...attachment }) => attachment,
+            ),
+          }
+        : message,
+    ),
+  })
+
+  it('renames a chat through the harness and stores the chat it returns', async () => {
     const { result } = await openSeeded()
+    const renamed = {
+      ...withPhoto(),
+      title: 'Front doors',
+      titleState: 'manual' as const,
+      updatedAt: '2026-04-01T09:06:00Z',
+    }
+    client.post.mockResolvedValueOnce({ thread: withoutBytes(renamed) })
 
     await act(() => result.current.update(SEEDED_ID, { title: 'Front doors' }))
 
-    expect(await stored(SEEDED_ID)).toMatchObject({
-      title: 'Front doors',
-      titleState: 'manual',
-      messages: seededThread().messages.map((message) =>
-        expect.objectContaining({ id: message.id }),
-      ),
-    })
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/update',
+      {
+        id: SEEDED_ID,
+        title: 'Front doors',
+        profile: PROFILE,
+        local: true,
+        thread: withPhoto(),
+      },
+      expect.any(AbortSignal),
+    )
+    expect(await stored(SEEDED_ID)).toEqual(renamed)
     expect(result.current.chat.title).toBe('Front doors')
-    expect(client.post).not.toHaveBeenCalled()
   })
 
-  it('forks a chat on the device up to the chosen message', async () => {
+  it('applies a change to the reply that finished while the harness made it', async () => {
     const { result } = await openSeeded()
+    const replied = seeded({
+      lastRequestId: 'request-1',
+      messages: [
+        ...withPhoto().messages,
+        { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
+      ],
+    })
+    let answer!: (value: unknown) => void
+    client.post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve
+        }),
+    )
+
+    let renaming!: Promise<unknown>
+    act(() => {
+      renaming = result.current.update(SEEDED_ID, { title: 'Front doors' })
+    })
+    await waitFor(() => expect(client.post).toHaveBeenCalledTimes(1))
+    await localThreadStore('device').update(SEEDED_ID, () => replied)
+    await act(async () => {
+      answer({
+        thread: withoutBytes({
+          ...withPhoto(),
+          title: 'Front doors',
+          titleState: 'manual',
+        }),
+      })
+      await renaming
+    })
+
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/update',
+      {
+        id: SEEDED_ID,
+        title: 'Front doors',
+        profile: PROFILE,
+        local: true,
+        thread: withPhoto(),
+      },
+      expect.any(AbortSignal),
+    )
+    expect(await stored(SEEDED_ID)).toEqual({
+      ...replied,
+      title: 'Front doors',
+      titleState: 'manual',
+    })
+  })
+
+  it('forks a chat through the harness, which names the fork', async () => {
+    const { result } = await openSeeded()
+    const FORK_ID = '8233746420000_2d5f8b63-0a3c-4f8e-9e2d-6c7d8e9f0a11'
+    const [u1, a1, u2] = withPhoto().messages
+    const fork = storedThread(FORK_ID, {
+      title: 'Doors (fork)',
+      titleState: 'manual',
+      messages: [u1, a1, u2],
+    })
+    client.post.mockResolvedValueOnce({ thread: withoutBytes(fork) })
 
     let forkId: string | null = null
     await act(async () => {
       forkId = await result.current.fork(2)
     })
 
-    expect(forkId).toMatch(REVERSE_ID)
-    const fork = await stored(forkId!)
-    expect(fork).toMatchObject({
-      id: forkId,
-      title: 'Doors (fork)',
-      titleState: 'manual',
-      model: 'test-model',
-    })
-    expect(fork?.codeExecutionAccessToken).toMatch(/^[0-9a-f]{64}$/)
-    expect(fork?.codeExecutionAccessToken).not.toBe('c'.repeat(64))
-    expect(fork?.messages.map((message) => message.id)).toEqual([
-      'u1',
-      'a1',
-      'u2',
-    ])
-    const [copy] = fork!.messages[2].attachments!
-    expect(copy).toEqual({
-      id: expect.not.stringMatching(/^att_photo$/),
-      type: 'image',
-      fileName: 'photo.png',
-      mimeType: 'image/png',
-      thumbnailBase64: 'dGh1bWI=',
-      base64: 'cGhvdG8=',
-    })
-    expect((await stored(SEEDED_ID))?.messages).toHaveLength(4)
-    expect(result.current.chat.id).toBe(forkId)
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/fork',
+      {
+        threadId: SEEDED_ID,
+        messageId: 'u2',
+        local: true,
+        thread: withPhoto(),
+      },
+      expect.any(AbortSignal),
+    )
+    expect(forkId).toBe(FORK_ID)
+    expect(await stored(FORK_ID)).toEqual(fork)
+    expect(await stored(SEEDED_ID)).toEqual(withPhoto())
+    expect(result.current.chat.id).toBe(FORK_ID)
     expect(result.current.chat.isLocalOnly).toBe(true)
   })
 
@@ -1028,7 +1361,7 @@ describe('stored local chat changes', () => {
     expect(client.post).not.toHaveBeenCalled()
   })
 
-  it('asks about a local chat with its transcript instead of a key', async () => {
+  it('asks about a local chat with its thread instead of a key', async () => {
     const { result } = await openSeeded()
 
     const context = await result.current.askContext()
@@ -1036,16 +1369,9 @@ describe('stored local chat changes', () => {
     expect(context).toEqual({
       threadId: SEEDED_ID,
       local: true,
-      thread: expect.objectContaining({ title: 'Doors' }),
-      profile: { nickname: 'Sam', traits: ['direct'] },
+      thread: withPhoto(),
+      profile: PROFILE,
     })
-    expect(context.thread?.messages.map((message) => message.id)).toEqual([
-      'u1',
-      'a1',
-      'u2',
-      'a2',
-    ])
-    expect(context.thread?.messages[2].attachments?.[0].base64).toBe('cGhvdG8=')
   })
 
   it('shares a local chat from its copy without image bytes or a key', async () => {
@@ -1058,34 +1384,24 @@ describe('stored local chat changes', () => {
     })
 
     expect(url).toBe('https://chat.tinfoil.sh/share/x')
-    expect(client.post).toHaveBeenCalledOnce()
-    const [path, input] = client.post.mock.calls[0]
-    expect(path).toBe('/v1/threads/share')
-    expect(input).not.toHaveProperty('key')
-    expect(input).toMatchObject({
-      local: true,
-      threadId: SEEDED_ID,
-      thread: { title: 'Doors', presetId: null },
-    })
-    expect(input.thread.messages.map((m: { id: string }) => m.id)).toEqual([
-      'u1',
-      'a1',
-      'u2',
-      'a2',
-    ])
-    expect(input.thread.messages[2].attachments).toEqual([
+    const { base64: _, ...thumbnailOnly } = PHOTO
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/share',
       {
-        id: 'att_photo',
-        type: 'image',
-        fileName: 'photo.png',
-        mimeType: 'image/png',
-        thumbnailBase64: 'dGh1bWI=',
+        local: true,
+        threadId: SEEDED_ID,
+        thread: seeded({
+          messages: SEEDED_MESSAGES.map((message) =>
+            message.id === 'u2'
+              ? { ...message, attachments: [thumbnailOnly] }
+              : message,
+          ),
+        }),
       },
-    ])
-    // The stored copy keeps its bytes.
-    expect((await stored(SEEDED_ID))?.messages[2].attachments?.[0].base64).toBe(
-      'cGhvdG8=',
+      expect.any(AbortSignal),
     )
+    // The stored copy keeps its bytes.
+    expect(await stored(SEEDED_ID)).toEqual(withPhoto())
   })
 
   it('shares the page text of a document stored without extracted text', async () => {
@@ -1096,25 +1412,28 @@ describe('stored local chat changes', () => {
       image: 'cGFnZQ==',
       is_scanned: true,
     })
-    await localThreadStore('device').update(SEEDED_ID, () => ({
-      ...seededThread(),
-      messages: [
-        {
-          id: 'u1',
-          role: 'user' as const,
-          createdAt: 't1',
-          content: 'Read this',
-          attachments: [
-            {
-              id: 'att_scan',
-              type: 'document' as const,
-              fileName: 'scan.pdf',
-              pages: [page(1, 'First page'), page(2, 'Second page')],
-            },
-          ],
-        },
-      ],
-    }))
+    await localThreadStore('device').update(SEEDED_ID, () =>
+      seeded({
+        messages: [
+          {
+            id: 'u1',
+            role: 'user',
+            createdAt: 't1',
+            content: 'Read this',
+            attachments: [
+              {
+                id: 'att_scan',
+                kind: 'document',
+                fileName: 'scan.pdf',
+                mimeType: 'application/pdf',
+                size: 9,
+                pages: [page(1, 'First page'), page(2, 'Second page')],
+              },
+            ],
+          },
+        ],
+      }),
+    )
     const { result } = renderHook(() =>
       useThread(SEEDED_ID, null, { local: true }),
     )
@@ -1132,37 +1451,13 @@ describe('stored local chat changes', () => {
     expect(input.thread.messages[0].attachments).toEqual([
       {
         id: 'att_scan',
-        type: 'document',
+        kind: 'document',
         fileName: 'scan.pdf',
+        mimeType: 'application/pdf',
+        size: 9,
         textContent: 'First page\n\nSecond page',
       },
     ])
-  })
-
-  it('refuses to send a local share larger than the harness reads', async () => {
-    signIn('alice')
-    await localThreadStore('device').update(SEEDED_ID, () => ({
-      ...seededThread(),
-      messages: [
-        ...seededThread().messages,
-        {
-          id: 'u3',
-          role: 'user' as const,
-          createdAt: 't5',
-          content: 'x'.repeat(8 * 1024 * 1024),
-        },
-      ],
-    }))
-    const { result } = renderHook(() =>
-      useThread(SEEDED_ID, null, { local: true }),
-    )
-    await waitFor(() => expect(result.current.chat.messages).toHaveLength(5))
-
-    const refusal = await result.current.share(SEEDED_ID).catch((e) => e)
-
-    expect(refusal).toBeInstanceOf(HarnessError)
-    expect(refusal).toMatchObject({ code: 'THREAD_TOO_LARGE', status: 413 })
-    expect(client.post).not.toHaveBeenCalled()
   })
 })
 
@@ -1176,12 +1471,19 @@ describe('signed-out chats', () => {
     })
     try {
       signIn(null)
+      const messages: ThreadMessage[] = [
+        { id: 'msg_q', role: 'user', createdAt: 't1', content: 'Hello?' },
+        {
+          id: 'msg_a',
+          role: 'assistant',
+          createdAt: 't2',
+          timeline: [{ id: 'b1', type: 'content', content: 'Hi' }],
+        },
+      ]
       client.events.mockImplementation((_path: string, input: Turn) =>
-        reply(
+        deviceRun(
           input.threadId!,
-          [{ id: 'msg_q', role: 'user', createdAt: 't1', content: 'Hello?' }],
-          'msg_a',
-          'Hi',
+          storedThread(input.threadId!, { messages }),
         )(),
       )
       const { result } = renderHook(() => useThread())
@@ -1197,10 +1499,8 @@ describe('signed-out chats', () => {
       expect(row).toMatchObject({
         id: turn().threadId,
         isLocalOnly: true,
-        messages: [
-          { id: 'msg_q', role: 'user', content: 'Hello?' },
-          { id: 'msg_a', role: 'assistant', content: 'Hi' },
-        ],
+        threadFormat: 1,
+        messages,
       })
       expect(await isolated.databases()).toEqual([])
     } finally {
@@ -1210,6 +1510,76 @@ describe('signed-out chats', () => {
       })
     }
   })
+})
+
+describe('temporary chats', () => {
+  it.each([
+    ['with cloud sync', 'alice', true],
+    ['without cloud sync', 'alice', false],
+    ['signed out', null, false],
+  ] as const)(
+    'run as chats on this device held in page memory %s',
+    async (_mode, userId, cloud) => {
+      signIn(userId, cloud)
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/list')
+          return { threads: [], nextCursor: null }
+        throw new Error(`Unexpected ${path}`)
+      })
+      const returned: StoredThread[] = []
+      client.events.mockImplementation((_path: string, input: Turn) => {
+        const thread = storedThread(input.threadId!, {
+          lastRequestId: input.clientRequestId,
+          messages: [
+            ...(input.thread?.messages ?? []),
+            {
+              id: input.clientRequestId,
+              role: 'user',
+              createdAt: 't1',
+              content: input.content,
+            },
+            {
+              id: `reply-${returned.length}`,
+              role: 'assistant',
+              createdAt: 't2',
+              timeline: [{ id: 'b1', type: 'content', content: 'Noted' }],
+            },
+          ],
+        })
+        returned.push(thread)
+        return deviceRun(input.threadId!, thread, `run-${returned.length}`)()
+      })
+      const { result } = renderHook(() => useThread())
+      await waitFor(() => expect(result.current.model).toBe('test-model'))
+      act(() => result.current.setTemporary(true))
+
+      await act(() => result.current.send({ content: 'Off the record' }))
+      await act(() => result.current.send({ content: 'Still off' }))
+
+      expect(turn(1)).toEqual({
+        clientRequestId: expect.any(String),
+        threadId: turn().threadId,
+        kind: 'send',
+        widgets: ['render_chart'],
+        options: { model: 'test-model', timezone: expect.any(String) },
+        content: 'Still off',
+        local: true,
+        thread: returned[0],
+        profile: PROFILE,
+      })
+      expect(result.current.chat).toMatchObject({
+        id: turn().threadId,
+        isTemporary: true,
+        isLocalOnly: false,
+      })
+      expect(result.current.chat.messages.map((m) => m.id)).toEqual(
+        returned[1].messages.map((m) => m.id),
+      )
+      expect(result.current.chats).toEqual([])
+      expect(await rawRows('chats')).toEqual([])
+      expect(sessionStorage.getItem('tinfoil-sync-session-chats')).toBeNull()
+    },
+  )
 })
 
 describe('cloud chats', () => {
@@ -1232,13 +1602,259 @@ describe('cloud chats', () => {
     expect(turn()).toMatchObject({
       key: KEY,
       projectId: 'project-1',
-      ephemeral: false,
       content: 'Stored question',
     })
     expect(turn()).not.toHaveProperty('local')
     expect(turn()).not.toHaveProperty('thread')
     expect(result.current.chat.isLocalOnly).toBe(false)
     expect(await localThreadStore('device').list()).toEqual([])
+  })
+
+  it('name a new chat and send again after its first message was refused', async () => {
+    signIn('alice', true)
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      throw new Error(`Unexpected ${path}`)
+    })
+    client.events
+      .mockImplementationOnce(async function* () {
+        throw new HarnessError(
+          { code: 'RATE_LIMITED', message: 'Chat access is busy' },
+          429,
+        )
+      })
+      .mockImplementationOnce((_path: string, input: Turn) =>
+        frames(
+          { type: 'RUN_STARTED', threadId: input.threadId!, runId: 'run-1' },
+          { type: 'RUN_FINISHED', threadId: input.threadId!, runId: 'run-1' },
+        )(),
+      )
+    const { result } = renderHook(() => useThread(null, 'project-1'))
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+
+    await act(() => result.current.send({ content: 'First try' }))
+
+    const threadId = turn().threadId
+    expect(threadId).toMatch(REVERSE_ID)
+    expect(result.current.chat).toMatchObject({
+      id: threadId,
+      pendingSave: true,
+    })
+    expect(result.current.chat.messages).toEqual([
+      expect.objectContaining({
+        id: turn().clientRequestId,
+        role: 'user',
+        content: 'First try',
+      }),
+    ])
+    expect(result.current.error).toBe('Chat access is busy')
+
+    await act(() => result.current.send({ content: 'Second try' }))
+
+    expect(client.events).toHaveBeenCalledTimes(2)
+    expect(turn(1)).toMatchObject({
+      threadId,
+      projectId: 'project-1',
+      content: 'Second try',
+    })
+    expect(turn(1).clientRequestId).not.toBe(turn().clientRequestId)
+    expect(result.current.chat).toMatchObject({
+      id: threadId,
+      pendingSave: false,
+    })
+  })
+
+  describe('whose stream drops mid-reply', () => {
+    const stored = summary('cloud-thread', 'Stored')
+    const question = {
+      id: 'u1',
+      role: 'user' as const,
+      createdAt: 't1',
+      content: 'Question',
+    }
+    const started: Frame['event'][] = [
+      { type: 'RUN_STARTED', threadId: stored.id, runId: 'run-1' },
+      { type: 'MESSAGES_SNAPSHOT', messages: [question], hasOlder: false },
+      { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: 'Hel' },
+    ]
+    function dropsAfter(events: Frame['event'][]) {
+      return async function* () {
+        for (const [id, event] of events.entries()) yield { id, event }
+        throw new TypeError('network error')
+      }
+    }
+    async function openStored(answer = 'Hello') {
+      signIn('alice', true)
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/list')
+          return { threads: [], nextCursor: null }
+        if (path === '/v1/threads/get')
+          return {
+            ...stored,
+            messages: [
+              question,
+              {
+                id: 'a1',
+                role: 'assistant',
+                createdAt: 't2',
+                timeline: [{ id: 'b1', type: 'content', content: answer }],
+              },
+            ],
+            hasOlder: false,
+          }
+        throw new Error(`Unexpected ${path}`)
+      })
+      const hook = renderHook(() => useThread(stored.id))
+      await waitFor(() => expect(hook.result.current.chat.id).toBe(stored.id))
+      return hook
+    }
+
+    it('rejoin their run, which replays it', async () => {
+      const { result } = await openStored()
+      client.events
+        .mockImplementationOnce(dropsAfter(started))
+        .mockImplementationOnce(
+          frames(
+            ...started,
+            { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: 'lo' },
+            { type: 'RUN_FINISHED', threadId: stored.id, runId: 'run-1' },
+          ),
+        )
+
+      await act(() => result.current.send({ content: 'Question' }))
+
+      expect(client.events.mock.calls[1]).toEqual([
+        '/v1/threads/follow',
+        { key: KEY, threadId: stored.id, runId: 'run-1' },
+        expect.any(AbortSignal),
+      ])
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+        'Question',
+        'Hello',
+      ])
+      expect(result.current.status).toBe('idle')
+      expect(result.current.error).toBe('')
+    })
+
+    it('stop streaming when they cannot rejoin, and show the chat once the run is gone', async () => {
+      const { result } = await openStored('Hello, from storage')
+      client.events
+        .mockImplementationOnce(dropsAfter(started))
+        .mockImplementationOnce(dropsAfter([]))
+
+      await act(() => result.current.send({ content: 'Question' }))
+
+      expect(client.events).toHaveBeenCalledTimes(2)
+      expect(result.current.running).toBe(false)
+      expect(result.current.status).toBe('error')
+      expect(result.current.errorDetail).toEqual({
+        code: 'STREAM_INTERRUPTED',
+        message: 'The connection closed. Reconnect to continue.',
+      })
+      client.events.mockImplementationOnce(async function* () {
+        throw new HarnessError(
+          { code: 'RUN_NOT_FOUND', message: 'The run is not running here' },
+          404,
+        )
+      })
+
+      await act(() => result.current.retry())
+
+      expect(client.events.mock.calls[2].slice(0, 2)).toEqual([
+        '/v1/threads/follow',
+        { key: KEY, threadId: stored.id, runId: 'run-1' },
+      ])
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+        'Question',
+        'Hello, from storage',
+      ])
+      expect(result.current.status).toBe('idle')
+      expect(result.current.error).toBe('')
+    })
+  })
+
+  it('show as stored, without an error, once the harness no longer has their run', async () => {
+    signIn('alice', true)
+    const stored = summary('cloud-thread', 'Stored')
+    const question = {
+      id: 'u1',
+      role: 'user',
+      createdAt: 't1',
+      content: 'Question',
+    }
+    const answer = {
+      id: 'a1',
+      role: 'assistant',
+      createdAt: 't2',
+      timeline: [{ id: 'b1', type: 'content', content: 'Committed answer' }],
+    }
+    const reads = [
+      {
+        ...stored,
+        activeRun: { runId: 'run-1', expiresAt: '2026-05-01T10:10:00Z' },
+        messages: [question],
+        hasOlder: false,
+      },
+      { ...stored, messages: [question, answer], hasOlder: false },
+    ]
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      if (path === '/v1/threads/get') return reads.shift()
+      throw new Error(`Unexpected ${path}`)
+    })
+    client.events.mockImplementationOnce(async function* () {
+      throw new HarnessError(
+        { code: 'RUN_NOT_FOUND', message: 'The run is not running here' },
+        404,
+      )
+    })
+
+    const { result } = renderHook(() => useThread(stored.id))
+
+    await waitFor(() =>
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+        'Question',
+        'Committed answer',
+      ]),
+    )
+    expect(client.events.mock.calls[0].slice(0, 2)).toEqual([
+      '/v1/threads/follow',
+      { key: KEY, threadId: stored.id, runId: 'run-1' },
+    ])
+    expect(result.current.error).toBe('')
+    expect(result.current.status).toBe('idle')
+  })
+
+  it('keep the chat list when a chat opens from its link', async () => {
+    signIn('alice', true)
+    const listed = [summary('cloud-a', 'First'), summary('cloud-b', 'Second')]
+    let releaseList!: () => void
+    const listing = new Promise<void>((resolve) => {
+      releaseList = resolve
+    })
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list') {
+        await listing
+        return { threads: listed, nextCursor: null }
+      }
+      if (path === '/v1/threads/get')
+        return { ...listed[0], messages: [], hasOlder: false }
+      throw new Error(`Unexpected ${path}`)
+    })
+    const { result } = renderHook(() => useThread('cloud-a'))
+    await waitFor(() => expect(result.current.chat.id).toBe('cloud-a'))
+
+    await act(async () => {
+      releaseList()
+      await listing
+    })
+
+    await waitFor(() =>
+      expect(result.current.chats.map((chat) => chat.id)).toEqual([
+        'cloud-a',
+        'cloud-b',
+      ]),
+    )
   })
 
   it('list the open chat as active while its run streams', async () => {
@@ -1287,11 +1903,21 @@ describe('cloud chats', () => {
     expect(listed()?.activeRun).toBeNull()
   })
 
-  it('rejoin a temporary run after a reload only until it ends', async () => {
+  it('keep streaming a reply when another action fails', async () => {
     signIn('alice', true)
-    client.post.mockImplementation(async (path: string) =>
-      path === '/v1/threads/list' ? { threads: [], nextCursor: null } : {},
+    const stored = summary('cloud-thread', 'Stored')
+    const refusal = new HarnessError(
+      { code: 'UPSTREAM_REFUSED', message: 'The chat could not be renamed' },
+      502,
     )
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list')
+        return { threads: [stored], nextCursor: null }
+      if (path === '/v1/threads/get')
+        return { ...stored, messages: [], hasOlder: false }
+      if (path === '/v1/threads/update') throw refusal
+      throw new Error(`Unexpected ${path}`)
+    })
     let release!: () => void
     const held = new Promise<void>((resolve) => {
       release = resolve
@@ -1299,43 +1925,179 @@ describe('cloud chats', () => {
     client.events.mockImplementation(async function* () {
       yield {
         id: 0,
-        event: { type: 'RUN_STARTED', threadId: 'temp-thread', runId: 'run-1' },
+        event: { type: 'RUN_STARTED', threadId: stored.id, runId: 'run-1' },
       }
       await held
       yield {
         id: 1,
-        event: {
-          type: 'RUN_FINISHED',
-          threadId: 'temp-thread',
-          runId: 'run-1',
-        },
+        event: { type: 'RUN_FINISHED', threadId: stored.id, runId: 'run-1' },
       }
     })
-    const { result, unmount } = renderHook(() => useThread())
-    await waitFor(() => expect(result.current.model).toBe('test-model'))
-    act(() => result.current.setTemporary(true))
+    const { result } = renderHook(() => useThread(stored.id))
+    await waitFor(() => expect(result.current.chat.id).toBe(stored.id))
     let sending: Promise<unknown> | undefined
     act(() => {
-      sending = result.current.send({ content: 'Off the record' })
+      sending = result.current.send({ content: 'More' })
     })
-    await waitFor(() =>
-      expect(JSON.parse(sessionStorage.getItem('harness-run:alice')!)).toEqual({
-        threadId: 'temp-thread',
-        runId: 'run-1',
-        temporary: true,
-      }),
+    await waitFor(() => expect(result.current.running).toBe(true))
+
+    await act(() =>
+      result.current
+        .update(stored.id, { title: 'Renamed' })
+        .catch(result.current.report),
     )
 
+    expect(result.current.error).toBe('The chat could not be renamed')
+    expect(result.current.errorDetail).toEqual(refusal.detail)
+    expect(result.current.running).toBe(true)
+    expect(result.current.status).toBe('streaming')
     await act(async () => {
       release()
       await sending
     })
-    expect(sessionStorage.getItem('harness-run:alice')).toBeNull()
+    expect(result.current.status).toBe('idle')
+  })
 
-    unmount()
-    client.events.mockClear()
-    renderHook(() => useThread())
-    expect(client.events).not.toHaveBeenCalled()
+  it.each(['cancel', 'removeQueued', 'sendQueued'] as const)(
+    'report a refused content key from %s',
+    async (action) => {
+      const api = signIn('alice', true)
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/list')
+          return { threads: [], nextCursor: null }
+        throw new Error(`Unexpected ${path}`)
+      })
+      let release!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      client.events.mockImplementation(async function* (
+        _path: string,
+        input: Turn,
+      ) {
+        const threadId = input.threadId!
+        yield {
+          id: 0,
+          event: { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+        }
+        await held
+        yield {
+          id: 1,
+          event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+        }
+      })
+      const { result } = renderHook(() => useThread())
+      await waitFor(() => expect(result.current.model).toBe('test-model'))
+      let sending: Promise<unknown> | undefined
+      act(() => {
+        sending = result.current.send({ content: 'Long task' })
+      })
+      await waitFor(() => expect(result.current.running).toBe(true))
+      const refusal = new HarnessError({
+        code: 'KEY_REQUIRED',
+        message: 'Unlock your encryption key in Settings to continue.',
+      })
+      vi.mocked(api.key).mockImplementation(() => {
+        throw refusal
+      })
+
+      await act(() =>
+        (action === 'cancel'
+          ? result.current.cancel()
+          : result.current[action]('queued-1')
+        ).catch(result.current.report),
+      )
+
+      expect(result.current.errorDetail).toEqual(refusal.detail)
+      expect(result.current.running).toBe(true)
+      vi.mocked(api.key).mockReturnValue(KEY)
+      await act(async () => {
+        release()
+        await sending
+      })
+    },
+  )
+
+  it('show a web search as the harness reports it while it streams', async () => {
+    signIn('alice', true)
+    client.post.mockImplementation(async (path: string) =>
+      path === '/v1/threads/list' ? { threads: [], nextCursor: null } : {},
+    )
+    const source = { url: 'https://example.com/doors', title: 'Doors' }
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    client.events.mockImplementation(async function* (
+      _path: string,
+      input: Turn,
+    ) {
+      const threadId = input.threadId!
+      const events: Frame['event'][] = [
+        { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+        {
+          type: 'TOOL_CALL_START',
+          toolCallId: 'call-1',
+          toolCallName: 'web_search',
+          parentMessageId: 'msg_reply',
+        },
+        {
+          type: 'TOOL_CALL_ARGS',
+          toolCallId: 'call-1',
+          delta: '{"query":"door"}',
+        },
+        {
+          type: 'ACTIVITY_SNAPSHOT',
+          messageId: 'act_call-1',
+          content: { toolCallId: 'call-1', progress: 0, output: [] },
+          display: { query: 'red doors', status: 'running', sources: [] },
+        },
+      ]
+      for (const [id, event] of events.entries()) yield { id, event }
+      await held
+      yield {
+        id: 4,
+        event: {
+          type: 'TOOL_CALL_RESULT',
+          toolCallId: 'call-1',
+          content: { results: [] },
+          display: {
+            query: 'red doors',
+            status: 'completed',
+            sources: [source],
+          },
+        },
+      }
+      yield {
+        id: 5,
+        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+      }
+    })
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+    let sending!: Promise<boolean | undefined> | undefined
+    act(() => {
+      sending = result.current.send({ content: 'Doors?' })
+    })
+    const search = () => result.current.chat.messages.at(-1)?.timeline?.[0]
+
+    await waitFor(() =>
+      expect(search()).toEqual({
+        type: 'web_search',
+        id: 'call-1',
+        state: { query: 'red doors', status: 'searching', sources: [] },
+      }),
+    )
+    await act(async () => {
+      release()
+      await sending
+    })
+
+    expect(search()).toEqual({
+      type: 'web_search',
+      id: 'call-1',
+      state: { query: 'red doors', status: 'completed', sources: [source] },
+    })
   })
 
   it('are shared by id with the content key', async () => {

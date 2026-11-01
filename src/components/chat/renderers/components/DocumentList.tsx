@@ -11,7 +11,6 @@ import {
   useUnsavedImages,
 } from '../../components/unsaved-images-notice'
 
-import { getMessageAttachments } from '../../attachment-helpers'
 import { useDocumentText } from '../../document-text-context'
 import {
   attachmentToImageSrc,
@@ -30,50 +29,11 @@ interface DocumentListProps {
   // Index of the owning message within the conversation, used to key images
   // into the shared gallery so the lightbox can span the whole conversation.
   messageIndex?: number
-  // Legacy props — used when attachments is not present
-  documents?: Array<{ name: string }>
-  documentContent?: string
-  imageData?: Array<{ base64: string; mimeType: string }>
-}
-
-function getPreviewForDocument(
-  documentContent: string | undefined,
-  docName: string,
-): string | null {
-  if (!documentContent) return null
-
-  const docHeader = `Document title: ${docName}`
-  const headerIndex = documentContent.indexOf(docHeader)
-
-  if (headerIndex === -1) return null
-
-  const contentsMarker = 'Document contents:\n'
-  const contentsStart = documentContent.indexOf(contentsMarker, headerIndex)
-  if (contentsStart === -1) return null
-
-  const startIndex = contentsStart + contentsMarker.length
-  const nextDocIndex = documentContent.indexOf('\nDocument title: ', startIndex)
-  const docSection =
-    nextDocIndex === -1
-      ? documentContent.slice(startIndex)
-      : documentContent.slice(startIndex, nextDocIndex)
-
-  const lines = docSection.split('\n').filter((line) => {
-    const trimmed = line.trim()
-    if (!trimmed) return false
-    if (trimmed.startsWith('# ')) return false
-    return true
-  })
-
-  return lines.slice(0, 2).join('\n') || null
 }
 
 export const DocumentList = memo(function DocumentList({
   attachments,
   messageIndex,
-  documents,
-  documentContent,
-  imageData,
 }: DocumentListProps) {
   const gallery = useImageGallery()
   const loadText = useDocumentText()
@@ -106,29 +66,12 @@ export const DocumentList = memo(function DocumentList({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [modalOpen])
 
-  // Resolve attachments from new format or legacy fields
-  const resolvedAttachments: Attachment[] = (() => {
-    if (attachments && attachments.length > 0) return attachments
-    // Build a synthetic Message to use the helpers
-    const syntheticMsg = {
-      role: 'user' as const,
-      content: '',
-      timestamp: new Date(),
-      documents,
-      documentContent,
-      imageData,
-    }
-    return getMessageAttachments(syntheticMsg)
-  })()
-
-  if (resolvedAttachments.length === 0) {
+  if (!attachments?.length) {
     return null
   }
 
-  const imageAttachments = resolvedAttachments.filter((a) => a.type === 'image')
-  const docAttachments = resolvedAttachments.filter(
-    (a) => a.type === 'document',
-  )
+  const imageAttachments = attachments.filter((a) => a.type === 'image')
+  const docAttachments = attachments.filter((a) => a.type === 'document')
 
   const textOf = (attachment: Attachment) =>
     attachment.textContent ?? loadedTexts[attachment.id]
@@ -244,7 +187,7 @@ export const DocumentList = memo(function DocumentList({
                   .filter((l) => l.trim() && !l.trim().startsWith('# '))
                   .slice(0, 2)
                   .join('\n') || null
-              : getPreviewForDocument(documentContent, attachment.fileName)
+              : null
 
             return (
               <button

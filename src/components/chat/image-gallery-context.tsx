@@ -15,7 +15,6 @@ import { PiSpinner } from 'react-icons/pi'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
 
-import { getMessageImages } from './attachment-helpers'
 import type { Attachment, Message } from './types'
 
 export type GalleryImage = {
@@ -123,18 +122,20 @@ export function ImageGalleryProvider({
       cacheKey: string
     })[] = []
     messages.forEach((message, messageIndex) => {
-      getMessageImages(message).forEach((attachment, imageIndex) => {
-        const cacheKey = `${message.id ?? messageIndex}:${attachment.id}`
-        const src = fullImages[cacheKey] ?? attachmentToImageSrc(attachment)
-        if (!src) return
-        collected.push({
-          key: `${messageIndex}:${imageIndex}`,
-          cacheKey,
-          attachment,
-          src,
-          alt: attachment.fileName || 'Image',
+      message.attachments
+        ?.filter((attachment) => attachment.type === 'image')
+        .forEach((attachment, imageIndex) => {
+          const cacheKey = `${message.id ?? messageIndex}:${attachment.id}`
+          const src = fullImages[cacheKey] ?? attachmentToImageSrc(attachment)
+          if (!src) return
+          collected.push({
+            key: `${messageIndex}:${imageIndex}`,
+            cacheKey,
+            attachment,
+            src,
+            alt: attachment.fileName || 'Image',
+          })
         })
-      })
     })
     return collected
   }, [messages, fullImages])

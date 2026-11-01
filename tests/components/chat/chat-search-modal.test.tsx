@@ -156,13 +156,12 @@ describe('ChatSearchModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('excludes blank, temporary, and undecryptable chats from recents and local search', () => {
+  it('excludes blank and temporary chats from recents and local search', () => {
     renderModal({
       chats: [
         ...chats,
         { id: 'blank', title: 'Grilling blank', isBlankChat: true },
         { id: 'temporary', title: 'Grilling temporary', isTemporary: true },
-        { id: 'locked', title: 'Grilling locked', decryptionFailed: true },
       ],
     })
     expect(screen.getAllByRole('option')).toHaveLength(2)
@@ -241,12 +240,6 @@ describe('ChatSearchModal', () => {
     const localChats = [
       { id: 'local', title: 'Local pond notes', isLocalOnly: true },
       { id: 'shared', title: 'Pond copy', isLocalOnly: true },
-      {
-        id: 'hidden',
-        title: 'Corrupt pond notes',
-        isLocalOnly: true,
-        dataCorrupted: true,
-      },
       { id: 'cached-cloud', title: 'Cached cloud pond notes' },
     ]
     renderModal({ chats: localChats, searchEnabled: true })

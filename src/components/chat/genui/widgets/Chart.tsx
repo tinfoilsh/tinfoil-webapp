@@ -1,17 +1,6 @@
 import { lazy, Suspense } from 'react'
-import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
-
-const schema = z.object({
-  type: z.enum(['bar', 'line', 'pie']),
-  data: z.array(z.record(z.string(), z.union([z.string(), z.number()]))).min(1),
-  xKey: z.string().optional(),
-  yKey: z.string().optional(),
-  title: z.string().optional(),
-  color: z.string().optional(),
-})
-
-export type ChartArgs = z.infer<typeof schema>
+import type { RenderChartArgs } from '../widget-args'
 
 // Recharts is heavy and only needed once a chart actually renders, so it is
 // split into its own chunk and loaded on demand rather than at registry
@@ -20,8 +9,7 @@ const ChartView = lazy(() => import('./ChartView'))
 
 export const widget = defineGenUIWidget({
   name: 'render_chart',
-  schema,
-  render: (args: ChartArgs) => (
+  render: (args: RenderChartArgs) => (
     <Suspense fallback={null}>
       <ChartView {...args} />
     </Suspense>

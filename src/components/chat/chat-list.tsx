@@ -1,6 +1,5 @@
 'use client'
 
-import { useFlaggedChatIds } from '@/hooks/use-safeguards'
 import { Fragment, useEffect, useState } from 'react'
 import { cn } from '../ui/utils'
 import {
@@ -28,7 +27,6 @@ interface ChatListProps {
   isDarkMode: boolean
   pixelateSidebarChatTitles: boolean
   isLoading?: boolean
-  showEncryptionStatus?: boolean
   enableTitleAnimation?: boolean
   animatedDeleteConfirmation?: boolean
   isDraggable?: boolean
@@ -39,7 +37,6 @@ interface ChatListProps {
   onAfterSelect?: () => void
   onUpdateTitle?: (chatId: string, title: string) => void
   onDeleteChat: (chatId: string) => void
-  onEncryptionKeyClick?: () => void
   onDragStart?: (chatId: string) => void
   onDragEnd?: () => void
   onMoveToProject?: (chatId: string, projectId: string) => void
@@ -55,12 +52,6 @@ interface ChatListProps {
   canPinLocalChats?: boolean
   loadMoreButton?: React.ReactNode
   emptyState?: React.ReactNode
-  /**
-   * Optional indicator rendered directly after the blank "New Chat"
-   * item (and before the chat history). Used to show a "Loading chats"
-   * spinner while the post-unlock decryption runs.
-   */
-  loadingIndicator?: React.ReactNode
 }
 
 export function ChatList({
@@ -71,7 +62,6 @@ export function ChatList({
   isDarkMode,
   pixelateSidebarChatTitles,
   isLoading = false,
-  showEncryptionStatus = false,
   enableTitleAnimation = false,
   animatedDeleteConfirmation = true,
   isDraggable = false,
@@ -82,7 +72,6 @@ export function ChatList({
   onAfterSelect,
   onUpdateTitle,
   onDeleteChat,
-  onEncryptionKeyClick,
   onDragStart,
   onDragEnd,
   onMoveToProject,
@@ -96,12 +85,10 @@ export function ChatList({
   canPinLocalChats = false,
   loadMoreButton,
   emptyState,
-  loadingIndicator,
 }: ChatListProps) {
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null)
-  const flaggedChatIds = useFlaggedChatIds()
   // Track chat IDs that were manually edited - skip animation for these
   const [manuallyEditedChatId, setManuallyEditedChatId] = useState<
     string | null
@@ -129,11 +116,6 @@ export function ChatList({
   }
 
   const handleSelect = (chat: ChatItemData) => {
-    if (chat.decryptionFailed) {
-      onEncryptionKeyClick?.()
-      return
-    }
-
     if (chat.isBlankChat) {
       onSelectChat(getBlankChatSelectId(chat))
     } else {
@@ -189,22 +171,15 @@ export function ChatList({
   if (visibleChats.length === 0 && emptyState) {
     return (
       <div className="space-y-2 p-2">
-        {loadingIndicator}
         <div className="p-2">{emptyState}</div>
       </div>
     )
   }
 
-  const lastBlankIndex = visibleChats.reduce(
-    (acc, chat, index) => (chat.isBlankChat ? index : acc),
-    -1,
-  )
-
   return (
     <>
       <div role="list" className="chat-title-privacy-region space-y-2 p-2">
-        {lastBlankIndex < 0 && loadingIndicator}
-        {visibleChats.map((chat, index) => (
+        {visibleChats.map((chat) => (
           <Fragment key={getChatKey(chat)}>
             <div role="listitem" className="relative">
               <ChatListItem
@@ -214,20 +189,13 @@ export function ChatList({
                 editingTitle={editingTitle}
                 isDarkMode={isDarkMode}
                 pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                showEncryptionStatus={showEncryptionStatus}
                 isStreaming={!chat.isBlankChat && !!chat.activeRun}
-                isFlagged={Boolean(flaggedChatIds[chat.id])}
+                isFlagged={!!chat.flagged}
                 enableTitleAnimation={
                   enableTitleAnimation && manuallyEditedChatId !== chat.id
                 }
-                isDraggable={
-                  isDraggable && !chat.isBlankChat && !chat.decryptionFailed
-                }
-                showMoveToProject={
-                  showMoveToProject &&
-                  !chat.isBlankChat &&
-                  !chat.decryptionFailed
-                }
+                isDraggable={isDraggable && !chat.isBlankChat}
+                showMoveToProject={showMoveToProject && !chat.isBlankChat}
                 projects={projects}
                 href={getChatHref?.(chat)}
                 onSelect={() => handleSelect(chat)}
@@ -269,7 +237,6 @@ export function ChatList({
                 />
               )}
             </div>
-            {index === lastBlankIndex && loadingIndicator}
           </Fragment>
         ))}
       </div>

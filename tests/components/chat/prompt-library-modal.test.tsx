@@ -23,23 +23,25 @@ const PRESETS: Session['presets'] = Array.from(
 const PRESET = PRESETS[0]
 const MODELS: BaseModel[] = [
   {
-    modelName: 'auto',
-    name: 'Auto',
-    nameShort: 'Auto',
-    image: '',
+    id: 'auto',
+    label: 'Auto',
+    shortLabel: 'Auto',
+    icon: '',
     description: '',
-    type: 'chat',
-    chat: true,
-    isAuto: true,
+    badges: [],
+    reasoning: null,
+    deprecated: false,
+    auto: true,
   },
   {
-    modelName: 'deep-model',
-    name: 'Deep model',
-    nameShort: 'Deep',
-    image: '',
+    id: 'deep-model',
+    label: 'Deep model',
+    shortLabel: 'Deep',
+    icon: '',
     description: '',
-    type: 'chat',
-    chat: true,
+    badges: [],
+    reasoning: null,
+    deprecated: false,
   },
 ]
 const SAVED = {
@@ -169,5 +171,17 @@ describe('PromptLibraryModal default prompt', () => {
     expect(
       screen.getByText('Chat settings').nextElementSibling,
     ).toHaveTextContent('ModelNo override setWeb searchOn')
+  })
+
+  it('shows a saved model the catalog no longer offers as unset', () => {
+    withDefaults({
+      customPromptPresets: [{ ...SAVED, model: 'retired-model' }],
+    })
+    renderModal()
+    fireEvent.click(screen.getByRole('button', { name: /Research/ }))
+
+    expect(
+      screen.getByText('Chat settings').nextElementSibling,
+    ).toHaveTextContent('ModelNo override setWeb searchOff')
   })
 })

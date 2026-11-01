@@ -2,9 +2,8 @@
  * Safeguards store: the signed-in user's flagged chats as reported by the
  * controlplane, plus the thresholds that govern an account suspension.
  *
- * Fetched once per signed-in session and refreshed on demand from the
- * Safeguards settings page. Framework-free singleton with a
- * `subscribe`/`getSnapshot` surface so React consumers can use
+ * Loaded on demand by the Safeguards settings page. Framework-free singleton
+ * with a `subscribe`/`getSnapshot` surface so React consumers can use
  * `useSyncExternalStore`, mirroring the sync-health store.
  */
 
@@ -31,10 +30,7 @@ export interface SafeguardsPolicy {
 }
 
 export interface SafeguardsSnapshot {
-  hasLoaded: boolean
   flaggedChats: readonly FlaggedChat[]
-  /** conversationId -> true, for O(1) sidebar lookups. */
-  flaggedChatIds: Readonly<Record<string, true>>
   /** Null until a response has been received, so the UI never presents a
    * guessed policy as the active one. */
   policy: SafeguardsPolicy | null
@@ -58,9 +54,7 @@ const FlagsResponseSchema = z.object({
 type FlagsResponse = z.infer<typeof FlagsResponseSchema>
 
 const EMPTY_SNAPSHOT: SafeguardsSnapshot = {
-  hasLoaded: false,
   flaggedChats: [],
-  flaggedChatIds: {},
   policy: null,
   status: 'idle',
 }
@@ -105,14 +99,8 @@ function toSnapshot(
     conversationId: v.conversation_id,
     createdAt: Date.parse(v.created_at),
   }))
-  const flaggedChatIds: Record<string, true> = {}
-  for (const chat of flaggedChats) {
-    if (chat.conversationId) flaggedChatIds[chat.conversationId] = true
-  }
   return {
-    hasLoaded: true,
     flaggedChats,
-    flaggedChatIds,
     policy: {
       inWindow: data.in_window,
       windowHours: data.window_hours,

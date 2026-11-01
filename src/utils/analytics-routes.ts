@@ -5,7 +5,6 @@ export function analyticsExcluded(asPath: string): boolean {
   const path = asPath.split(/[?#]/)[0].replace(/\/+$/, '') || '/'
   return (
     path === '/' ||
-    path === '/harness' ||
     path === '/newchat' ||
     /^\/(chat|share)(\/|$)/.test(path) ||
     /^\/project\/[^/]+\/chat\/[^/]+/.test(path)

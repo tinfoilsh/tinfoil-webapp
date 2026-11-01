@@ -9,12 +9,8 @@ import {
   USER_PREFS_NATIVE_APP_DISMISSED,
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
-import { toast } from '@/hooks/use-toast'
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
-import {
-  useCloudSyncSetting,
-  useLocalChatsSetting,
-} from '@/services/harness/storage-mode'
+import { useLocalChatsSetting } from '@/services/harness/storage-mode'
 import {
   hasUserSetLocalOnlyPreference,
   isLocalOnlyModeEnabled,
@@ -39,7 +35,6 @@ import {
   TfSidebarOpen,
   TfSparkle,
   TfThumbtack,
-  TfTrash,
   TfWarning,
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
@@ -114,12 +109,9 @@ type ChatSidebarProps = {
   isClient: boolean
   isPremium?: boolean
   isSubscriptionLoading?: boolean
-  onEncryptionKeyClick?: () => void
   onCloudSyncSetupClick?: () => void
   onSetupPasskey?: () => Promise<boolean>
   passkeySetupAvailable?: boolean
-  onAddPasskeyToThisDevice?: () => Promise<boolean>
-  passkeyAddDeviceAvailable?: boolean
   backupWarningVisible?: boolean
   /**
    * True when remote encrypted data exists but this device can't decrypt it
@@ -128,8 +120,6 @@ type ChatSidebarProps = {
    */
   backupWarningNeedsRecovery?: boolean
   onDismissBackupWarning?: () => void
-  onChatsUpdated?: () => void | Promise<void>
-  isInitialChatPageReady?: boolean
   isProjectMode?: boolean
   activeProjectName?: string
   onEnterProject?: (projectId: string, projectName?: string) => Promise<void>
@@ -146,17 +136,6 @@ type ChatSidebarProps = {
   onRemoveFavorite?: (chatId: string) => void
   onOpenFavorite?: (chat: ChatItemData) => void | Promise<void>
   windowWidth: number
-  /**
-   * Progress of the post-unlock background chat decryption. When
-   * `isDecrypting` is true the sidebar shows a "Loading chats"
-   * indicator so users see work is happening after the recovery modal
-   * dismisses, without the modal blocking the whole UI.
-   */
-  chatDecryptionProgress?: {
-    isDecrypting: boolean
-    current: number
-    total: number
-  } | null
 }
 
 const MOBILE_BREAKPOINT = 1024 // Same as in chat-interface.tsx
@@ -194,17 +173,12 @@ export function ChatSidebar({
   isClient,
   isPremium = true,
   isSubscriptionLoading = false,
-  onEncryptionKeyClick,
   onCloudSyncSetupClick,
   onSetupPasskey,
   passkeySetupAvailable,
-  onAddPasskeyToThisDevice,
-  passkeyAddDeviceAvailable,
   backupWarningVisible = false,
   backupWarningNeedsRecovery = false,
   onDismissBackupWarning,
-  onChatsUpdated,
-  isInitialChatPageReady = false,
   isProjectMode,
   activeProjectName,
   onEnterProject,
@@ -221,7 +195,6 @@ export function ChatSidebar({
   onRemoveFavorite,
   onOpenFavorite,
   windowWidth,
-  chatDecryptionProgress,
 }: ChatSidebarProps) {
   const router = useRouter()
   const authRedirectUrl = postAuthRedirectTarget(router.asPath)
@@ -288,12 +261,10 @@ export function ChatSidebar({
     upgradeLoading,
     upgradeError,
   } = useUpgradeToPro()
-  const { keyReady } = useHarness()
-  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   // Without cloud sync every chat stays on this device. With it, "Enable
   // local chats" adds a Local tab whose new chats stay on this device.
-  const cloudSyncSetting = useCloudSyncSetting()
-  const cloudSyncEnabled = Boolean(isSignedIn && cloudSyncSetting)
+  const { keyReady, cloud: cloudSyncEnabled } = useHarness()
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const localOnlyModeEnabled = useLocalChatsSetting()
   const showStorageTabs = cloudSyncEnabled && localOnlyModeEnabled
   const [activeTab, setActiveTab] = useState<'cloud' | 'local'>(() => {
@@ -360,7 +331,7 @@ export function ChatSidebar({
     autoLoad: cloudSyncEnabled && keyReady && isPremium,
   })
 
-  const { deleteProject, activeProject } = useProject()
+  const { activeProject } = useProject()
 
   const sidebarTintColor = getProjectColor(activeProject?.color)
   const sidebarTintStyle = sidebarTintColor
@@ -376,10 +347,6 @@ export function ChatSidebar({
   // distinct drawers against the sidebar surface.
   // Opaque so pinned panels hide content scrolling beneath them.
   const expandedPanelClass = 'bg-surface-sidebar-panel'
-
-  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(
-    null,
-  )
 
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [hasAttemptedLoadMore, setHasAttemptedLoadMore] = useState(false)
@@ -650,7 +617,7 @@ export function ChatSidebar({
   useEffect(() => {
     setVisibleCloudChatCount(PAGINATION.CHATS_PER_PAGE)
     setHasAttemptedLoadMore(false)
-  }, [user?.id, isInitialChatPageReady])
+  }, [user?.id])
 
   const loadMoreChats = async (): Promise<void> => {
     if (isLoadingMore) return
@@ -1401,100 +1368,30 @@ export function ChatSidebar({
                               {projects.map((project) => {
                                 const projectContent = (
                                   <>
-                                    {project.decryptionFailed ? (
-                                      <TfLockLocked
-                                        className="mt-0.5 h-4 w-4 shrink-0 self-start !text-orange-500"
-                                        aria-hidden="true"
-                                      />
-                                    ) : (
-                                      <TfFolder
-                                        className={cn(
-                                          'mt-0.5 h-4 w-4 shrink-0 self-start',
-                                          !getProjectColor(project.color) &&
-                                            '!text-content-muted',
-                                        )}
-                                        style={
-                                          getProjectColor(project.color)
-                                            ? {
-                                                color: getProjectColor(
-                                                  project.color,
-                                                )!.hex,
-                                              }
-                                            : undefined
-                                        }
-                                      />
-                                    )}
+                                    <TfFolder
+                                      className={cn(
+                                        'mt-0.5 h-4 w-4 shrink-0 self-start',
+                                        !getProjectColor(project.color) &&
+                                          '!text-content-muted',
+                                      )}
+                                      style={
+                                        getProjectColor(project.color)
+                                          ? {
+                                              color: getProjectColor(
+                                                project.color,
+                                              )!.hex,
+                                            }
+                                          : undefined
+                                      }
+                                    />
                                     <div className="flex min-w-0 flex-1 flex-col text-left">
-                                      <span
-                                        className={cn(
-                                          'truncate font-aeonik-fono text-sm font-medium leading-5',
-                                          project.decryptionFailed
-                                            ? 'text-orange-500'
-                                            : 'text-content-primary',
-                                        )}
-                                      >
+                                      <span className="truncate font-aeonik-fono text-sm font-medium leading-5 text-content-primary">
                                         {project.name}
                                       </span>
-                                      <span
-                                        className={cn(
-                                          'text-xs',
-                                          project.decryptionFailed
-                                            ? 'text-red-500'
-                                            : 'text-content-muted',
-                                        )}
-                                      >
-                                        {project.decryptionFailed
-                                          ? 'Failed to decrypt: wrong key'
-                                          : `Updated ${formatRelativeTime(new Date(project.updatedAt))}`}
+                                      <span className="text-xs text-content-muted">
+                                        {`Updated ${formatRelativeTime(new Date(project.updatedAt))}`}
                                       </span>
                                     </div>
-                                    {project.decryptionFailed && (
-                                      <button
-                                        type="button"
-                                        onClick={async () => {
-                                          if (deletingProjectId === project.id)
-                                            return
-                                          setDeletingProjectId(project.id)
-                                          try {
-                                            await deleteProject(project.id)
-                                            await refreshProjects()
-                                          } catch (error) {
-                                            toast({
-                                              title: 'Failed to delete project',
-                                              description:
-                                                error instanceof Error
-                                                  ? error.message
-                                                  : 'Please try again.',
-                                              variant: 'destructive',
-                                            })
-                                          } finally {
-                                            setDeletingProjectId(null)
-                                          }
-                                        }}
-                                        disabled={
-                                          deletingProjectId === project.id
-                                        }
-                                        className={cn(
-                                          'shrink-0 rounded p-1 transition-colors',
-                                          isDarkMode
-                                            ? 'text-content-muted hover:bg-surface-chat hover:text-white'
-                                            : 'text-content-muted hover:bg-surface-sidebar hover:text-content-secondary',
-                                          deletingProjectId === project.id &&
-                                            'opacity-50',
-                                        )}
-                                        aria-label="Delete encrypted project"
-                                        title="Delete encrypted project"
-                                      >
-                                        {deletingProjectId === project.id ? (
-                                          <PiSpinner className="h-4 w-4 animate-spin" />
-                                        ) : (
-                                          <TfTrash
-                                            className="h-4 w-4"
-                                            aria-hidden="true"
-                                          />
-                                        )}
-                                      </button>
-                                    )}
                                   </>
                                 )
                                 const projectClassName = cn(
@@ -1504,11 +1401,9 @@ export function ChatSidebar({
                                       ? 'border-white/30 bg-white/10'
                                       : 'border-gray-400 bg-gray-200/30'
                                     : 'border-transparent hover:border-border-subtle',
-                                  project.decryptionFailed
-                                    ? 'cursor-default'
-                                    : isDarkMode
-                                      ? 'cursor-pointer text-content-secondary hover:bg-surface-chat'
-                                      : 'cursor-pointer text-content-secondary hover:bg-surface-sidebar',
+                                  isDarkMode
+                                    ? 'cursor-pointer text-content-secondary hover:bg-surface-chat'
+                                    : 'cursor-pointer text-content-secondary hover:bg-surface-sidebar',
                                 )
                                 const projectDragHandlers = {
                                   onDragOver: (
@@ -1517,8 +1412,7 @@ export function ChatSidebar({
                                     if (
                                       e.dataTransfer.types.includes(
                                         'application/x-chat-id',
-                                      ) &&
-                                      !project.decryptionFailed
+                                      )
                                     ) {
                                       e.preventDefault()
                                       if (draggingChatSource !== 'favorites') {
@@ -1533,8 +1427,7 @@ export function ChatSidebar({
                                     if (
                                       e.dataTransfer.types.includes(
                                         'application/x-chat-id',
-                                      ) &&
-                                      !project.decryptionFailed
+                                      )
                                     ) {
                                       e.preventDefault()
                                       if (draggingChatSource !== 'favorites') {
@@ -1596,8 +1489,7 @@ export function ChatSidebar({
                                     if (
                                       !favoriteDropConsumed &&
                                       chatId &&
-                                      onMoveChatToProject &&
-                                      !project.decryptionFailed
+                                      onMoveChatToProject
                                     ) {
                                       await onMoveChatToProject(
                                         chatId,
@@ -1606,17 +1498,6 @@ export function ChatSidebar({
                                     }
                                     clearDragState()
                                   },
-                                }
-
-                                if (project.decryptionFailed) {
-                                  return (
-                                    <div
-                                      key={project.id}
-                                      className={projectClassName}
-                                    >
-                                      {projectContent}
-                                    </div>
-                                  )
                                 }
 
                                 return (
@@ -2168,7 +2049,6 @@ export function ChatSidebar({
                         currentChatIsLocalOnly={currentChat?.isLocalOnly}
                         isDarkMode={isDarkMode}
                         pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                        showEncryptionStatus={true}
                         enableTitleAnimation={true}
                         isDraggable={
                           cloudSyncEnabled &&
@@ -2197,7 +2077,6 @@ export function ChatSidebar({
                         onAfterSelect={undefined}
                         onUpdateTitle={updateChatTitle}
                         onDeleteChat={deleteChat}
-                        onEncryptionKeyClick={onEncryptionKeyClick}
                         onDragStart={(chatId) => setDraggingChat(chatId, null)}
                         onDragEnd={() => {
                           clearDragState()
@@ -2212,19 +2091,6 @@ export function ChatSidebar({
                                 await onMoveChatToProject(chatId, projectId)
                               }
                             : undefined
-                        }
-                        loadingIndicator={
-                          chatDecryptionProgress?.isDecrypting ? (
-                            <div className="flex items-center gap-2 px-4 py-2 text-content-secondary">
-                              <PiSpinner className="h-4 w-4 animate-spin" />
-                              <span className="text-sm">
-                                Loading chats
-                                {chatDecryptionProgress.total > 0
-                                  ? ` (${chatDecryptionProgress.current}/${chatDecryptionProgress.total})`
-                                  : '...'}
-                              </span>
-                            </div>
-                          ) : undefined
                         }
                         onConvertToCloud={onConvertChatToCloud}
                         onConvertToLocal={onConvertChatToLocal}

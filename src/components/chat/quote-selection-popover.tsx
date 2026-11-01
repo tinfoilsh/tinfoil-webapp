@@ -233,11 +233,7 @@ export function QuoteSelectionPopover({
           <span>Ask</span>
         </button>
       )}
-      <ReadAloudButton
-        content={selectedText}
-        textFormat="plain"
-        variant="menu"
-      />
+      <ReadAloudButton content={selectedText} variant="menu" />
     </div>
   )
 }

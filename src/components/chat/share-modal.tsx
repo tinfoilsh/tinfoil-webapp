@@ -19,10 +19,6 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import { Card, CardContent } from '../ui/card'
-import {
-  getMessageAttachments,
-  hasMessageAttachments,
-} from './attachment-helpers'
 import { CONSTANTS } from './constants'
 import type { LoadDocumentText } from './document-text-context'
 import type { Message } from './types'
@@ -137,7 +133,9 @@ function ShareModalContent({
       return
     }
     if (!loadDocumentText) return
-    for (const attachment of messages.flatMap(getMessageAttachments)) {
+    for (const attachment of messages.flatMap(
+      (message) => message.attachments ?? [],
+    )) {
       if (
         attachment.type !== 'document' ||
         attachment.textContent !== undefined ||
@@ -252,16 +250,15 @@ function ShareModalContent({
       }
 
       // Add attachment references if any
-      if (hasMessageAttachments(message)) {
-        const allAttachments = getMessageAttachments(message)
+      if (message.attachments?.length) {
         markdown += '**Attachments:**\n'
-        allAttachments.forEach((a) => {
+        message.attachments.forEach((a) => {
           markdown += `- ${a.fileName}\n`
         })
         markdown += '\n'
 
         // Add document text content if any
-        const docTexts = allAttachments
+        const docTexts = message.attachments
           .filter(
             (a) =>
               a.type === 'document' && (a.textContent ?? documentTexts[a.id]),

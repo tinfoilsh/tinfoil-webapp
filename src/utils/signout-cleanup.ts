@@ -1,5 +1,4 @@
 import { resetRendererRegistry } from '@/components/chat/renderers'
-import { PINNED_CHAT_IDS_CHANGED_EVENT } from '@/constants/settings-events'
 import {
   AUTH_ACCOUNT_RESET_FAILED,
   AUTH_ACTIVE_USER_ID,
@@ -154,18 +153,10 @@ export async function performSignoutCleanup(opts?: {
       },
     )
 
-    try {
-      await clearAllUserData({
-        context: 'signoutCleanup',
-        preserveEncryptionKey: preserveKey,
-      })
-    } finally {
-      window.dispatchEvent(
-        new CustomEvent(PINNED_CHAT_IDS_CHANGED_EVENT, {
-          detail: { pinnedChatIds: [] },
-        }),
-      )
-    }
+    await clearAllUserData({
+      context: 'signoutCleanup',
+      preserveEncryptionKey: preserveKey,
+    })
 
     logInfo(
       `Signout cleanup completed${preserveKey ? ' (encryption key preserved)' : ''}`,

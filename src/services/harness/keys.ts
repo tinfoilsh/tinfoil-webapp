@@ -1,4 +1,5 @@
 import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
+import { ROUTES, type HarnessRoute } from './protocol'
 import { harnessAPI } from './runtime'
 import { HarnessError as SyncEnclaveError } from './sse'
 export { SyncEnclaveError }
@@ -8,11 +9,8 @@ export interface OKResponse {
 const bytesToB64 = uint8ArrayToBase64
 const b64ToBytes = base64ToUint8Array
 const keyClient = {
-  post: <T>(
-    path: string,
-    body: Record<string, unknown>,
-    signal?: AbortSignal,
-  ) => harnessAPI().post<T>(path, body, signal, false),
+  post: <T>(path: HarnessRoute, body: object, signal?: AbortSignal) =>
+    harnessAPI().post<T>(path, body, { signal, keyless: true }),
 }
 export interface KeyRegisterBundleInput {
   credentialId: string
@@ -117,12 +115,12 @@ export async function registerKey(
       encrypted_keys: req.initialBundle.encryptedKeysHex,
     }
   }
-  return client.post<KeyRegisterResponse>('/v1/keys/register', body)
+  return client.post<KeyRegisterResponse>(ROUTES.keysRegister, body)
 }
 
 export async function addBundle(req: AddBundleRequest): Promise<OKResponse> {
   const client = keyClient
-  return client.post<OKResponse>('/v1/keys/add-bundle', {
+  return client.post<OKResponse>(ROUTES.keysAddBundle, {
     key_id: req.keyId,
     key: req.keyB64,
     credential_id: req.credentialId,
@@ -140,7 +138,7 @@ export async function removeBundle(
   req: RemoveBundleRequest,
 ): Promise<OKResponse> {
   const client = keyClient
-  return client.post<OKResponse>('/v1/keys/remove-bundle', {
+  return client.post<OKResponse>(ROUTES.keysRemoveBundle, {
     key_id: req.keyId,
     key: req.keyB64,
     credential_id: req.credentialId,
@@ -161,9 +159,11 @@ export async function keyCurrent(
   signal?.throwIfAborted()
   const client = keyClient
   try {
-    const resp = signal
-      ? await client.post<KeyCurrentResponse>('/v1/keys/current', {}, signal)
-      : await client.post<KeyCurrentResponse>('/v1/keys/current', {})
+    const resp = await client.post<KeyCurrentResponse>(
+      ROUTES.keysCurrent,
+      {},
+      signal,
+    )
     // The server is a Go service; a nil bundle map marshals to JSON
     // null. Normalize so callers can Object.values/index the map
     // without crashing on edge shapes (e.g. a key registered via

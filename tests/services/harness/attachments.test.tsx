@@ -1,14 +1,11 @@
-import {
-  localThreadStore,
-  type LocalThread,
-} from '@/services/harness/local-threads'
+import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
 import type { Thread } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from './thread-fixture'
+import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/utils/error-handling', () => ({
@@ -45,9 +42,6 @@ const thread: Thread = {
           fileName: 'report.pdf',
           mimeType: 'application/pdf',
           size: 2048,
-          thumbnail: null,
-          pages: 3,
-          status: 'ready',
         },
         {
           id: 'att_chart',
@@ -56,7 +50,6 @@ const thread: Thread = {
           mimeType: 'image/png',
           size: 512,
           thumbnail: 'dGh1bWI=',
-          status: 'ready',
         },
       ],
     },
@@ -136,12 +129,9 @@ describe('attachments of a stored chat', () => {
 describe('attachments of a local chat', () => {
   it("reads a document's text from its stored pages without the harness", async () => {
     signIn({ cloud: false })
-    const local: LocalThread = {
-      id: THREAD_ID,
+    const local = storedThread(THREAD_ID, {
       title: 'Scans',
       titleState: 'generated',
-      createdAt: '2026-04-01T09:00:00Z',
-      updatedAt: '2026-04-01T09:00:00Z',
       messages: [
         {
           id: 'u1',
@@ -151,9 +141,10 @@ describe('attachments of a local chat', () => {
           attachments: [
             {
               id: 'att_scan',
-              type: 'document',
+              kind: 'document',
               fileName: 'scan.pdf',
               mimeType: 'application/pdf',
+              size: 9,
               pages: [
                 { page: 1, text: 'First page', image: '', is_scanned: true },
                 { page: 2, text: '', image: '', is_scanned: true },
@@ -163,7 +154,7 @@ describe('attachments of a local chat', () => {
           ],
         },
       ],
-    }
+    })
     await localThreadStore('device').update(THREAD_ID, () => local)
     const { result } = renderHook(() =>
       useThread(THREAD_ID, null, { local: true }),
@@ -176,4 +167,51 @@ describe('attachments of a local chat', () => {
     )
     expect(client.download).not.toHaveBeenCalled()
   })
+})
+
+describe('picking a file to attach', () => {
+  // The session takes .png files up to 1000 bytes, and .pdf and .txt files
+  // up to 2000. Picked files carry no type, so only the name tells them
+  // apart.
+  it.each([
+    { name: 'photo.png', size: 1000, refused: null },
+    { name: 'PHOTO.PNG', size: 1001, refused: 413 },
+    { name: 'notes.v2.txt', size: 2000, refused: null },
+    { name: 'report.pdf', size: 2001, refused: 413 },
+    { name: 'archive.zip', size: 10, refused: 415 },
+  ])(
+    'uploads $name of $size bytes unless its group refuses it ($refused)',
+    async ({ name, size, refused }) => {
+      signIn({ cloud: true })
+      const descriptor = {
+        id: 'att_1',
+        kind: 'document',
+        fileName: name,
+        mimeType: 'application/octet-stream',
+        size,
+      }
+      client.upload.mockResolvedValue({ attachment: descriptor })
+      const { result } = renderHook(() => useThread())
+      const picked = new File([new Uint8Array(size)], name)
+
+      const upload = result.current.upload(picked)
+
+      if (!refused) {
+        await expect(upload).resolves.toEqual(descriptor)
+        expect(client.upload).toHaveBeenCalledExactlyOnceWith(
+          '/v1/attachments/upload',
+          picked,
+          {},
+          expect.any(AbortSignal),
+        )
+      } else {
+        await expect(upload).rejects.toMatchObject({
+          status: refused,
+          code:
+            refused === 413 ? 'ATTACHMENT_TOO_LARGE' : 'ATTACHMENT_UNSUPPORTED',
+        })
+        expect(client.upload).not.toHaveBeenCalled()
+      }
+    },
+  )
 })

@@ -1,11 +1,10 @@
 import { API_BASE_URL } from '@/config'
+import { ERROR_CODES } from './protocol'
 import { HarnessError } from './sse'
-import type { RateLimit } from './types'
 
 interface Credential {
   key: string
   expiresAt: number
-  rateLimit: RateLimit
 }
 
 // This cache belongs to one HarnessClient and never writes browser storage.
@@ -13,10 +12,6 @@ export class AnonymousCredentialCache {
   private cached?: Credential
   private pending?: Promise<Credential>
   private readonly lifetime = new AbortController()
-
-  get rateLimit() {
-    return this.cached?.rateLimit
-  }
 
   async get(signal?: AbortSignal): Promise<string> {
     this.lifetime.signal.throwIfAborted()
@@ -49,15 +44,6 @@ export class AnonymousCredentialCache {
     if (this.cached?.key === key) this.cached = undefined
   }
 
-  invalidate() {
-    if (this.cached) this.cached.expiresAt = 0
-  }
-
-  exhausted() {
-    if (this.cached)
-      this.cached.rateLimit = { ...this.cached.rateLimit, remaining: 0 }
-  }
-
   dispose() {
     this.lifetime.abort()
     this.cached = undefined
@@ -74,7 +60,7 @@ export class AnonymousCredentialCache {
       base.hash
     )
       throw new HarnessError({
-        code: 'CONFIGURATION',
+        code: ERROR_CODES.configuration,
         message: 'Configure an HTTPS origin for the controlplane.',
       })
     // Controlplane is public HTTPS, not an enclave. Calling it from the
@@ -93,14 +79,17 @@ export class AnonymousCredentialCache {
       throw new HarnessError(
         {
           code:
-            response.status === 429 ? 'QUOTA_EXHAUSTED' : 'UPSTREAM_REFUSED',
+            response.status === 429
+              ? ERROR_CODES.quotaExhausted
+              : ERROR_CODES.upstreamRefused,
           message: 'Unable to obtain anonymous chat access. Please try again.',
         },
         response.status,
       )
+    // The harness reports the key's quota; only the key and its expiry are
+    // read here.
     const value = await response.json()
     const expiresAt = Date.parse(value?.expires_at)
-    const rate = value?.rate_limit
     if (
       typeof value?.key !== 'string' ||
       !value.key.startsWith('free_') ||
@@ -109,30 +98,14 @@ export class AnonymousCredentialCache {
       value.is_free_tier !== true ||
       typeof value.expires_at !== 'string' ||
       !Number.isFinite(expiresAt) ||
-      expiresAt <= Date.now() ||
-      !Number.isSafeInteger(rate?.max_requests) ||
-      rate.max_requests < 0 ||
-      !Number.isSafeInteger(rate?.remaining) ||
-      rate.remaining < 0 ||
-      rate.remaining > rate.max_requests ||
-      typeof rate?.resets_at !== 'string' ||
-      !Number.isFinite(Date.parse(rate.resets_at))
+      expiresAt <= Date.now()
     )
       throw new HarnessError({
-        code: 'UPSTREAM_REFUSED',
+        code: ERROR_CODES.upstreamRefused,
         message: 'Controlplane returned invalid anonymous chat access.',
       })
     this.lifetime.signal.throwIfAborted()
-    this.cached = {
-      key: value.key,
-      expiresAt,
-      rateLimit: {
-        kind: 'free_daily',
-        maxRequests: rate.max_requests,
-        remaining: rate.remaining,
-        resetsAt: rate.resets_at,
-      },
-    }
+    this.cached = { key: value.key, expiresAt }
     return this.cached
   }
 }

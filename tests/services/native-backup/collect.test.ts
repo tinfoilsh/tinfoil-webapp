@@ -1,7 +1,4 @@
-import {
-  localThreadStore,
-  type LocalThread,
-} from '@/services/harness/local-threads'
+import { localThreadStore } from '@/services/harness/local-threads'
 import { collectNativeBackupV2 } from '@/services/native-backup/collect'
 import {
   runNativeBackupExport,
@@ -21,7 +18,10 @@ import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import { client, KEY, signIn as signInTo } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from '../harness/thread-fixture'
+import {
+  resetChatStoresAroundEachTest,
+  storedThread,
+} from '../harness/thread-fixture'
 
 const backupId = '123e4567-e89b-42d3-a456-426614174000'
 const timestamp = '2026-08-20T12:00:00.000Z'
@@ -110,8 +110,7 @@ function cloudBackup(
   ])
 }
 
-const deviceChat: LocalThread = {
-  id: LOCAL_ID,
+const deviceChat = storedThread(LOCAL_ID, {
   title: 'Garden plans',
   titleState: 'manual',
   createdAt: '2026-04-01T09:00:00Z',
@@ -119,7 +118,6 @@ const deviceChat: LocalThread = {
   model: 'test-model',
   presetId: 'preset-1',
   webSearchEnabled: false,
-  codeExecutionAccessToken: 'c'.repeat(64),
   messages: [
     {
       id: 'u1',
@@ -130,20 +128,20 @@ const deviceChat: LocalThread = {
       attachments: [
         {
           id: 'photo',
-          type: 'image',
+          kind: 'image',
           fileName: 'bed.png',
           mimeType: 'image/png',
-          fileSize: png.length,
-          thumbnailBase64: 'dGh1bWI=',
+          size: png.length,
+          thumbnail: 'dGh1bWI=',
           description: 'A raised bed',
           base64: uint8ArrayToBase64(png),
         },
         {
           id: 'scan',
-          type: 'document',
+          kind: 'document',
           fileName: 'scan.pdf',
           mimeType: 'application/pdf',
-          fileSize: 2048,
+          size: 2048,
           textContent: 'Tomatoes',
           pages: [
             {
@@ -183,14 +181,12 @@ const deviceChat: LocalThread = {
           arguments: '{"x":1}',
           complete: true,
           result: { ok: true },
-          resolution: { text: 'Done' },
-          resolvedAt: '2026-04-01T09:00:06Z',
         },
         { id: 'a1-c', type: 'content', content: 'Plant in May.' },
       ],
     },
   ],
-}
+})
 
 const photoId = JSON.stringify(['attachment', LOCAL_ID, 0, 0, 'photo'])
 const pageId = JSON.stringify(['page', LOCAL_ID, 0, 1, 'scan', 1])
@@ -254,8 +250,6 @@ const backedUpChat = {
           toolCallId: 'call-2',
           name: 'render_chart',
           arguments: '{"x":1}',
-          resolution: { text: 'Done' },
-          resolvedAt: Date.parse('2026-04-01T09:00:06Z'),
         },
         { type: 'content', id: 'a1-c', content: 'Plant in May.' },
       ],
@@ -405,20 +399,26 @@ describe('creating a native backup', () => {
           attachments: [
             {
               id: 'not-an-image',
-              type: 'image',
+              kind: 'image',
               fileName: 'notes.png',
+              mimeType: 'image/png',
+              size: 10,
               base64: btoa('plain text'),
             },
             {
               id: 'thumb-only',
-              type: 'image',
+              kind: 'image',
               fileName: 'old.png',
-              thumbnailBase64: 'dGh1bWI=',
+              mimeType: 'image/png',
+              size: 10,
+              thumbnail: 'dGh1bWI=',
             },
             {
               id: 'photo',
-              type: 'image',
+              kind: 'image',
               fileName: 'bed.png',
+              mimeType: 'image/png',
+              size: png.length,
               base64: uint8ArrayToBase64(png),
             },
           ],
@@ -507,8 +507,10 @@ describe('creating a native backup', () => {
           attachments: [
             {
               id: 'scan',
-              type: 'document' as const,
+              kind: 'document',
               fileName: 'scan.pdf',
+              mimeType: 'application/pdf',
+              size: 1,
               pages: [{ page: 1.5, text: 'x', image: '', is_scanned: false }],
             },
           ],

@@ -36,8 +36,6 @@ export interface SearchableChat {
   projectId?: string
   isBlankChat?: boolean
   isTemporary?: boolean
-  decryptionFailed?: boolean
-  dataCorrupted?: boolean
   isLocalOnly?: boolean
 }
 

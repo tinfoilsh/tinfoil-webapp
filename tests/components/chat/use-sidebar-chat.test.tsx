@@ -1,5 +1,5 @@
 import { useSidebarChat } from '@/components/chat/hooks/use-sidebar-chat'
-import { harnessAPI } from '@/services/harness/runtime'
+import { getView, harnessAPI } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
@@ -66,10 +66,22 @@ it('stops streaming a cancelled ask and keeps its partial answer', async () => {
   )
 })
 
-it('shows why an ask failed before the harness sent any message', async () => {
+it('shows why an ask failed before the harness sent any message, and the quota it reports', async () => {
+  const rateLimit = {
+    kind: 'free_daily' as const,
+    maxRequests: 20,
+    remaining: 0,
+    resetsAt: '2026-05-02T00:00:00Z',
+  }
   vi.mocked(harnessAPI().client.events).mockImplementation(async function* () {
     throw new HarnessError(
-      { code: 'QUOTA_EXHAUSTED', message: 'The daily limit is reached' },
+      {
+        code: 'QUOTA_EXHAUSTED',
+        message: 'The daily limit is reached',
+        kind: 'free_daily',
+        resetsAt: '2026-05-02T00:00:00Z',
+        rateLimit,
+      },
       429,
     )
   })
@@ -93,6 +105,7 @@ it('shows why an ask failed before the harness sent any message', async () => {
     ]),
   )
   expect(result.current.isStreaming).toBe(false)
+  expect(getView().rateLimit).toEqual(rateLimit)
   expect(vi.mocked(harnessAPI().client.events)).toHaveBeenCalledWith(
     '/v1/threads/turn',
     expect.objectContaining({
@@ -105,4 +118,34 @@ it('shows why an ask failed before the harness sent any message', async () => {
     }),
     expect.any(AbortSignal),
   )
+})
+
+it('shows why the chat an ask reads could not be read, and sends no turn', async () => {
+  const { result } = renderHook(() =>
+    useSidebarChat({
+      context: async () => {
+        throw new DOMException(
+          'The chat database is unavailable',
+          'UnknownError',
+        )
+      },
+      options: { model: 'test-model' },
+    }),
+  )
+
+  act(() => result.current.askQuote('What does this mean?'))
+
+  await waitFor(() =>
+    expect(result.current.messages).toEqual([
+      {
+        role: 'assistant',
+        content: 'Error: The chat database is unavailable',
+        timestamp: expect.any(Date),
+        isError: true,
+      },
+    ]),
+  )
+  expect(vi.mocked(harnessAPI().client.events)).not.toHaveBeenCalled()
+  act(() => result.current.reset())
+  expect(result.current.messages).toEqual([])
 })

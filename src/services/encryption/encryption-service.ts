@@ -272,7 +272,6 @@ export class EncryptionService {
   }
 
   // Get current encryption key as raw bytes, or null if no key is set.
-  // Used as HKDF input keying material for derived keys (e.g. code execution).
   getCurrentKeyBytes(): Uint8Array | null {
     const keyString = this.getKey()
     if (!keyString) return null

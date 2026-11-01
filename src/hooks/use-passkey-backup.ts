@@ -19,7 +19,6 @@ import {
   inspectRemoteEncryptedState,
   validateCurrentPrimaryKey,
 } from '@/services/keys/cloud-key-preflight'
-import { passkeyEvents } from '@/services/keys/passkey-events'
 import {
   addWrappedKeyForCurrentKey,
   createAndWrapTinfoilKey,
@@ -1718,18 +1717,6 @@ export function usePasskeyBackup({
     }
   }, [encryptionKey])
 
-  // Subscribe to bundle-state-maybe-changed events so the hook stays in
-  // sync after the legacy-blob migration finishes, a different tab adds
-  // a bundle via storage events, etc.
-  useEffect(() => {
-    const unsubscribe = passkeyEvents.on('bundle-state-maybe-changed', () => {
-      void refreshBundleState()
-    })
-    return () => {
-      unsubscribe()
-    }
-  }, [refreshBundleState])
-
   /**
    * Re-authenticate the user's legacy `/api/passkey-credentials/`
    * passkey and use the resulting PRF to write a v2 initial bundle
@@ -1861,7 +1848,7 @@ export function usePasskeyBackup({
           passkeySetupFailed: false,
         }))
       }
-      passkeyEvents.emit({ type: 'bundle-state-maybe-changed' })
+      void refreshBundleState()
       return true
     } catch (error) {
       if (error instanceof PrfNotSupportedError) throw error
@@ -1874,7 +1861,7 @@ export function usePasskeyBackup({
     } finally {
       passkeyFlowInProgressRef.current = false
     }
-  }, [promoteLegacyPasskeyForCurrentDevice])
+  }, [promoteLegacyPasskeyForCurrentDevice, refreshBundleState])
 
   return {
     ...state,

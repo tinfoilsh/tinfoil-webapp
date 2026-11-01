@@ -8,7 +8,7 @@ NEVER run npm run dev, npm start, or start the development server. Only make cod
 
 # API Requests
 
-NEVER use raw fetch() for API requests to Tinfoil enclaves. Always use the Tinfoil SDK client for the enclave: `HarnessClient` (src/services/harness/client.ts) for the chat harness, and the SDK's `SecureClient` for another enclave, as src/services/inference/summary-client.ts does for the summarizer. The SDK handles attestation verification which is critical for security.
+NEVER use raw fetch() for API requests to Tinfoil enclaves. Always use the Tinfoil SDK client for the enclave: `HarnessClient` (src/services/harness/client.ts) for the chat harness, which makes every inference call itself, and the SDK's `SecureClient` for any other enclave. The SDK handles attestation verification which is critical for security.
 
 # Error Classification
 
@@ -25,6 +25,6 @@ NEVER string match on error messages to drive control flow (retries, fallbacks, 
 - Shared `vitest.setup.ts` resets a plain-object `localStorage` adapter and `sessionStorage` before each test, and activates a signed-out fake harness from `tests/harness-fixture.ts` whose client rejects every request but the session until a test scripts it. Spy on `localStorage` itself, not `Storage.prototype`, when injecting storage failures. Module state needs its own cleanup.
 - Use held promises or transaction events to test await/account-switch boundaries, not sleeps or the number of times a guard was called. Keep different accounts, attachment occurrences, and concurrent operations distinguishable.
 - Run `npm test`, `npm run test:shuffle -- --sequence.seed=<seed>`, and `npm run test:typecheck`. CI runs shuffled tests and typechecks tests as well as building the app. Validate locally in the workstation's timezone; use explicit timezone overrides only for labeled timezone-specific checks.
-- Don't write tests that only check Tailwind classes, icons, fixed copy, or a constant list; that a mock was called with what the test passed in; or code that nothing in `src` calls (delete such code instead). Check that the input reaches the branch under test: a 4-word thought never reached the summarizer's 20-word minimum, so its test passed with the guard removed.
+- Don't write tests that only check Tailwind classes, icons, fixed copy, or a constant list; that a mock was called with what the test passed in; or code that nothing in `src` calls (delete such code instead). Check that the input reaches the branch under test: a short paste into a composer without an upload handler never reached the paste-as-file length check, so its test passed with the check removed.
 - Script harness responses with `signIn` from `tests/harness-fixture.ts` and the store helpers in `tests/services/harness/thread-fixture.ts`; don't build another fake harness client, and don't answer `{}` for undeclared requests. A lenient fake once decided which branch a passkey migration test took.
 - CSP/iframe configuration lints do not prove browser enforcement or layout. Keep rendered sandbox/source/nonce tests alongside them. Script tests use local HTTP servers; the scheduled Clerk configuration check contacts the real service and is separate from the unit suite.

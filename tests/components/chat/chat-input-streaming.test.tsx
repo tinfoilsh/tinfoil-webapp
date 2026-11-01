@@ -2,6 +2,7 @@ import { ChatInput } from '@/components/chat/chat-input'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { signIn, testSession } from '../../harness-fixture'
 
 vi.mock('@/components/project', () => ({
   ProjectModeBanner: () => null,
@@ -76,6 +77,51 @@ describe('ChatInput streaming action', () => {
     expect(stop).toHaveBeenCalledOnce()
     expect(constructRecorder).not.toHaveBeenCalled()
     expect(start).not.toHaveBeenCalled()
+  })
+
+  it("stops dictation once the session's time limit is reached", async () => {
+    vi.useFakeTimers()
+    signIn({
+      session: {
+        ...testSession,
+        composer: { ...testSession.composer, dictationMaxSeconds: 7 },
+      },
+    })
+    const stop = vi.fn()
+    class SupportedMediaRecorder {
+      static isTypeSupported = () => true
+      state = 'recording'
+      start = vi.fn()
+      stop = stop
+    }
+    vi.stubGlobal('MediaRecorder', SupportedMediaRecorder)
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [] })),
+      },
+    })
+    render(
+      <ChatInput
+        input=""
+        setInput={vi.fn()}
+        handleSubmit={vi.fn()}
+        loadingState="idle"
+        cancelGeneration={vi.fn()}
+        inputRef={createRef<HTMLTextAreaElement>()}
+        handleInputFocus={vi.fn()}
+        inputMinHeight="40px"
+        isDarkMode
+        isPremium
+      />,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start recording' }))
+    })
+
+    await act(() => vi.advanceTimersByTimeAsync(6_999))
+    expect(stop).not.toHaveBeenCalled()
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(stop).toHaveBeenCalledOnce()
   })
 
   it('shows Stop while a recovered response is streaming', () => {

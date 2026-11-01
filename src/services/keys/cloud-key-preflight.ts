@@ -1,25 +1,25 @@
 // Checks the browser CEK against the key identity reported by the harness.
 
-import { base64ToBytes, keyCurrent as enclaveKeyCurrent } from '../harness/keys'
+import {
+  base64ToBytes,
+  keyCurrent as enclaveKeyCurrent,
+  type KeyCurrentResponse,
+} from '../harness/keys'
 import { deriveTinfoilKeyIdHex } from '../keys/tinfoil-key-id'
 import { requirePrimaryKeyB64 } from './cek-encoding'
 
 export type CloudRemoteState = 'empty' | 'exists' | 'unknown'
-export type CloudKeyValidationProbe = 'none' | 'profile' | 'project' | 'chat'
 
-export interface CloudKeyValidationResult {
-  remoteState: CloudRemoteState
-  canWrite: boolean
-  probe: CloudKeyValidationProbe
-  message?: string
-  /**
-   * Set when the remote holds legacy data but no registered current
-   * key. The local CEK can write, but only after it is adopted as the
-   * current key — otherwise every push is rejected as a stale key. The
-   * write gate uses this to adopt before pushing.
-   */
-  needsAdoption?: boolean
-}
+// A known remote state carries the key the harness reported, so callers
+// act on the same answer the validation used.
+export type CloudKeyValidationResult =
+  | { remoteState: 'unknown'; canWrite: false; message: string }
+  | {
+      remoteState: 'empty' | 'exists'
+      canWrite: boolean
+      message?: string
+      current: KeyCurrentResponse
+    }
 
 /**
  * Raised when activating a CEK is rejected by the preflight check.
@@ -82,33 +82,23 @@ export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationRes
   try {
     primaryKeyB64 = requirePrimaryKeyB64()
   } catch {
-    return unknownResult('none', 'No encryption key is currently loaded.')
+    return unknownResult('No encryption key is currently loaded.')
   }
 
-  let resp: Awaited<ReturnType<typeof enclaveKeyCurrent>>
+  let current: KeyCurrentResponse
   try {
-    resp = await enclaveKeyCurrent()
+    current = await enclaveKeyCurrent()
   } catch {
     return unknownResult(
-      'none',
       "We couldn't verify whether encrypted cloud data already exists.",
     )
   }
 
-  if (!resp.key_id && !resp.has_data) {
+  if (!current.key_id) {
     return {
-      remoteState: 'empty',
+      remoteState: current.has_data ? 'exists' : 'empty',
       canWrite: true,
-      probe: 'none',
-    }
-  }
-
-  if (!resp.key_id && resp.has_data) {
-    return {
-      remoteState: 'exists',
-      canWrite: true,
-      probe: 'none',
-      needsAdoption: true,
+      current,
     }
   }
 
@@ -116,34 +106,25 @@ export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationRes
   try {
     localKeyId = await deriveTinfoilKeyIdHex(base64ToBytes(primaryKeyB64))
   } catch {
-    return blockedResult('none')
+    return blockedResult(current)
   }
 
-  if (localKeyId === resp.key_id) {
-    return {
-      remoteState: 'exists',
-      canWrite: true,
-      probe: 'none',
-    }
+  if (localKeyId === current.key_id) {
+    return { remoteState: 'exists', canWrite: true, current }
   }
 
-  return blockedResult('none')
+  return blockedResult(current)
 }
 
-function unknownResult(
-  probe: CloudKeyValidationProbe,
-  message: string,
-): CloudKeyValidationResult {
-  return { remoteState: 'unknown', canWrite: false, probe, message }
+function unknownResult(message: string): CloudKeyValidationResult {
+  return { remoteState: 'unknown', canWrite: false, message }
 }
 
-function blockedResult(
-  probe: CloudKeyValidationProbe,
-): CloudKeyValidationResult {
+function blockedResult(current: KeyCurrentResponse): CloudKeyValidationResult {
   return {
     remoteState: 'exists',
     canWrite: false,
-    probe,
+    current,
     message:
       "This key doesn't match your existing cloud data. Try using your existing key instead.",
   }

@@ -19,7 +19,7 @@ it('rejects a response from an account that has been replaced', async () => {
     null,
   )
   activateAPI(api)
-  const request = api.post('/v1/session', {}, undefined, false)
+  const request = api.post('/v1/session', {}, { keyless: true })
   activateAPI(new HarnessAPI({} as HarnessClient, null))
   resolve({ private: 'old account' })
   await expect(request).rejects.toMatchObject({ name: 'AbortError' })

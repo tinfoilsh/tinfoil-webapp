@@ -1,36 +1,8 @@
 import { Card } from '@/components/ui/card'
-import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
+import type { RenderSportsDataArgs as Props } from '../widget-args'
 
-const teamSchema = z.object({
-  name: z.string(),
-  score: z.union([z.string(), z.number()]).optional(),
-  logo: z.string().optional(),
-  rank: z.string().optional(),
-})
-
-const standingSchema = z.object({
-  team: z.string(),
-  wins: z.number().optional(),
-  losses: z.number().optional(),
-  ties: z.number().optional(),
-  points: z.union([z.string(), z.number()]).optional(),
-  gamesBack: z.string().optional(),
-})
-
-const schema = z.object({
-  sport: z.string().optional(),
-  kind: z.enum(['fixture', 'standings']),
-  title: z.string().optional(),
-  status: z.string().optional(),
-  venue: z.string().optional(),
-  startTime: z.string().optional(),
-  home: teamSchema.optional(),
-  away: teamSchema.optional(),
-  standings: z.array(standingSchema).optional(),
-})
-
-type Props = z.infer<typeof schema>
+type Standing = NonNullable<Props['standings']>[number]
 
 function isLiveStatus(status?: string): boolean {
   if (!status) return false
@@ -132,7 +104,7 @@ function TeamBlock({
   )
 }
 
-function recordLabel(row: z.infer<typeof standingSchema>): string {
+function recordLabel(row: Standing): string {
   const parts: string[] = []
   if (row.wins !== undefined) parts.push(String(row.wins))
   if (row.losses !== undefined) parts.push(String(row.losses))
@@ -140,11 +112,7 @@ function recordLabel(row: z.infer<typeof standingSchema>): string {
   return parts.join('–')
 }
 
-function StandingsList({
-  standings,
-}: {
-  standings: z.infer<typeof standingSchema>[]
-}) {
+function StandingsList({ standings }: { standings: Standing[] }) {
   const showGamesBack = standings.some(
     (row) => row.gamesBack && row.gamesBack.length > 0,
   )
@@ -267,7 +235,6 @@ function FixtureView({
 
 export const widget = defineGenUIWidget({
   name: 'render_sports_data',
-  schema,
   render: ({
     sport,
     kind,

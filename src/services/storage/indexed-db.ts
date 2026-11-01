@@ -7,9 +7,7 @@ import { ACCOUNT_RESET_FAILED_EVENT } from '@/constants/auth-events'
 import {
   AUTH_ACCOUNT_RESET_FAILED,
   AUTH_ACCOUNT_RESET_SIGNAL,
-  AUTH_ACTIVE_USER_ID,
 } from '@/constants/storage-keys'
-import type { PendingRecoveryEnvelope } from '@/types/chat-recovery'
 import { logError, logWarning } from '@/utils/error-handling'
 import { bytesToHex } from '@noble/hashes/utils.js'
 import { deletedChatsTracker } from './deleted-chats-tracker'
@@ -18,22 +16,11 @@ export interface Chat extends Omit<ChatType, 'createdAt'> {
   createdAt: string
   updatedAt: string
   model?: string
-  pendingRecoveries?: PendingRecoveryEnvelope[]
 }
 
 export interface StoredChat extends Chat {
-  lastAccessedAt: number
-  syncedAt?: number
-  syncVersion?: number
-  formatVersion?: number
-  decryptionFailed?: boolean
-  dataCorrupted?: boolean
-  version?: number
-  loadedAt?: number
   isLocalOnly?: boolean
   isBlankChat?: boolean
-  syncUserId?: string
-  projectLocallyModified?: boolean
 }
 
 export interface SaveChatResult {
@@ -52,6 +39,18 @@ interface StoredAttachmentPayload {
 
 type StoredAttachmentReference = Attachment & {
   storagePayloadId?: string
+}
+
+// The file a user picked for an image attachment, kept for display apart
+// from the copy a chat sends models.
+export interface AttachmentOriginal {
+  base64: string
+  mimeType: string
+}
+
+interface StoredAttachmentOriginal extends AttachmentOriginal {
+  chatId: string
+  attachmentId: string
 }
 
 export class AttachmentPayloadIdUnavailableError extends Error {
@@ -73,22 +72,34 @@ export class AttachmentPayloadMissingError extends Error {
 }
 
 export const DB_NAME = 'tinfoil-chat'
-export const DB_VERSION = 7
+export const DB_VERSION = 9
 const CHATS_STORE = 'chats'
-const CHATS_PROJECT_INDEX = 'projectId'
-const CHATS_SYNC_PENDING_INDEX = 'syncPending'
-const PROJECTS_STORE = 'projects'
-const PROJECTS_USER_INDEX = 'userId'
 const MIGRATIONS_STORE = 'migrations'
-const SYNC_PENDING_MIGRATION_ID = 'sync-pending-v4'
 const ATTACHMENT_PAYLOADS_STORE = 'attachmentPayloads'
+const ATTACHMENT_ORIGINALS_STORE = 'attachmentOriginals'
+// The chat a payload or an original belongs to, in either store.
 const ATTACHMENT_PAYLOADS_CHAT_INDEX = 'chatId'
 const GENERATED_ATTACHMENT_PAYLOAD_PREFIX = 'attachment-payload:'
 const CHAT_SUMMARIES_STORE = 'chatSummaries'
 const CHAT_SUMMARIES_MIGRATION_ID = 'chat-summaries-v6'
-const SYNC_STATE_STORE = 'sync_state'
-const REMOTE_CHAT_STATE_STORE = 'remote_chat_state'
-const SYNC_OUTBOX_STORE = 'sync_outbox'
+// Stores and chat indexes earlier versions kept for cloud sync, which
+// nothing reads anymore.
+const REMOVED_STORES = [
+  'projects',
+  'sync_state',
+  'remote_chat_state',
+  'sync_outbox',
+] as const
+const REMOVED_CHAT_INDEXES = [
+  'lastAccessedAt',
+  'createdAt',
+  'syncedAt',
+  'syncPending',
+  'projectId',
+  'pendingUploadByUser',
+  'pendingUpload',
+  'locallyModified',
+] as const
 const ACCOUNT_CHANGE_RESET_TIMEOUT_MS = 10_000
 const ACCOUNT_CHANGE_READ_ERROR = 'IndexedDB read superseded by account change'
 const ACCOUNT_CHANGE_WRITE_ERROR =
@@ -142,9 +153,6 @@ function putStoredChat(
 function snapshotChatForStorage(chat: Chat): Chat {
   return {
     ...chat,
-    pendingRecoveries: chat.pendingRecoveries?.map((recovery) => ({
-      ...recovery,
-    })),
     messages: chat.messages.map((message) => ({
       ...message,
       attachments: message.attachments?.map((attachment) => ({
@@ -336,10 +344,7 @@ function hydrateAttachmentPayloads(
   }
 }
 
-function deleteAttachmentPayloadsForChat(
-  store: IDBObjectStore,
-  chatId: string,
-): void {
+function deleteAttachmentsForChat(store: IDBObjectStore, chatId: string): void {
   const request = store
     .index(ATTACHMENT_PAYLOADS_CHAT_INDEX)
     .openKeyCursor(IDBKeyRange.only(chatId))
@@ -349,22 +354,6 @@ function deleteAttachmentPayloadsForChat(
     store.delete(cursor.primaryKey)
     cursor.continue()
   }
-}
-
-function activeUserId(): string | undefined {
-  if (typeof window === 'undefined') return undefined
-  try {
-    return localStorage.getItem(AUTH_ACTIVE_USER_ID) ?? undefined
-  } catch {
-    return undefined
-  }
-}
-
-function chatOwnerId(chat: StoredChat | Chat): string | undefined {
-  return (
-    (chat as StoredChat).syncUserId ??
-    (chat as StoredChat & { userId?: string }).userId
-  )
 }
 
 export class IndexedDBStorage {
@@ -441,86 +430,14 @@ export class IndexedDBStorage {
 
         try {
           if (!db.objectStoreNames.contains(CHATS_STORE)) {
-            const store = db.createObjectStore(CHATS_STORE, { keyPath: 'id' })
-            store.createIndex('lastAccessedAt', 'lastAccessedAt', {
-              unique: false,
-            })
-            store.createIndex('createdAt', 'createdAt', { unique: false })
-            // Add sync-related indexes
-            store.createIndex('syncedAt', 'syncedAt', { unique: false })
-            store.createIndex(CHATS_SYNC_PENDING_INDEX, 'syncPending', {
-              unique: false,
-            })
-            store.createIndex(CHATS_PROJECT_INDEX, 'projectId', {
-              unique: false,
-            })
-            store.createIndex(
-              'pendingUploadByUser',
-              ['pendingUpload', 'syncUserId'],
-              { unique: false },
-            )
+            db.createObjectStore(CHATS_STORE, { keyPath: 'id' })
           } else {
             const store = request.transaction!.objectStore(CHATS_STORE)
-            if (store.indexNames.contains('locallyModified')) {
-              store.deleteIndex('locallyModified')
-            }
-            if (!store.indexNames.contains(CHATS_PROJECT_INDEX)) {
-              store.createIndex(CHATS_PROJECT_INDEX, 'projectId', {
-                unique: false,
-              })
-            }
-            if (!store.indexNames.contains(CHATS_SYNC_PENDING_INDEX)) {
-              store.createIndex(CHATS_SYNC_PENDING_INDEX, 'syncPending', {
-                unique: false,
-              })
-            }
-            if (store.indexNames.contains('pendingUpload')) {
-              store.deleteIndex('pendingUpload')
-            }
-            if (!store.indexNames.contains('pendingUploadByUser')) {
-              store.createIndex(
-                'pendingUploadByUser',
-                ['pendingUpload', 'syncUserId'],
-                { unique: false },
-              )
-            }
-            const cursorRequest = store.openCursor()
-            cursorRequest.onsuccess = () => {
-              const cursor = cursorRequest.result
-              if (!cursor) return
-              const chat = cursor.value as StoredChat
-              chat.syncUserId ??= chatOwnerId(chat) ?? activeUserId()
-              cursor.update(chat)
-              cursor.continue()
-            }
+            for (const index of REMOVED_CHAT_INDEXES)
+              if (store.indexNames.contains(index)) store.deleteIndex(index)
           }
-          if (!db.objectStoreNames.contains(PROJECTS_STORE)) {
-            const store = db.createObjectStore(PROJECTS_STORE, {
-              keyPath: 'cacheKey',
-            })
-            store.createIndex(PROJECTS_USER_INDEX, 'userId', { unique: false })
-          }
-          if (!db.objectStoreNames.contains(SYNC_STATE_STORE)) {
-            db.createObjectStore(SYNC_STATE_STORE, { keyPath: 'id' })
-          }
-          if (!db.objectStoreNames.contains(REMOTE_CHAT_STATE_STORE)) {
-            db.createObjectStore(REMOTE_CHAT_STATE_STORE, {
-              keyPath: 'id',
-            })
-          } else {
-            const store = request.transaction!.objectStore(
-              REMOTE_CHAT_STATE_STORE,
-            )
-            if (store.indexNames.contains('updatedAt')) {
-              store.deleteIndex('updatedAt')
-            }
-          }
-          if (!db.objectStoreNames.contains(SYNC_OUTBOX_STORE)) {
-            const store = db.createObjectStore(SYNC_OUTBOX_STORE, {
-              keyPath: ['userId', 'id'],
-            })
-            store.createIndex('userId', 'userId', { unique: false })
-          }
+          for (const store of REMOVED_STORES)
+            if (db.objectStoreNames.contains(store)) db.deleteObjectStore(store)
           if (!db.objectStoreNames.contains(MIGRATIONS_STORE)) {
             db.createObjectStore(MIGRATIONS_STORE, { keyPath: 'id' })
           }
@@ -537,14 +454,18 @@ export class IndexedDBStorage {
           if (!db.objectStoreNames.contains(CHAT_SUMMARIES_STORE)) {
             db.createObjectStore(CHAT_SUMMARIES_STORE, { keyPath: 'id' })
           }
-          if ((event as IDBVersionChangeEvent).oldVersion === 0) {
-            const migrations =
-              request.transaction?.objectStore(MIGRATIONS_STORE)
-            migrations?.put({
-              id: SYNC_PENDING_MIGRATION_ID,
-              completedAt: Date.now(),
+          if (!db.objectStoreNames.contains(ATTACHMENT_ORIGINALS_STORE)) {
+            const store = db.createObjectStore(ATTACHMENT_ORIGINALS_STORE, {
+              keyPath: ['chatId', 'attachmentId'],
             })
-            migrations?.put({
+            store.createIndex(
+              ATTACHMENT_PAYLOADS_CHAT_INDEX,
+              ATTACHMENT_PAYLOADS_CHAT_INDEX,
+              { unique: false },
+            )
+          }
+          if ((event as IDBVersionChangeEvent).oldVersion === 0) {
+            request.transaction?.objectStore(MIGRATIONS_STORE).put({
               id: CHAT_SUMMARIES_MIGRATION_ID,
               completedAt: Date.now(),
             })
@@ -736,14 +657,22 @@ export class IndexedDBStorage {
     return trackedReset
   }
 
-  async saveChat(chat: Chat): Promise<SaveChatResult> {
+  // Saves a chat with the originals of its image attachments, by attachment
+  // id. Originals of attachments the chat no longer has are deleted.
+  async saveChat(
+    chat: Chat,
+    originals: ReadonlyMap<string, AttachmentOriginal> = new Map(),
+  ): Promise<SaveChatResult> {
     const chatSnapshot = snapshotChatForStorage(chat)
     return this.enqueueSave('saveChat', () =>
-      this.saveChatInternal(chatSnapshot),
+      this.saveChatInternal(chatSnapshot, originals),
     )
   }
 
-  private async saveChatInternal(chat: Chat): Promise<SaveChatResult> {
+  private async saveChatInternal(
+    chat: Chat,
+    originals: ReadonlyMap<string, AttachmentOriginal>,
+  ): Promise<SaveChatResult> {
     this.assertActiveSaveGeneration()
     const db = await this.ensureDB()
     this.assertActiveSaveGeneration()
@@ -758,12 +687,18 @@ export class IndexedDBStorage {
 
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(
-        [CHATS_STORE, ATTACHMENT_PAYLOADS_STORE, CHAT_SUMMARIES_STORE],
+        [
+          CHATS_STORE,
+          ATTACHMENT_PAYLOADS_STORE,
+          CHAT_SUMMARIES_STORE,
+          ATTACHMENT_ORIGINALS_STORE,
+        ],
         'readwrite',
       )
       const store = transaction.objectStore(CHATS_STORE)
       const payloadStore = transaction.objectStore(ATTACHMENT_PAYLOADS_STORE)
       const summaryStore = transaction.objectStore(CHAT_SUMMARIES_STORE)
+      const originalStore = transaction.objectStore(ATTACHMENT_ORIGINALS_STORE)
       let result: SaveChatResult = {
         saved: false,
         isLocalOnly: (chat as StoredChat).isLocalOnly === true,
@@ -829,26 +764,43 @@ export class IndexedDBStorage {
         const storedChat: StoredChat = {
           ...chat,
           messages: messagesForStorage as any,
-          lastAccessedAt: Date.now(),
-          syncedAt: existingChat?.syncedAt ?? (chat as StoredChat).syncedAt,
-          syncVersion:
-            existingChat?.syncVersion ?? (chat as StoredChat).syncVersion,
-          decryptionFailed: (chat as StoredChat).decryptionFailed,
-          dataCorrupted: (chat as StoredChat).dataCorrupted,
-          version: 1,
-          loadedAt:
-            (chat as StoredChat).loadedAt ??
-            existingChat?.loadedAt ??
-            undefined,
           isLocalOnly,
-          syncUserId:
-            chatOwnerId(chat) ?? existingChat?.syncUserId ?? activeUserId(),
-          projectLocallyModified:
-            (chat as StoredChat).projectLocallyModified ??
-            existingChat?.projectLocallyModified ??
-            false,
         }
         result = { saved: true, isLocalOnly }
+
+        const attachmentIds = new Set(
+          chat.messages.flatMap((message) =>
+            (message.attachments ?? []).map((attachment) => attachment.id),
+          ),
+        )
+        const originalCursor = originalStore
+          .index(ATTACHMENT_PAYLOADS_CHAT_INDEX)
+          .openKeyCursor(IDBKeyRange.only(chat.id))
+        originalCursor.onerror = () =>
+          reject(new Error('Failed to reconcile attachment originals'))
+        originalCursor.onsuccess = () => {
+          const cursor = originalCursor.result
+          if (!cursor) return
+          const [, attachmentId] = cursor.primaryKey as [string, string]
+          if (!attachmentIds.has(attachmentId))
+            originalStore.delete(cursor.primaryKey)
+          cursor.continue()
+        }
+        for (const [attachmentId, original] of originals) {
+          if (!attachmentIds.has(attachmentId)) continue
+          const stored: StoredAttachmentOriginal = {
+            chatId: chat.id,
+            attachmentId,
+            base64: original.base64,
+            mimeType: original.mimeType,
+          }
+          const originalRequest = originalStore.put(stored)
+          originalRequest.onerror = () =>
+            reject(
+              originalRequest.error ??
+                new Error('Failed to save attachment original'),
+            )
+        }
 
         const writeChatAndPayloads = () => {
           for (const payload of normalizedAttachments.payloads) {
@@ -932,17 +884,37 @@ export class IndexedDBStorage {
 
   async getChat(id: string): Promise<StoredChat | null> {
     await this.waitForSaveQueue()
+    return this.protectRead(this.getChatInternal(id))
+  }
+
+  async getAttachmentOriginals(
+    chatId: string,
+    attachmentIds: readonly string[],
+  ): Promise<Map<string, AttachmentOriginal>> {
+    if (!attachmentIds.length) return new Map()
+    await this.waitForSaveQueue()
+    const db = await this.ensureDB()
     return this.protectRead(
-      this.getChatInternal(id).then((chat) => {
-        if (chat) {
-          this.updateLastAccessed(id).catch((error) =>
-            logError('Failed to update last accessed time', error, {
-              component: 'IndexedDBStorage',
-              metadata: { chatId: id },
-            }),
-          )
+      new Promise((resolve, reject) => {
+        const store = db
+          .transaction([ATTACHMENT_ORIGINALS_STORE], 'readonly')
+          .objectStore(ATTACHMENT_ORIGINALS_STORE)
+        const originals = new Map<string, AttachmentOriginal>()
+        for (const attachmentId of attachmentIds) {
+          const request = store.get([chatId, attachmentId])
+          request.onsuccess = () => {
+            const stored = request.result as
+              StoredAttachmentOriginal | undefined
+            if (stored)
+              originals.set(attachmentId, {
+                base64: stored.base64,
+                mimeType: stored.mimeType,
+              })
+          }
+          request.onerror = () =>
+            reject(new Error('Failed to get attachment originals'))
         }
-        return chat
+        store.transaction.oncomplete = () => resolve(originals)
       }),
     )
   }
@@ -954,14 +926,23 @@ export class IndexedDBStorage {
       const db = await this.ensureDB()
       return new Promise<void>((resolve, reject) => {
         const transaction = db.transaction(
-          [CHATS_STORE, ATTACHMENT_PAYLOADS_STORE, CHAT_SUMMARIES_STORE],
+          [
+            CHATS_STORE,
+            ATTACHMENT_PAYLOADS_STORE,
+            CHAT_SUMMARIES_STORE,
+            ATTACHMENT_ORIGINALS_STORE,
+          ],
           'readwrite',
         )
         const store = transaction.objectStore(CHATS_STORE)
         const request = store.delete(id)
         transaction.objectStore(CHAT_SUMMARIES_STORE).delete(id)
-        deleteAttachmentPayloadsForChat(
+        deleteAttachmentsForChat(
           transaction.objectStore(ATTACHMENT_PAYLOADS_STORE),
+          id,
+        )
+        deleteAttachmentsForChat(
+          transaction.objectStore(ATTACHMENT_ORIGINALS_STORE),
           id,
         )
 
@@ -997,7 +978,12 @@ export class IndexedDBStorage {
       const db = await this.ensureDB()
       return new Promise<number>((resolve, reject) => {
         const transaction = db.transaction(
-          [CHATS_STORE, ATTACHMENT_PAYLOADS_STORE, CHAT_SUMMARIES_STORE],
+          [
+            CHATS_STORE,
+            ATTACHMENT_PAYLOADS_STORE,
+            CHAT_SUMMARIES_STORE,
+            ATTACHMENT_ORIGINALS_STORE,
+          ],
           'readwrite',
         )
         const store = transaction.objectStore(CHATS_STORE)
@@ -1009,6 +995,7 @@ export class IndexedDBStorage {
           store.clear()
           transaction.objectStore(ATTACHMENT_PAYLOADS_STORE).clear()
           transaction.objectStore(CHAT_SUMMARIES_STORE).clear()
+          transaction.objectStore(ATTACHMENT_ORIGINALS_STORE).clear()
         }
 
         transaction.oncomplete = () => resolve(count)
@@ -1101,37 +1088,6 @@ export class IndexedDBStorage {
         }
       })
       this.chatSummariesReady = true
-    })
-  }
-
-  private async updateLastAccessed(id: string): Promise<void> {
-    return this.enqueueSave('updateLastAccessed', async () => {
-      const db = await this.ensureDB()
-      return new Promise<void>((resolve, reject) => {
-        const transaction = db.transaction(
-          [CHATS_STORE, CHAT_SUMMARIES_STORE],
-          'readwrite',
-        )
-        const store = transaction.objectStore(CHATS_STORE)
-        const summaryStore = transaction.objectStore(CHAT_SUMMARIES_STORE)
-        const request = store.get(id)
-
-        transaction.oncomplete = () => resolve()
-        transaction.onerror = () =>
-          reject(new Error('Failed to update last accessed'))
-        transaction.onabort = () =>
-          reject(new Error('Last accessed update transaction aborted'))
-        request.onerror = () =>
-          reject(new Error('Failed to read chat for last accessed update'))
-        request.onsuccess = () => {
-          const chat = request.result as StoredChat | undefined
-          if (!chat) return
-          chat.lastAccessedAt = Date.now()
-          const putRequest = putStoredChat(store, summaryStore, chat)
-          putRequest.onerror = () =>
-            reject(new Error('Failed to update last accessed'))
-        }
-      })
     })
   }
 }

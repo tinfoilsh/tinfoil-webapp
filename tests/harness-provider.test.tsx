@@ -3,6 +3,7 @@ import {
   SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
   USER_ENCRYPTION_KEY,
   USER_PREFS_LOCAL_PROFILE,
+  USER_PREFS_LOCAL_PROFILE_UPGRADED,
 } from '@/constants/storage-keys'
 import { authTokenManager } from '@/services/auth'
 import { encryptionService } from '@/services/encryption/encryption-service'
@@ -50,16 +51,12 @@ vi.mock('@/services/harness/client', async (importOriginal) => {
   }
 })
 
+// The key and its expiry: the harness reports the key's quota.
 function issuance() {
   return Response.json({
     key: 'free_guest',
     is_free_tier: true,
     expires_at: new Date(Date.now() + 3_600_000).toISOString(),
-    rate_limit: {
-      max_requests: 10,
-      remaining: 9,
-      resets_at: new Date(Date.now() + 3_600_000).toISOString(),
-    },
   })
 }
 
@@ -93,7 +90,12 @@ beforeEach(() => {
       )
     return Response.json({
       ...testSession,
-      rateLimit: { kind: null, maxRequests: 0, remaining: 0 },
+      rateLimit: {
+        kind: 'free_daily',
+        maxRequests: 10,
+        remaining: 9,
+        resetsAt: new Date(Date.now() + 3_600_000).toISOString(),
+      },
     })
   })
   controlplane.mockReset().mockImplementation(async () => issuance())
@@ -228,6 +230,7 @@ describe('signed-in storage modes', () => {
       USER_PREFS_LOCAL_PROFILE,
       JSON.stringify({ nickname: 'Local Sam' }),
     )
+    localStorage.setItem(USER_PREFS_LOCAL_PROFILE_UPGRADED, 'true')
     render(
       <HarnessProvider>
         <StorageMode />

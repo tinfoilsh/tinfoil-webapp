@@ -3,10 +3,9 @@ import { getAudioContextClass } from '@/utils/audio-context'
 import { Bell, BellOff } from 'lucide-react'
 import type { JSX } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
+import type { RenderClockArgs } from '../widget-args'
 
-const MAX_TIMER_SECONDS = 7 * 24 * 60 * 60
 const DEFAULT_ALARM_MODE = 'sound'
 const TICK_INTERVAL_MS = 250
 const SECOND_MS = 1000
@@ -38,62 +37,8 @@ const ALARM_FREQUENCY_HZ = 880
 const ALARM_GAIN = 0.07
 const TIMER_ACCENT = '#f6b34b'
 
-const alarmModeSchema = z.enum(['sound', 'flash'])
-
-const schema = z.object({
-  mode: z
-    .enum(['clock', 'timer'])
-    .optional()
-    .describe(
-      'What to display. "clock" shows the current time as an analog face. "timer" counts down from a duration or to a target time. Defaults to "clock".',
-    ),
-  label: z
-    .string()
-    .optional()
-    .describe('Short label, e.g. "New York" for a clock or "Tea" for a timer.'),
-  title: z.string().optional().describe('Main title (timer mode)'),
-  description: z.string().optional().describe('Optional description'),
-  timeZone: z
-    .string()
-    .optional()
-    .describe(
-      'Clock mode only. IANA time zone, e.g. "America/New_York". Defaults to local.',
-    ),
-  showSeconds: z
-    .boolean()
-    .optional()
-    .describe('Clock mode: include the second hand (default true).'),
-  showDate: z
-    .boolean()
-    .optional()
-    .describe('Clock mode: include date line (default true).'),
-  durationSeconds: z
-    .number()
-    .positive()
-    .max(MAX_TIMER_SECONDS)
-    .optional()
-    .describe(
-      'Timer mode. Duration in seconds. Prefer this for requests like "set a 5 minute timer".',
-    ),
-  target: z
-    .string()
-    .optional()
-    .describe(
-      'Timer mode. ISO date-time when the timer should end, e.g. "2026-12-31T23:59:59Z". Use when an exact end time is known.',
-    ),
-  completedMessage: z
-    .string()
-    .optional()
-    .describe('Timer mode. Message shown when the timer finishes.'),
-  alarmMode: alarmModeSchema
-    .optional()
-    .describe(
-      'Timer mode. Alarm behavior when done. "sound" beeps; "flash" stays silent and flashes visually. Defaults to sound.',
-    ),
-})
-
-type ClockArgs = z.infer<typeof schema>
-type TimerAlarmMode = z.infer<typeof alarmModeSchema>
+type ClockArgs = RenderClockArgs
+type TimerAlarmMode = NonNullable<RenderClockArgs['alarmMode']>
 
 interface TimeParts {
   hour: number
@@ -750,7 +695,6 @@ function resolveMode(args: ClockArgs): 'clock' | 'timer' {
 
 export const widget = defineGenUIWidget({
   name: 'render_clock',
-  schema,
   render: (args: ClockArgs) => {
     const resolved = resolveMode(args)
     if (resolved === 'timer') {

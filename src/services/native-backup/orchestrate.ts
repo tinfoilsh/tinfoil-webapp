@@ -7,11 +7,10 @@ import {
 } from '@/services/harness/archives'
 import {
   localThreadStore,
-  newLocalThread,
-  readLocalThread,
-  type LocalThread,
+  upgradeThreads,
 } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
+import type { StoredThread } from '@/services/harness/types'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
@@ -38,7 +37,7 @@ export type NativeRestoreCount = { imported: number; skipped: number; failed: nu
 // prettier-ignore
 export type NativeRestoreResult = { state: 'completed' | 'partial' | 'failed' | 'pending' | 'interrupted'; jobId?: string; failureReason?: ImportFailureReason; report: Record<NativeRestoreKind, NativeRestoreCount> }
 // prettier-ignore
-type Dependencies = { validate: typeof validateAndPackageNativeBackup; upload(file: File, signal: AbortSignal): Promise<ImportStatusResponse>; status: typeof importStatus; forEachImage: typeof forEachNativeBackupLocalImage; getChat(id: string): Promise<LocalThread | null>; saveChat(thread: LocalThread): Promise<LocalThread | null>; wait(ms: number, signal: AbortSignal): Promise<void> }
+type Dependencies = { validate: typeof validateAndPackageNativeBackup; upload(file: File, signal: AbortSignal): Promise<ImportStatusResponse>; status: typeof importStatus; forEachImage: typeof forEachNativeBackupLocalImage; getChat(id: string): Promise<StoredThread | null>; saveChat(thread: StoredThread): Promise<StoredThread | null>; wait(ms: number, signal: AbortSignal): Promise<void> }
 // prettier-ignore
 type RestoreEvents = { onStarted?(status: ImportStatusResponse): void; onPhase?(phase?: string): void }
 
@@ -246,26 +245,6 @@ function normalizeChat(
   }
 }
 
-// A restored chat as this device stores it: its messages are upgraded the
-// way the previous client's rows are.
-function restoredThread(chat: Chat): LocalThread {
-  return readLocalThread({
-    ...newLocalThread(
-      chat.id,
-      {
-        model: chat.model,
-        presetId: chat.presetId,
-        webSearchEnabled: chat.webSearchEnabled,
-      },
-      chat.createdAt.toISOString(),
-    ),
-    title: chat.title,
-    titleState: chat.titleState,
-    updatedAt: chat.updatedAt,
-    messages: chat.messages,
-  })
-}
-
 function applyCloudReport(
   status: ImportStatusResponse,
   report: NativeRestoreResult['report'],
@@ -320,7 +299,10 @@ async function restoreLocalChats(
       const chat = normalizeChat(source, id, sourceImages)
       // prettier-ignore
       await dependencies.forEachImage(sourceImages, ({ metadata, bytes }) => applyImage(chat, source, metadata, bytes), { signal })
-      if (!(await dependencies.saveChat(restoredThread(chat))))
+      // A backup's chat is in the previous client's format, which the
+      // harness upgrades the way it upgrades that client's rows.
+      const [thread] = await upgradeThreads([chat])
+      if (!thread || !(await dependencies.saveChat(thread)))
         throw new Error('Restored chat was not saved')
       report.local_chats.imported++
       report.attachments.imported += sourceImages.length

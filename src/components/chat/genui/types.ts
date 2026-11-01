@@ -1,25 +1,25 @@
-// Browser renderer contracts. Tool declarations and prompts live in the harness.
+// Browser renderers. Tool declarations, prompts, and argument validation
+// live in the harness, which sends a widget's arguments once they match its
+// declaration.
 import type { JSX } from 'react'
-import type { ZodTypeAny, z } from 'zod'
+import type { WidgetArgs } from './widget-args'
 
 /**
- * Helper that preserves specific-schema type inference inside a widget
- * definition while yielding a `GenUIWidget` with the schema erased to
- * `ZodTypeAny` for storage in the registry array.
+ * Types a widget's renderers by its tool name, and erases the arguments for
+ * storage in the registry array.
  *
  * Usage inside a widget file:
  * ```
  * export const widget = defineGenUIWidget({
  *   name: 'render_x',
- *   schema: z.object({ ... }),
- *   render: (args) => <...>, // args is typed from the schema
+ *   render: (args) => <...>, // args is typed from the harness's declaration
  * })
  * ```
  */
-export function defineGenUIWidget<Schema extends ZodTypeAny>(
-  widget: GenUIWidget<Schema>,
+export function defineGenUIWidget<Name extends keyof WidgetArgs>(
+  widget: GenUIWidget<WidgetArgs[Name]> & { name: Name },
 ): GenUIWidget {
-  return widget as unknown as GenUIWidget
+  return widget as GenUIWidget
 }
 
 /**
@@ -33,28 +33,12 @@ export interface GenUIRenderContext {
   toolCallId?: string
 }
 
-export interface GenUIWidget<Schema extends ZodTypeAny = ZodTypeAny> {
+export interface GenUIWidget<Args = any> {
   /** Tool name sent to the model. Must be unique and `render_*` snake_case. */
   name: string
-  /** Validates renderer arguments received from the harness. */
-  schema: Schema
 
   /** Inline render. */
-  render?: (
-    args: z.infer<Schema>,
-    ctx: GenUIRenderContext,
-  ) => JSX.Element | null
-
-  /**
-   * Optional compact stamp shown inline after the user resolves an
-   * input-surface widget. When omitted, the widget leaves no trace in the
-   * chat scroll once resolved.
-   */
-  renderResolved?: (
-    args: z.infer<Schema>,
-    resolution: GenUIToolResolution,
-    ctx: GenUIRenderContext,
-  ) => JSX.Element | null
+  render?: (args: Args, ctx: GenUIRenderContext) => JSX.Element | null
 }
 
 /**
@@ -68,13 +52,6 @@ export interface GenUIToolCall {
   id: string
   name: string
   arguments: string
-}
-
-/**
- * Persisted resolution of an input-surface tool call.
- */
-export interface GenUIToolResolution {
-  text: string
-  data?: unknown
-  resolvedAt: number
+  // The harness found the stored arguments no longer match the widget.
+  invalidArguments?: boolean
 }

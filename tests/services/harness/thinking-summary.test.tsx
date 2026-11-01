@@ -4,11 +4,9 @@ import type { BaseModel } from '@/config/models'
 import type { Frame } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { act, render, screen, waitFor } from '@testing-library/react'
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { client } from '../../harness-fixture'
 
-const summarize = vi.hoisted(() => vi.fn())
-vi.mock('@/services/inference/summary-client', () => ({ summarize }))
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/hooks/use-chat-print', () => ({ useChatPrint: () => undefined }))
 vi.mock('@/utils/error-handling', () => ({
@@ -19,16 +17,16 @@ vi.mock('@/utils/error-handling', () => ({
 
 const models: BaseModel[] = [
   {
-    modelName: 'test-model',
-    name: 'Test model',
-    nameShort: 'Test',
-    image: '',
+    id: 'test-model',
+    label: 'Test model',
+    shortLabel: 'Test',
+    icon: '',
     description: '',
-    type: 'chat',
-    chat: true,
+    badges: [],
+    reasoning: null,
+    deprecated: false,
   },
 ]
-const THOUGHTS = Array.from({ length: 25 }, (_, i) => `step${i}`).join(' ')
 
 let send: (() => Promise<unknown>) | undefined
 
@@ -60,12 +58,8 @@ function gate() {
 
 beforeAll(() => initializeRenderers())
 
-beforeEach(() => {
-  summarize.mockReset().mockResolvedValue('Weighing the options')
-})
-
 describe('the live thinking summary', () => {
-  it('summarizes reasoning while it streams and stops once the reply moves on', async () => {
+  it('shows the summary the harness sends while the reply thinks, until it moves on', async () => {
     const thinking = gate()
     const answering = gate()
     client.events.mockImplementation(async function* (_path, input) {
@@ -82,13 +76,25 @@ describe('the live thinking summary', () => {
         {
           type: 'REASONING_MESSAGE_CHUNK',
           messageId: 'm1-reasoning',
-          delta: THOUGHTS,
+          delta: 'Compare the two plans.',
+        },
+        {
+          type: 'REASONING_SUMMARY',
+          messageId: 'm1',
+          blockId: 'm1_thinking_0',
+          content: 'Weighing the options',
+        },
+        {
+          type: 'REASONING_SUMMARY',
+          messageId: 'm1',
+          blockId: 'other-block',
+          content: 'Summary of another block',
         },
       ]
       for (const [id, event] of frames.entries()) yield { id, event }
       await thinking.opened
       yield {
-        id: 3,
+        id: 5,
         event: {
           type: 'TEXT_MESSAGE_CHUNK',
           messageId: 'm1',
@@ -97,7 +103,7 @@ describe('the live thinking summary', () => {
       }
       await answering.opened
       yield {
-        id: 4,
+        id: 6,
         event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
       }
     })
@@ -108,10 +114,7 @@ describe('the live thinking summary', () => {
     })
 
     expect(await screen.findByText('Weighing the options')).toBeInTheDocument()
-    expect(summarize).toHaveBeenCalledExactlyOnceWith({
-      content: THOUGHTS,
-      style: 'thoughts_summary',
-    })
+    expect(screen.queryByText('Summary of another block')).toBeNull()
 
     await act(async () => thinking.open())
     await screen.findByText('Because.')
@@ -120,7 +123,6 @@ describe('the live thinking summary', () => {
         screen.queryByText('Weighing the options'),
       ).not.toBeInTheDocument(),
     )
-    expect(summarize).toHaveBeenCalledOnce()
 
     await act(async () => {
       answering.open()

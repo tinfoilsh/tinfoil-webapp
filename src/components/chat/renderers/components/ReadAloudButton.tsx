@@ -1,21 +1,27 @@
 import { useSessionFeature } from '@/services/harness/provider'
+import { speakText } from '@/services/harness/speech'
 import { speechPlayer } from '@/services/speech/player'
-import type { SpeechTextFormat } from '@/services/speech/text'
+import { speechSource } from '@/services/speech/stream'
 import { TfAudio, TfPlay, TfStop } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { PiSpinner } from 'react-icons/pi'
+import { useSpeak } from '../../speech-context'
 
 export function ReadAloudButton({
+  messageId,
   content,
-  textFormat = 'markdown',
   variant = 'icon',
 }: {
+  // A message of the chat shown, which its chat reads aloud. Without one,
+  // the content is read as plain text.
+  messageId?: string
+  // The text; reading stops when it changes.
   content: string
-  textFormat?: SpeechTextFormat
   variant?: 'icon' | 'menu'
 }) {
   const [owner] = useState(() => Symbol('read-aloud'))
   const available = useSessionFeature('speech')
+  const speak = useSpeak()
   const snapshot = useSyncExternalStore(
     speechPlayer.subscribe,
     speechPlayer.getSnapshot,
@@ -38,10 +44,15 @@ export function ReadAloudButton({
   const tooltipLabel =
     status === 'loading' ? 'Buffering audio — click to cancel' : label
 
-  useEffect(() => () => speechPlayer.stop(owner), [owner, content, textFormat])
+  useEffect(() => () => speechPlayer.stop(owner), [owner, messageId, content])
 
-  // The harness reads aloud only when its session offers speech.
-  if (!available) return null
+  const open = messageId
+    ? speak && ((signal: AbortSignal) => speak(messageId, signal))
+    : (signal: AbortSignal) => speakText(content, signal)
+
+  // The harness reads aloud only when its session offers speech, and only a
+  // message of a chat it can read.
+  if (!available || !open) return null
 
   return (
     <div className="relative flex items-center">
@@ -52,7 +63,7 @@ export function ReadAloudButton({
         onClick={() => {
           if (status === 'paused') speechPlayer.resume(owner)
           else if (active) speechPlayer.stop(owner)
-          else speechPlayer.read(owner, content, textFormat)
+          else speechPlayer.read(owner, speechSource(open))
         }}
         className={`group/speech relative flex items-center whitespace-nowrap transition-colors ${variant === 'menu' ? 'gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium' : 'rounded px-2 py-2'} ${
           status === 'playing'

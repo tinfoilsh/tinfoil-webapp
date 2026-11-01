@@ -1,15 +1,15 @@
 import { buildChatExport } from '@/services/chat-export/export-archive'
 import { collectChatExport } from '@/services/chat-export/export-chats'
-import {
-  localThreadStore,
-  type LocalThread,
-} from '@/services/harness/local-threads'
+import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
 import type { ThreadSummary } from '@/services/harness/types'
 import { strFromU8, unzipSync } from 'fflate'
 import { describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
-import { resetChatStoresAroundEachTest } from '../harness/thread-fixture'
+import {
+  resetChatStoresAroundEachTest,
+  storedThread,
+} from '../harness/thread-fixture'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -21,8 +21,7 @@ const IMAGE = new Uint8Array([137, 80, 78, 71, 1, 2, 3])
 const IMAGE_BASE64 = 'iVBORwECAw=='
 const LOCAL_ID = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
 
-const deviceChat: LocalThread = {
-  id: LOCAL_ID,
+const deviceChat = storedThread(LOCAL_ID, {
   title: 'Garden plans',
   titleState: 'manual',
   createdAt: '2026-04-01T09:00:00Z',
@@ -36,18 +35,19 @@ const deviceChat: LocalThread = {
       attachments: [
         {
           id: 'photo-1',
-          type: 'image',
+          kind: 'image',
           fileName: 'bed.png',
           mimeType: 'image/png',
-          fileSize: 7,
-          thumbnailBase64: 'dGh1bWI=',
+          size: 7,
+          thumbnail: 'dGh1bWI=',
           base64: IMAGE_BASE64,
         },
         {
           id: 'scan-1',
-          type: 'document',
+          kind: 'document',
           fileName: 'scan.pdf',
           mimeType: 'application/pdf',
+          size: 9,
           pages: [
             { page: 1, text: 'Tomatoes', image: 'cGFnZQ==', is_scanned: true },
             { page: 2, text: 'Basil', image: 'cGFnZQ==', is_scanned: true },
@@ -68,7 +68,7 @@ const deviceChat: LocalThread = {
       ],
     },
   ],
-}
+})
 
 // The conversation the export writes for deviceChat, in main's format.
 const deviceConversation = {
@@ -96,6 +96,7 @@ const deviceConversation = {
           type: 'document',
           fileName: 'scan.pdf',
           mimeType: 'application/pdf',
+          fileSize: 9,
           textContent: 'Tomatoes\n\n---\n\nBasil',
         },
       ],
@@ -239,9 +240,10 @@ describe('collecting chats for an export', () => {
                     ? [
                         {
                           id: 'c'.repeat(36),
-                          type: 'image',
+                          kind: 'image',
                           fileName: 'cake.png',
                           mimeType: 'image/png',
+                          size: IMAGE.length,
                           base64: IMAGE_BASE64,
                         },
                       ]

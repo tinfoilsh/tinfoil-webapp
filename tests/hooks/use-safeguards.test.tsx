@@ -1,85 +1,53 @@
-import { useSafeguardsLoader } from '@/hooks/use-safeguards'
+import { useSafeguardsReset } from '@/hooks/use-safeguards'
+import {
+  getSafeguardsSnapshot,
+  refreshSafeguards,
+  resetSafeguards,
+} from '@/services/safeguards'
 import { renderHook } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({
-  useAuth: vi.fn(),
-  refresh: vi.fn(() => Promise.resolve()),
-  reset: vi.fn(),
+const useAuth = vi.hoisted(() => vi.fn())
+
+vi.mock('@clerk/react', () => ({ useAuth }))
+vi.mock('@/services/auth', () => ({
+  authTokenManager: {
+    getAuthHeaders: vi.fn().mockResolvedValue({ Authorization: 'Bearer t' }),
+  },
+  AuthTokenUnavailableError: class extends Error {},
 }))
 
-vi.mock('@clerk/react', () => ({ useAuth: mocks.useAuth }))
-vi.mock('@/services/safeguards', () => ({
-  getSafeguardsServerSnapshot: vi.fn(),
-  getSafeguardsSnapshot: vi.fn(),
-  refreshSafeguards: mocks.refresh,
-  resetSafeguards: mocks.reset,
-  subscribeSafeguards: vi.fn(),
-}))
+beforeEach(() => {
+  resetSafeguards()
+})
 
-const SAFEGUARDS_REFRESH_INTERVAL_MS = 30_000
+it("drops an account's flagged chats once another signs in", async () => {
+  useAuth.mockReturnValue({ userId: 'user-1' })
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    Response.json({
+      flags: [
+        {
+          id: 'v1',
+          conversation_id: 'chat-a',
+          created_at: '2026-09-16T12:00:00Z',
+        },
+      ],
+      in_window: 1,
+      window_hours: 168,
+      warn_threshold: 8,
+      ban_threshold: 10,
+    }),
+  )
+  const { rerender } = renderHook(() => useSafeguardsReset())
+  await refreshSafeguards()
+  rerender()
+  expect(getSafeguardsSnapshot().flaggedChats).toHaveLength(1)
 
-describe('useSafeguardsLoader', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-    vi.clearAllMocks()
-    mocks.useAuth.mockReturnValue({ isSignedIn: true, userId: 'user-1' })
-    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
-  })
+  useAuth.mockReturnValue({ userId: 'user-2' })
+  rerender()
 
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('refreshes immediately, every 30 seconds, on focus, and online', () => {
-    renderHook(() => useSafeguardsLoader())
-
-    expect(mocks.refresh).toHaveBeenCalledTimes(1)
-    vi.advanceTimersByTime(SAFEGUARDS_REFRESH_INTERVAL_MS - 1)
-    expect(mocks.refresh).toHaveBeenCalledTimes(1)
-    vi.advanceTimersByTime(1)
-    expect(mocks.refresh).toHaveBeenCalledTimes(2)
-
-    window.dispatchEvent(new Event('focus'))
-    expect(mocks.refresh).toHaveBeenCalledTimes(3)
-    window.dispatchEvent(new Event('online'))
-    expect(mocks.refresh).toHaveBeenCalledTimes(4)
-  })
-
-  it('pauses polling while hidden and refreshes when visible again', () => {
-    const visibility = vi
-      .spyOn(document, 'visibilityState', 'get')
-      .mockReturnValue('hidden')
-    renderHook(() => useSafeguardsLoader())
-
-    vi.advanceTimersByTime(SAFEGUARDS_REFRESH_INTERVAL_MS)
-    expect(mocks.refresh).toHaveBeenCalledTimes(1)
-
-    visibility.mockReturnValue('visible')
-    document.dispatchEvent(new Event('visibilitychange'))
-    expect(mocks.refresh).toHaveBeenCalledTimes(2)
-  })
-
-  it('clears account state and timers on cleanup', () => {
-    const { unmount } = renderHook(() => useSafeguardsLoader())
-
-    unmount()
-    vi.advanceTimersByTime(SAFEGUARDS_REFRESH_INTERVAL_MS)
-    window.dispatchEvent(new Event('focus'))
-    window.dispatchEvent(new Event('online'))
-    document.dispatchEvent(new Event('visibilitychange'))
-
-    expect(mocks.reset).toHaveBeenCalledTimes(1)
-    expect(mocks.refresh).toHaveBeenCalledTimes(1)
-  })
-
-  it('clears state without fetching or polling when signed out', () => {
-    mocks.useAuth.mockReturnValue({ isSignedIn: false, userId: null })
-
-    renderHook(() => useSafeguardsLoader())
-    vi.advanceTimersByTime(SAFEGUARDS_REFRESH_INTERVAL_MS)
-
-    expect(mocks.reset).toHaveBeenCalledTimes(1)
-    expect(mocks.refresh).not.toHaveBeenCalled()
+  expect(getSafeguardsSnapshot()).toMatchObject({
+    flaggedChats: [],
+    policy: null,
   })
 })

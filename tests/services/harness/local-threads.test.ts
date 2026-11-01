@@ -1,18 +1,20 @@
-import {
-  localThreadStore,
-  localThreadView,
-  mergeLocalThread,
-  newLocalThread,
-  turnThread,
-  type LocalAttachment,
-  type LocalThread,
-} from '@/services/harness/local-threads'
-import type { Message as WireMessage } from '@/services/harness/types'
+import { localThreadStore } from '@/services/harness/local-threads'
+import { HarnessError } from '@/services/harness/sse'
+import type {
+  AttachmentDescriptor,
+  StoredThread,
+} from '@/services/harness/types'
 import { chatEvents } from '@/services/storage/chat-events'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
+import { logError } from '@/utils/error-handling'
 import { IDBFactory } from 'fake-indexeddb'
 import { describe, expect, it, vi } from 'vitest'
-import { rawRows, resetChatStoresAroundEachTest } from './thread-fixture'
+import { client, signIn } from '../../harness-fixture'
+import {
+  rawRows,
+  resetChatStoresAroundEachTest,
+  storedThread,
+} from './thread-fixture'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -21,23 +23,19 @@ vi.mock('@/utils/error-handling', () => ({
 }))
 
 const CHAT_ID = '8233746419999_8a3b4f1e-6f7d-4d52-9c3a-0e1f2a3b4c5d'
-const IMAGE: LocalAttachment = {
+const OTHER_ID = '8233746418888_9b4c5f2e-7a8e-4e63-8d4b-1f2a3b4c5d6e'
+const IMAGE: AttachmentDescriptor = {
   id: 'att_image',
-  type: 'image',
+  kind: 'image',
   fileName: 'photo.png',
   mimeType: 'image/png',
-  fileSize: 4,
-  thumbnailBase64: 'dGh1bWI=',
+  size: 4,
+  thumbnail: 'dGh1bWI=',
   base64: 'cGhvdG8=',
 }
 
-function thread(overrides: Partial<LocalThread> = {}): LocalThread {
-  return {
-    ...newLocalThread(CHAT_ID, { model: 'test-model' }, '2026-05-01T10:00:00Z'),
-    codeExecutionAccessToken: 'a'.repeat(64),
-    ...overrides,
-  }
-}
+const thread = (fields: Partial<StoredThread> = {}) =>
+  storedThread(CHAT_ID, fields)
 
 resetChatStoresAroundEachTest()
 
@@ -54,7 +52,7 @@ describe('device store', () => {
           role: 'user',
           createdAt: '2026-05-01T10:00:01Z',
           content: 'What is this?',
-          attachments: [IMAGE],
+          attachments: [IMAGE, { ...IMAGE, id: 'att_seen', base64: undefined }],
         },
       ],
     })
@@ -62,36 +60,52 @@ describe('device store', () => {
     await store.update(CHAT_ID, () => saved)
 
     const [row] = await rawRows('chats')
-    expect(row.isLocalOnly).toBe(true)
+    expect(row).toMatchObject({ isLocalOnly: true, threadFormat: 1 })
     const [storedMessage] = row.messages as Record<string, unknown>[]
     expect(storedMessage.attachments).toEqual([
       {
         id: 'att_image',
-        type: 'image',
+        kind: 'image',
         fileName: 'photo.png',
         mimeType: 'image/png',
-        fileSize: 4,
+        size: 4,
+        thumbnail: 'dGh1bWI=',
         storagePayloadId: `${CHAT_ID}:att_image`,
+      },
+      {
+        id: 'att_seen',
+        kind: 'image',
+        fileName: 'photo.png',
+        mimeType: 'image/png',
+        size: 4,
+        thumbnail: 'dGh1bWI=',
+        storagePayloadId: `${CHAT_ID}:att_seen`,
       },
     ])
     expect(await rawRows('attachmentPayloads')).toEqual([
-      {
-        id: `${CHAT_ID}:att_image`,
-        chatId: CHAT_ID,
-        base64: 'cGhvdG8=',
-        thumbnailBase64: 'dGh1bWI=',
-      },
+      { id: `${CHAT_ID}:att_image`, chatId: CHAT_ID, base64: 'cGhvdG8=' },
+      { id: `${CHAT_ID}:att_seen`, chatId: CHAT_ID, textContent: '' },
     ])
-    expect(await store.get(CHAT_ID)).toEqual(saved)
+    expect(await store.get(CHAT_ID)).toEqual({
+      ...saved,
+      messages: [
+        {
+          ...saved.messages[0],
+          attachments: [IMAGE, { ...IMAGE, id: 'att_seen', base64: undefined }],
+        },
+      ],
+    })
+    expect(
+      (await store.get(CHAT_ID))?.messages[0].attachments?.[1],
+    ).not.toHaveProperty('textContent')
   })
 
   it('lists only local chats, newest first, without their messages', async () => {
     await store.update(CHAT_ID, () =>
       thread({ title: 'Older', updatedAt: '2026-05-01T10:00:00Z' }),
     )
-    await store.update('newer', () =>
-      thread({
-        id: 'newer',
+    await store.update(OTHER_ID, () =>
+      storedThread(OTHER_ID, {
         title: 'Newer',
         updatedAt: '2026-05-02T10:00:00.5Z',
         messages: [
@@ -117,115 +131,231 @@ describe('device store', () => {
     expect(
       summaries.map((summary) => [summary.id, summary.messageCount]),
     ).toEqual([
-      ['newer', 1],
+      [OTHER_ID, 1],
       [CHAT_ID, 0],
     ])
     expect(await store.get('cloud-copy')).toBeNull()
   })
 
-  it('opens and upgrades a chat the previous client stored on the device', async () => {
-    await indexedDBStorage.saveChat({
-      id: CHAT_ID,
-      title: 'Legacy chat',
+  describe('with chats the previous client stored', () => {
+    const legacyRow = (id: string, title: string) => ({
+      id,
+      title,
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
       isLocalOnly: true,
-      model: 'old-model',
-      codeExecutionAccessToken: 'b'.repeat(64),
       messages: [
         {
-          role: 'user',
+          role: 'user' as const,
           content: 'Look at this',
           timestamp: new Date('2026-01-01T00:00:01.000Z'),
           imageData: [{ base64: 'aW1n', mimeType: 'image/jpeg' }],
         },
-        {
-          role: 'assistant',
-          content: 'A cat',
-          timestamp: new Date('2026-01-01T00:00:02.000Z'),
-          thoughts: 'It has whiskers',
-          webSearch: {
-            query: 'cats',
-            status: 'completed',
-            sources: [{ title: 'Cats', url: 'https://cats.example' }],
-          },
-        },
       ],
     })
-
-    const legacy = await store.get(CHAT_ID)
-
-    expect(legacy).toEqual({
-      id: CHAT_ID,
-      title: 'Legacy chat',
-      titleState: 'generated',
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-02T00:00:00Z',
-      model: 'old-model',
-      codeExecutionAccessToken: 'b'.repeat(64),
-      messages: [
-        {
-          id: `${CHAT_ID}-message-0`,
-          role: 'user',
-          createdAt: '2026-01-01T00:00:01Z',
-          content: 'Look at this',
-          attachments: [
-            {
-              id: `${CHAT_ID}-message-0-attachment-0`,
-              type: 'image',
-              fileName: 'image-0',
-              mimeType: 'image/jpeg',
-              base64: 'aW1n',
-            },
-          ],
-        },
-        {
-          id: `${CHAT_ID}-message-1`,
-          role: 'assistant',
-          createdAt: '2026-01-01T00:00:02Z',
-          content: 'A cat',
-          timeline: [
-            {
-              type: 'thinking',
-              id: `${CHAT_ID}-message-1-thinking`,
-              content: 'It has whiskers',
-              duration: null,
-            },
-            {
-              type: 'tool_call',
-              id: `${CHAT_ID}-message-1-search`,
-              toolCallId: `${CHAT_ID}-message-1-search`,
-              name: 'web_search',
-              arguments: '{"query":"cats"}',
-              result: {
-                query: 'cats',
-                results: [
-                  { url: 'https://cats.example', title: 'Cats', snippet: '' },
-                ],
+    const upgraded = (id: string, title: string) =>
+      storedThread(id, {
+        title,
+        titleState: 'generated',
+        messages: [
+          {
+            id: `${id}-message-0`,
+            role: 'user',
+            createdAt: '2026-01-01T00:00:01Z',
+            content: 'Look at this',
+            attachments: [
+              {
+                id: `${id}-message-0-attachment-0`,
+                kind: 'image',
+                fileName: 'image-0',
+                mimeType: 'image/jpeg',
+                size: 3,
+                base64: 'aW1n',
               },
-              complete: true,
-            },
-            {
-              type: 'content',
-              id: `${CHAT_ID}-message-1-content`,
-              content: 'A cat',
-            },
-          ],
-        },
-      ],
+            ],
+          },
+        ],
+      })
+    const upgrades = () =>
+      client.post.mock.calls.filter(([path]) => path === '/v1/threads/upgrade')
+
+    it('rewrites each one in the thread format once, through the harness', async () => {
+      signIn()
+      await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/upgrade')
+          return { threads: [upgraded(CHAT_ID, 'Cats')] }
+        throw new Error(`Unexpected ${path}`)
+      })
+
+      expect((await store.list()).map((summary) => summary.id)).toEqual([
+        CHAT_ID,
+      ])
+
+      expect(upgrades()).toHaveLength(1)
+      expect(upgrades()[0][1]).toEqual({
+        threads: [
+          expect.objectContaining({
+            id: CHAT_ID,
+            title: 'Cats',
+            messages: [
+              expect.objectContaining({
+                content: 'Look at this',
+                imageData: [{ base64: 'aW1n', mimeType: 'image/jpeg' }],
+              }),
+            ],
+          }),
+        ],
+      })
+      expect(await store.get(CHAT_ID)).toEqual(upgraded(CHAT_ID, 'Cats'))
+      const [row] = await rawRows('chats')
+      expect(row).toMatchObject({ id: CHAT_ID, threadFormat: 1 })
+      await store.list()
+      await store.update(CHAT_ID, (current) => current)
+      expect(upgrades()).toHaveLength(1)
     })
-    expect(localThreadView(legacy!).messages[0].attachments).toEqual([
-      {
-        id: `${CHAT_ID}-message-0-attachment-0`,
-        kind: 'image',
-        fileName: 'image-0',
-        mimeType: 'image/jpeg',
-        size: 0,
-        thumbnail: null,
-        pages: null,
-        status: 'ready',
-      },
-    ])
+
+    it("keeps each old image as the original of the harness's copy", async () => {
+      signIn()
+      const row = legacyRow(CHAT_ID, 'Cats')
+      await indexedDBStorage.saveChat({
+        ...row,
+        messages: [
+          ...row.messages,
+          {
+            role: 'user',
+            content: 'And this one',
+            timestamp: new Date('2026-01-01T00:00:02.000Z'),
+            attachments: [
+              {
+                id: 'att-cat',
+                type: 'image',
+                fileName: 'cat.png',
+                mimeType: 'image/png',
+                base64: 'Y2F0',
+              },
+            ],
+          },
+        ],
+      })
+      const modelCopy = (id: string, base64: string) => ({
+        id,
+        kind: 'image' as const,
+        fileName: 'image.webp',
+        mimeType: 'image/webp',
+        size: 5,
+        base64,
+      })
+      const returned = storedThread(CHAT_ID, {
+        title: 'Cats',
+        titleState: 'generated',
+        messages: [
+          {
+            id: `${CHAT_ID}-message-0`,
+            role: 'user',
+            createdAt: '2026-01-01T00:00:01Z',
+            content: 'Look at this',
+            attachments: [
+              modelCopy(`${CHAT_ID}-message-0-attachment-0`, 'Y29weTA='),
+            ],
+          },
+          {
+            id: `${CHAT_ID}-message-1`,
+            role: 'user',
+            createdAt: '2026-01-01T00:00:02Z',
+            content: 'And this one',
+            attachments: [modelCopy('att-cat', 'Y29weTE=')],
+          },
+        ],
+      })
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/upgrade') return { threads: [returned] }
+        throw new Error(`Unexpected ${path}`)
+      })
+
+      expect(await store.get(CHAT_ID)).toEqual(returned)
+      expect(
+        await store.originals(CHAT_ID, [
+          `${CHAT_ID}-message-0-attachment-0`,
+          'att-cat',
+        ]),
+      ).toEqual(
+        new Map([
+          [
+            `${CHAT_ID}-message-0-attachment-0`,
+            { base64: 'aW1n', mimeType: 'image/jpeg' },
+          ],
+          ['att-cat', { base64: 'Y2F0', mimeType: 'image/png' }],
+        ]),
+      )
+    })
+
+    it('sends each one alone, and upgrades the others when the harness refuses one', async () => {
+      signIn()
+      await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))
+      await indexedDBStorage.saveChat(legacyRow(OTHER_ID, 'Unreadable'))
+      const refusal = new HarnessError(
+        { code: 'BAD_REQUEST', message: 'The chat cannot be read' },
+        400,
+      )
+      client.post.mockImplementation(
+        async (path: string, input: { threads: { id: string }[] }) => {
+          if (path !== '/v1/threads/upgrade')
+            throw new Error(`Unexpected ${path}`)
+          if (input.threads.some((row) => row.id === OTHER_ID)) throw refusal
+          return { threads: [upgraded(CHAT_ID, 'Cats')] }
+        },
+      )
+
+      expect(await store.get(CHAT_ID)).toEqual(upgraded(CHAT_ID, 'Cats'))
+
+      const sent = upgrades().map(([, input]) =>
+        input.threads.map((row: { id: string }) => row.id),
+      )
+      expect(sent.sort()).toEqual([[OTHER_ID], [CHAT_ID]])
+      expect(await store.get(OTHER_ID)).toBeNull()
+      const unreadable = (await rawRows('chats')).find(
+        (row) => row.id === OTHER_ID,
+      )
+      expect(unreadable).toMatchObject({ title: 'Unreadable' })
+      expect(unreadable).not.toHaveProperty('threadFormat')
+    })
+
+    it('lists the others when the harness fails on one, and upgrades it on a later load', async () => {
+      signIn()
+      await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))
+      await indexedDBStorage.saveChat(legacyRow(OTHER_ID, 'Dogs'))
+      const failure = new HarnessError(
+        { code: 'UPSTREAM_REFUSED', message: 'The chat service is busy' },
+        503,
+      )
+      let failing = true
+      client.post.mockImplementation(
+        async (path: string, input: { threads: { id: string }[] }) => {
+          if (path !== '/v1/threads/upgrade')
+            throw new Error(`Unexpected ${path}`)
+          const [{ id }] = input.threads
+          if (id === OTHER_ID && failing) throw failure
+          return { threads: [upgraded(id, id === CHAT_ID ? 'Cats' : 'Dogs')] }
+        },
+      )
+
+      expect((await store.list()).map((summary) => summary.id)).toEqual([
+        CHAT_ID,
+      ])
+      expect(await store.get(OTHER_ID)).toBeNull()
+      expect(logError).toHaveBeenCalledWith(
+        'Failed to upgrade a chat stored on this device',
+        failure,
+        expect.objectContaining({ metadata: { chatId: OTHER_ID } }),
+      )
+      failing = false
+
+      expect((await store.list()).map((summary) => summary.id).sort()).toEqual(
+        [CHAT_ID, OTHER_ID].sort(),
+      )
+      expect(await store.get(OTHER_ID)).toEqual(upgraded(OTHER_ID, 'Dogs'))
+    })
   })
 
   it('does not write back a chat deleted while its run was finishing', async () => {
@@ -272,18 +402,17 @@ describe('tab store', () => {
     })
     try {
       const store = localThreadStore('tab')
-      await store.update(CHAT_ID, () =>
-        thread({
-          messages: [
-            {
-              id: 'm1',
-              role: 'user',
-              createdAt: '2026-05-01T10:00:01Z',
-              content: 'Signed out question',
-            },
-          ],
-        }),
-      )
+      const saved = thread({
+        messages: [
+          {
+            id: 'm1',
+            role: 'user',
+            createdAt: '2026-05-01T10:00:01Z',
+            content: 'Signed out question',
+          },
+        ],
+      })
+      await store.update(CHAT_ID, () => saved)
 
       const [row] = JSON.parse(
         sessionStorage.getItem('tinfoil-sync-session-chats')!,
@@ -291,11 +420,10 @@ describe('tab store', () => {
       expect(row).toMatchObject({
         id: CHAT_ID,
         isLocalOnly: true,
+        threadFormat: 1,
         messages: [{ id: 'm1', content: 'Signed out question' }],
       })
-      expect((await store.get(CHAT_ID))?.messages[0].content).toBe(
-        'Signed out question',
-      )
+      expect(await store.get(CHAT_ID)).toEqual(saved)
       expect((await store.list()).map((summary) => summary.id)).toEqual([
         CHAT_ID,
       ])
@@ -310,12 +438,12 @@ describe('tab store', () => {
 
   it("keeps a signed-out chat's image bytes and page images in memory, not session storage", async () => {
     const store = localThreadStore('tab')
-    const scan: LocalAttachment = {
+    const scan: AttachmentDescriptor = {
       id: 'att_scan',
-      type: 'document',
+      kind: 'document',
       fileName: 'scan.pdf',
       mimeType: 'application/pdf',
-      fileSize: 8,
+      size: 8,
       pages: [
         { page: 1, text: 'Typed text', image: '', is_scanned: false },
         { page: 2, text: 'Scanned text', image: 'cGFnZQ==', is_scanned: true },
@@ -338,28 +466,17 @@ describe('tab store', () => {
       const [row] = JSON.parse(
         sessionStorage.getItem('tinfoil-sync-session-chats')!,
       )
+      const { base64: _, ...thumbnailOnly } = IMAGE
       expect(row.messages).toEqual([
         {
           id: 'm1',
           role: 'user',
           createdAt: '2026-05-01T10:00:01Z',
-          timestamp: '2026-05-01T10:00:01Z',
           content: 'What is this?',
           attachments: [
+            thumbnailOnly,
             {
-              id: 'att_image',
-              type: 'image',
-              fileName: 'photo.png',
-              mimeType: 'image/png',
-              fileSize: 4,
-              thumbnailBase64: 'dGh1bWI=',
-            },
-            {
-              id: 'att_scan',
-              type: 'document',
-              fileName: 'scan.pdf',
-              mimeType: 'application/pdf',
-              fileSize: 8,
+              ...scan,
               pages: [
                 { page: 1, text: 'Typed text', image: '', is_scanned: false },
                 { page: 2, text: 'Scanned text', image: '', is_scanned: true },
@@ -372,254 +489,5 @@ describe('tab store', () => {
     } finally {
       await store.deleteAll()
     }
-  })
-})
-
-describe('mergeLocalThread', () => {
-  const stored = thread({
-    messages: [
-      { id: 'u1', role: 'user', createdAt: 't1', content: 'first' },
-      {
-        id: 'a1',
-        role: 'assistant',
-        createdAt: 't2',
-        content: 'answer',
-        model: 'test-model',
-        timeline: [{ id: 'b1', type: 'content', content: 'answer' }],
-      },
-      {
-        id: 'u2',
-        role: 'user',
-        createdAt: 't3',
-        content: 'second',
-        attachments: [IMAGE],
-      },
-      {
-        id: 'a2',
-        role: 'assistant',
-        createdAt: 't4',
-        content: 'second answer',
-        timeline: [{ id: 'b2', type: 'content', content: 'second answer' }],
-      },
-    ],
-  })
-
-  it('keeps messages before the window and maps attachments back to descriptors', () => {
-    const window: WireMessage[] = [
-      {
-        id: 'u2',
-        role: 'user',
-        createdAt: 't3',
-        content: 'second',
-        attachments: [
-          {
-            id: 'att_image',
-            kind: 'image',
-            fileName: 'photo.png',
-            mimeType: 'image/png',
-            size: 4,
-            thumbnail: 'dGh1bWI=',
-            pages: null,
-            status: 'ready',
-            description: 'A photo of a door',
-          },
-        ],
-      },
-      {
-        id: 'a2',
-        role: 'assistant',
-        createdAt: 't4',
-        timeline: [{ id: 'b2', type: 'content', content: 'second answer' }],
-      },
-      {
-        id: 'msg_u3',
-        role: 'user',
-        createdAt: 't5',
-        content: 'third',
-      },
-      {
-        id: 'msg_a3',
-        role: 'assistant',
-        createdAt: '',
-        timeline: [
-          { id: 'msg_a3_thinking_0', type: 'thinking', content: 'hmm' },
-          { id: 'msg_a3_content_1', type: 'content', content: 'third ' },
-          { id: 'msg_a3_content_2', type: 'content', content: 'answer' },
-        ],
-        isError: false,
-      },
-    ]
-
-    const merged = mergeLocalThread(
-      stored,
-      { messages: window, hasOlder: true },
-      {
-        replies: [
-          {
-            id: 'msg_a3',
-            model: 'test-model',
-            modelDisplayName: 'Test model',
-            usage: { promptTokens: 10, completionTokens: 3 },
-            isError: false,
-            isInterrupted: false,
-          },
-        ],
-        summary: {
-          ...localThreadView(stored),
-          title: 'Doors',
-          titleState: 'generated',
-          contextUsage: { usedTokens: 10, limitTokens: 100, percentage: 10 },
-        },
-        updatedAt: '2026-05-01T11:00:00Z',
-      },
-    )
-
-    expect(merged.messages).toEqual([
-      stored.messages[0],
-      stored.messages[1],
-      {
-        ...stored.messages[2],
-        attachments: [{ ...IMAGE, description: 'A photo of a door' }],
-      },
-      stored.messages[3],
-      { id: 'msg_u3', role: 'user', createdAt: 't5', content: 'third' },
-      {
-        id: 'msg_a3',
-        role: 'assistant',
-        createdAt: '2026-05-01T11:00:00Z',
-        content: 'third answer',
-        model: 'test-model',
-        modelDisplayName: 'Test model',
-        usage: { promptTokens: 10, completionTokens: 3 },
-        timeline: window[3].timeline,
-      },
-    ])
-    expect(merged).toMatchObject({
-      title: 'Doors',
-      titleState: 'generated',
-      contextUsage: { usedTokens: 10, limitTokens: 100, percentage: 10 },
-      updatedAt: '2026-05-01T11:00:00Z',
-    })
-  })
-
-  it('drops stored messages after an edited message', () => {
-    const merged = mergeLocalThread(stored, {
-      messages: [
-        { id: 'u1', role: 'user', createdAt: 't1', content: 'first' },
-        {
-          id: 'a1',
-          role: 'assistant',
-          createdAt: 't2',
-          timeline: stored.messages[1].timeline,
-        },
-        { id: 'msg_edit', role: 'user', createdAt: 't6', content: 'edited' },
-      ],
-      hasOlder: false,
-    })
-    expect(merged.messages.map((message) => message.id)).toEqual([
-      'u1',
-      'a1',
-      'msg_edit',
-    ])
-    expect(merged.messages[1]).toEqual(stored.messages[1])
-  })
-
-  it('keeps a title the user set while the run streamed', () => {
-    const renamed = { ...stored, title: 'Mine', titleState: 'manual' as const }
-    const merged = mergeLocalThread(
-      renamed,
-      { messages: [], hasOlder: false },
-      {
-        summary: {
-          ...localThreadView(stored),
-          title: 'Generated',
-          titleState: 'generated',
-        },
-      },
-    )
-    expect(merged).toMatchObject({ title: 'Mine', titleState: 'manual' })
-  })
-})
-
-describe('turnThread', () => {
-  it('sends image bytes only with the most recent image messages', () => {
-    const image = (id: string): LocalAttachment => ({
-      ...IMAGE,
-      id,
-      base64: `bytes-${id}`,
-    })
-    const document: LocalAttachment = {
-      id: 'doc',
-      type: 'document',
-      fileName: 'scan.pdf',
-      textContent: 'scanned',
-      pages: [
-        { page: 1, text: 'scanned', image: 'page-bytes', is_scanned: true },
-      ],
-    }
-    const messages = [
-      ['m1', [image('a')]],
-      ['m2', [document]],
-      ['m3', [image('b')]],
-      ['m4', []],
-      ['m5', [image('c')]],
-    ].map(([id, attachments]) => ({
-      id: id as string,
-      role: 'user' as const,
-      createdAt: 't',
-      content: 'look',
-      ...((attachments as LocalAttachment[]).length
-        ? { attachments: attachments as LocalAttachment[] }
-        : {}),
-    }))
-
-    const sent = turnThread(thread({ messages }))
-
-    const { base64: _, ...withoutBytes } = image('a')
-    expect(sent.messages.map((message) => message.attachments)).toEqual([
-      [withoutBytes],
-      [document],
-      [image('b')],
-      undefined,
-      [image('c')],
-    ])
-    expect(sent).toMatchObject({
-      title: 'New Chat',
-      titleState: 'placeholder',
-      model: 'test-model',
-      presetId: null,
-      codeExecutionAccessToken: 'a'.repeat(64),
-    })
-    expect(sent).not.toHaveProperty('id')
-  })
-
-  it('blanks page images of older documents but keeps their text', () => {
-    const scan = (id: string): LocalAttachment => ({
-      id,
-      type: 'document',
-      fileName: `${id}.pdf`,
-      pages: [
-        { page: 1, text: `text ${id}`, image: `img-${id}`, is_scanned: false },
-      ],
-    })
-    const sent = turnThread(
-      thread({
-        messages: ['d1', 'd2'].map((id) => ({
-          id,
-          role: 'user' as const,
-          createdAt: 't',
-          content: '',
-          attachments: [scan(id)],
-        })),
-      }),
-      1,
-    )
-    expect(sent.messages[0].attachments).toEqual([
-      {
-        ...scan('d1'),
-        pages: [{ page: 1, text: 'text d1', image: '', is_scanned: false }],
-      },
-    ])
-    expect(sent.messages[1].attachments).toEqual([scan('d2')])
   })
 })

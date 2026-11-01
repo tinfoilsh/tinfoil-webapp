@@ -144,8 +144,8 @@ export function PresetEditor({
                 {PRESET_SETTING_UNSET_LABEL}
               </option>
               {modelOptions.map((model) => (
-                <option key={model.modelName} value={model.modelName}>
-                  {model.name}
+                <option key={model.id} value={model.id}>
+                  {model.label}
                 </option>
               ))}
             </select>

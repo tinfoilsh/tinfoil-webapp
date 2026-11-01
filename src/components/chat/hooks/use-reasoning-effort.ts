@@ -15,6 +15,6 @@ export function useThinkingEnabled() {
   return { thinkingEnabled, setThinkingEnabled }
 }
 export const supportsReasoningEffort = (model?: BaseModel | null) =>
-  !!model?.chatConfig?.reasoningConfig?.supportsEffort
+  !!model?.reasoning?.effort
 export const supportsThinkingToggle = (model?: BaseModel | null) =>
-  !!model?.chatConfig?.reasoningConfig?.supportsToggle
+  !!model?.reasoning?.toggle

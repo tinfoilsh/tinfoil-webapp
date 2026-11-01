@@ -2,18 +2,13 @@
  * GenUI rendering entry points.
  *
  * `renderGenUIInline` is the hot path used by the chat renderer. It looks up
- * the widget by name, validates the raw arguments with the widget's Zod
- * schema, and delegates to the widget's `render` function. Returns `null`
- * for unknown widgets or invalid input so callers can decide how to fall
- * back.
+ * the widget by name and delegates to the widget's `render` function with
+ * the arguments the harness validated. Returns `null` for unknown widgets so
+ * callers can decide how to fall back.
  */
 import type { JSX } from 'react'
 import { GENUI_WIDGETS_BY_NAME } from './registry'
-import type {
-  GenUIRenderContext,
-  GenUIToolResolution,
-  GenUIWidget,
-} from './types'
+import type { GenUIRenderContext, GenUIWidget } from './types'
 
 export function getGenUIWidget(name: string): GenUIWidget | undefined {
   return GENUI_WIDGETS_BY_NAME[name]
@@ -21,25 +16,10 @@ export function getGenUIWidget(name: string): GenUIWidget | undefined {
 
 export function renderGenUIInline(
   name: string,
-  rawArgs: unknown,
+  args: unknown,
   ctx: GenUIRenderContext,
 ): JSX.Element | null {
   const widget = GENUI_WIDGETS_BY_NAME[name]
   if (!widget || !widget.render) return null
-  const parsed = widget.schema.safeParse(rawArgs)
-  if (!parsed.success) return null
-  return widget.render(parsed.data, ctx)
-}
-
-export function renderGenUIResolved(
-  name: string,
-  rawArgs: unknown,
-  resolution: GenUIToolResolution,
-  ctx: GenUIRenderContext,
-): JSX.Element | null {
-  const widget = GENUI_WIDGETS_BY_NAME[name]
-  if (!widget || !widget.renderResolved) return null
-  const parsed = widget.schema.safeParse(rawArgs)
-  if (!parsed.success) return null
-  return widget.renderResolved(parsed.data, resolution, ctx)
+  return widget.render(args, ctx)
 }
