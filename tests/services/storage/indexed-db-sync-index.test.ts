@@ -246,6 +246,61 @@ describe('IndexedDB pending sync index', () => {
     db.close()
   })
 
+  it('rebuilds the summaries the previous version wrote from their chats', async () => {
+    const thread = {
+      id: 'device-chat',
+      title: 'Device chat',
+      titleState: 'manual',
+      createdAt: '2026-08-12T00:00:00.000Z',
+      updatedAt: '2026-08-12T00:00:00.000Z',
+    }
+    const row = {
+      id: 'device-chat',
+      isLocalOnly: true,
+      threadFormat: 1,
+      title: 'Device chat',
+      createdAt: '2026-08-12T00:00:00.000Z',
+      updatedAt: '2026-08-12T00:00:00.000Z',
+      activityAt: '2026-08-12T00:05:00.000Z',
+      thread,
+      messages: [
+        {
+          id: 'message-1',
+          role: 'user',
+          content: 'Hello',
+          createdAt: '2026-08-12T00:05:00.000Z',
+        },
+      ],
+    }
+    // As the previous version left it: a summary whose activity time it took
+    // from the chat's creation, and its summary migrations marked done.
+    await seedVersionSeven({
+      chats: [row],
+      chatSummaries: [
+        {
+          ...row,
+          messages: [],
+          messageCount: 1,
+          activityAt: '2026-08-12T00:00:00.000Z',
+          isMetadataOnly: true,
+        },
+      ],
+      migrations: [
+        { id: 'chat-summaries-v6', completedAt: 1 },
+        { id: 'chat-summaries-v7', completedAt: 2 },
+      ],
+    })
+
+    const [summary] = await new IndexedDBStorage().getChatSummaries()
+
+    expect(summary).toMatchObject({
+      id: 'device-chat',
+      activityAt: '2026-08-12T00:05:00.000Z',
+      messageCount: 1,
+      messages: [],
+    })
+  })
+
   it('fails a blocked upgrade promptly and allows a retry', async () => {
     const olderConnection = await openVersionThree([storedChat('cloud-chat')])
     olderConnection.onversionchange = () => undefined
