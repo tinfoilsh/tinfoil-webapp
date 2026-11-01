@@ -6,6 +6,8 @@ export {
 } from './kit'
 export {
   getLocalPasskeyCredentialId,
+  getRoamingPasskeyCredentialIds,
+  getThisDevicePasskeyCredentialIds,
   setLocalPasskeyCredentialId,
 } from './local-passkey-credential'
 export {

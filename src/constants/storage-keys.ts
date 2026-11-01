@@ -17,6 +17,11 @@ export const SECRET_PASSKEY_BACKED_UP = 'tinfoil-secret-passkey-backed-up'
 // "another device has a bundle but this one doesn't yet" so the
 // multi-device setup prompt surfaces correctly.
 export const LOCAL_PASSKEY_CREDENTIAL_ID = 'tinfoil-local-passkey-credential-id'
+// Security keys and phones (WebAuthn credentials not built into this device)
+// that have registered or unlocked on this browser. They work wherever the
+// user carries them, so they count as this device's passkey too.
+export const ROAMING_PASSKEY_CREDENTIAL_IDS =
+  'tinfoil-roaming-passkey-credential-ids'
 export const PASSKEY_SYNC_VERSION = 'tinfoil-passkey-sync-version'
 export const PASSKEY_BUNDLE_VERSION = 'tinfoil-passkey-bundle-version'
 

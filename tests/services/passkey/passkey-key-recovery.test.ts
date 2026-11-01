@@ -335,13 +335,18 @@ describe('recoverPasskeyKeyBundle', () => {
         .mockImplementation(async ({ wrappedKeys }) => {
           if (recoverFromCache.mock.calls.length === 1) {
             expect(wrappedKeys).toEqual([primaryRecord])
-            return { credentialId: CREDENTIAL_ID, key: primary }
+            return {
+              credentialId: CREDENTIAL_ID,
+              key: primary,
+              authenticatorAttachment: null,
+            }
           }
           expect(wrappedKeys).toEqual([alternativeRecord])
           if (result === 'missing') return null
           return {
             credentialId: result === 'matching' ? CREDENTIAL_ID : 'BAUG',
             key: alternative,
+            authenticatorAttachment: null,
           }
         })
 

@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   addWrappedKeyForCurrentKey: vi.fn(),
   createAndWrapTinfoilKey: vi.fn(),
   deletePasskeyCredential: vi.fn(),
-  getLocalPasskeyCredentialId: vi.fn(),
+  getThisDevicePasskeyCredentialIds: vi.fn(),
   getPasskeyCredentialState: vi.fn(),
   getPasskeyDeviceState: vi.fn(),
   loadPasskeyCredentials: vi.fn(),
@@ -59,7 +59,7 @@ vi.mock('@/services/passkey', () => {
     addWrappedKeyForCurrentKey: mocks.addWrappedKeyForCurrentKey,
     createAndWrapTinfoilKey: mocks.createAndWrapTinfoilKey,
     deletePasskeyCredential: mocks.deletePasskeyCredential,
-    getLocalPasskeyCredentialId: mocks.getLocalPasskeyCredentialId,
+    getThisDevicePasskeyCredentialIds: mocks.getThisDevicePasskeyCredentialIds,
     getPasskeyCredentialState: mocks.getPasskeyCredentialState,
     getPasskeyDeviceState: mocks.getPasskeyDeviceState,
     loadPasskeyCredentials: mocks.loadPasskeyCredentials,
@@ -116,7 +116,7 @@ describe('usePasskeyBackup', () => {
     mocks.getPasskeyCredentialState.mockResolvedValue('empty')
     mocks.getPasskeyDeviceState.mockResolvedValue('empty')
     mocks.loadPasskeyCredentials.mockResolvedValue([])
-    mocks.getLocalPasskeyCredentialId.mockReturnValue(null)
+    mocks.getThisDevicePasskeyCredentialIds.mockReturnValue([])
     mocks.getKey.mockReturnValue(null)
     mocks.getAllKeys.mockReturnValue({ primary: null, alternatives: [] })
     mocks.wrapTinfoilKeyBundle.mockImplementation(async (primary) => ({
@@ -332,7 +332,7 @@ describe('usePasskeyBackup', () => {
 
   it('clears stale recovery state when no passkey bundles remain', async () => {
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
-    mocks.getLocalPasskeyCredentialId.mockReturnValue('cred-local')
+    mocks.getThisDevicePasskeyCredentialIds.mockReturnValue(['cred-local'])
     mocks.getPasskeyDeviceState
       .mockResolvedValueOnce('this-device')
       .mockResolvedValueOnce('empty')
@@ -356,7 +356,7 @@ describe('usePasskeyBackup', () => {
 
   it('updates empty refresh state when marker removal throws', async () => {
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
-    mocks.getLocalPasskeyCredentialId.mockReturnValue('cred-local')
+    mocks.getThisDevicePasskeyCredentialIds.mockReturnValue(['cred-local'])
     mocks.getPasskeyDeviceState
       .mockResolvedValueOnce('this-device')
       .mockResolvedValueOnce('empty')
@@ -392,7 +392,7 @@ describe('usePasskeyBackup', () => {
       resolveOldState = resolve
     })
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
-    mocks.getLocalPasskeyCredentialId.mockReturnValue('cred-local')
+    mocks.getThisDevicePasskeyCredentialIds.mockReturnValue(['cred-local'])
     mocks.getPasskeyDeviceState
       .mockReturnValueOnce(oldState)
       .mockResolvedValueOnce('this-device')
@@ -457,7 +457,7 @@ describe('usePasskeyBackup', () => {
       resolveOldState = resolve
     })
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
-    mocks.getLocalPasskeyCredentialId.mockReturnValue('cred-local')
+    mocks.getThisDevicePasskeyCredentialIds.mockReturnValue(['cred-local'])
     mocks.getPasskeyDeviceState
       .mockReturnValueOnce(oldState)
       .mockResolvedValueOnce('this-device')
@@ -512,7 +512,7 @@ describe('usePasskeyBackup', () => {
     const oldState = new Promise<'empty'>((resolve) => {
       resolveOldState = resolve
     })
-    mocks.getLocalPasskeyCredentialId.mockReturnValue('cred-local')
+    mocks.getThisDevicePasskeyCredentialIds.mockReturnValue(['cred-local'])
     mocks.getPasskeyDeviceState
       .mockReturnValueOnce(oldState)
       .mockResolvedValueOnce('this-device')
