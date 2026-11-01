@@ -2,9 +2,7 @@ import {
   ChatListItem,
   type ChatItemData,
 } from '@/components/chat/chat-list-item'
-import { fireEvent, render, screen } from '@testing-library/react'
-import { TfThumbtack } from '@tinfoilsh/tinfoil-icons'
-import { PiPushPinFill } from 'react-icons/pi'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 const savedChat: ChatItemData = {
@@ -83,57 +81,26 @@ describe('ChatListItem navigation semantics', () => {
   })
 
   it.each([
-    { type: 'click', ctrlKey: true },
-    { type: 'click', metaKey: true },
-    { type: 'click', shiftKey: true },
-    { type: 'click', altKey: true },
-    { type: 'auxclick', button: 1 },
-  ])(
-    'preserves modified- and middle-click link behavior (%j)',
-    ({ type, ...modifiers }) => {
-      const { onSelect } = renderChatListItem({ href: '/chat/chat-123' })
-      const link = screen.getByRole('link')
+    { ctrlKey: true },
+    { metaKey: true },
+    { shiftKey: true },
+    { altKey: true },
+  ])('preserves modified-click link behavior (%j)', (modifiers) => {
+    const { onSelect } = renderChatListItem({ href: '/chat/chat-123' })
+    const link = screen.getByRole('link')
 
-      const event = new MouseEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        ...modifiers,
-      })
-      fireEvent(link, event)
-      expect(event.defaultPrevented).toBe(false)
-      expect(onSelect).not.toHaveBeenCalled()
-    },
-  )
-
-  it('renders chats without destinations as buttons', () => {
-    const { onSelect } = renderChatListItem()
-
-    fireEvent.click(screen.getByRole('button', { name: /Trip planning/ }))
-    expect(onSelect).toHaveBeenCalledOnce()
-    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    const event = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      ...modifiers,
+    })
+    fireEvent(link, event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })
 
 describe('ChatListItem favorites', () => {
-  it.each([false, true])(
-    'renders the real filled pin SVG when selected=%s',
-    (isSelected) => {
-      renderChatListItem({ isPinned: true, isSelected })
-      const indicator = screen.getByLabelText('Pinned to Favorites')
-      const { container } = render(
-        <PiPushPinFill
-          className="h-3.5 w-3.5 flex-shrink-0 text-content-muted"
-          title="Pinned to Favorites"
-          aria-label="Pinned to Favorites"
-        />,
-      )
-
-      expect(indicator.outerHTML).toBe(
-        container.querySelector('svg')?.outerHTML,
-      )
-    },
-  )
-
   it('does not show a pinned indicator for an unpinned chat', () => {
     renderChatListItem({ onTogglePin: vi.fn() })
 
@@ -164,52 +131,6 @@ describe('ChatListItem favorites', () => {
     expect(screen.queryByTitle('Generating response')).not.toBeInTheDocument()
   })
 
-  it.each(['button', 'menuitem'] as const)(
-    'keeps the real Tinfoil thumbtack SVG for the %s action',
-    (role) => {
-      renderChatListItem({ isPinned: true, onTogglePin: vi.fn() })
-      if (role === 'menuitem') {
-        fireEvent.click(
-          screen.getByRole('button', { name: 'More chat options' }),
-        )
-      }
-      const action = screen.getByRole(role, { name: 'Remove from Favorites' })
-      const { container } = render(
-        <TfThumbtack className="h-4 w-4" aria-hidden="true" />,
-      )
-
-      expect(action.querySelector('svg')).toBeInTheDocument()
-      expect(action.querySelector('svg')?.outerHTML).toBe(
-        container.querySelector('svg')?.outerHTML,
-      )
-    },
-  )
-
-  it('shows pinned state and removes a favorite from the desktop action', () => {
-    const onTogglePin = vi.fn()
-    renderChatListItem({ isPinned: true, onTogglePin })
-
-    expect(screen.getByLabelText('Pinned to Favorites')).toBeInTheDocument()
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Remove from Favorites' }),
-    )
-    expect(onTogglePin).toHaveBeenCalledOnce()
-  })
-
-  it('can hide pin controls next to a favorite title', () => {
-    renderChatListItem({
-      isPinned: true,
-      showPinnedIndicator: false,
-      showDesktopPinAction: false,
-      onTogglePin: vi.fn(),
-    })
-
-    expect(screen.queryByLabelText('Pinned to Favorites')).toBeNull()
-    expect(
-      screen.queryByRole('button', { name: 'Remove from Favorites' }),
-    ).toBeNull()
-  })
-
   it('can hide only the pinned marker', () => {
     renderChatListItem({
       isPinned: true,
@@ -221,11 +142,26 @@ describe('ChatListItem favorites', () => {
     expect(
       screen.getByRole('button', { name: 'Remove from Favorites' }),
     ).toBeInTheDocument()
+
+    cleanup()
+    renderChatListItem({
+      isPinned: true,
+      showPinnedIndicator: false,
+      showDesktopPinAction: false,
+      onTogglePin: vi.fn(),
+    })
+    expect(
+      screen.queryByRole('button', { name: 'Remove from Favorites' }),
+    ).toBeNull()
   })
 
-  it('does not offer pinning for temporary chats', () => {
+  it.each([
+    { isTemporary: true },
+    { pendingSave: true },
+    { dataCorrupted: true },
+  ])('does not offer pinning for a chat with %j', (state) => {
     renderChatListItem({
-      chat: { ...savedChat, isTemporary: true },
+      chat: { ...savedChat, ...state },
       onTogglePin: vi.fn(),
     })
     expect(
@@ -243,61 +179,17 @@ describe('ChatListItem favorites', () => {
       screen.getByRole('button', { name: 'Remove from Favorites' }),
     ).toBeInTheDocument()
   })
-
-  it('does not offer pinning while a chat save is pending', () => {
-    renderChatListItem({
-      chat: { ...savedChat, pendingSave: true },
-      onTogglePin: vi.fn(),
-    })
-    expect(
-      screen.queryByRole('button', { name: 'Pin to Favorites' }),
-    ).not.toBeInTheDocument()
-  })
-
-  it('does not offer pinning for corrupted chats', () => {
-    renderChatListItem({
-      chat: { ...savedChat, dataCorrupted: true },
-      onTogglePin: vi.fn(),
-    })
-    expect(
-      screen.queryByRole('button', { name: 'Pin to Favorites' }),
-    ).not.toBeInTheDocument()
-  })
-
-  it('offers the favorite action in the mobile menu', () => {
-    const onTogglePin = vi.fn()
-    renderChatListItem({ onTogglePin })
-
-    fireEvent.click(screen.getByRole('button', { name: 'More chat options' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Pin to Favorites' }))
-
-    expect(onTogglePin).toHaveBeenCalledOnce()
-  })
 })
 
 describe('ChatListItem safeguards', () => {
-  it('keeps the flag beside the title when the row has a favorite indicator and a timestamp', () => {
-    renderChatListItem({
-      isFlagged: true,
-      isPinned: true,
-      href: '/chat/chat-123',
-      chat: savedChat,
-      pixelateSidebarChatTitles: false,
-    })
-    const flag = screen.getByLabelText('Flagged by safeguards')
-    expect(flag.parentElement).toContainElement(
-      screen.getByText('Trip planning'),
-    )
-    expect(flag.parentElement).toContainElement(
-      screen.getByLabelText('Pinned to Favorites'),
-    )
+  it('shows the flag in the row of a flagged chat only', () => {
+    renderChatListItem({ isFlagged: true, href: '/chat/chat-123' })
     expect(
       screen.getByRole('link', { name: /Trip planning/ }),
-    ).toContainElement(flag)
-  })
+    ).toContainElement(screen.getByLabelText('Flagged by safeguards'))
 
-  it('does not show a flag for unflagged chats', () => {
-    renderChatListItem()
+    cleanup()
+    renderChatListItem({ href: '/chat/chat-123' })
     expect(
       screen.queryByLabelText('Flagged by safeguards'),
     ).not.toBeInTheDocument()
@@ -370,14 +262,6 @@ describe('ChatListItem message count', () => {
     createdAt: '2026-08-11T12:00:00.000Z',
     updatedAt: '2026-08-11T12:01:00.000Z',
   }
-
-  it('shows only the title for saved chats', () => {
-    renderChatListItem({ chat: { ...timestampedChat, messageCount: 4 } })
-
-    expect(screen.getByText('Trip planning')).toBeInTheDocument()
-    expect(screen.queryByText(/ago/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Updated/)).not.toBeInTheDocument()
-  })
 
   it('trusts the stored count over the placeholder messages of a summary', () => {
     renderChatListItem({

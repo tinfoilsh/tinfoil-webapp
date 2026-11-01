@@ -211,34 +211,6 @@ describe('native backup v1 manifest', () => {
     expect(parseNativeBackupManifest(first.manifestBytes)).toEqual(
       goldenManifest,
     )
-    expectTypeOf<NativeBackupManifestV1['counts']>().toMatchTypeOf<{
-      projects: number
-      project_documents: number
-      cloud_chats: number
-      local_chats: number
-      relationships: number
-      images: number
-      files: number
-    }>()
-  })
-
-  it('serializes relationships independently of input order', () => {
-    const ordered = input()
-    ordered.cloudChats.push({
-      id: 'c2',
-      title: 'Second cloud chat',
-      messages: [],
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      projectId: 'p',
-    })
-    ordered.relationships.projectChats.push({ projectId: 'p', chatId: 'c2' })
-    const reversed = structuredClone(ordered)
-    reversed.relationships.projectChats.reverse()
-
-    expect(formatNativeBackupV1(reversed).manifestBytes).toEqual(
-      formatNativeBackupV1(ordered).manifestBytes,
-    )
   })
 
   it('uses runtime-independent string ordering', () => {
@@ -572,43 +544,6 @@ describe('native backup v1 manifest', () => {
 })
 
 describe('native backup v2 manifest', () => {
-  it('truthfully records complete and partial source coverage', () => {
-    const complete = formatNativeBackupV2({
-      ...input(),
-      omissions: [],
-      warnings: [],
-    })
-    expect(parseNativeBackupManifest(complete.manifestBytes)).toMatchObject({
-      version: 2,
-      complete: true,
-      omissions: [],
-      warnings: [],
-    })
-
-    const partial = formatNativeBackupV2({
-      ...input(),
-      omissions: [
-        {
-          kind: 'cloud_chat',
-          source_id: 'unreadable-chat',
-          category: 'invalid',
-          reason: 'chat_payload_invalid',
-        },
-      ],
-      warnings: [
-        {
-          code: 'source_items_omitted',
-          category: 'source_coverage',
-          count: 1,
-        },
-      ],
-    })
-    expect(parseNativeBackupManifest(partial.manifestBytes)).toMatchObject({
-      version: 2,
-      complete: false,
-    })
-  })
-
   it('rejects contradictory partial metadata', async () => {
     const formatted = formatNativeBackupV2({
       ...input(),

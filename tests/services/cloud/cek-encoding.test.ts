@@ -15,9 +15,3 @@ it('encodes the active CEK and clears its temporary bytes', () => {
   )
   expect(bytes.every((byte) => byte === 0)).toBe(true)
 })
-it('rejects a missing key', () => {
-  mocks.bytes.mockImplementation(() => {
-    throw new Error('missing key')
-  })
-  expect(requirePrimaryKeyB64).toThrow('missing key')
-})

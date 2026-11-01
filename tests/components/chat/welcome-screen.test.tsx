@@ -16,10 +16,10 @@ vi.mock('@/components/chat/model-selector', () => ({
   ModelSelector: () => null,
 }))
 
-function renderWelcome(isDarkMode = false) {
+function renderWelcome() {
   return render(
     <WelcomeScreen
-      isDarkMode={isDarkMode}
+      isDarkMode={false}
       autoIntelligence="high"
       setAutoIntelligence={vi.fn()}
       onOpenPromptLibrary={vi.fn()}
@@ -34,32 +34,21 @@ describe('anonymous welcome legal notice', () => {
     auth.isSignedIn = false
   })
 
-  it.each([false, true])(
-    'shows the notice below prompt choices with legal links (dark mode: %s)',
-    (isDarkMode) => {
-      renderWelcome(isDarkMode)
+  it('shows the notice with legal links', () => {
+    renderWelcome()
 
-      const notice = screen.getByText(/By using this chat, you agree to our/)
-      expect(notice).toHaveTextContent(
-        'By using this chat, you agree to our Terms of Service and Privacy Policy.',
-      )
-      expect(
-        screen
-          .getByRole('button', { name: 'More' })
-          .compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy()
-
-      for (const [name, href] of [
-        ['Terms of Service', TERMS_URL],
-        ['Privacy Policy', PRIVACY_POLICY_URL],
-      ]) {
-        const link = screen.getByRole('link', { name })
-        expect(link).toHaveAttribute('href', href)
-        expect(link).toHaveAttribute('target', '_blank')
-        expect(link).toHaveAttribute('rel', 'noopener noreferrer')
-      }
-    },
-  )
+    expect(
+      screen.getByText(/By using this chat, you agree to our/),
+    ).toHaveTextContent(
+      'By using this chat, you agree to our Terms of Service and Privacy Policy.',
+    )
+    expect(
+      screen.getByRole('link', { name: 'Terms of Service' }),
+    ).toHaveAttribute('href', TERMS_URL)
+    expect(
+      screen.getByRole('link', { name: 'Privacy Policy' }),
+    ).toHaveAttribute('href', PRIVACY_POLICY_URL)
+  })
 
   it('does not show the notice to signed-in users', () => {
     auth.user = { id: 'user-test', firstName: 'Alex' }

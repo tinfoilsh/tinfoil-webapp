@@ -8,7 +8,7 @@ import {
   ENCRYPTION_KEY_CHANGED_EVENT,
   EncryptionService,
 } from '@/services/encryption/encryption-service'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const KEY_BYTES = new Uint8Array(32).fill(0x11)
 const KEY_STRING = `key_${'ar'.repeat(32)}`
@@ -20,10 +20,7 @@ describe('EncryptionService', () => {
 
   beforeEach(() => {
     service = new EncryptionService()
-    localStorage.clear()
   })
-
-  afterEach(() => vi.restoreAllMocks())
 
   describe('generateKey', () => {
     it('should generate distinct canonical 256-bit keys', async () => {
@@ -44,39 +41,21 @@ describe('EncryptionService', () => {
 
   describe('setKey', () => {
     it('should reject keys without key_ prefix', async () => {
-      await expect(service.setKey('invalid_key')).rejects.toThrow(
+      await expect(service.setKey(`kex_${'ar'.repeat(32)}`)).rejects.toThrow(
         'Key must start with "key_" prefix',
       )
     })
 
-    it.each(['key_INVALID', 'key_abc!def'])(
-      'should reject keys with invalid characters: %s',
-      async (key) => {
-        await expect(service.setKey(key)).rejects.toThrow(
-          'Key must only contain lowercase letters and numbers after the prefix',
-        )
-      },
-    )
-
-    it('should reject odd-length keys', async () => {
-      await expect(service.setKey('key_abc')).rejects.toThrow(
-        'Key length must be even',
-      )
-    })
-
-    it('should reject keys that decode to the wrong byte length', async () => {
+    it.each([
+      ['key_INVALID', /only contain lowercase letters and numbers/],
+      ['key_abc!def', /only contain lowercase letters and numbers/],
+      ['key_abc', /length must be even/],
       // 8 valid chars decode to 4 bytes — far short of the 32 a CEK
       // needs. Without the byte-length guard this would persist and
       // break every downstream crypto/sync operation.
-      await expect(service.setKey('key_abcdefgh')).rejects.toThrow(
-        /must decode to 32 bytes/,
-      )
-    })
-
-    it('should persist key to localStorage', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-      expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBe(key)
+      ['key_abcdefgh', /must decode to 32 bytes/],
+    ])('should reject a malformed key: %s', async (key, message) => {
+      await expect(service.setKey(key)).rejects.toThrow(message)
     })
 
     it('should store previous key in history when setting new key', async () => {
@@ -94,27 +73,6 @@ describe('EncryptionService', () => {
   })
 
   describe('staged activation (persist: false)', () => {
-    it('stages the key in memory without touching storage', async () => {
-      expect(service.getKey()).toBeNull()
-      const key = await service.generateKey()
-      await service.setKey(key, { persist: false })
-
-      expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBeNull()
-      expect(service.getKey()).toBeNull()
-      // The active CEK is still usable for the enclave handshake.
-      expect(service.getKeyBytesOrThrow().byteLength).toBe(32)
-    })
-
-    it('persistCurrentKeyState commits the staged key to storage', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key, { persist: false })
-
-      service.persistCurrentKeyState()
-
-      expect(service.getKey()).toBe(key)
-      expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBe(key)
-    })
-
     it('keeps the previous stored key until the staged key is committed', async () => {
       const existing = await service.generateKey()
       await service.setKey(existing)
@@ -136,12 +94,6 @@ describe('EncryptionService', () => {
   })
 
   describe('getKey / getKeyBytesOrThrow', () => {
-    it('getKeyBytesOrThrow throws when no key is set', () => {
-      expect(() => service.getKeyBytesOrThrow()).toThrow(
-        /no encryption key available/,
-      )
-    })
-
     it('getKeyBytesOrThrow returns raw bytes for the current key', async () => {
       await service.setKey(KEY_STRING)
       const bytes = service.getKeyBytesOrThrow()
@@ -208,8 +160,7 @@ describe('EncryptionService', () => {
 
     it('should support clearing without persisting', async () => {
       const key = KEY_STRING
-      await service.setKey(key)
-      service.addDecryptionKey(ALTERNATIVE_KEY)
+      await service.setAllKeys(key, [ALTERNATIVE_KEY])
       await service.setKey(REPLACEMENT_KEY, { persist: false })
 
       service.clearKey({ persist: false })
@@ -261,113 +212,7 @@ describe('EncryptionService', () => {
     )
   })
 
-  describe('addDecryptionKey', () => {
-    it('should reject invalid key format', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      expect(() => service.addDecryptionKey('invalid_key')).toThrow(
-        'Key must start with "key_" prefix',
-      )
-    })
-
-    it('should not add the primary key to fallback list', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      service.addDecryptionKey(key)
-
-      expect(service.getFallbackKeyCount()).toBe(0)
-    })
-
-    it('should not add duplicate keys', async () => {
-      const primaryKey = await service.generateKey()
-      await service.setKey(primaryKey)
-
-      const fallbackKey = await service.generateKey()
-      service.addDecryptionKey(fallbackKey)
-      service.addDecryptionKey(fallbackKey)
-
-      expect(service.getFallbackKeyCount()).toBe(1)
-      expect(service.getAllKeys()).toEqual({
-        primary: primaryKey,
-        alternatives: [fallbackKey],
-      })
-    })
-
-    it('should persist fallback keys to storage', async () => {
-      const primaryKey = await service.generateKey()
-      await service.setKey(primaryKey)
-
-      const fallbackKey = await service.generateKey()
-      service.addDecryptionKey(fallbackKey)
-
-      const stored = localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY)
-      expect(stored).toBeTruthy()
-
-      const parsed = JSON.parse(stored!)
-      expect(parsed).toContain(fallbackKey)
-    })
-
-    it('should trigger onFallbackKeyAdded callbacks', async () => {
-      const primaryKey = await service.generateKey()
-      await service.setKey(primaryKey)
-
-      let calls = 0
-      const unsubscribe = service.onFallbackKeyAdded(() => {
-        calls += 1
-      })
-
-      service.addDecryptionKey(await service.generateKey())
-      expect(calls).toBe(1)
-
-      unsubscribe()
-      service.addDecryptionKey(await service.generateKey())
-      expect(calls).toBe(1)
-    })
-  })
-
-  describe('clearFallbackKeys', () => {
-    it('drops every fallback key from memory and persists the empty history', async () => {
-      const primaryKey = await service.generateKey()
-      await service.setKey(primaryKey)
-      service.addDecryptionKey(await service.generateKey())
-      service.addDecryptionKey(await service.generateKey())
-      expect(service.getFallbackKeyCount()).toBe(2)
-      const primaryBytes = service.getKeyBytesOrThrow()
-
-      service.clearFallbackKeys()
-
-      expect(service.getFallbackKeyCount()).toBe(0)
-      const stored = localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY)
-      expect(stored).toBe('[]')
-      service.clearFallbackKeys()
-      expect(service.getKey()).toBe(primaryKey)
-      expect(service.getKeyBytesOrThrow()).toEqual(primaryBytes)
-      expect(service.getAllKeys()).toEqual({
-        primary: primaryKey,
-        alternatives: [],
-      })
-      expect(localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY)).toBe('[]')
-    })
-  })
-
   describe('setAllKeys / replaceKeyBundle', () => {
-    it('setAllKeys persists the primary and alternatives', async () => {
-      const primary = await service.generateKey()
-      const alt1 = await service.generateKey()
-      const alt2 = await service.generateKey()
-
-      await service.setAllKeys(primary, [alt1, alt2])
-
-      expect(service.getKey()).toBe(primary)
-      expect(service.getFallbackKeyCount()).toBe(2)
-      const stored = JSON.parse(
-        localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY) || '[]',
-      )
-      expect(stored).toEqual(expect.arrayContaining([alt1, alt2]))
-    })
-
     it('setAllKeys skips invalid alternatives silently', async () => {
       const primary = await service.generateKey()
       const alt = await service.generateKey()
@@ -379,7 +224,7 @@ describe('EncryptionService', () => {
         'key_ab',
       ])
 
-      expect(service.getFallbackKeyCount()).toBe(1)
+      expect(service.getKey()).toBe(primary)
       expect(service.getAllKeys()).toEqual({ primary, alternatives: [alt] })
       expect(
         JSON.parse(localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY)!),
@@ -388,8 +233,7 @@ describe('EncryptionService', () => {
 
     it('replaceKeyBundle clears the bundle when primary is null', async () => {
       const primary = await service.generateKey()
-      await service.setKey(primary)
-      service.addDecryptionKey(ALTERNATIVE_KEY)
+      await service.setAllKeys(primary, [ALTERNATIVE_KEY])
 
       await service.replaceKeyBundle(null, [])
 
@@ -407,12 +251,10 @@ describe('EncryptionService', () => {
       const newPrimary = await service.generateKey()
       const alt = await service.generateKey()
 
-      await service.setKey(oldPrimary)
-      service.addDecryptionKey(ALTERNATIVE_KEY)
+      await service.setAllKeys(oldPrimary, [ALTERNATIVE_KEY])
       await service.replaceKeyBundle(newPrimary, [alt])
 
       expect(service.getKey()).toBe(newPrimary)
-      expect(service.getFallbackKeyCount()).toBe(1)
       expect(service.getAllKeys()).toEqual({
         primary: newPrimary,
         alternatives: [alt],

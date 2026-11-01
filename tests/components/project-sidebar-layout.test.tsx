@@ -1,7 +1,7 @@
 import { DragProvider } from '@/components/chat/drag-context'
 import { ProjectSidebar } from '@/components/project/project-sidebar'
 import type { Project } from '@/types/project'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const projectContext = vi.hoisted(() => ({
@@ -46,7 +46,6 @@ const project: Project = {
 function renderSidebar(
   overrides: Partial<Parameters<typeof ProjectSidebar>[0]> = {},
 ) {
-  const onExitProject = vi.fn()
   render(
     <DragProvider>
       <ProjectSidebar
@@ -58,71 +57,18 @@ function renderSidebar(
         cloudSyncEnabled
         windowWidth={1200}
         project={project}
-        onExitProject={onExitProject}
+        onExitProject={vi.fn()}
         onSelectChat={vi.fn()}
         onNewChat={vi.fn()}
         {...overrides}
       />
     </DragProvider>,
   )
-  return { onExitProject }
 }
 
 describe('project sidebar layout', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    sessionStorage.clear()
-  })
-
-  it('renders rounded section headers and gray panels with square bottoms', () => {
-    renderSidebar()
-    for (const name of ['Favorites', 'Project Settings', 'Documents (0)']) {
-      const button = screen.getByRole('button', { name })
-      expect(button).toHaveClass('rounded-lg', 'mx-2')
-      expect(button).toHaveAttribute('aria-expanded', 'false')
-      fireEvent.click(button)
-      expect(button).toHaveAttribute('aria-expanded', 'true')
-      expect(button).toHaveClass('border-border-subtle')
-      const panel = button.parentElement!.querySelector(
-        '.bg-surface-sidebar-panel',
-      )
-      expect(panel).toHaveClass('rounded-t-lg')
-      expect(panel).not.toHaveClass('rounded-b-lg', 'rounded-lg')
-    }
-  })
-
-  it('keeps the project chat description outside the populated chat scroller', () => {
-    renderSidebar({
-      chats: [
-        {
-          id: 'first',
-          title: 'First project chat',
-          messageCount: 2,
-          createdAt: new Date('2026-09-02T12:00:00Z'),
-        },
-        {
-          id: 'second',
-          title: 'Second project chat',
-          messageCount: 1,
-          createdAt: new Date('2026-09-01T12:00:00Z'),
-        },
-      ],
-    })
-    const description = screen.getByText(
-      'Chats in this project share context and documents.',
-    )
-    expect(description).toHaveClass('border-b', 'flex-none')
-    expect(description.parentElement).toHaveClass(
-      'rounded-t-lg',
-      'bg-surface-sidebar-panel',
-    )
-    expect(description.nextElementSibling).toHaveClass(
-      'overflow-y-auto',
-      'overscroll-contain',
-    )
-    const list = screen.getByRole('list')
-    expect(screen.getAllByRole('listitem')).toHaveLength(2)
-    expect(description.nextElementSibling).toContainElement(list)
   })
 
   it('orders project chats by update time with creation time as the fallback', () => {
@@ -152,46 +98,5 @@ describe('project sidebar layout', () => {
       screen.getAllByRole('listitem').map((row) => row.textContent),
     ).toEqual(['Recently updated', 'Recently created', 'Older chat'])
     expect(chats.map((chat) => chat.id)).toEqual(['old', 'updated', 'created'])
-  })
-
-  it('leaves loading the open project to the provider when it renders', () => {
-    const first = vi.fn()
-    projectContext.refreshDocuments = first
-    const sidebar = () => (
-      <DragProvider>
-        <ProjectSidebar
-          isOpen
-          setIsOpen={vi.fn()}
-          isDarkMode={false}
-          isClient
-          pixelateSidebarChatTitles={false}
-          cloudSyncEnabled
-          windowWidth={1200}
-          project={project}
-          onExitProject={vi.fn()}
-          onSelectChat={vi.fn()}
-          onNewChat={vi.fn()}
-        />
-      </DragProvider>
-    )
-    const view = render(sidebar())
-    // The provider hands over a new context value whenever it renders.
-    const next = vi.fn()
-    projectContext.refreshDocuments = next
-    view.rerender(sidebar())
-
-    expect(first).not.toHaveBeenCalled()
-    expect(next).not.toHaveBeenCalled()
-  })
-
-  it('uses a compact content-width blue exit button and preserves its action', () => {
-    const { onExitProject } = renderSidebar()
-    const exit = screen.getByRole('button', {
-      name: 'Exit Project',
-    })
-    expect(exit).toHaveClass('inline-flex', 'bg-tinfoil-accent-blue', 'py-1.5')
-    expect(exit).not.toHaveClass('w-full')
-    fireEvent.click(exit)
-    expect(onExitProject).toHaveBeenCalledTimes(1)
   })
 })

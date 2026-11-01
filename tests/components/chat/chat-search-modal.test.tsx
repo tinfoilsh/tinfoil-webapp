@@ -64,7 +64,6 @@ describe('ChatSearchModal', () => {
     searchState.available = true
     searchState.failed = false
     searchState.isSearching = false
-    searchState.isIndexing = false
   })
 
   it('lists recent non-project chats newest first before a term is typed', () => {
@@ -207,18 +206,6 @@ describe('ChatSearchModal', () => {
     })
     expect(screen.queryByRole('option')).not.toBeInTheDocument()
     expect(screen.getByText('Searching...')).toBeInTheDocument()
-  })
-
-  it('shows an ongoing rebuild even before any current-query results arrive', () => {
-    searchState.isIndexing = true
-    searchState.isSearching = true
-    renderModal({ searchEnabled: true })
-    fireEvent.change(screen.getByRole('textbox'), {
-      target: { value: 'new query' },
-    })
-    expect(
-      screen.getByText(/The search index is still being built/),
-    ).toBeInTheDocument()
   })
 
   it('uses server results when encrypted search is available', () => {

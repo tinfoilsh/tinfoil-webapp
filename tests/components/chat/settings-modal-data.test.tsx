@@ -1,33 +1,16 @@
 import { SettingsModal } from '@/components/chat/settings-modal'
-import {
-  AUTH_ACTIVE_USER_ID,
-  SETTINGS_CLOUD_SYNC_ENABLED,
-} from '@/constants/storage-keys'
 import { buildChatExport } from '@/services/chat-export/export-archive'
-import type { HarnessClient } from '@/services/harness/client'
 import {
   localThreadStore,
   type LocalThread,
 } from '@/services/harness/local-threads'
-import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { ThreadSummary } from '@/services/harness/types'
-import { chatEvents } from '@/services/storage/chat-events'
-import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
-import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest'
-import { testSession } from '../../harness-fixture'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { client, KEY, signIn } from '../../harness-fixture'
 import { createFunctionalImportWorker } from '../../services/chat-import/functional-import-worker'
+import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
 
 const page = vi.hoisted(() => ({
   isSignedIn: true,
@@ -57,38 +40,12 @@ vi.mock('@/utils/error-handling', () => ({
   logWarning: vi.fn(),
 }))
 
-const KEY = 'Y29udGVudC1rZXk='
 const LOCAL_ID = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
 
-let client: {
-  events: ReturnType<typeof vi.fn>
-  post: ReturnType<typeof vi.fn>
-  upload: ReturnType<typeof vi.fn>
-  download: ReturnType<typeof vi.fn>
-}
 let downloads: { name: string; blob: Blob }[]
 
 function connect({ cloud = false }: { cloud?: boolean } = {}) {
-  const userId = page.isSignedIn ? 'alice' : null
-  localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, cloud ? 'true' : 'false')
-  if (userId) localStorage.setItem(AUTH_ACTIVE_USER_ID, userId)
-  client = {
-    events: vi.fn(),
-    post: vi.fn(async (path: string) => {
-      throw new Error(`Unexpected ${path}`)
-    }),
-    upload: vi.fn(),
-    download: vi.fn(),
-  }
-  const api = new HarnessAPI(client as unknown as HarnessClient, userId)
-  if (userId) vi.spyOn(api, 'key').mockReturnValue(KEY)
-  activateAPI(api)
-  publish({
-    session: testSession,
-    profile: {},
-    keyReady: true,
-    profileReady: true,
-  })
+  signIn({ userId: page.isSignedIn ? 'alice' : null, cloud })
 }
 
 function renderData(props: { isPremium?: boolean } = {}) {
@@ -171,24 +128,11 @@ function summary(id: string, projectId: string | null): ThreadSummary {
   }
 }
 
-beforeAll(() => {
-  Object.defineProperty(globalThis, 'indexedDB', {
-    configurable: true,
-    value: new IDBFactory(),
-  })
-  Object.defineProperty(globalThis, 'IDBKeyRange', {
-    configurable: true,
-    value: FakeIDBKeyRange,
-  })
-})
+resetChatStoresAroundEachTest()
 
-beforeEach(async () => {
+beforeEach(() => {
   page.isSignedIn = true
   page.toast.mockReset()
-  sessionStorage.clear()
-  deletedChatsTracker.clear()
-  await indexedDBStorage.deleteAllChats()
-  deletedChatsTracker.clear()
   downloads = []
   vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
     downloads.push({ name: '', blob: blob as Blob })
@@ -200,14 +144,6 @@ beforeEach(async () => {
   ) {
     downloads[downloads.length - 1].name = this.download
   })
-})
-
-afterEach(() => {
-  chatEvents.clear()
-  deletedChatsTracker.clear()
-  sessionStorage.clear()
-  vi.unstubAllGlobals()
-  vi.restoreAllMocks()
 })
 
 async function exportChats() {
@@ -582,11 +518,9 @@ describe('importing chats from the Data tab', () => {
   it('uploads the export to the chat service with cloud sync', async () => {
     connect({ cloud: true })
     client.upload.mockResolvedValue({ jobId: 'job-1' })
-    client.post.mockResolvedValue({
-      status: 'running',
-      imported: 0,
-      failed: 0,
-      total: 1,
+    client.post.mockImplementation(async (path: string) => {
+      if (path !== '/v1/import/status') throw new Error(`Unexpected ${path}`)
+      return { status: 'running', imported: 0, failed: 0, total: 1 }
     })
     renderData()
 

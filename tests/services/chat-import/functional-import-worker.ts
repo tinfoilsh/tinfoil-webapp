@@ -7,11 +7,7 @@ interface WorkerRequest {
   maxArchiveBytes: number
 }
 
-type ImportParser = typeof parseTinfoilExportBytes
-
-export function createFunctionalImportWorker(
-  parseExport: ImportParser = parseTinfoilExportBytes,
-): typeof Worker {
+export function createFunctionalImportWorker(): typeof Worker {
   return class FunctionalImportWorker {
     onmessage: ((event: MessageEvent) => void) | null = null
     onerror: ((event: ErrorEvent) => void) | null = null
@@ -21,7 +17,7 @@ export function createFunctionalImportWorker(
       const request = message as WorkerRequest
       queueMicrotask(() => {
         try {
-          const result = parseExport({
+          const result = parseTinfoilExportBytes({
             bytes: new Uint8Array(request.buffer),
             fileName: request.fileName,
             mimeType: request.mimeType,
