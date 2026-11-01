@@ -615,6 +615,10 @@ export function useThread(
   const { cloudListed, pinnedListed, deviceListed } = list
   // Stored chats a refused key cannot open are left out, cached or not.
   const listsCloud = cloud && !keyLocked
+  const firstMessageAt = state.snapshot.thread
+    ? undefined
+    : state.messages[0]?.createdAt
+  const messageCount = state.messages.length
   // The same list while nothing it shows changes, so a title the user just
   // typed is not animated in again.
   const chats = useMemo(() => {
@@ -631,7 +635,7 @@ export function useThread(
       listed.id === id && shownActivity > lastActive(listed)
         ? { ...listed, activityAt: new Date(shownActivity).toISOString() }
         : listed
-    return [
+    const listed: Chat[] = [
       ...(listsCloud
         ? [
             ...cloudListed,
@@ -645,7 +649,28 @@ export function useThread(
         isLocalOnly: true,
       })),
     ]
-      .map((listed) => recent(liveRun(listed)))
+    // The first message lists its chat before either store reports it.
+    if (
+      id &&
+      firstMessageAt &&
+      !temporary &&
+      (isLocalChat || listsCloud) &&
+      !listed.some((chat) => chat.id === id)
+    )
+      listed.push({
+        id,
+        title: DEFAULT_CHAT_TITLE,
+        titleState: 'placeholder',
+        messages: [],
+        messageCount,
+        isMetadataOnly: true,
+        createdAt: new Date(firstMessageAt),
+        isLocalOnly: isLocalChat,
+        pendingSave: unsaved === id,
+        projectId: isLocalChat ? undefined : (projectId ?? undefined),
+      })
+    return listed
+      .map((chat) => recent(liveRun(chat)))
       .sort((a, b) => lastActive(b) - lastActive(a))
   }, [
     listsCloud,
@@ -656,6 +681,12 @@ export function useThread(
     id,
     shownRun,
     shownActivity,
+    firstMessageAt,
+    messageCount,
+    temporary,
+    isLocalChat,
+    unsaved,
+    projectId,
   ])
   // The favorites, the most recently pinned first.
   const favoriteIds = useMemo(
