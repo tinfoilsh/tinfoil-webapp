@@ -125,13 +125,19 @@ function answerTurns() {
   ): AsyncGenerator<Frame> {
     yield {
       id: 0,
-      event: { type: 'RUN_STARTED', runId: 'reply', threadId: input.threadId! },
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'reply',
+        threadId: input.threadId!,
+        instance: 'instance-1',
+      },
     }
     yield {
       id: 1,
       event: {
         type: 'TEXT_MESSAGE_CHUNK',
         messageId: 'answer',
+        role: 'assistant',
         delta: 'The answer is here.',
       },
     }
@@ -141,6 +147,7 @@ function answerTurns() {
         type: 'RUN_FINISHED',
         runId: 'reply',
         threadId: input.threadId!,
+        metadata: {},
       },
     }
   })
@@ -319,13 +326,19 @@ it('stops a streaming reply when Escape is pressed in the composer', async () =>
   ): AsyncGenerator<Frame> {
     yield {
       id: 0,
-      event: { type: 'RUN_STARTED', runId: 'reply', threadId: input.threadId! },
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'reply',
+        threadId: input.threadId!,
+        instance: 'instance-1',
+      },
     }
     yield {
       id: 1,
       event: {
         type: 'TEXT_MESSAGE_CHUNK',
         messageId: 'answer',
+        role: 'assistant',
         delta: 'Once upon a time',
       },
     }
@@ -336,6 +349,7 @@ it('stops a streaming reply when Escape is pressed in the composer', async () =>
         type: 'RUN_FINISHED',
         runId: 'reply',
         threadId: input.threadId!,
+        metadata: {},
       },
     }
   })
@@ -556,8 +570,14 @@ it('shows the attachments and quote of each queued message', async () => {
           createdAt: '2026-10-22T12:00:00Z',
         },
       ],
-      activeRun: { runId: 'run-1', expiresAt: '2026-10-22T13:00:00Z' },
+      activeRun: {
+        runId: 'run-1',
+        expiresAt: '2026-10-22T13:00:00Z',
+        instance: 'instance-1',
+      },
     }),
+    activityAt: '2026-10-22T12:00:00Z',
+    contextUsage: null,
     messageCount: 1,
     hasOlder: false,
   }
@@ -572,18 +592,31 @@ it('shows the attachments and quote of each queued message', async () => {
   client.events.mockImplementation(async function* (): AsyncGenerator<Frame> {
     yield {
       id: 0,
-      event: { type: 'RUN_STARTED', threadId: saved.id, runId: 'run-1' },
+      event: {
+        type: 'RUN_STARTED',
+        threadId: saved.id,
+        runId: 'run-1',
+        instance: 'instance-1',
+      },
     }
     yield {
       id: 1,
       event: {
         type: 'STATE_SNAPSHOT',
         snapshot: {
-          thread: summary,
+          thread: {
+            ...summary,
+            createdAt: summary.createdAt ?? null,
+            updatedAt: summary.updatedAt ?? null,
+            projectId: summary.projectId ?? null,
+            activeRun: summary.activeRun ?? null,
+          },
           queue: [
             {
               queueId: 'queued-files',
+              kind: 'send',
               content: '',
+              quote: null,
               attachments: [
                 {
                   id: 'att-door',
@@ -600,11 +633,30 @@ it('shows the attachments and quote of each queued message', async () => {
                   mimeType: 'text/plain',
                   size: 4,
                 },
+                // One the chat already holds, which the turn named by its id
+                // alone, has nothing to show.
+                { id: 'att-earlier' },
               ],
+              createdAt: '2026-10-22T12:00:10Z',
             },
-            { queueId: 'queued-quote', content: null, quote: 'Earlier text' },
-            { queueId: 'queued-text', content: 'And then?' },
+            {
+              queueId: 'queued-quote',
+              kind: 'send',
+              content: null,
+              quote: 'Earlier text',
+              attachments: [],
+              createdAt: '2026-10-22T12:00:20Z',
+            },
+            {
+              queueId: 'queued-text',
+              kind: 'send',
+              content: 'And then?',
+              quote: null,
+              attachments: [],
+              createdAt: '2026-10-22T12:00:30Z',
+            },
           ],
+          rateLimit: { kind: null },
         },
       },
     }
@@ -767,7 +819,16 @@ function openChatWhoseSettingsFail(fields: Partial<StoredThread> = {}) {
     cloud: true,
     session: {
       ...sessionWithOtherModel,
-      presets: [{ id: 'research', name: 'Research', builtIn: true }],
+      presets: [
+        {
+          id: 'research',
+          name: 'Research',
+          description: 'Careful researcher who cites its sources',
+          systemPrompt: 'You research questions carefully.',
+          icon: 'search',
+          builtIn: true,
+        },
+      ],
     },
   })
   const saved = { ...savedChat('test-model'), ...fields }
@@ -979,7 +1040,11 @@ it('uploads a file of an unlisted type and marks one the harness cannot read', a
   client.upload.mockImplementation(async (_path: string, file: File) => {
     if (file.name === dockerfile.fileName) return { attachment: dockerfile }
     throw new HarnessError(
-      { code: 'ATTACHMENT_UNSUPPORTED', message: 'Unsupported file type' },
+      {
+        code: 'ATTACHMENT_UNSUPPORTED',
+        message: 'Unsupported file type',
+        action: 'revise',
+      },
       415,
     )
   })

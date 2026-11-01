@@ -1,6 +1,7 @@
+import type { FollowRequest } from './client'
 import type { ImagesById, LocalThreadStore, Originals } from './local-threads'
 import { scopedTurn } from './prompt-cache-secret'
-import { ERROR_CODES, ROUTES, type RunRoute } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES, ROUTES, type RunRoute } from './protocol'
 import {
   initialChat,
   isTerminal,
@@ -13,7 +14,6 @@ import type { HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import { createStore } from './store'
 import type {
-  FollowInput,
   HarnessErrorBody,
   HarnessEvent,
   TerminalEvent,
@@ -25,16 +25,22 @@ import type {
 // connection dropped. Its run may go on.
 const CONNECTION_LOST: HarnessErrorBody = {
   code: ERROR_CODES.streamInterrupted,
+  action: ERROR_ACTIONS.retry,
   message: 'The connection closed. Reconnect to continue.',
 }
 const interrupted = (cause: unknown) =>
   !(cause instanceof HarnessError) || cause.code === CONNECTION_LOST.code
-// A turn sent again after the harness applied it changed the chat already,
-// and a run the harness no longer has ended, finished or not.
+// The chat changed from the copy this client shows, as when the harness
+// had applied a turn sent again, or no longer has the run, finished or not.
 const gone = (cause: unknown) =>
-  cause instanceof HarnessError &&
-  (cause.code === ERROR_CODES.alreadyApplied ||
-    cause.code === ERROR_CODES.runNotFound)
+  cause instanceof HarnessError && cause.detail.action === ERROR_ACTIONS.reload
+
+// Following a run resumes after the last frame of it this client applied,
+// when it applied one.
+const resumed = (input: FollowRequest, after?: number): FollowRequest =>
+  input.lastEventId === undefined && after !== undefined
+    ? { ...input, lastEventId: after }
+    : input
 
 // A run of a chat the browser stores. Its final event returns the whole
 // thread, without the image bytes the browser holds for it.
@@ -45,7 +51,8 @@ export interface DeviceRun {
   images: ImagesById
   // The originals of the images the turn sent, stored with the thread.
   originals?: Originals
-  runId?: string
+  // The run, once it started.
+  run?: Receipt
   // When the run's turn read the chat, on the controller's clock.
   since: number
 }
@@ -90,9 +97,10 @@ export interface RunHooks {
 }
 
 // A hint that rejoins a device chat's run after a reload, kept for the tab.
-interface Receipt {
+export interface Receipt {
   threadId: string
   runId: string
+  instance: string
 }
 
 // Streams the runs of the chat a view shows: a turn's run, or a live run it
@@ -183,7 +191,7 @@ export class RunController {
 
   async run(
     route: RunRoute,
-    input: Turn | FollowInput,
+    input: Turn | FollowRequest,
     options: RunOptions = {},
   ): Promise<boolean> {
     const { device, quiet = false, widgetRetry } = options
@@ -196,7 +204,10 @@ export class RunController {
     let threadId = input.threadId
     let succeeded = false
     let view = this.view.get()
-    const sent = 'kind' in input ? scopedTurn(input, this.api.userId) : input
+    const sent =
+      'clientRequestId' in input
+        ? scopedTurn(input, this.api.userId)
+        : resumed(input, view.cursors[input.runId])
     try {
       for await (const frame of this.api.client.events(
         route,
@@ -225,7 +236,15 @@ export class RunController {
           view = next
           if (shown) this.view.set(next)
           if (event.type === 'RUN_STARTED') {
-            this.started(event.runId, threadId!, device, shown && !widgetRetry)
+            this.started(
+              {
+                threadId: threadId!,
+                runId: event.runId,
+                instance: event.instance,
+              },
+              device,
+              shown && !widgetRetry,
+            )
             if (shown)
               this.hooks.started?.({
                 threadId: event.threadId,
@@ -274,6 +293,14 @@ export class RunController {
         }
         this.forgetReceipt(runId)
         this.hooks.ended?.()
+        if (
+          event.type === 'RUN_ERROR' &&
+          runErrorOf(event).action === ERROR_ACTIONS.reload &&
+          attached()
+        ) {
+          this.pending = null
+          await this.hooks.gone?.(threadId!)
+        }
       }
     } catch (cause) {
       if (controller.signal.aborted) return false
@@ -285,13 +312,16 @@ export class RunController {
         interrupted(cause) &&
         (device || attached())
       ) {
-        let follow: FollowInput
+        let follow: FollowRequest
         try {
-          follow = {
-            ...(input.key ? { key: this.api.key() } : {}),
-            threadId: threadId!,
-            runId,
-          }
+          follow = resumed(
+            {
+              ...(input.key ? { key: this.api.key() } : {}),
+              threadId: threadId!,
+              runId,
+            },
+            view.cursors[runId],
+          )
         } catch (refusal) {
           if (attached()) this.fail(refusal)
           return false
@@ -335,15 +365,11 @@ export class RunController {
     return succeeded && attached()
   }
 
-  private started(
-    runId: string,
-    threadId: string,
-    device: DeviceRun | undefined,
-    shown: boolean,
-  ) {
+  private started(run: Receipt, device: DeviceRun | undefined, shown: boolean) {
+    const { threadId } = run
     if (device) {
       this.settle(device)
-      device.runId = runId
+      device.run = run
       this.deviceRuns.update((runs) =>
         new Map(runs).set(device.threadId, device),
       )
@@ -352,7 +378,7 @@ export class RunController {
     this.pending = null
     // A stored chat names its run itself; a chat on this device is
     // rejoined after a reload through this receipt.
-    if (device) this.writeReceipt({ threadId, runId })
+    if (device) this.writeReceipt(run)
     else this.hooks.accepted?.(threadId)
   }
 
@@ -418,10 +444,14 @@ export class RunController {
     if (!this.receiptKey) return null
     try {
       const receipt = JSON.parse(sessionStorage.getItem(this.receiptKey) ?? '')
-      return typeof receipt?.threadId === 'string' &&
-        typeof receipt?.runId === 'string'
-        ? receipt
-        : null
+      if (
+        typeof receipt?.threadId !== 'string' ||
+        typeof receipt?.runId !== 'string' ||
+        typeof receipt?.instance !== 'string'
+      )
+        return null
+      const { threadId, runId, instance } = receipt
+      return { threadId, runId, instance }
     } catch {
       // Receipts are optional routing hints; an invalid one is discarded.
       return null

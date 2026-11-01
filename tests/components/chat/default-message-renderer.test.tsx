@@ -6,9 +6,11 @@ import type {
   Annotation,
   ToolDisplay,
   TimelineBlock as WireBlock,
-  Message as WireMessage,
 } from '@/services/harness/types'
-import { messageView } from '@/services/harness/view-model'
+import {
+  messageView,
+  type ShownMessage as WireMessage,
+} from '@/services/harness/view-model'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi, type Mock } from 'vitest'
 
@@ -853,7 +855,12 @@ describe('DefaultMessageRenderer work traces', () => {
     renderReply(
       searchReply(
         { query: 'tinfoil', status: 'completed', sources: [source] },
-        [{ type: 'url_citation', url_citation: source }],
+        [
+          {
+            type: 'url_citation',
+            url_citation: { ...source, start_index: 4, end_index: 33 },
+          },
+        ],
       ),
       false,
     )
@@ -965,7 +972,12 @@ describe('DefaultMessageRenderer work traces', () => {
       createdAt: '2026-08-07T00:00:01.000Z',
       content: 'Answer.',
       timeline: [...timeline, { id: 'c', type: 'content', content: 'Answer.' }],
-      annotations: [{ type: 'url_citation', url_citation: page('first') }],
+      annotations: [
+        {
+          type: 'url_citation',
+          url_citation: { ...page('first'), start_index: 0, end_index: 7 },
+        },
+      ],
     })
     const read = call('f', 'web_fetch', {
       url: page('read').url,

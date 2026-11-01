@@ -4,12 +4,12 @@ import {
   SETTINGS_CHAT_FONT,
   SETTINGS_THEME_MODE,
 } from '@/constants/storage-keys'
-import { publish } from '@/services/harness/runtime'
+import { getView, publish } from '@/services/harness/runtime'
 import { act, renderHook } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 beforeEach(() => {
   document.documentElement.removeAttribute('data-chat-font')
@@ -34,6 +34,27 @@ describe('the theme', () => {
     expect(result.current.isDarkMode).toBe(false)
     expect(document.documentElement).not.toHaveClass('dark')
     expect(localStorage.getItem(SETTINGS_THEME_MODE)).toBe('light')
+  })
+
+  it('is the system theme for a mode this client does not know, which the settings keep', () => {
+    vi.spyOn(window, 'matchMedia').mockReturnValue({
+      matches: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    } as unknown as MediaQueryList)
+    localStorage.setItem(SETTINGS_THEME_MODE, 'light')
+    publish({ profile: {}, profileReady: false })
+
+    const { result } = renderHook(() => useUIState())
+    expect(result.current.themeMode).toBe('light')
+
+    act(() => publish({ profile: { themeMode: 'sepia' }, profileReady: true }))
+
+    expect(result.current.themeMode).toBe('system')
+    expect(result.current.isDarkMode).toBe(true)
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+    expect(localStorage.getItem(SETTINGS_THEME_MODE)).toBe('system')
+    expect(getView().profile).toEqual({ themeMode: 'sepia' })
   })
 })
 
@@ -76,5 +97,17 @@ describe('the chat font', () => {
 
     expect(document.documentElement).toHaveAttribute('data-chat-font', 'serif')
     expect(localStorage.getItem(SETTINGS_CHAT_FONT)).toBe('serif')
+  })
+
+  it('is the system font for a font this client does not know, which the settings keep', () => {
+    publish({ profile: { chatFont: 'serif' }, profileReady: true })
+    renderHook(() => useChatFontSync())
+    expect(document.documentElement).toHaveAttribute('data-chat-font', 'serif')
+
+    act(() => publish({ profile: { chatFont: 'comic' }, profileReady: true }))
+
+    expect(document.documentElement).toHaveAttribute('data-chat-font', 'system')
+    expect(localStorage.getItem(SETTINGS_CHAT_FONT)).toBe('system')
+    expect(getView().profile).toEqual({ chatFont: 'comic' })
   })
 })

@@ -1,10 +1,12 @@
+import { ERROR_ACTIONS, ERROR_CODES } from '@/services/harness/protocol'
 import { useHarness } from '@/services/harness/provider'
 import type { HarnessAPI } from '@/services/harness/runtime'
 import {
   latestChatsOutsideProjects,
   searchChats,
 } from '@/services/harness/search'
-import type { ThreadSummary } from '@/services/harness/types'
+import { HarnessError } from '@/services/harness/sse'
+import type { HarnessErrorBody, ThreadSummary } from '@/services/harness/types'
 import { logError } from '@/utils/error-handling'
 import { useEffect, useState } from 'react'
 const SEARCH_DEBOUNCE_MS = 250
@@ -13,6 +15,12 @@ const SEARCH_DEBOUNCE_MS = 250
 const INDEX_POLL_FIRST_WAIT_MS = 1000
 const INDEX_POLL_MAX_WAIT_MS = 16_000
 const INDEX_POLL_MAX_ATTEMPTS = 6
+// Why a search that never reached the chat service failed.
+const NOT_REACHED: HarnessErrorBody = {
+  code: ERROR_CODES.connection,
+  action: ERROR_ACTIONS.retry,
+  message: 'The chat service could not be reached.',
+}
 export function useChatSearch(
   term: string,
   enabled: boolean,
@@ -20,13 +28,18 @@ export function useChatSearch(
 ) {
   const { api, keyReady } = useHarness()
   // The results, with the search they answer: a render after the term
-  // changes shows none of the previous term's rows.
+  // changes, or after the search is run again, shows none of the previous
+  // search's rows.
   const [outcome, setOutcome] = useState<{
     query: string
     includeProjectChats: boolean
-    results: (ThreadSummary & { score?: number })[]
-    failed: boolean
+    retries: number
+    results: ThreadSummary[]
+    unreadable: number
+    failure: HarnessErrorBody | null
   } | null>(null)
+  // How many times the user ran the search again after it failed.
+  const [retries, setRetries] = useState(0)
   const [isIndexing, setIsIndexing] = useState(false)
   const available = !!api.userId && keyReady
   const query = term.trim()
@@ -47,10 +60,12 @@ export function useChatSearch(
           setOutcome({
             query,
             includeProjectChats,
+            retries,
             results: page.results.filter(
               (t) => includeProjectChats || !t.projectId,
             ),
-            failed: false,
+            unreadable: page.unreadable,
+            failure: null,
           })
           if (page.indexing && attempt < INDEX_POLL_MAX_ATTEMPTS)
             timer = setTimeout(
@@ -74,8 +89,10 @@ export function useChatSearch(
           setOutcome((previous) => ({
             query,
             includeProjectChats,
+            retries,
             results: attempt > 0 && previous ? previous.results : [],
-            failed: true,
+            unreadable: attempt > 0 && previous ? previous.unreadable : 0,
+            failure: cause instanceof HarnessError ? cause.detail : NOT_REACHED,
           }))
         })
     }
@@ -84,17 +101,21 @@ export function useChatSearch(
       clearTimeout(timer)
       controller.abort()
     }
-  }, [api, active, includeProjectChats, query])
+  }, [api, active, includeProjectChats, query, retries])
   const current =
     active &&
     outcome?.query === query &&
-    outcome.includeProjectChats === includeProjectChats
+    outcome.includeProjectChats === includeProjectChats &&
+    outcome.retries === retries
       ? outcome
       : null
   return {
     results: current?.results ?? [],
+    // Matching chats the harness could not open, left out of results.
+    unreadable: current?.unreadable ?? 0,
     isSearching: active && !current,
-    failed: !!current?.failed,
+    failure: current?.failure ?? null,
+    retry: () => setRetries((count) => count + 1),
     available,
     isIndexing: active && isIndexing,
   }

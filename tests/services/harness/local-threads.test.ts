@@ -295,7 +295,11 @@ describe('device store', () => {
       await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))
       await indexedDBStorage.saveChat(legacyRow(OTHER_ID, 'Unreadable'))
       const refusal = new HarnessError(
-        { code: 'BAD_REQUEST', message: 'The chat cannot be read' },
+        {
+          code: 'BAD_REQUEST',
+          message: 'The chat cannot be read',
+          action: 'stop',
+        },
         400,
       )
       client.post.mockImplementation(
@@ -326,7 +330,11 @@ describe('device store', () => {
       await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))
       await indexedDBStorage.saveChat(legacyRow(OTHER_ID, 'Dogs'))
       const failure = new HarnessError(
-        { code: 'UPSTREAM_REFUSED', message: 'The chat service is busy' },
+        {
+          code: 'UPSTREAM_REFUSED',
+          message: 'The chat service is busy',
+          action: 'retry',
+        },
         503,
       )
       let failing = true

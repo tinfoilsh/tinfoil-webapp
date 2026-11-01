@@ -2,6 +2,7 @@ import { API_BASE_URL } from '@/config'
 import { AnonymousCredentialCache } from '@/services/harness/anonymous-credential'
 import { HarnessClient } from '@/services/harness/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SEALED } from './harness-fixture'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
@@ -12,6 +13,19 @@ const issuance = (key = 'free_first') =>
     is_free_tier: true,
     expires_at: new Date(Date.now() + 3_600_000).toISOString(),
   })
+
+// The harness refusing a key it no longer accepts.
+const rejected = () =>
+  Response.json(
+    {
+      error: {
+        code: 'UNAUTHENTICATED',
+        message: 'Authentication is required',
+        action: 'reauthenticate',
+      },
+    },
+    { status: 401, headers: SEALED },
+  )
 
 const controlplane = vi.fn<typeof fetch>()
 function setup(getToken = async (): Promise<string | null> => null) {
@@ -77,7 +91,7 @@ describe('anonymous client credentials', () => {
     expect(
       new Headers(secure.fetch.mock.calls[1][1].headers).get('Authorization'),
     ).toBe('Bearer free_second')
-    secure.fetch.mockResolvedValueOnce(new Response('{}', { status: 401 }))
+    secure.fetch.mockResolvedValueOnce(rejected())
     controlplane.mockImplementationOnce(async () => issuance('free_third'))
     const turn = {
       clientRequestId: 'same-nonce',
@@ -101,9 +115,7 @@ describe('anonymous client credentials', () => {
 
   it('bounds repeated rejection and preserves quota errors without retrying issuance', async () => {
     const { client, secure } = setup()
-    secure.fetch.mockImplementation(
-      async () => new Response('{}', { status: 401 }),
-    )
+    secure.fetch.mockImplementation(async () => rejected())
     await expect(client.post('/v1/session', {})).rejects.toMatchObject({
       status: 401,
     })
@@ -112,9 +124,13 @@ describe('anonymous client credentials', () => {
     secure.fetch.mockResolvedValueOnce(
       Response.json(
         {
-          error: { code: 'QUOTA_EXHAUSTED', message: 'Daily quota exhausted' },
+          error: {
+            code: 'QUOTA_EXHAUSTED',
+            message: 'Daily quota exhausted',
+            action: 'wait',
+          },
         },
-        { status: 429 },
+        { status: 429, headers: SEALED },
       ),
     )
     await expect(client.post('/v1/threads/turn', {})).rejects.toMatchObject({

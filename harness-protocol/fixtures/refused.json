@@ -1,0 +1,141 @@
+{
+  "description": "A run the model refuses because the caller's quota is used up.",
+  "frames": [
+    {
+      "id": 0,
+      "event": {
+        "type": "RUN_STARTED",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
+        "runId": "00000000000000000000000000000002",
+        "instance": "00000000000000000000000000000003"
+      }
+    },
+    {
+      "id": 1,
+      "event": {
+        "type": "MESSAGES_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:01Z",
+        "messages": [
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "role": "user",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "content": "test message"
+          }
+        ],
+        "hasOlder": false
+      }
+    },
+    {
+      "id": 2,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:02Z",
+        "snapshot": {
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "New Chat",
+            "titleState": "placeholder",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "activityAt": "2026-01-01T00:00:00Z",
+            "projectId": null,
+            "model": "kimi-k3",
+            "webSearchEnabled": false,
+            "pinned": false,
+            "contextUsage": {
+              "usedTokens": 68,
+              "limitTokens": 6553,
+              "percentage": 1.0376926598504501
+            },
+            "activeRun": {
+              "runId": "00000000000000000000000000000002",
+              "expiresAt": "2026-01-01T00:00:00Z",
+              "instance": "00000000000000000000000000000003"
+            },
+            "messageCount": 1
+          },
+          "queue": [],
+          "rateLimit": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:03Z",
+        "snapshot": {
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "New Chat",
+            "titleState": "placeholder",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "activityAt": "2026-01-01T00:00:00Z",
+            "projectId": null,
+            "model": "kimi-k3",
+            "webSearchEnabled": false,
+            "pinned": false,
+            "contextUsage": {
+              "usedTokens": 68,
+              "limitTokens": 6553,
+              "percentage": 1.0376926598504501
+            },
+            "activeRun": null,
+            "messageCount": 1
+          },
+          "queue": [],
+          "rateLimit": {
+            "kind": null,
+            "maxRequests": 0,
+            "remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "event": {
+        "type": "RUN_ERROR",
+        "timestamp": "2026-01-01T00:00:04Z",
+        "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
+        "runId": "00000000000000000000000000000002",
+        "code": "QUOTA_EXHAUSTED",
+        "message": "Daily request limit reached.",
+        "action": "wait",
+        "status": 429,
+        "metadata": {
+          "messages": [],
+          "rateLimit": {
+            "kind": null,
+            "maxRequests": 0,
+            "remaining": 0
+          }
+        }
+      }
+    }
+  ],
+  "expected": {
+    "messages": [
+      {
+        "content": "test message",
+        "id": "00000000-0000-4000-8000-000000000004",
+        "role": "user",
+        "timeline": []
+      }
+    ],
+    "title": "New Chat",
+    "titleState": "placeholder",
+    "status": "error",
+    "error": {
+      "code": "QUOTA_EXHAUSTED",
+      "message": "Daily request limit reached.",
+      "action": "wait",
+      "status": 429
+    }
+  }
+}

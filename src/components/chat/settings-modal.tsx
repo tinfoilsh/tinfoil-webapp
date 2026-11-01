@@ -74,8 +74,6 @@ import {
   TfBoxCheckmark,
   TfBoxX,
   TfCard,
-  TfChat2,
-  TfChevronDown,
   TfChevronRight,
   TfCloudSync,
   TfComputer,
@@ -90,17 +88,21 @@ import {
   TfNumber2,
   TfNumber3,
   TfNumber4,
-  TfPerson,
   TfPersonKey,
-  TfPlus,
   TfShieldCheck,
   TfShieldWithExclamation,
   TfSignIn,
   TfStack,
   TfSunLightMode,
-  TfTools,
   TfTrash,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfChat2Animated,
+  TfChevronDownAnimated,
+  TfPersonAnimated,
+  TfPlusAnimated,
+  TfToolsAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
@@ -575,7 +577,7 @@ function ImportAccordionHeader({
         <span className="font-aeonik text-sm font-medium text-content-primary">
           {title}
         </span>
-        <TfChevronDown
+        <TfChevronDownAnimated
           aria-hidden="true"
           className={cn(
             'h-4 w-4 text-content-muted transition-transform',
@@ -1927,7 +1929,7 @@ ${encryptionKey.replace('key_', '')}
   if (!isOpen) return null
 
   const navItems = [
-    { id: 'account' as const, label: 'Account', icon: TfPerson },
+    { id: 'account' as const, label: 'Account', icon: TfPersonAnimated },
     {
       id: 'general' as const,
       label: 'General',
@@ -1936,17 +1938,17 @@ ${encryptionKey.replace('key_', '')}
     {
       id: 'chat' as const,
       label: 'Chat Settings',
-      icon: TfChat2,
+      icon: TfChat2Animated,
     },
     {
       id: 'personalization' as const,
       label: 'Personalization',
-      icon: TfPerson,
+      icon: TfPersonAnimated,
     },
     {
       id: 'prompts' as const,
       label: 'Prompts',
-      icon: TfTools,
+      icon: TfToolsAnimated,
     },
     ...(isSignedIn
       ? [
@@ -2648,7 +2650,7 @@ ${encryptionKey.replace('key_', '')}
                                     aria-hidden="true"
                                   />
                                 ) : (
-                                  <TfPlus
+                                  <TfPlusAnimated
                                     className="inline-block h-3 w-3"
                                     aria-hidden="true"
                                   />
@@ -2816,7 +2818,10 @@ ${encryptionKey.replace('key_', '')}
                       )}
                     >
                       <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-surface-chat text-content-secondary">
-                        <TfTools className="h-5 w-5" aria-hidden="true" />
+                        <TfToolsAnimated
+                          className="h-5 w-5"
+                          aria-hidden="true"
+                        />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block font-aeonik text-sm font-medium text-content-primary">
@@ -2859,7 +2864,7 @@ ${encryptionKey.replace('key_', '')}
                           How It Works
                         </h3>
                       </div>
-                      <TfChevronDown
+                      <TfChevronDownAnimated
                         className={cn(
                           'h-4 w-4 text-content-muted transition-transform',
                           isHowItWorksOpen && 'rotate-180',
@@ -4333,7 +4338,7 @@ ${encryptionKey.replace('key_', '')}
                         >
                           <div className="text-left">
                             <div className="flex items-center gap-3">
-                              <TfPerson
+                              <TfPersonAnimated
                                 className="h-5 w-5 text-content-muted"
                                 aria-hidden="true"
                               />
@@ -4360,7 +4365,7 @@ ${encryptionKey.replace('key_', '')}
                           isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                         )}
                       >
-                        <TfPerson
+                        <TfPersonAnimated
                           className="mx-auto h-12 w-12 text-content-muted"
                           aria-hidden="true"
                         />

@@ -5,7 +5,7 @@ import { SPEECH } from '@/services/speech/constants'
 import { speechErrorMessage } from '@/services/speech/errors'
 import { decodePcmStream, speechSource } from '@/services/speech/stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { stubChatAccess } from '../../harness-fixture'
+import { SEALED, stubChatAccess } from '../../harness-fixture'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
@@ -163,9 +163,13 @@ describe('speech requests', () => {
             error: {
               code: 'TOOL_UNAVAILABLE',
               message: 'Speech is unavailable',
+              action: 'retry',
             },
           }),
-          { status: 503, headers: { 'Content-Type': 'application/json' } },
+          {
+            status: 503,
+            headers: { 'Content-Type': 'application/json', ...SEALED },
+          },
         ),
     )
     const refusal = await collect(speech(new AbortController().signal)).catch(
@@ -203,9 +207,16 @@ describe('speech requests', () => {
       () =>
         new Response(
           JSON.stringify({
-            error: { code: 'RATE_LIMITED', message: 'private request details' },
+            error: {
+              code: 'RATE_LIMITED',
+              message: 'private request details',
+              action: 'wait',
+            },
           }),
-          { status: 429, headers: { 'Content-Type': 'application/json' } },
+          {
+            status: 429,
+            headers: { 'Content-Type': 'application/json', ...SEALED },
+          },
         ),
     )
     const result = collect(speech(new AbortController().signal)).catch(
@@ -220,23 +231,25 @@ describe('speech requests', () => {
     [
       400,
       'BAD_REQUEST',
+      'stop',
       'There is nothing to read aloud',
       'There is no readable text in this response.',
     ],
     [
       413,
       'PAYLOAD_TOO_LARGE',
+      'revise',
       'The text is too long to read aloud',
       'This response is too long to read aloud.',
     ],
   ])(
     'shows why the harness refuses a text with status %i',
-    async (status, code, message, shown) => {
+    async (status, code, action, message, shown) => {
       const { speech } = connect(
         () =>
-          new Response(JSON.stringify({ error: { code, message } }), {
+          new Response(JSON.stringify({ error: { code, message, action } }), {
             status,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...SEALED },
           }),
       )
       const result = collect(speech(new AbortController().signal)).catch(

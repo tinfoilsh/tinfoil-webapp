@@ -8,12 +8,11 @@ import {
   type AutoIntelligenceLevelId,
   type BaseModel,
 } from '@/config/models'
+import { TfBoxCheckmark, TfShuffle } from '@tinfoilsh/tinfoil-icons'
 import {
-  TfBoxCheckmark,
-  TfChevronDown,
-  TfChevronRight,
-  TfShuffle,
-} from '@tinfoilsh/tinfoil-icons'
+  TfChevronDownAnimated,
+  TfChevronRightAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import {
   useCallback,
   useLayoutEffect,
@@ -546,7 +545,7 @@ export function ModelSelector({
                 <span className="text-xs">
                   {isThinkingActive ? currentEffort.label : 'Off'}
                 </span>
-                <TfChevronRight
+                <TfChevronRightAnimated
                   className={`h-4 w-4 transition-transform ${showEffortOptions && isMobileLayout ? 'rotate-90' : ''}`}
                   aria-hidden="true"
                 />
@@ -595,7 +594,7 @@ export function ModelSelector({
               {...menuItemHandlers(() => setShowOtherModels((prev) => !prev))}
             >
               <span>Other models</span>
-              <TfChevronDown
+              <TfChevronDownAnimated
                 className={`h-4 w-4 text-content-muted transition-transform ${showOtherModels ? 'rotate-180' : ''}`}
                 aria-hidden="true"
               />

@@ -55,10 +55,13 @@ const thread: Thread = {
   titleState: 'generated',
   createdAt: '2026-04-01T09:00:00Z',
   updatedAt: '2026-04-01T09:00:00Z',
+  activityAt: '2026-04-01T09:00:01Z',
   model: 'test-model',
   projectId: null,
+  presetId: null,
   pinned: false,
   webSearchEnabled: true,
+  contextUsage: null,
   messageCount: 2,
   activeRun: null,
   hasOlder: false,
@@ -78,7 +81,11 @@ const thread: Thread = {
   ],
 }
 const refusal = new HarnessError(
-  { code: 'THREAD_NOT_FOUND', message: 'The message was not found' },
+  {
+    code: 'THREAD_NOT_FOUND',
+    message: 'The message was not found',
+    action: 'stop',
+  },
   404,
 )
 

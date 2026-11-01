@@ -12,13 +12,8 @@ import {
 import { cn } from '@/components/ui/utils'
 import { toast } from '@/hooks/use-toast'
 import { downloadMarkdownAsPdf } from '@/utils/markdown-pdf-export'
-import {
-  TfBoxCheckmark,
-  TfCode,
-  TfCopy,
-  TfEye,
-  TfPlay,
-} from '@tinfoilsh/tinfoil-icons'
+import { TfBoxCheckmark, TfCopy, TfEye, TfPlay } from '@tinfoilsh/tinfoil-icons'
+import { TfCodeAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { BsFiletypeMd, BsFiletypePdf } from 'react-icons/bs'
 import ReactMarkdown from 'react-markdown'
@@ -31,7 +26,7 @@ import remarkGfm from 'remark-gfm'
 import { CONSTANTS } from './chat/constants'
 
 const CodeIcon = () => (
-  <TfCode className="h-4 w-4" aria-hidden="true" focusable="false" />
+  <TfCodeAnimated className="h-4 w-4" aria-hidden="true" focusable="false" />
 )
 
 const PlayIcon = () => (

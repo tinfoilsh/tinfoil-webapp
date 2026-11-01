@@ -66,7 +66,7 @@ function sendReply(
   client.events.mockImplementation(async function* (_path, input) {
     const threadId = input.threadId as string
     const frames: Frame['event'][] = [
-      { type: 'RUN_STARTED', threadId, runId: 'run-1' },
+      { type: 'RUN_STARTED', threadId, runId: 'run-1', instance: 'instance-1' },
       {
         type: 'MESSAGES_SNAPSHOT',
         messages: [
@@ -80,7 +80,7 @@ function sendReply(
     await finish
     yield {
       id: frames.length,
-      event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+      event: { type: 'RUN_FINISHED', threadId, runId: 'run-1', metadata: {} },
     }
   })
   render(<Conversation />)
@@ -118,6 +118,7 @@ describe('a streamed reply', () => {
       {
         type: 'TEXT_MESSAGE_CHUNK',
         messageId: 'm1',
+        role: 'assistant',
         delta: 'Because.',
         timestamp: at(3),
       },
@@ -152,7 +153,9 @@ describe('a streamed reply', () => {
       },
       {
         type: 'TOOL_CALL_RESULT',
+        messageId: 'tool-search-1',
         toolCallId: 'search-1',
+        role: 'tool',
         content: { query: 'why', results: [] },
         display: { query: 'why', status: 'completed', sources: [] },
         timestamp: at(9),
@@ -160,6 +163,7 @@ describe('a streamed reply', () => {
       {
         type: 'TEXT_MESSAGE_CHUNK',
         messageId: 'm1',
+        role: 'assistant',
         delta: 'Because.',
         timestamp: at(10),
       },
@@ -189,10 +193,17 @@ describe('a streamed reply', () => {
         { type: 'TOOL_CALL_END', toolCallId: 'draft-1' },
         {
           type: 'TOOL_CALL_RESULT',
+          messageId: 'tool-draft-1',
           toolCallId: 'draft-1',
+          role: 'tool',
           content: { status: 'error', error: 'The arguments did not match.' },
         },
-        { type: 'TEXT_MESSAGE_CHUNK', messageId: 'm1', delta: 'Sorry.' },
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'm1',
+          role: 'assistant',
+          delta: 'Sorry.',
+        },
       ],
       new Promise((resolve) => {
         finish = resolve
@@ -232,8 +243,18 @@ describe('a streamed reply', () => {
     client.events.mockImplementation(async function* (_path, input) {
       const threadId = input.threadId as string
       const events: Frame['event'][] = [
-        { type: 'RUN_STARTED', threadId, runId: 'run-1' },
-        { type: 'TEXT_MESSAGE_CHUNK', messageId: 'm1', delta: 'Reading.' },
+        {
+          type: 'RUN_STARTED',
+          threadId,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'm1',
+          role: 'assistant',
+          delta: 'Reading.',
+        },
         {
           type: 'TOOL_CALL_START',
           parentMessageId: 'm1',
@@ -255,7 +276,7 @@ describe('a streamed reply', () => {
       await finished
       yield {
         id: events.length + 1,
-        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1', metadata: {} },
       }
     })
     render(<Conversation />)
@@ -293,7 +314,9 @@ describe('a streamed reply', () => {
         },
         {
           type: 'TOOL_CALL_RESULT',
+          messageId: 'tool-search-1',
           toolCallId: 'search-1',
+          role: 'tool',
           content: { query: 'tinfoil', results: [] },
           display: {
             query: 'tinfoil',
@@ -309,7 +332,9 @@ describe('a streamed reply', () => {
         },
         {
           type: 'TOOL_CALL_RESULT',
+          messageId: 'tool-read-1',
           toolCallId: 'read-1',
+          role: 'tool',
           content: { pages: [], failed: [] },
           display: {
             url: 'https://docs.example/page',
@@ -322,6 +347,7 @@ describe('a streamed reply', () => {
         {
           type: 'TEXT_MESSAGE_CHUNK',
           messageId: 'm1',
+          role: 'assistant',
           delta:
             'See [Tinfoil](https://tinfoil.sh/), [the docs](https://docs.example/page) and [elsewhere](https://other.example/).',
         },
@@ -365,7 +391,15 @@ describe('the views of a streaming chat', () => {
     })
     client.events.mockImplementation(async function* (_path, input) {
       const threadId = input.threadId as string
-      yield { id: 0, event: { type: 'RUN_STARTED', threadId, runId: 'run-1' } }
+      yield {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          threadId,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+      }
       yield {
         id: 1,
         event: {
@@ -396,7 +430,7 @@ describe('the views of a streaming chat', () => {
       await finished
       yield {
         id: 4,
-        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1', metadata: {} },
       }
     })
     const { result } = renderHook(() => useThread())

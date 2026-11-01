@@ -83,8 +83,8 @@ export interface ThreadStore {
     turn: { defaults: Turn; fields: Partial<Turn>; key: { key?: string } },
     settings: TurnSettings,
   ): Promise<PreparedTurn | null>
-  // A run of the chat that may still be live.
-  liveRun(thread: Thread): string | undefined
+  // A run of the chat that may still be live, and the instance holding it.
+  liveRun(thread: Thread): { runId: string; instance: string } | undefined
   follow(
     threadId: string,
     runId: string,
@@ -205,7 +205,7 @@ export function cloudThreads(
       }
       return { input, resend: { ...input, key: undefined } }
     },
-    liveRun: (thread) => thread.activeRun?.runId,
+    liveRun: (thread) => thread.activeRun ?? undefined,
     async follow(threadId, runId) {
       return { input: { key: api.key(), threadId, runId } }
     },

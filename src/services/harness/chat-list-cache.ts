@@ -6,18 +6,21 @@ import { logError } from '@/utils/error-handling'
 import { z } from 'zod'
 import type { ThreadSummary } from './types'
 
+// A list an earlier version cached in another shape is not read, and the
+// list is fetched again.
 const summarySchema = z.object({
   id: z.string(),
   title: z.string(),
-  titleState: z.enum(['placeholder', 'generated', 'manual']),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  activityAt: z.string().optional(),
+  titleState: z.string(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  activityAt: z.string(),
   model: z.string(),
   projectId: z.string().nullable(),
   pinned: z.boolean(),
   webSearchEnabled: z.boolean(),
   messageCount: z.number(),
+  contextUsage: z.null(),
   activeRun: z.null(),
   flagged: z.boolean().optional(),
 })
@@ -74,7 +77,11 @@ function write(key: string, list: CachedChatList) {
   // Persist only sidebar fields. Run hints and message contents belong to
   // the live response, even if a caller supplies a complete thread.
   const summaries = (threads: ThreadSummary[]) =>
-    threads.map((thread) => ({ ...thread, activeRun: null }))
+    threads.map((thread) => ({
+      ...thread,
+      activeRun: null,
+      contextUsage: null,
+    }))
   const snapshot = cacheSchema.parse({
     threads: summaries(list.threads),
     pinned: summaries(list.pinned),

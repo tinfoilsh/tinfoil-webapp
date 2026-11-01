@@ -81,8 +81,6 @@ function cloudChat(
     ...storedThread(id, {
       title,
       titleState: 'generated',
-      createdAt: activityAt,
-      updatedAt: activityAt,
       messages: [
         {
           id: `${id}-message`,
@@ -92,7 +90,12 @@ function cloudChat(
         },
       ],
     }),
+    createdAt: activityAt,
+    updatedAt: activityAt,
     activityAt,
+    projectId: null,
+    activeRun: null,
+    contextUsage: null,
     messageCount: 1,
     hasOlder: false,
     ...fields,
@@ -218,13 +221,25 @@ it('lists a new stored chat while its first reply streams, then once', async () 
   const created = summaryOf(
     cloudChat(threadId, PLACEHOLDER_CHAT_TITLE, started, {
       titleState: 'placeholder',
-      activeRun: { runId: 'reply', expiresAt: '2026-10-22T12:10:00Z' },
+      activeRun: {
+        runId: 'reply',
+        expiresAt: '2026-10-22T12:10:00Z',
+        instance: 'instance-1',
+      },
     }),
   )
   runs.emit(
-    { type: 'RUN_STARTED', threadId, runId: 'reply' },
-    { type: 'STATE_SNAPSHOT', snapshot: { thread: created, queue: [] } },
-    { type: 'TEXT_MESSAGE_CHUNK', messageId: 'answer', delta: 'Here it is.' },
+    { type: 'RUN_STARTED', threadId, runId: 'reply', instance: 'instance-1' },
+    {
+      type: 'STATE_SNAPSHOT',
+      snapshot: { thread: created, queue: [], rateLimit: { kind: null } },
+    },
+    {
+      type: 'TEXT_MESSAGE_CHUNK',
+      messageId: 'answer',
+      role: 'assistant',
+      delta: 'Here it is.',
+    },
   )
   await screen.findByText('Here it is.')
   const untitled = await row('Untitled')
@@ -264,8 +279,11 @@ it('lists a new stored chat while its first reply streams, then once', async () 
   }
   listed = [finished]
   runs.emit(
-    { type: 'STATE_SNAPSHOT', snapshot: { thread: finished, queue: [] } },
-    { type: 'RUN_FINISHED', threadId, runId: 'reply' },
+    {
+      type: 'STATE_SNAPSHOT',
+      snapshot: { thread: finished, queue: [], rateLimit: { kind: null } },
+    },
+    { type: 'RUN_FINISHED', threadId, runId: 'reply', metadata: {} },
   )
   await waitFor(() =>
     expect(
@@ -306,11 +324,23 @@ it('keeps a stored chat marked running after moving to another chat', async () =
     ...summaryOf(older),
     activityAt: '2026-10-22T13:00:00Z',
     messageCount: 2,
-    activeRun: { runId: 'reply', expiresAt: '2026-10-22T13:10:00Z' },
+    activeRun: {
+      runId: 'reply',
+      expiresAt: '2026-10-22T13:10:00Z',
+      instance: 'instance-1',
+    },
   }
   runs.emit(
-    { type: 'RUN_STARTED', threadId: older.id, runId: 'reply' },
-    { type: 'STATE_SNAPSHOT', snapshot: { thread: running, queue: [] } },
+    {
+      type: 'RUN_STARTED',
+      threadId: older.id,
+      runId: 'reply',
+      instance: 'instance-1',
+    },
+    {
+      type: 'STATE_SNAPSHOT',
+      snapshot: { thread: running, queue: [], rateLimit: { kind: null } },
+    },
   )
   const olderRow = await row('Older chat')
   await waitFor(() =>

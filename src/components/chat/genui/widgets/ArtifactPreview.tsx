@@ -26,12 +26,12 @@ import {
 import { cn } from '@/components/ui/utils'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import {
-  TfCode2,
   TfDownload,
   TfExternalLink,
   TfEye,
   type IconType,
 } from '@tinfoilsh/tinfoil-icons'
+import { TfCode2Animated } from '@tinfoilsh/tinfoil-icons/animated'
 import { FileText } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -332,7 +332,7 @@ function getSidebarPreviewClassName(source: ArtifactSource): string {
 
 const VIEW_TABS: { mode: ViewMode; label: string; icon: IconType }[] = [
   { mode: 'preview', label: 'Preview', icon: TfEye },
-  { mode: 'source', label: 'Source', icon: TfCode2 },
+  { mode: 'source', label: 'Source', icon: TfCode2Animated },
 ]
 
 interface ArtifactView {

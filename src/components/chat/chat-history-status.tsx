@@ -1,11 +1,11 @@
 import { cn } from '@/components/ui/utils'
 import { postAuthRedirectTarget } from '@/utils/redirect-url'
+import { TfTinSad } from '@tinfoilsh/tinfoil-icons'
 import {
-  TfChat2,
-  TfLockLocked,
-  TfPerson,
-  TfTinSad,
-} from '@tinfoilsh/tinfoil-icons'
+  TfChat2Animated,
+  TfLockLockedAnimated,
+  TfPersonAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import Link from 'next/link'
 
 export type ChatHistoryProblem =
@@ -35,10 +35,10 @@ const LOCAL_NOT_FOUND_DESCRIPTION =
   'This local chat may have been deleted from your browser.'
 
 const icons = {
-  'sign-in': TfPerson,
-  unlock: TfLockLocked,
-  'wrong-key': TfLockLocked,
-  'not-found': TfChat2,
+  'sign-in': TfPersonAnimated,
+  unlock: TfLockLockedAnimated,
+  'wrong-key': TfLockLockedAnimated,
+  'not-found': TfChat2Animated,
   failed: TfTinSad,
 } as const
 

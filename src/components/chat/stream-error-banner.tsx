@@ -2,12 +2,10 @@
 
 import { cn } from '@/components/ui/utils'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
-import { ERROR_CODES } from '@/services/harness/protocol'
-import {
-  TfBoxX,
-  TfChevronDown,
-  TfRefreshTwoArrows,
-} from '@tinfoilsh/tinfoil-icons'
+import { ERROR_ACTIONS, ERROR_CODES } from '@/services/harness/protocol'
+import type { ErrorAction } from '@/services/harness/types'
+import { TfBoxX, TfRefreshTwoArrows } from '@tinfoilsh/tinfoil-icons'
+import { TfChevronDownAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 
 export type StreamErrorInfo = {
@@ -21,6 +19,8 @@ export type StreamErrorInfo = {
   retryAfter?: number
   // A document conversion failure's document_* code.
   upstreamCode?: string
+  // What the client does about an error it has no copy for.
+  action?: ErrorAction
   // When the error happened; a retry wait counts from then.
   timestamp?: number
 }
@@ -50,6 +50,8 @@ type ErrorKind =
   | 'document'
   | 'server'
   | 'storage'
+  | 'revise'
+  | 'refused'
 
 type ErrorClassification = {
   kind: ErrorKind
@@ -76,6 +78,17 @@ function useIsOnline(): boolean {
 }
 
 const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
+  revise: {
+    kind: 'revise',
+    title: 'This message cannot be sent as it is',
+    suggestion:
+      'Change it, for example by removing an attachment or shortening it, then send it again. Your message was not lost.',
+  },
+  refused: {
+    kind: 'refused',
+    title: 'This request could not be completed',
+    suggestion: 'Sending it again would not help. The details below say why.',
+  },
   auth: {
     kind: 'auth',
     title: 'Unable to confirm your sign-in',
@@ -177,7 +190,12 @@ function quotaClassification(error: StreamErrorInfo): ErrorClassification {
       title: 'Daily limit reached',
       suggestion: `Upgrade to Premium to keep chatting${resetLabel ? `, or try again after ${resetLabel}` : ''}.`,
     }
-  return CLASSIFICATIONS['rate-limit']
+  return resetLabel
+    ? {
+        ...CLASSIFICATIONS['rate-limit'],
+        suggestion: `The limit resets at ${resetLabel}. Your message was not lost.`,
+      }
+    : CLASSIFICATIONS['rate-limit']
 }
 
 // Map a run failure to a behavioral kind plus human-readable copy using the
@@ -229,6 +247,25 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
     case ERROR_CODES.connection:
       return CLASSIFICATIONS.connection
     default:
+      return actionClassification(error)
+  }
+}
+
+// A code this client has no copy for is explained by what its error asks
+// the client to do.
+function actionClassification(error: StreamErrorInfo): ErrorClassification {
+  switch (error.action) {
+    case ERROR_ACTIONS.reauthenticate:
+      return CLASSIFICATIONS.auth
+    case ERROR_ACTIONS.unlock:
+      return CLASSIFICATIONS.key
+    case ERROR_ACTIONS.wait:
+      return quotaClassification(error)
+    case ERROR_ACTIONS.revise:
+      return CLASSIFICATIONS.revise
+    case ERROR_ACTIONS.stop:
+      return CLASSIFICATIONS.refused
+    default:
       return CLASSIFICATIONS.server
   }
 }
@@ -261,10 +298,10 @@ export function StreamErrorBanner({
   const isOnline = useIsOnline()
   const { kind, title, suggestion } = classifyError(error)
   const [shownAt] = useState(Date.now)
-  // A busy service names how long to wait; resending is allowed once the
-  // wait has passed.
+  // An error that names how long to wait allows a retry once the wait has
+  // passed.
   const waitSeconds = useSecondsUntil(
-    kind === 'busy' && error.retryAfter
+    error.retryAfter
       ? (error.timestamp || shownAt) + error.retryAfter * 1000
       : 0,
   )
@@ -283,13 +320,15 @@ export function StreamErrorBanner({
     kind !== 'rate-limit' &&
     kind !== 'too-large' &&
     kind !== 'key' &&
-    kind !== 'storage'
+    kind !== 'storage' &&
+    kind !== 'revise' &&
+    kind !== 'refused'
   const isOffline = isResend && !isOnline
   const retryDisabled = isOffline || waitSeconds > 0
   const retryLabel = isOffline
     ? 'Offline'
     : waitSeconds > 0
-      ? `Resend in ${waitSeconds}s`
+      ? `${isResend ? 'Resend' : 'Try again'} in ${waitSeconds}s`
       : isResend
         ? 'Resend message'
         : 'Try again'
@@ -403,7 +442,7 @@ export function StreamErrorBanner({
               isDarkMode ? 'hover:bg-red-500/20' : 'hover:bg-red-500/10',
             )}
           >
-            <TfChevronDown
+            <TfChevronDownAnimated
               className={cn(
                 'h-4 w-4 transition-transform',
                 isExpanded && 'rotate-180',

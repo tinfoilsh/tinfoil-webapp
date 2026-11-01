@@ -129,7 +129,7 @@ describe('SharePage', () => {
     await act(async () =>
       fail(
         new HarnessError(
-          { code: 'THREAD_NOT_FOUND', message: 'Not found' },
+          { code: 'THREAD_NOT_FOUND', message: 'Not found', action: 'stop' },
           404,
         ),
       ),
@@ -172,6 +172,7 @@ describe('SharePage', () => {
         {
           code: 'THREAD_NOT_FOUND',
           message: 'The requested data was not found',
+          action: 'stop',
         },
         404,
       ),
@@ -183,6 +184,7 @@ describe('SharePage', () => {
         {
           code: 'UPSTREAM_REFUSED',
           message: 'A downstream service refused the request',
+          action: 'stop',
           status: 400,
         },
         502,
@@ -191,7 +193,11 @@ describe('SharePage', () => {
     },
     {
       error: new HarnessError(
-        { code: 'BAD_REQUEST', message: 'Invalid shared thread' },
+        {
+          code: 'BAD_REQUEST',
+          message: 'Invalid shared thread',
+          action: 'stop',
+        },
         400,
       ),
       message: 'Invalid chat data format',
@@ -201,6 +207,7 @@ describe('SharePage', () => {
         {
           code: 'UPSTREAM_REFUSED',
           message: 'A downstream service refused the request',
+          action: 'retry',
           status: 500,
         },
         502,

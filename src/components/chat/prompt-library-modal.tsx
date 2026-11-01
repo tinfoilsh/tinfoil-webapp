@@ -9,12 +9,14 @@ import {
   TfBookmarkFilled,
   TfBoxCheckmark,
   TfBoxX,
-  TfPlus,
   TfStars,
-  TfTools,
   TfTrash,
-  TfWriting,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfPlusAnimated,
+  TfToolsAnimated,
+  TfWritingAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/confirm-dialog'
 import { CONSTANTS } from './constants'
@@ -322,7 +324,7 @@ export function PromptLibraryModal({
                       <ArrowLeftIcon className="h-5 w-5" aria-hidden="true" />
                     </button>
                   )}
-                  <TfTools
+                  <TfToolsAnimated
                     className="hidden h-5 w-5 text-content-secondary md:block"
                     aria-hidden="true"
                   />
@@ -365,7 +367,10 @@ export function PromptLibraryModal({
                         onClick={startCreate}
                         className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
                       >
-                        <TfPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                        <TfPlusAnimated
+                          className="h-3.5 w-3.5"
+                          aria-hidden="true"
+                        />
                         New
                       </button>
                     </div>
@@ -665,7 +670,7 @@ function PresetDetail({
             onClick={onEdit}
             className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
           >
-            <TfWriting className="h-3.5 w-3.5" aria-hidden="true" />
+            <TfWritingAnimated className="h-3.5 w-3.5" aria-hidden="true" />
             Edit
           </button>
         )}
@@ -674,7 +679,7 @@ function PresetDetail({
           onClick={onDuplicate}
           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
         >
-          <TfPlus className="h-3.5 w-3.5" aria-hidden="true" />
+          <TfPlusAnimated className="h-3.5 w-3.5" aria-hidden="true" />
           Duplicate
         </button>
         {!preset.isBuiltIn && (

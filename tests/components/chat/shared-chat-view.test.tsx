@@ -126,7 +126,12 @@ it('offers copy and sources on shared messages but nothing that changes the chat
             annotations: [
               {
                 type: 'url_citation',
-                url_citation: { url: 'https://example.org', title: 'Source' },
+                url_citation: {
+                  url: 'https://example.org',
+                  title: 'Source',
+                  start_index: 0,
+                  end_index: 7,
+                },
               },
             ],
           },

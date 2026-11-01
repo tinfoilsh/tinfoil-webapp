@@ -13,11 +13,13 @@ import {
   TfGlobe,
   TfGlobeX,
   TfMicrophone,
-  TfPlus,
   TfQuote,
-  TfStop,
-  TfTools,
 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfPlusAnimated,
+  TfStopAnimated,
+  TfToolsAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import type { FormEvent, RefObject } from 'react'
 import {
   useCallback,
@@ -1243,7 +1245,7 @@ export function ChatInput({
                     aria-haspopup="menu"
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                   >
-                    <TfPlus className="h-5 w-5" aria-hidden="true" />
+                    <TfPlusAnimated className="h-5 w-5" aria-hidden="true" />
                   </button>
                   {isInputMenuOpen && (
                     <>
@@ -1283,7 +1285,7 @@ export function ChatInput({
                             }}
                             className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                           >
-                            <TfTools
+                            <TfToolsAnimated
                               className="h-5 w-5 text-content-secondary"
                               aria-hidden="true"
                             />
@@ -1369,7 +1371,7 @@ export function ChatInput({
                     disabled={isTranscribing}
                   >
                     {isRecording ? (
-                      <TfStop
+                      <TfStopAnimated
                         className="h-6 w-6 md:h-5 md:w-5"
                         aria-hidden="true"
                       />
@@ -1433,7 +1435,7 @@ export function ChatInput({
                       aria-label={showStopAction ? 'Stop generation' : 'Send'}
                     >
                       {showStopAction ? (
-                        <TfStop
+                        <TfStopAnimated
                           className="h-6 w-6 text-white/80 transition-colors md:h-5 md:w-5"
                           aria-hidden="true"
                         />

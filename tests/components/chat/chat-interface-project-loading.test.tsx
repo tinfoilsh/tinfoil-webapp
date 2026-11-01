@@ -56,10 +56,13 @@ const project = {
 }
 const otherProject = { ...project, id: 'project-two', name: 'Planning' }
 const chat: ThreadSummary = {
-  ...storedThread('project-chat', {
-    title: 'Project discussion',
-    projectId: project.id,
-  }),
+  ...storedThread('project-chat', { title: 'Project discussion' }),
+  createdAt: '2026-04-01T09:00:00Z',
+  updatedAt: '2026-04-01T09:00:00Z',
+  activityAt: '2026-04-01T09:00:00Z',
+  projectId: project.id,
+  activeRun: null,
+  contextUsage: null,
   messageCount: 2,
 }
 const otherChat: ThreadSummary = {

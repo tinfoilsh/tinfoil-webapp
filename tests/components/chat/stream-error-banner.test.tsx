@@ -180,6 +180,134 @@ describe('StreamErrorBanner', () => {
     },
   )
 
+  // Codes it has no copy for, including codes a newer harness adds, are
+  // explained by what the error asks the client to do.
+  it.each([
+    {
+      code: 'RUN_LOG_FULL',
+      action: 'stop',
+      title: 'This request could not be completed',
+      retry: null,
+    },
+    {
+      code: 'ATTACHMENT_TOO_LARGE',
+      action: 'revise',
+      title: 'This message cannot be sent as it is',
+      retry: null,
+    },
+    {
+      code: 'MAX_TURNS',
+      action: 'retry',
+      title: 'The service is having trouble right now',
+      retry: 'Try again',
+    },
+    {
+      code: 'SPEECH_QUOTA_EXHAUSTED',
+      action: 'wait',
+      title: 'Usage limit reached',
+      retry: null,
+    },
+    {
+      code: 'SESSION_EXPIRED',
+      action: 'reauthenticate',
+      title: 'Unable to confirm your sign-in',
+      retry: 'Try again',
+    },
+  ] as const)(
+    'explains $code by its action, $action',
+    ({ code, action, title, retry }) => {
+      const onRetry = vi.fn()
+      render(
+        <StreamErrorBanner
+          error={{ code, action, message: 'Refused' }}
+          isDarkMode={false}
+          onRetry={onRetry}
+          onDismiss={vi.fn()}
+        />,
+      )
+      expect(screen.getByRole('alert')).toHaveTextContent(title)
+      if (retry) {
+        fireEvent.click(screen.getByRole('button', { name: retry }))
+        expect(onRetry).toHaveBeenCalledOnce()
+      } else {
+        expect(
+          screen.queryByRole('button', { name: /Resend|Try again/ }),
+        ).not.toBeInTheDocument()
+      }
+    },
+  )
+
+  it('holds a retry back for the wait an error it has no copy for names', async () => {
+    vi.useFakeTimers()
+    try {
+      const onRetry = vi.fn()
+      render(
+        <StreamErrorBanner
+          error={{
+            code: 'MAX_TURNS',
+            action: 'retry',
+            message: 'Refused',
+            retryAfter: 2,
+            timestamp: Date.now(),
+          }}
+          isDarkMode={false}
+          onRetry={onRetry}
+          onDismiss={vi.fn()}
+        />,
+      )
+      const retry = screen.getByRole('button', { name: 'Try again in 2s' })
+      expect(retry).toBeDisabled()
+      fireEvent.click(retry)
+      expect(onRetry).not.toHaveBeenCalled()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000)
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+      expect(onRetry).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('names when the limit an error it has no copy for waits on resets', () => {
+    const resetsAt = '2026-07-24T11:00:00Z'
+    const label = new Date(resetsAt).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+    render(
+      <StreamErrorBanner
+        error={{
+          code: 'SPEECH_QUOTA_EXHAUSTED',
+          action: 'wait',
+          resetsAt,
+          message: 'Refused',
+        }}
+        isDarkMode={false}
+        onRetry={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      `The limit resets at ${label}.`,
+    )
+  })
+
+  it('offers to unlock the key for a code it has no copy for whose action is unlock', () => {
+    const onUnlock = vi.fn()
+    render(
+      <StreamErrorBanner
+        error={{ code: 'KEY_ROTATED', action: 'unlock', message: 'Refused' }}
+        isDarkMode={false}
+        onRetry={vi.fn()}
+        onUnlock={onUnlock}
+        onDismiss={vi.fn()}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }))
+    expect(onUnlock).toHaveBeenCalledOnce()
+  })
+
   it.each([undefined, 'CONNECTION'])(
     'treats a failure without a response (code %s) as a connection problem',
     (code) => {

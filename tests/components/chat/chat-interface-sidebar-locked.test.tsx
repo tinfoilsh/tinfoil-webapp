@@ -118,6 +118,12 @@ it('offers to unlock instead of listing cached chats the refused key cannot open
           title: 'Cached chat',
           titleState: 'generated',
         }),
+        createdAt: '2026-04-01T09:00:00Z',
+        updatedAt: '2026-04-01T09:00:00Z',
+        activityAt: '2026-04-01T09:00:00Z',
+        projectId: null,
+        activeRun: null,
+        contextUsage: null,
         messageCount: 2,
       },
     ],
@@ -141,6 +147,12 @@ it('leaves cached favorites out of the sidebar and search while the key is refus
       titleState: 'generated',
       pinned: true,
     }),
+    createdAt: '2026-04-01T09:00:00Z',
+    updatedAt: '2026-04-01T09:00:00Z',
+    activityAt: '2026-04-01T09:00:00Z',
+    projectId: null,
+    activeRun: null,
+    contextUsage: null,
     messageCount: 2,
   }
   writeChatListCache('alice', null, { threads: [cached], pinned: [cached] })
@@ -159,6 +171,12 @@ it('offers to load the chats again after the profile fails to load', async () =>
       title: 'Listed chat',
       titleState: 'generated',
     }),
+    createdAt: '2026-04-01T09:00:00Z',
+    updatedAt: '2026-04-01T09:00:00Z',
+    activityAt: '2026-04-01T09:00:00Z',
+    projectId: null,
+    activeRun: null,
+    contextUsage: null,
     messageCount: 2,
   }
   client.post.mockImplementation(async (path) => {
