@@ -23,9 +23,9 @@ import {
   addWrappedKeyForCurrentKey,
   createAndWrapTinfoilKey,
   deletePasskeyCredential,
-  getLocalPasskeyCredentialId,
   getPasskeyCredentialState,
   getPasskeyDeviceState,
+  getThisDevicePasskeyCredentialIds,
   loadPasskeyCredentials,
   PasskeyCredentialConflictError,
   passkeyKeyManager,
@@ -982,8 +982,9 @@ export function usePasskeyBackup({
 
       if (initializationEncryptionKey) {
         // User has local keys — check for existing backup
-        const localCredentialId = getLocalPasskeyCredentialId()
-        const deviceState = await getPasskeyDeviceState(localCredentialId)
+        const deviceState = await getPasskeyDeviceState(
+          getThisDevicePasskeyCredentialIds(),
+        )
         if (!isCurrentInitialization()) return
 
         if (deviceState === 'this-device') {
@@ -1561,8 +1562,9 @@ export function usePasskeyBackup({
     const refreshUserId = userRef.current?.id
     const refreshEncryptionKey = encryptionKey
     if (!refreshUserId) return
-    const localCredentialId = getLocalPasskeyCredentialId()
-    const deviceState = await getPasskeyDeviceState(localCredentialId)
+    const deviceState = await getPasskeyDeviceState(
+      getThisDevicePasskeyCredentialIds(),
+    )
     if (
       !isMountedRef.current ||
       userRef.current?.id !== refreshUserId ||
