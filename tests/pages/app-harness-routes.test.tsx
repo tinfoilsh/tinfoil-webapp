@@ -42,17 +42,17 @@ vi.mock('next/script', () => ({ default: () => null }))
 
 describe('the chat service around pages', () => {
   it.each([
-    { pathname: '/', slug: undefined, wrapped: true },
-    { pathname: '/[...slug]', slug: ['chat', 'c1'], wrapped: true },
-    { pathname: '/[...slug]', slug: ['project', 'p1'], wrapped: true },
-    { pathname: '/[...slug]', slug: ['share', 's1'], wrapped: true },
-    { pathname: '/[...slug]', slug: ['no-such-page'], wrapped: false },
-    { pathname: '/signin', slug: undefined, wrapped: false },
-  ])('wraps $pathname $slug: $wrapped', ({ pathname, slug, wrapped }) => {
+    { pathname: '/', asPath: '/', wrapped: true },
+    { pathname: '/chat/[[...slug]]', asPath: '/chat/c1', wrapped: true },
+    { pathname: '/project/[[...slug]]', asPath: '/project/p1', wrapped: true },
+    { pathname: '/share/[[...slug]]', asPath: '/share/s1', wrapped: true },
+    { pathname: '/404', asPath: '/no-such-page', wrapped: false },
+    { pathname: '/signin', asPath: '/signin', wrapped: false },
+  ])('wraps $asPath: $wrapped', ({ pathname, asPath, wrapped }) => {
     const router = {
       pathname,
-      asPath: slug ? `/${slug.join('/')}` : pathname,
-      query: slug ? { slug } : {},
+      asPath,
+      query: {},
       isReady: true,
     }
     render(
@@ -68,32 +68,33 @@ describe('the chat service around pages', () => {
   })
 
   it.each([
-    { pathname: '/', slug: undefined, isReady: true, anonymous: 'false' },
+    { pathname: '/', asPath: '/', isReady: true, anonymous: 'false' },
     {
-      pathname: '/[...slug]',
-      slug: ['chat', 'c1'],
+      pathname: '/chat/[[...slug]]',
+      asPath: '/chat/c1',
       isReady: true,
       anonymous: 'false',
     },
     {
-      pathname: '/[...slug]',
-      slug: ['share', 's1'],
+      pathname: '/share/[[...slug]]',
+      asPath: '/share/s1',
       isReady: true,
       anonymous: 'true',
     },
+    // The share shell's route names the page before the router has its id.
     {
-      pathname: '/[...slug]',
-      slug: ['share', 's1'],
+      pathname: '/share/[[...slug]]',
+      asPath: '/share/s1',
       isReady: false,
-      anonymous: 'false',
+      anonymous: 'true',
     },
   ])(
-    'opens $pathname $slug without the account: $anonymous',
-    ({ pathname, slug, isReady, anonymous }) => {
+    'opens $asPath (ready: $isReady) without the account: $anonymous',
+    ({ pathname, asPath, isReady, anonymous }) => {
       const router = {
         pathname,
-        asPath: slug ? `/${slug.join('/')}` : pathname,
-        query: slug ? { slug } : {},
+        asPath,
+        query: {},
         isReady,
       }
       render(
