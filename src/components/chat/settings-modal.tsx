@@ -38,6 +38,7 @@ import { validateCurrentPrimaryKey } from '@/services/keys/cloud-key-preflight'
 import {
   deletePasskeyCredential,
   getLocalPasskeyCredentialId,
+  getRoamingPasskeyCredentialIds,
   loadPasskeyCredentials,
   PrfNotSupportedError,
   type PasskeyCredentialEntry,
@@ -624,6 +625,7 @@ function PasskeyBundleInventory({
 }) {
   const canManage = keyStatus === 'match'
   const localCredentialId = getLocalPasskeyCredentialId()
+  const roamingCredentialIds = getRoamingPasskeyCredentialIds()
   const sorted = [...entries].sort((a, b) => {
     if (a.id === localCredentialId) return -1
     if (b.id === localCredentialId) return 1
@@ -672,7 +674,7 @@ function PasskeyBundleInventory({
       <ul className="divide-y divide-border-subtle">
         {sorted.map((entry) => {
           const isCurrentPlatform = entry.id === localCredentialId
-          const isLegacy = entry.source === 'legacy'
+          const isRoaming = roamingCredentialIds.includes(entry.id)
           const isRemoving = removingId === entry.id
           return (
             <li
@@ -686,13 +688,12 @@ function PasskeyBundleInventory({
                     aria-hidden="true"
                   />
                   <span className="truncate text-sm font-medium text-content-primary">
-                    {isCurrentPlatform ? 'This platform' : 'Other platform'}
+                    {isCurrentPlatform
+                      ? 'This platform'
+                      : isRoaming
+                        ? 'Security key or phone'
+                        : 'Other platform'}
                   </span>
-                  {isLegacy && (
-                    <span className="rounded bg-surface-chat px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted">
-                      Legacy
-                    </span>
-                  )}
                 </div>
                 <p className="mt-0.5 truncate font-mono text-xs text-content-muted">
                   {formatCredentialId(entry.id)} ·{' '}
@@ -704,17 +705,15 @@ function PasskeyBundleInventory({
                 onClick={() => {
                   void onRemove(entry.id)
                 }}
-                disabled={removingId !== null || isLegacy || !canManage}
+                disabled={removingId !== null || !canManage}
                 title={
-                  isLegacy
-                    ? 'Legacy credentials cannot be removed from settings yet'
-                    : !canManage
-                      ? "This device's key must match your current cloud key to remove passkeys"
-                      : undefined
+                  !canManage
+                    ? "This device's key must match your current cloud key to remove passkeys"
+                    : undefined
                 }
                 className={cn(
                   'shrink-0 rounded-md border border-border-subtle px-2.5 py-1 text-xs font-medium transition-colors',
-                  removingId !== null || isLegacy || !canManage
+                  removingId !== null || !canManage
                     ? 'cursor-not-allowed opacity-50'
                     : 'hover:bg-surface-chat/80',
                 )}
@@ -3204,8 +3203,8 @@ ${encryptionKey.replace('key_', '')}
                                   Sync and backup using Passkeys
                                 </span>
                                 <p className="text-xs text-content-muted">
-                                  Use Face ID or Touch ID to sync chats across
-                                  devices
+                                  Use a passkey or security key to sync chats
+                                  across devices
                                 </p>
                               </div>
                             </div>
@@ -3328,8 +3327,8 @@ ${encryptionKey.replace('key_', '')}
                                       : 'Add Passkey for seamless sync'}
                                   </span>
                                   <p className="text-xs text-content-muted">
-                                    Use Face ID or Touch ID to sync chats across
-                                    devices
+                                    Use a passkey or security key to sync chats
+                                    across devices
                                   </p>
                                 </div>
                               </div>
@@ -3350,7 +3349,7 @@ ${encryptionKey.replace('key_', '')}
                                     toast({
                                       title: 'Passkey added for this device',
                                       description:
-                                        'You can now unlock your chats on this device with Face ID or Touch ID',
+                                        'You can now unlock your chats on this device with your passkey',
                                     })
                                   }
                                 } catch (error) {

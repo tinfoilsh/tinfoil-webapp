@@ -17,8 +17,6 @@ export type ProcessedDocument = {
   isImageDescription?: boolean // True if content is from multimodal image description
   hasDescription?: boolean // True if a multimodal description has been generated
   isGeneratingDescription?: boolean // True while generating image description
-  // Legacy field — kept for backward compat during transition
-  imageData?: { base64: string; mimeType: string }
 }
 
 export interface MessageRenderProps {
