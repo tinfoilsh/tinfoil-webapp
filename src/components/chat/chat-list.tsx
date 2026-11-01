@@ -1,7 +1,6 @@
 'use client'
 
 import { useFlaggedChatIds } from '@/hooks/use-safeguards'
-import { useStreamingChats } from '@/hooks/use-streaming-chats'
 import { Fragment, useEffect, useState } from 'react'
 import { cn } from '../ui/utils'
 import {
@@ -51,6 +50,9 @@ interface ChatListProps {
   showPinnedIndicators?: boolean
   showDesktopPinActions?: boolean
   onTogglePin?: (chat: ChatItemData) => void | Promise<void>
+  // Whether a chat kept on this device offers pinning, which moves it to
+  // the cloud first.
+  canPinLocalChats?: boolean
   loadMoreButton?: React.ReactNode
   emptyState?: React.ReactNode
   /**
@@ -91,6 +93,7 @@ export function ChatList({
   showPinnedIndicators = true,
   showDesktopPinActions = true,
   onTogglePin,
+  canPinLocalChats = false,
   loadMoreButton,
   emptyState,
   loadingIndicator,
@@ -99,9 +102,6 @@ export function ChatList({
   const [editingTitle, setEditingTitle] = useState('')
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null)
   const flaggedChatIds = useFlaggedChatIds()
-  // App-wide source of truth for which chats are streaming, so the
-  // indicator covers background streams in any chat, not just the active one.
-  const streamingChats = useStreamingChats()
   // Track chat IDs that were manually edited - skip animation for these
   const [manuallyEditedChatId, setManuallyEditedChatId] = useState<
     string | null
@@ -184,10 +184,7 @@ export function ChatList({
     )
   }
 
-  // Chats that failed to decrypt are never displayed. They stay in
-  // storage so the background re-decryption can recover them once the
-  // right key is active, at which point they reappear here.
-  const visibleChats = chats.filter((chat) => !chat.decryptionFailed)
+  const visibleChats = chats
 
   if (visibleChats.length === 0 && emptyState) {
     return (
@@ -218,7 +215,7 @@ export function ChatList({
                 isDarkMode={isDarkMode}
                 pixelateSidebarChatTitles={pixelateSidebarChatTitles}
                 showEncryptionStatus={showEncryptionStatus}
-                isStreaming={!chat.isBlankChat && streamingChats.has(chat.id)}
+                isStreaming={!chat.isBlankChat && !!chat.activeRun}
                 isFlagged={Boolean(flaggedChatIds[chat.id])}
                 enableTitleAnimation={
                   enableTitleAnimation && manuallyEditedChatId !== chat.id
@@ -261,6 +258,7 @@ export function ChatList({
                 showPinnedIndicator={showPinnedIndicators}
                 showDesktopPinAction={showDesktopPinActions}
                 onTogglePin={onTogglePin ? () => onTogglePin(chat) : undefined}
+                canPinLocalChats={canPinLocalChats}
               />
               {deletingChatId === chat.id && (
                 <DeleteConfirmation

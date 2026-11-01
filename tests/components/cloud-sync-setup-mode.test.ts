@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockInspectRemoteEncryptedState = vi.fn()
 
-vi.mock('@/services/cloud/cloud-key-preflight', () => ({
+vi.mock('@/services/keys/cloud-key-preflight', () => ({
   inspectRemoteEncryptedState: (...args: unknown[]) =>
     mockInspectRemoteEncryptedState(...args),
 }))

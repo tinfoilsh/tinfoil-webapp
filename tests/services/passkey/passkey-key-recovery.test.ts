@@ -1,5 +1,8 @@
 import { SECRET_PASSKEY_PRF_OUTPUT } from '@/constants/storage-keys'
 import { encryptionService } from '@/services/encryption/encryption-service'
+import { hexToB64 } from '@/services/harness/keys'
+import { HarnessError } from '@/services/harness/sse'
+import { deriveTinfoilKeyIdHex } from '@/services/keys/tinfoil-key-id'
 import {
   passkeyKeyManager,
   TINFOIL_PASSKEY_PROFILE,
@@ -11,9 +14,6 @@ import {
   type KeyBundle,
   type PasskeyCredentialEntry,
 } from '@/services/passkey/passkey-key-storage'
-import { hexToB64 } from '@/services/sync-enclave/sync-api'
-import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
-import { deriveTinfoilKeyIdHex } from '@/services/sync-enclave/tinfoil-key-id'
 import {
   decodeWrappedKeyRecord,
   encodeWrappedKeyRecord,
@@ -29,10 +29,10 @@ const mockKeyCurrent = vi.fn()
 const mockAddBundle = vi.fn()
 const mockRegisterKey = vi.fn()
 
-vi.mock('@/services/sync-enclave/sync-api', async () => {
+vi.mock('@/services/harness/keys', async () => {
   const actual = await vi.importActual<
-    typeof import('@/services/sync-enclave/sync-api')
-  >('@/services/sync-enclave/sync-api')
+    typeof import('@/services/harness/keys')
+  >('@/services/harness/keys')
   return {
     ...actual,
     addBundle: (...args: unknown[]) => mockAddBundle(...args),
@@ -432,10 +432,15 @@ describe('recoverPasskeyKeyBundle', () => {
       const keyId = await deriveTinfoilKeyIdHex(new Uint8Array(32).fill(0x11))
       if (remoteState === 'unavailable' || remoteState === 'not-found') {
         mockKeyCurrent.mockRejectedValue(
-          new SyncEnclaveError(
-            'opaque',
-            remoteState === 'not-found' ? 404 : 503,
-          ),
+          remoteState === 'not-found'
+            ? new HarnessError(
+                { code: 'THREAD_NOT_FOUND', message: 'opaque' },
+                404,
+              )
+            : new HarnessError(
+                { code: 'UPSTREAM_REFUSED', message: 'opaque' },
+                503,
+              ),
         )
       } else {
         mockKeyCurrent.mockResolvedValue({
@@ -605,8 +610,6 @@ describe('recoverPasskeyKeyBundle', () => {
       ],
     }
     localStorage.clear()
-    const { deriveTinfoilKeyIdHex } =
-      await import('@/services/sync-enclave/tinfoil-key-id')
     mockKeyCurrent.mockResolvedValue({
       key_id: await deriveTinfoilKeyIdHex(cek),
       bundles: {},

@@ -1,11 +1,17 @@
 import type { Chat } from '@/components/chat/types'
 import {
-  isImportJobGone,
-  runOffDeviceImport,
-} from '@/services/chat-import/off-device-import'
-import { chatStorage } from '@/services/storage/chat-storage'
-// prettier-ignore
-import { importStatus,type ImportFailureReason,type ImportStatusResponse } from '@/services/sync-enclave/sync-api'
+  importStatus,
+  startImport,
+  type ImportFailureReason,
+  type ImportStatusResponse,
+} from '@/services/harness/archives'
+import {
+  localThreadStore,
+  newLocalThread,
+  readLocalThread,
+  type LocalThread,
+} from '@/services/harness/local-threads'
+import { HarnessError } from '@/services/harness/sse'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
@@ -32,17 +38,22 @@ export type NativeRestoreCount = { imported: number; skipped: number; failed: nu
 // prettier-ignore
 export type NativeRestoreResult = { state: 'completed' | 'partial' | 'failed' | 'pending' | 'interrupted'; jobId?: string; failureReason?: ImportFailureReason; report: Record<NativeRestoreKind, NativeRestoreCount> }
 // prettier-ignore
-type Dependencies = { validate: typeof validateAndPackageNativeBackup; upload: typeof runOffDeviceImport; status: typeof importStatus; forEachImage: typeof forEachNativeBackupLocalImage; getChat(id: string): Promise<Chat | null>; saveChat(chat: Chat, skipCloudSync?: boolean): Promise<Chat | null>; wait(ms: number, signal: AbortSignal): Promise<void> }
+type Dependencies = { validate: typeof validateAndPackageNativeBackup; upload(file: File, signal: AbortSignal): Promise<ImportStatusResponse>; status: typeof importStatus; forEachImage: typeof forEachNativeBackupLocalImage; getChat(id: string): Promise<LocalThread | null>; saveChat(thread: LocalThread): Promise<LocalThread | null>; wait(ms: number, signal: AbortSignal): Promise<void> }
 // prettier-ignore
 type RestoreEvents = { onStarted?(status: ImportStatusResponse): void; onPhase?(phase?: string): void }
 
+// A restore's local chats are stored on this device, never in the cloud.
 const defaults: Dependencies = {
   validate: validateAndPackageNativeBackup,
-  upload: runOffDeviceImport,
+  // The chat service converts the cloud part, a native backup of its own.
+  upload: (file, signal) => startImport(file, 'tinfoil', signal),
   status: importStatus,
   forEachImage: forEachNativeBackupLocalImage,
-  getChat: chatStorage.getChat.bind(chatStorage),
-  saveChat: chatStorage.saveChatIfAllowed.bind(chatStorage),
+  getChat: (id) => localThreadStore('device').get(id),
+  saveChat: (thread) =>
+    localThreadStore('device').update(thread.id, (current) =>
+      current ? null : thread,
+    ),
   wait: (ms, signal) => {
     signal.throwIfAborted()
     return new Promise((resolve, reject) => {
@@ -188,8 +199,6 @@ function applyImage(
 function normalizeChat(
   source: ValidatedNativeRestore['local']['chats'][number],
   id: string,
-  ownerId: string,
-  projectId: string | undefined,
   images: ValidatedNativeRestore['local']['images'],
 ): Chat {
   const imageById = new Map(
@@ -230,23 +239,37 @@ function normalizeChat(
     })),
     createdAt: new Date(source.createdAt),
     updatedAt: source.updatedAt,
-    projectId,
     presetId: source.presetId,
     model: source.model,
     webSearchEnabled: source.webSearchEnabled,
     isLocalOnly: true,
-    syncUserId: ownerId,
   }
+}
+
+// A restored chat as this device stores it: its messages are upgraded the
+// way the previous client's rows are.
+function restoredThread(chat: Chat): LocalThread {
+  return readLocalThread({
+    ...newLocalThread(
+      chat.id,
+      {
+        model: chat.model,
+        presetId: chat.presetId,
+        webSearchEnabled: chat.webSearchEnabled,
+      },
+      chat.createdAt.toISOString(),
+    ),
+    title: chat.title,
+    titleState: chat.titleState,
+    updatedAt: chat.updatedAt,
+    messages: chat.messages,
+  })
 }
 
 function applyCloudReport(
   status: ImportStatusResponse,
   report: NativeRestoreResult['report'],
-  fallback: NonNullable<
-    ValidatedNativeRestore['cloud']
-  >['manifest']['counts'] & {
-    images: number
-  },
+  fallback: NonNullable<ValidatedNativeRestore['cloud']>['manifest']['counts'],
 ) {
   // prettier-ignore
   const aliases: Record<string, NativeRestoreKind> = { project: 'projects', document: 'project_documents', chat: 'cloud_chats' }
@@ -257,8 +280,8 @@ function applyCloudReport(
   if (status.status === 'completed' && !status.counts) {
     report.cloud_chats.failed = status.failed
     report.projects.imported = fallback.projects
-    report.project_documents.imported = fallback.documents
-    report.cloud_chats.imported = fallback.chats
+    report.project_documents.imported = fallback.project_documents
+    report.cloud_chats.imported = fallback.cloud_chats
     report.attachments.imported = fallback.images
   }
   report.attachments.warnings.push(...(status.warnings ?? []))
@@ -267,10 +290,12 @@ function applyCloudReport(
     report.cloud_chats.failed = status.failed
 }
 
+// Local chats are restored on this device under ids derived from the
+// account, the backup, and the source chat, so restoring a backup again
+// skips the chats it restored before.
 async function restoreLocalChats(
   validated: ValidatedNativeRestore,
   ownerId: string,
-  projectMap: Record<string, string>,
   report: NativeRestoreResult['report'],
   signal: AbortSignal,
   dependencies: Dependencies,
@@ -278,31 +303,24 @@ async function restoreLocalChats(
   for (const source of validated.local.chats) {
     signal.throwIfAborted()
     const id = destinationChatId(ownerId, validated.backup.backup_id, source.id)
-    const existing = await dependencies.getChat(id)
-    if (existing) {
-      const existingOwner =
-        existing.syncUserId ?? (existing as Chat & { userId?: string }).userId
-      const bucket = existingOwner === ownerId ? 'skipped' : 'blocked'
-      report.local_chats[bucket]++
-      // prettier-ignore
-      report.attachments[bucket] += validated.local.images.filter(({ metadata }) => metadata.chatId === source.id).length
-      continue
-    }
-    let projectId = source.projectId ? projectMap[source.projectId] : undefined
-    if (source.projectId && !projectId) {
-      report.local_chats.warnings.push(
-        `Restored "${source.title}" without its unavailable project.`,
-      )
-      projectId = undefined
-    }
     const sourceImages = validated.local.images.filter(
       ({ metadata }) => metadata.chatId === source.id,
     )
+    if (await dependencies.getChat(id)) {
+      report.local_chats.skipped++
+      report.attachments.skipped += sourceImages.length
+      continue
+    }
+    // A chat kept on this device belongs to no project.
+    if (source.projectId)
+      report.local_chats.warnings.push(
+        `Restored "${source.title}" without its unavailable project.`,
+      )
     try {
-      const chat = normalizeChat(source, id, ownerId, projectId, sourceImages)
+      const chat = normalizeChat(source, id, sourceImages)
       // prettier-ignore
       await dependencies.forEachImage(sourceImages, ({ metadata, bytes }) => applyImage(chat, source, metadata, bytes), { signal })
-      if (!(await dependencies.saveChat(chat, true)))
+      if (!(await dependencies.saveChat(restoredThread(chat))))
         throw new Error('Restored chat was not saved')
       report.local_chats.imported++
       report.attachments.imported += sourceImages.length
@@ -319,8 +337,9 @@ export async function restoreNativeBackup(
   ownerId: string,
   signal: AbortSignal,
   events: RestoreEvents = {},
-  dependencies: Dependencies = defaults,
+  overrides: Partial<Dependencies> = {},
 ): Promise<NativeRestoreResult> {
+  const dependencies: Dependencies = { ...defaults, ...overrides }
   if (!ownerId.trim()) throw new Error('Sign in before restoring a backup')
   const report = emptyReport()
   const validated = await dependencies.validate(file, { signal })
@@ -332,11 +351,8 @@ export async function restoreNativeBackup(
     try {
       // prettier-ignore
       const packageFile = upload.kind === 'blob' ? new File([upload.blob], upload.filename, { type: 'application/zip' }) : await upload.handle.getFile()
-      const started = await dependencies.upload('tinfoil_backup', packageFile, {
-        signal,
-      })
-      jobId = started.jobId
-      status = started.status
+      status = await dependencies.upload(packageFile, signal)
+      jobId = status.jobId
       events.onStarted?.(status)
       events.onPhase?.(status.phase)
       for (
@@ -348,9 +364,11 @@ export async function restoreNativeBackup(
       ) {
         await dependencies.wait(POLL_INTERVAL_MS, signal)
         try {
-          status = await dependencies.status(jobId, signal)
+          status = await dependencies.status(jobId!, signal)
         } catch (cause) {
-          if (isImportJobGone(cause))
+          // The chat service no longer knows the job: it restarted or reaped
+          // it, so its outcome is unknown here.
+          if (cause instanceof HarnessError && cause.status === 404)
             return { state: 'interrupted', jobId, report }
           throw cause
         }
@@ -359,27 +377,14 @@ export async function restoreNativeBackup(
     } finally {
       if (upload.kind === 'file') await upload.cleanup()
     }
-    applyCloudReport(status!, report, {
-      ...validated.cloud.manifest.counts,
-      images:
-        (validated.backup.counts?.images ??
-          validated.cloud.manifest.counts.blobs) -
-        validated.local.images.length,
-    })
+    applyCloudReport(status!, report, validated.cloud.manifest.counts)
     if (status!.status !== 'completed' && status!.status !== 'failed')
       return { state: 'pending', jobId, report }
     if (status!.status === 'failed')
       // prettier-ignore
-      return { state: 'failed', jobId, failureReason: status!.failure_reason, report }
+      return { state: 'failed', jobId, failureReason: status!.failureReason ?? status!.failure_reason, report }
   }
-  await restoreLocalChats(
-    validated,
-    ownerId,
-    status?.project_mappings ?? {},
-    report,
-    signal,
-    dependencies,
-  )
+  await restoreLocalChats(validated, ownerId, report, signal, dependencies)
   const partial = Object.values(report).some(
     ({ failed, blocked, warnings, errors }) =>
       failed || blocked || warnings.length || errors.length,

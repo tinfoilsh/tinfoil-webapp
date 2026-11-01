@@ -1,0 +1,392 @@
+[
+  [
+    {
+      "attachments": [
+        {
+          "fileName": "Attached document",
+          "id": "0000000000001_chat-a-message-0-attachment-0",
+          "textContent": "Doc body",
+          "type": "document"
+        },
+        {
+          "base64": "aW1n",
+          "fileName": "image-0",
+          "id": "0000000000001_chat-a-message-0-attachment-1",
+          "mimeType": "image/jpeg",
+          "type": "image"
+        },
+        {
+          "base64": "cG5n",
+          "fileName": "image-2",
+          "id": "0000000000001_chat-a-message-0-attachment-2",
+          "mimeType": "image/png",
+          "type": "image"
+        }
+      ],
+      "content": "Find it",
+      "createdAt": "2026-01-01T00:00:01Z",
+      "documentContent": "Doc body",
+      "id": "0000000000001_chat-a-message-0",
+      "imageData": [
+        {
+          "base64": "aW1n",
+          "mimeType": "image/jpeg"
+        },
+        {
+          "base64": ""
+        },
+        {
+          "base64": "cG5n"
+        }
+      ],
+      "role": "user",
+      "timestamp": "2026-01-01T00:00:01.000Z"
+    },
+    {
+      "codeExecCalls": [
+        {
+          "arguments": {
+            "command": "ls"
+          },
+          "id": "c1",
+          "output": "file.txt",
+          "status": "completed",
+          "toolName": "bash"
+        },
+        {
+          "arguments": {
+            "path": "/out/report.md"
+          },
+          "output": "```markdown\n# Report\n```",
+          "status": "completed",
+          "toolName": "present"
+        },
+        {
+          "arguments": "{\"command\":\"cat x\"}",
+          "output": "{\"stdout\":\"from json\"}",
+          "status": "completed",
+          "toolName": "bash"
+        },
+        {
+          "arguments": {},
+          "output": "[1,2]",
+          "status": "completed",
+          "toolName": "render_chart"
+        }
+      ],
+      "content": "Here it is",
+      "createdAt": "2026-01-01T00:00:02.5Z",
+      "id": "0000000000001_chat-a-message-1",
+      "role": "assistant",
+      "thinkingDuration": 3,
+      "thoughts": "Thinking...",
+      "timeline": [
+        {
+          "arguments": "{\"query\":\"where \\u003cis\\u003e it \\u0026 why\"}",
+          "complete": true,
+          "id": "0000000000001_chat-a-message-1-search",
+          "name": "web_search",
+          "result": {
+            "query": "where \u003cis\u003e it \u0026 why",
+            "results": [
+              {
+                "snippet": "a snippet",
+                "title": "A",
+                "url": "https://a.example"
+              },
+              {
+                "snippet": "described",
+                "title": "No url",
+                "url": null
+              }
+            ]
+          },
+          "toolCallId": "0000000000001_chat-a-message-1-search",
+          "type": "tool_call"
+        },
+        {
+          "content": "Thinking...",
+          "duration": 3,
+          "id": "0000000000001_chat-a-message-1-thinking",
+          "type": "thinking"
+        },
+        {
+          "arguments": "{\"url\":\"https://b.example\"}",
+          "complete": true,
+          "id": "f1",
+          "name": "web_fetch",
+          "result": {
+            "text": "",
+            "title": "",
+            "url": "https://b.example"
+          },
+          "toolCallId": "f1",
+          "type": "tool_call"
+        },
+        {
+          "arguments": "{\"url\":\"https://c.example\"}",
+          "complete": true,
+          "id": "0000000000001_chat-a-message-1-fetches-1",
+          "name": "web_fetch",
+          "result": {
+            "text": "",
+            "title": "",
+            "url": "https://c.example"
+          },
+          "toolCallId": "0000000000001_chat-a-message-1-fetches-1",
+          "type": "tool_call"
+        },
+        {
+          "arguments": "{\"command\":\"ls\"}",
+          "complete": true,
+          "id": "c1",
+          "name": "bash",
+          "result": {
+            "output": "file.txt"
+          },
+          "toolCallId": "c1",
+          "type": "tool_call"
+        },
+        {
+          "arguments": "{\"path\":\"/out/report.md\"}",
+          "complete": true,
+          "id": "0000000000001_chat-a-message-1-code-1",
+          "name": "present",
+          "result": {
+            "content": "# Report",
+            "filename": "report.md",
+            "language": "markdown"
+          },
+          "toolCallId": "0000000000001_chat-a-message-1-code-1",
+          "type": "tool_call"
+        },
+        {
+          "arguments": "{\"command\":\"cat x\"}",
+          "complete": true,
+          "id": "0000000000001_chat-a-message-1-code-2",
+          "name": "bash",
+          "result": {
+            "output": "from json"
+          },
+          "toolCallId": "0000000000001_chat-a-message-1-code-2",
+          "type": "tool_call"
+        },
+        {
+          "arguments": "{}",
+          "complete": true,
+          "id": "0000000000001_chat-a-message-1-code-3",
+          "name": "render_chart",
+          "result": [1, 2],
+          "toolCallId": "0000000000001_chat-a-message-1-code-3",
+          "type": "tool_call"
+        },
+        {
+          "arguments": "{\"title\":\"T\"}",
+          "id": "w1",
+          "name": "render_chart",
+          "toolCallId": "w1",
+          "type": "tool_call"
+        },
+        {
+          "content": "Here it is",
+          "id": "0000000000001_chat-a-message-1-content",
+          "type": "content"
+        }
+      ],
+      "timestamp": "2026-01-01T00:00:02.500Z",
+      "toolCalls": [
+        {
+          "arguments": "{\"title\":\"T\"}",
+          "id": "w1",
+          "name": "render_chart"
+        }
+      ],
+      "urlFetches": [
+        {
+          "id": "f1",
+          "status": "completed",
+          "url": "https://b.example"
+        },
+        {
+          "status": "failed",
+          "url": "https://c.example"
+        }
+      ],
+      "webSearch": {
+        "query": "where \u003cis\u003e it \u0026 why",
+        "sources": [
+          {
+            "snippet": "a snippet",
+            "title": "A",
+            "url": "https://a.example"
+          },
+          {
+            "description": "described",
+            "title": "No url"
+          }
+        ],
+        "status": "completed"
+      },
+      "webSearchBeforeThinking": true
+    },
+    {
+      "content": "Search after thinking",
+      "createdAt": "2026-01-01T00:00:03Z",
+      "id": "0000000000001_chat-a-message-2",
+      "role": "assistant",
+      "thoughts": "First",
+      "timeline": [
+        {
+          "content": "First",
+          "duration": null,
+          "id": "0000000000001_chat-a-message-2-thinking",
+          "type": "thinking"
+        },
+        {
+          "arguments": "{\"query\":\"later\"}",
+          "complete": true,
+          "id": "0000000000001_chat-a-message-2-search",
+          "name": "web_search",
+          "result": {
+            "query": "later",
+            "results": []
+          },
+          "toolCallId": "0000000000001_chat-a-message-2-search",
+          "type": "tool_call"
+        },
+        {
+          "content": "Search after thinking",
+          "id": "0000000000001_chat-a-message-2-content",
+          "type": "content"
+        }
+      ],
+      "timestamp": 1767225603000,
+      "webSearch": {
+        "query": "later",
+        "status": "completed"
+      }
+    },
+    {
+      "attachments": [
+        {
+          "fileName": "Attached document",
+          "id": "0000000000001_chat-a-message-3-attachment-0",
+          "textContent": "Scanned text",
+          "type": "document"
+        }
+      ],
+      "content": "Older multimodal",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "id": "0000000000001_chat-a-message-3",
+      "multimodalText": "Scanned text",
+      "role": "user"
+    }
+  ],
+  [
+    {
+      "attachments": [
+        {
+          "base64": "Y2F0",
+          "fileName": "cat.png",
+          "id": "0000000000002_chat-b-message-0-attachment-0",
+          "mimeType": "image/png",
+          "thumbnailBase64": "dGh1bWI=",
+          "type": "image"
+        },
+        {
+          "fileName": "notes.txt",
+          "id": "doc-1",
+          "textContent": "notes",
+          "type": "document"
+        }
+      ],
+      "content": "Hello",
+      "createdAt": "2026-01-01T08:00:00.12Z",
+      "id": "0000000000002_chat-b-message-0",
+      "role": "user",
+      "timestamp": "2026-01-01T10:00:00.120+02:00"
+    },
+    {
+      "content": "Answer",
+      "createdAt": "not a date",
+      "id": "0000000000002_chat-b-message-1",
+      "role": "assistant",
+      "timeline": [
+        {
+          "content": "hmm",
+          "duration": 2,
+          "id": "t1",
+          "isThinking": false,
+          "type": "thinking"
+        },
+        {
+          "arguments": "{\"query\":\"q\"}",
+          "complete": true,
+          "id": "s1",
+          "name": "web_search",
+          "result": {
+            "query": "q",
+            "results": []
+          },
+          "toolCallId": "s1",
+          "type": "tool_call"
+        },
+        {
+          "arguments": "{\"url\":\"https://d.example\"}",
+          "complete": true,
+          "id": "u1-0",
+          "name": "web_fetch",
+          "result": {
+            "text": "",
+            "title": "",
+            "url": "https://d.example"
+          },
+          "toolCallId": "u1-0",
+          "type": "tool_call"
+        },
+        {
+          "arguments": "{\"path\":\"a.txt\"}",
+          "complete": true,
+          "id": "x1-0",
+          "name": "view",
+          "result": {
+            "output": ""
+          },
+          "toolCallId": "x1-0",
+          "type": "tool_call"
+        },
+        {
+          "content": "Answer",
+          "id": "0000000000002_chat-b-message-1-block-4",
+          "type": "content"
+        },
+        {
+          "arguments": "{}",
+          "id": "g1",
+          "name": "render_clock",
+          "resolution": {
+            "text": "ok"
+          },
+          "resolvedAt": 1767225600000,
+          "toolCallId": "g1",
+          "type": "tool_call"
+        }
+      ],
+      "timestamp": "not a date"
+    },
+    {
+      "content": "",
+      "createdAt": "2026-02-30T00:00:00Z",
+      "id": "0000000000002_chat-b-message-2",
+      "role": "assistant",
+      "timeline": [],
+      "timestamp": "2026-02-30T00:00:00Z"
+    },
+    {
+      "content": "Has an id",
+      "createdAt": "2026-01-02T00:00:00Z",
+      "id": "kept-id",
+      "role": "user"
+    }
+  ]
+]

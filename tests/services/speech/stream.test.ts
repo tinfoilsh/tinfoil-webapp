@@ -1,13 +1,12 @@
+import { HarnessClient } from '@/services/harness/client'
+import { activateAPI, HarnessAPI } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import { SPEECH } from '@/services/speech/constants'
 import { speechErrorMessage } from '@/services/speech/errors'
 import { decodePcmStream, streamSpeech } from '@/services/speech/stream'
-import OpenAI from 'openai'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { getClient } = vi.hoisted(() => ({ getClient: vi.fn() }))
-vi.mock('@/services/inference/tinfoil-client', () => ({
-  getTinfoilClient: getClient,
-}))
+vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
 async function collect(stream: AsyncIterable<Float32Array>): Promise<number[]> {
   const samples: number[] = []
@@ -130,21 +129,31 @@ describe('PCM streaming', () => {
   })
 })
 
-describe('speech SDK requests', () => {
-  function clientWithResponse(response: () => Response) {
-    const transport = vi.fn<typeof fetch>(async () => response())
-    getClient.mockResolvedValue(
-      new OpenAI({
-        apiKey: 'test-session-key',
-        fetch: transport,
-        dangerouslyAllowBrowser: true,
-      }),
+describe('speech requests', () => {
+  // The attested connection to the harness, with its transport replaced.
+  function connect(response: () => Response | Promise<Response>) {
+    const secure = {
+      ready: vi.fn().mockResolvedValue(undefined),
+      fetch: vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+        response(),
+      ),
+      getVerificationDocument: vi.fn(),
+    }
+    activateAPI(
+      new HarnessAPI(
+        new HarnessClient(
+          'https://harness.example/',
+          async () => 'clerk-session',
+          () => secure,
+        ),
+        'alice',
+      ),
     )
-    return transport
+    return secure
   }
 
-  it('sends identical style guidance separately from the text of parallel chunks', async () => {
-    const transport = clientWithResponse(
+  it('asks the harness to read each chunk over the attested connection', async () => {
+    const secure = connect(
       () =>
         new Response(bytes([0, 0]), {
           headers: { 'Content-Type': 'audio/pcm' },
@@ -161,22 +170,15 @@ describe('speech SDK requests', () => {
         ),
       ),
     ).resolves.toEqual([[0], [0]])
-    expect(
-      transport.mock.calls.map(([, options]) =>
-        JSON.parse(options!.body as string),
-      ),
-    ).toEqual(
-      chunks.map((input) => ({
-        model: SPEECH.MODEL,
-        voice: SPEECH.VOICE,
-        instructions: SPEECH.INSTRUCTIONS,
-        input,
-        response_format: 'pcm',
-        stream_format: 'audio',
-      })),
-    )
-    for (const [, options] of transport.mock.calls) {
-      expect(options?.signal).toBeDefined()
+    expect(secure.fetch).toHaveBeenCalledTimes(2)
+    for (const [index, [url, init]] of secure.fetch.mock.calls.entries()) {
+      expect(url).toBe('https://harness.example/v1/speech')
+      expect(init?.method).toBe('POST')
+      expect(JSON.parse(init?.body as string)).toEqual({ text: chunks[index] })
+      expect(new Headers(init?.headers).get('Authorization')).toBe(
+        'Bearer clerk-session',
+      )
+      expect(init?.signal).toBeInstanceOf(AbortSignal)
     }
   })
 
@@ -192,7 +194,7 @@ describe('speech SDK requests', () => {
         },
         cancel,
       })
-      clientWithResponse(
+      connect(
         () => new Response(body, { headers: { 'Content-Type': mediaType } }),
       )
       await expect(
@@ -203,41 +205,56 @@ describe('speech SDK requests', () => {
     },
   )
 
-  it('does not retry a failed generation request', async () => {
-    const transport = clientWithResponse(
+  it('does not retry a refused request', async () => {
+    const secure = connect(
       () =>
-        new Response('{}', {
-          status: 503,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'TOOL_UNAVAILABLE',
+              message: 'Speech is unavailable',
+            },
+          }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } },
+        ),
     )
-    await expect(
-      collect(streamSpeech('Hello.', new AbortController().signal)),
-    ).rejects.toMatchObject({ status: 503 })
-    expect(transport).toHaveBeenCalledOnce()
+    const refusal = await collect(
+      streamSpeech('Hello.', new AbortController().signal),
+    ).catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(HarnessError)
+    expect(refusal).toMatchObject({ status: 503, code: 'TOOL_UNAVAILABLE' })
+    expect(secure.fetch).toHaveBeenCalledOnce()
   })
 
-  it('does not send speech after cancellation during SDK initialization', async () => {
-    let resolve!: (value: unknown) => void
-    getClient.mockReturnValue(
-      new Promise((r) => {
-        resolve = r
+  it('does not send speech after cancellation while the connection is verified', async () => {
+    let verified!: () => void
+    const secure = connect(
+      () =>
+        new Response(bytes([0, 0]), {
+          headers: { 'Content-Type': 'audio/pcm' },
+        }),
+    )
+    secure.ready.mockReturnValue(
+      new Promise<void>((resolve) => {
+        verified = resolve
       }),
     )
     const controller = new AbortController()
     const result = collect(streamSpeech('Hello.', controller.signal))
+    await vi.waitFor(() => expect(secure.ready).toHaveBeenCalledOnce())
     controller.abort()
-    const create = vi.fn()
-    resolve({ audio: { speech: { create } } })
+    verified()
     await expect(result).rejects.toMatchObject({ name: 'AbortError' })
-    expect(create).not.toHaveBeenCalled()
+    expect(secure.fetch).not.toHaveBeenCalled()
   })
 
-  it('uses the HTTP status to explain rate limits without exposing server details', async () => {
-    clientWithResponse(
+  it('explains a rate limit by its status without exposing server details', async () => {
+    connect(
       () =>
         new Response(
-          JSON.stringify({ error: { message: 'private request details' } }),
+          JSON.stringify({
+            error: { code: 'RATE_LIMITED', message: 'private request details' },
+          }),
           { status: 429, headers: { 'Content-Type': 'application/json' } },
         ),
     )
@@ -252,7 +269,7 @@ describe('speech SDK requests', () => {
   it('times out stalled response bodies, not just response headers', async () => {
     vi.useFakeTimers()
     const cancel = vi.fn()
-    clientWithResponse(
+    connect(
       () =>
         new Response(new ReadableStream({ cancel }), {
           headers: { 'Content-Type': 'audio/pcm' },

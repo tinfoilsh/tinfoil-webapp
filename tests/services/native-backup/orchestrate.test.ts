@@ -1,732 +1,526 @@
-import type { Chat } from '@/components/chat/types'
+import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import type { HarnessClient } from '@/services/harness/client'
+import { localThreadStore } from '@/services/harness/local-threads'
+import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
+import {
+  formatNativeBackupV2,
+  type NativeBackupOmission,
+  type NativeBackupV2Input,
+} from '@/services/native-backup/format'
 import { restoreNativeBackup } from '@/services/native-backup/orchestrate'
-import type { ValidatedNativeRestore } from '@/services/native-backup/restore'
-import { SyncEnclaveError } from '@/services/sync-enclave'
-import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+import { validateAndPackageNativeBackup } from '@/services/native-backup/restore'
+import { chatEvents } from '@/services/storage/chat-events'
+import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
+import { uint8ArrayToBase64 } from '@/utils/binary-codec'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex } from '@noble/hashes/utils.js'
+import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
+import { unzipSync, zipSync } from 'fflate'
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
+import { testSession } from '../../harness-fixture'
 
-const sourceFile = new File(['plaintext'], 'backup.zip')
-const cloudFile = new File(['cloud-only'], 'cloud.zip')
+const KEY = 'Y29udGVudC1rZXk='
 const backupId = '123e4567-e89b-42d3-a456-426614174000'
-type RestoreDependencies = NonNullable<
-  Parameters<typeof restoreNativeBackup>[4]
->
-const localChat: ValidatedNativeRestore['local']['chats'][number] = {
-  id: 'source-chat',
+const timestamp = '2026-08-20T12:00:00.000Z'
+const later = '2026-08-20T12:05:00.000Z'
+const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13])
+const pageImage = new Uint8Array([255, 216, 255, 224, 0, 16])
+
+let client: {
+  events: ReturnType<typeof vi.fn>
+  post: ReturnType<typeof vi.fn>
+  upload: ReturnType<typeof vi.fn>
+  download: ReturnType<typeof vi.fn>
+}
+
+function signIn() {
+  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+  client = {
+    events: vi.fn(),
+    post: vi.fn(async (path: string) => {
+      throw new Error(`Unexpected ${path}`)
+    }),
+    upload: vi.fn(async (path: string) => {
+      throw new Error(`Unexpected ${path}`)
+    }),
+    download: vi.fn(),
+  }
+  const api = new HarnessAPI(client as unknown as HarnessClient, 'alice')
+  vi.spyOn(api, 'key').mockReturnValue(KEY)
+  activateAPI(api)
+  publish({ session: testSession, keyReady: true, profileReady: true })
+}
+
+const localChat: NativeBackupV2Input['localChats'][number] = {
+  id: 'local-1',
   title: 'Local chat',
+  titleState: 'manual',
+  createdAt: timestamp,
+  updatedAt: later,
+  model: 'test-model',
+  webSearchEnabled: false,
   messages: [
     {
-      role: 'user' as const,
-      content: 'hello',
-      timestamp: '2026-01-01T00:00:00.000Z',
-    },
-  ],
-  createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-01-01T00:00:00.000Z',
-  projectId: 'source-project',
-}
-
-function validated(cloud = true): ValidatedNativeRestore {
-  return {
-    backup: {
-      format: 'tinfoil-native-backup',
-      version: 1,
-      backup_id: backupId,
-      created_at: localChat.createdAt,
-      complete: true,
-      counts: {
-        projects: cloud ? 1 : 0,
-        project_documents: 0,
-        cloud_chats: 0,
-        local_chats: 1,
-        relationships: cloud ? 1 : 0,
-        images: 0,
-        files: 0,
-      },
-      notices: {
-        contains_plaintext: true,
-        documents_are_extracted_text_only: true,
-      },
-      files: [],
-    },
-    local: {
-      chats: [
+      role: 'user',
+      content: 'See these',
+      timestamp,
+      attachments: [
+        { id: 'photo', type: 'image', imageId: 'local-image' },
         {
-          ...structuredClone(localChat),
-          projectId: cloud ? localChat.projectId : undefined,
+          id: 'scan',
+          type: 'document',
+          fileName: 'scan.pdf',
+          textContent: 'Scanned text',
+          pages: [
+            {
+              page: 1,
+              text: 'Scanned text',
+              is_scanned: true,
+              imageId: 'page',
+            },
+          ],
         },
       ],
-      images: [],
     },
-    cloud: cloud
-      ? {
-          manifest: {
-            format: 'tinfoil-native-cloud-import',
-            version: 1,
-            source_backup_id: backupId,
-            counts: { projects: 1, documents: 0, chats: 0, blobs: 0 },
-            entities: [],
-            blobs: [],
-          },
-          upload: {
-            kind: 'blob',
-            blob: cloudFile,
-            filename: 'cloud.zip',
-          },
-        }
-      : null,
-  }
+    {
+      role: 'assistant',
+      content: 'Both are clear.',
+      timestamp: later,
+      thoughts: 'Reading',
+      timeline: [
+        { type: 'thinking', id: 'r-t', content: 'Reading', isThinking: false },
+        { type: 'content', id: 'r-c', content: 'Both are clear.' },
+      ],
+    },
+  ],
 }
 
-describe('restoreNativeBackup', () => {
-  let saveChat: ReturnType<
-    typeof vi.fn<(chat: Chat, skipCloudSync?: boolean) => Promise<Chat | null>>
-  >
-  let dependencies: {
-    [K in keyof RestoreDependencies]: Mock<RestoreDependencies[K]>
+function backup(
+  parts: { cloud?: boolean; local?: boolean; localInProject?: boolean } = {},
+  omissions: NativeBackupOmission[] = [],
+  warnings: NativeBackupV2Input['warnings'] = [],
+) {
+  const cloud = parts.cloud ?? true
+  const local = parts.local ?? true
+  const inProject = cloud && local && parts.localInProject === true
+  const input: NativeBackupV2Input = {
+    backupId,
+    createdAt: timestamp,
+    projects: cloud
+      ? [
+          {
+            id: 'project-1',
+            name: 'Research',
+            description: '',
+            systemInstructions: '',
+            memory: [],
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        ]
+      : [],
+    projectDocuments: [],
+    cloudChats: cloud
+      ? [
+          {
+            id: 'cloud-1',
+            title: 'Cloud chat',
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            projectId: 'project-1',
+            messages: [
+              {
+                role: 'user',
+                content: 'hello',
+                timestamp,
+                attachments: [
+                  { id: 'cloud-photo', type: 'image', imageId: 'cloud-image' },
+                ],
+              },
+            ],
+          },
+        ]
+      : [],
+    localChats: local
+      ? [inProject ? { ...localChat, projectId: 'project-1' } : localChat]
+      : [],
+    relationships: {
+      projectChats: [
+        ...(cloud ? [{ projectId: 'project-1', chatId: 'cloud-1' }] : []),
+        ...(inProject ? [{ projectId: 'project-1', chatId: 'local-1' }] : []),
+      ],
+      projectDocuments: [],
+      chatImages: [
+        ...(cloud ? [{ chatId: 'cloud-1', imageId: 'cloud-image' }] : []),
+        ...(local
+          ? [
+              { chatId: 'local-1', imageId: 'local-image' },
+              { chatId: 'local-1', imageId: 'page' },
+            ]
+          : []),
+      ],
+    },
+    images: [
+      ...(cloud
+        ? [
+            {
+              metadata: {
+                id: 'cloud-image',
+                chatId: 'cloud-1',
+                messageIndex: 0,
+                attachmentId: 'cloud-photo',
+                fileName: 'cloud.png',
+                mimeType: 'image/png' as const,
+              },
+              bytes: png,
+            },
+          ]
+        : []),
+      ...(local
+        ? [
+            {
+              metadata: {
+                id: 'local-image',
+                chatId: 'local-1',
+                messageIndex: 0,
+                attachmentId: 'photo',
+                fileName: 'photo.png',
+                mimeType: 'image/png' as const,
+              },
+              bytes: png,
+            },
+            {
+              metadata: {
+                id: 'page',
+                chatId: 'local-1',
+                messageIndex: 0,
+                attachmentId: 'scan',
+                page: 1,
+                fileName: 'scan-page-1.jpg',
+                mimeType: 'image/jpeg' as const,
+              },
+              bytes: pageImage,
+            },
+          ]
+        : []),
+    ],
+    omissions,
+    warnings,
   }
+  const formatted = formatNativeBackupV2(input)
+  return new File(
+    [
+      zipSync({
+        'manifest.json': formatted.manifestBytes,
+        ...Object.fromEntries(
+          formatted.files.map(({ path, bytes }) => [path, bytes]),
+        ),
+      }),
+    ],
+    'tinfoil-backup.zip',
+    { type: 'application/zip' },
+  )
+}
 
-  beforeEach(() => {
-    saveChat = vi.fn(async (chat) => chat)
-    dependencies = {
-      validate: vi.fn<RestoreDependencies['validate']>(async () => validated()),
-      upload: vi.fn<RestoreDependencies['upload']>(async () => ({
-        jobId: 'job-1',
-        status: {
-          status: 'completed',
-          imported: 1,
+const restoredId = (ownerId: string, sourceId = 'local-1') =>
+  `native-${bytesToHex(sha256(new TextEncoder().encode(`${ownerId}\0${backupId}\0${sourceId}`)))}`
+
+function acceptUpload(statuses: Record<string, unknown>[]) {
+  client.upload.mockResolvedValue({ jobId: 'job-1' })
+  client.post.mockImplementation(async (path: string) => {
+    if (path !== '/v1/import/status') throw new Error(`Unexpected ${path}`)
+    const status = statuses.length > 1 ? statuses.shift() : statuses[0]
+    return { jobId: 'job-1', imported: 0, failed: 0, total: 1, ...status }
+  })
+}
+
+const restore = (
+  file: File,
+  overrides: Parameters<typeof restoreNativeBackup>[4] = {},
+  ownerId = 'alice',
+) =>
+  restoreNativeBackup(
+    file,
+    ownerId,
+    new AbortController().signal,
+    {},
+    { wait: async () => {}, ...overrides },
+  )
+
+beforeAll(() => {
+  Object.defineProperty(globalThis, 'indexedDB', {
+    configurable: true,
+    value: new IDBFactory(),
+  })
+  Object.defineProperty(globalThis, 'IDBKeyRange', {
+    configurable: true,
+    value: FakeIDBKeyRange,
+  })
+})
+
+beforeEach(async () => {
+  sessionStorage.clear()
+  deletedChatsTracker.clear()
+  await indexedDBStorage.deleteAllChats()
+  deletedChatsTracker.clear()
+  signIn()
+})
+
+afterEach(() => {
+  chatEvents.clear()
+  deletedChatsTracker.clear()
+  vi.restoreAllMocks()
+})
+
+describe('restoring a native backup', () => {
+  it('uploads only the cloud part and restores the local chats on this device', async () => {
+    acceptUpload([{ status: 'completed' }])
+
+    const result = await restore(backup())
+
+    expect(client.upload).toHaveBeenCalledOnce()
+    const [path, uploaded, fields] = client.upload.mock.calls[0]
+    expect([path, fields]).toEqual([
+      '/v1/import',
+      { key: KEY, source: 'tinfoil' },
+    ])
+    const entries = Object.keys(
+      unzipSync(new Uint8Array(await (uploaded as File).arrayBuffer())),
+    )
+    expect(entries.some((entry) => entry.startsWith('local_chats/'))).toBe(
+      false,
+    )
+    const cloudPart = await validateAndPackageNativeBackup(uploaded as File)
+    expect(cloudPart.local).toEqual({ chats: [], images: [] })
+    expect(cloudPart.backup.counts).toMatchObject({
+      cloud_chats: 1,
+      local_chats: 0,
+      images: 1,
+    })
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/import/status',
+      { jobId: 'job-1' },
+      expect.any(AbortSignal),
+    )
+
+    const id = restoredId('alice')
+    const restored = await localThreadStore('device').get(id)
+    expect(restored).toEqual({
+      id,
+      title: 'Local chat',
+      titleState: 'manual',
+      createdAt: '2026-08-20T12:00:00Z',
+      updatedAt: '2026-08-20T12:05:00Z',
+      model: 'test-model',
+      webSearchEnabled: false,
+      codeExecutionAccessToken: expect.stringMatching(/^[0-9a-f]{64}$/),
+      messages: [
+        {
+          id: `${id}-message-0`,
+          role: 'user',
+          createdAt: '2026-08-20T12:00:00Z',
+          content: 'See these',
+          attachments: [
+            {
+              id: 'photo',
+              type: 'image',
+              fileName: 'photo.png',
+              mimeType: 'image/png',
+              fileSize: png.length,
+              base64: uint8ArrayToBase64(png),
+            },
+            {
+              id: 'scan',
+              type: 'document',
+              fileName: 'scan.pdf',
+              textContent: 'Scanned text',
+              pages: [
+                {
+                  page: 1,
+                  text: 'Scanned text',
+                  is_scanned: true,
+                  image: uint8ArrayToBase64(pageImage),
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: `${id}-message-1`,
+          role: 'assistant',
+          createdAt: '2026-08-20T12:05:00Z',
+          content: 'Both are clear.',
+          timeline: [
+            {
+              type: 'thinking',
+              id: 'r-t',
+              content: 'Reading',
+              isThinking: false,
+            },
+            { type: 'content', id: 'r-c', content: 'Both are clear.' },
+          ],
+        },
+      ],
+    })
+    expect(result.state).toBe('completed')
+    expect(result.report).toMatchObject({
+      projects: { imported: 1 },
+      cloud_chats: { imported: 1 },
+      local_chats: { imported: 1, skipped: 0, failed: 0 },
+      attachments: { imported: 3 },
+    })
+  })
+
+  it('skips local chats restored before and keeps them apart per account', async () => {
+    acceptUpload([{ status: 'completed' }])
+    await restore(backup({ cloud: false }))
+    const first = await localThreadStore('device').get(restoredId('alice'))
+
+    const again = await restore(backup({ cloud: false }))
+
+    expect(again.report.local_chats).toMatchObject({ imported: 0, skipped: 1 })
+    expect(again.report.attachments).toMatchObject({ imported: 0, skipped: 2 })
+    expect(await localThreadStore('device').get(restoredId('alice'))).toEqual(
+      first,
+    )
+    expect((await localThreadStore('device').list()).map((t) => t.id)).toEqual([
+      restoredId('alice'),
+    ])
+
+    await restore(backup({ cloud: false }), {}, 'bob')
+    expect(
+      (await localThreadStore('device').list()).map((t) => t.id).sort(),
+    ).toEqual([restoredId('alice'), restoredId('bob')].sort())
+    expect(client.upload).not.toHaveBeenCalled()
+  })
+
+  it('restores no local chats when the cloud restore fails', async () => {
+    acceptUpload([{ status: 'failed', failure_reason: 'invalid_archive' }])
+
+    const result = await restore(backup())
+
+    expect(result).toMatchObject({
+      state: 'failed',
+      jobId: 'job-1',
+      failureReason: 'invalid_archive',
+    })
+    expect(await localThreadStore('device').list()).toEqual([])
+  })
+
+  it('leaves a restore pending while the cloud job keeps running', async () => {
+    acceptUpload([{ status: 'running' }])
+    const wait = vi.fn(async () => {})
+
+    const result = await restore(backup(), { wait })
+
+    expect(result).toMatchObject({ state: 'pending', jobId: 'job-1' })
+    expect(wait).toHaveBeenCalledTimes(20)
+    expect(client.post).toHaveBeenCalledTimes(21)
+    expect(await localThreadStore('device').list()).toEqual([])
+  })
+
+  it('reports an interrupted restore when the chat service forgets the job', async () => {
+    client.upload.mockResolvedValue({ jobId: 'job-1' })
+    let polls = 0
+    client.post.mockImplementation(async () => {
+      if (polls++ === 0)
+        return {
+          jobId: 'job-1',
+          status: 'running',
+          imported: 0,
           failed: 0,
           total: 1,
-          project_mappings: { 'source-project': 'destination-project' },
-        },
-      })),
-      status: vi.fn<RestoreDependencies['status']>(async () => {
-        throw new Error('Unexpected status poll')
-      }),
-      forEachImage: vi.fn<RestoreDependencies['forEachImage']>(
-        async (images) => {
-          if (images.length) throw new Error('Unexpected image read')
-        },
-      ),
-      getChat: vi.fn<RestoreDependencies['getChat']>(async () => null),
-      saveChat,
-      wait: vi.fn<RestoreDependencies['wait']>(async () => undefined),
-    }
+        }
+      throw new HarnessError({ code: 'THREAD_NOT_FOUND', message: 'Gone' }, 404)
+    })
+
+    const result = await restore(backup())
+
+    expect(result).toMatchObject({ state: 'interrupted', jobId: 'job-1' })
+    expect(await localThreadStore('device').list()).toEqual([])
   })
 
-  it('uploads only the cloud package and restores local chats with mapped projects', async () => {
-    const signal = new AbortController().signal
-    const result = await restoreNativeBackup(
-      sourceFile,
-      'destination-owner',
-      signal,
-      {},
-      dependencies,
+  it('rethrows status failures other than a missing job', async () => {
+    client.upload.mockResolvedValue({ jobId: 'job-1' })
+    const failure = new HarnessError(
+      { code: 'UPSTREAM_REFUSED', message: 'Down' },
+      503,
     )
-
-    expect(dependencies.upload).toHaveBeenCalledWith(
-      'tinfoil_backup',
-      expect.objectContaining({ name: 'cloud.zip' }),
-      { signal },
-    )
-    expect(dependencies.upload.mock.calls[0][1]).not.toBe(sourceFile)
-    expect(await dependencies.upload.mock.calls[0][1].text()).toBe('cloud-only')
-    expect(saveChat.mock.calls[0][0]).toMatchObject({
-      projectId: 'destination-project',
-      syncUserId: 'destination-owner',
-      isLocalOnly: true,
+    let polls = 0
+    client.post.mockImplementation(async () => {
+      if (polls++ === 0)
+        return {
+          jobId: 'job-1',
+          status: 'running',
+          imported: 0,
+          failed: 0,
+          total: 1,
+        }
+      throw failure
     })
-    expect(result.report.projects.imported).toBe(1)
-    expect(saveChat.mock.calls[0][1]).toBe(true)
-    expect(result.state).toBe('completed')
-  })
 
-  it('uses deterministic owner-scoped IDs and skips an existing owner row', async () => {
-    dependencies.validate.mockResolvedValue(validated(false))
-    const rows = new Map<string, Chat>()
-    dependencies.getChat.mockImplementation(
-      async (id: string) => rows.get(id) ?? null,
-    )
-    saveChat.mockImplementation(async (chat) => {
-      rows.set(chat.id, chat)
-      return chat
-    })
-    await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-    const id = saveChat.mock.calls[0][0].id
-    const result = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-    expect(saveChat).toHaveBeenCalledTimes(1)
-    expect(dependencies.getChat).toHaveBeenNthCalledWith(2, id)
-    await restoreNativeBackup(
-      sourceFile,
-      'owner-b',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-
-    expect(result.report.local_chats.skipped).toBe(1)
-    expect(saveChat.mock.calls[1][0].id).not.toBe(id)
-    const changedBackup = validated(false)
-    changedBackup.backup.backup_id = '123e4567-e89b-42d3-a456-426614174001'
-    dependencies.validate.mockResolvedValue(changedBackup)
-    await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-    const changedSource = validated(false)
-    changedSource.local.chats[0].id = 'another-source'
-    dependencies.validate.mockResolvedValue(changedSource)
-    await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-    expect(new Set(saveChat.mock.calls.map(([chat]) => chat.id)).size).toBe(4)
-
-    dependencies.validate.mockResolvedValue(validated(false))
-    rows.set(id, { ...rows.get(id)!, id, syncUserId: 'foreign-owner' })
-    const blocked = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-    expect(blocked.report.local_chats).toMatchObject({
-      imported: 0,
-      skipped: 0,
-      blocked: 1,
-    })
-    expect(saveChat).toHaveBeenCalledTimes(4)
+    await expect(restore(backup())).rejects.toBe(failure)
   })
 
   it('surfaces partial source coverage through the restore report', async () => {
-    const value = validated(false)
-    value.backup = {
-      ...value.backup,
-      version: 2,
-      complete: false,
-      omissions: [
+    acceptUpload([{ status: 'completed' }])
+    const file = backup(
+      {},
+      [
         {
           kind: 'cloud_chat',
           source_id: 'private-source-id',
           category: 'invalid',
-          reason: 'chat_payload_invalid',
+          reason: 'record_invalid',
         },
       ],
-      warnings: [
-        {
-          code: 'source_items_omitted',
-          category: 'source_coverage',
-          count: 1,
-        },
-      ],
-    } as ValidatedNativeRestore['backup']
-    dependencies.validate.mockResolvedValue(value)
-
-    const result = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
+      [{ code: 'source_items_omitted', category: 'source_coverage', count: 1 }],
     )
+
+    const result = await restore(file)
 
     expect(result.state).toBe('partial')
     expect(result.report.cloud_chats.warnings).toEqual([
       'Source archive omitted 1 cloud chat.',
     ])
     expect(JSON.stringify(result.report)).not.toContain('private-source-id')
+    expect(
+      await localThreadStore('device').get(restoredId('alice')),
+    ).not.toBeNull()
   })
 
-  it('reports relationship adjustments separately from omitted cloud chats', async () => {
-    const value = validated(false)
-    value.backup = {
-      ...value.backup,
-      version: 2,
-      complete: false,
-      omissions: [
-        {
-          kind: 'relationship',
-          source_id: 'private-chat-id',
-          parent_source_id: 'private-project-id',
-          category: 'unavailable',
-          reason: 'project_reference_unavailable',
-        },
-      ],
-      warnings: [
-        {
-          code: 'chats_detached_from_omitted_projects',
-          category: 'relationship_adjustment',
-          count: 1,
-        },
-      ],
-    } as ValidatedNativeRestore['backup']
-    dependencies.validate.mockResolvedValue(value)
+  it('restores a local chat from a project without it, as chats on this device have none', async () => {
+    acceptUpload([{ status: 'completed' }])
 
-    const result = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
+    const result = await restore(backup({ localInProject: true }))
 
-    expect(result.report.cloud_chats.warnings).toEqual([
-      'Source archive adjusted 1 relationship to keep restored data valid.',
-    ])
-    expect(result.report.cloud_chats.warnings[0]).not.toContain('omitted')
+    expect(result.state).toBe('partial')
+    expect(result.report.local_chats).toMatchObject({
+      imported: 1,
+      warnings: ['Restored "Local chat" without its unavailable project.'],
+    })
+    const [summary] = await localThreadStore('device').list()
+    expect(summary).toMatchObject({ id: restoredId('alice'), projectId: null })
   })
 
-  it('attributes relationship adjustments for local source chat IDs locally', async () => {
-    const value = validated(false)
-    value.local.chats[0].projectId = undefined
-    value.backup = {
-      ...value.backup,
-      version: 2,
-      complete: false,
-      omissions: [
-        {
-          kind: 'relationship',
-          source_id: localChat.id,
-          parent_source_id: 'private-project-id',
-          category: 'unavailable',
-          reason: 'project_reference_unavailable',
-        },
-      ],
-      warnings: [
-        {
-          code: 'chats_detached_from_omitted_projects',
-          category: 'relationship_adjustment',
-          count: 1,
-        },
-      ],
-    } as ValidatedNativeRestore['backup']
-    dependencies.validate.mockResolvedValue(value)
+  it('counts a local chat that cannot be stored as failed', async () => {
+    const result = await restore(backup({ cloud: false }), {
+      saveChat: async () => null,
+    })
 
-    const result = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-
-    expect(result.report.local_chats.warnings).toEqual([
-      'Source archive adjusted 1 relationship to keep restored data valid.',
-    ])
-    expect(result.report.cloud_chats.warnings).toEqual([])
-  })
-
-  it('does not count a skipped storage write as imported', async () => {
-    dependencies.validate.mockResolvedValue(validated(false))
-    saveChat.mockResolvedValue(null)
-
-    const result = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-
+    expect(result.state).toBe('partial')
     expect(result.report.local_chats).toMatchObject({ imported: 0, failed: 1 })
-    expect(result.state).toBe('partial')
-  })
-
-  it('treats a legacy owner row as an idempotent restore', async () => {
-    dependencies.validate.mockResolvedValue(validated(false))
-    await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-    const id = saveChat.mock.calls[0][0].id
-    dependencies.getChat.mockImplementation(async (requestedId: string) =>
-      requestedId === id
-        ? {
-            ...saveChat.mock.calls[0][0],
-            id,
-            syncUserId: undefined,
-            userId: 'owner-a',
-          }
-        : null,
-    )
-
-    const result = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-
-    expect(result.report.local_chats.skipped).toBe(1)
-    expect(saveChat).toHaveBeenCalledTimes(1)
-  })
-
-  it('uses service counts for an idempotent cloud restore', async () => {
-    dependencies.upload.mockResolvedValue({
-      jobId: 'job-1',
-      status: {
-        status: 'completed',
-        imported: 0,
-        failed: 0,
-        total: 1,
-        counts: {
-          project: { imported: 0, skipped: 1, failed: 0, blocked: 0 },
-        },
-      },
-    })
-
-    const result = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-
-    expect(result.report.projects).toMatchObject({ imported: 0, skipped: 1 })
-  })
-
-  it('preserves aggregate failures and all image counts without service counts', async () => {
-    const value = validated()
-    value.backup.counts = {
-      projects: 1,
-      project_documents: 0,
-      cloud_chats: 1,
-      local_chats: 0,
-      relationships: 2,
-      images: 2,
-      files: 0,
-    }
-    value.cloud!.manifest.counts = {
-      projects: 1,
-      documents: 0,
-      chats: 1,
-      blobs: 0,
-    }
-    dependencies.validate.mockResolvedValue(value)
-    dependencies.upload.mockResolvedValue({
-      jobId: 'job-1',
-      status: {
-        status: 'completed',
-        imported: 1,
-        failed: 1,
-        total: 2,
-      },
-    })
-
-    const result = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-
-    expect(result.report.cloud_chats.failed).toBe(1)
-    expect(result.report.attachments.imported).toBe(2)
-    expect(result.state).toBe('partial')
-  })
-
-  it.each([
-    [false, false],
-    [true, false],
-    [false, true],
-    [true, true],
-  ])(
-    'restores image occurrences and counts outcomes with duplicate IDs: %s, documents: %s',
-    async (duplicateIds, documents) => {
-      const value = validated(false)
-      if (documents)
-        value.local.chats[0].messages[0].attachments = [1, 2].map((number) => ({
-          id: duplicateIds ? 'attachment-1' : `attachment-${number}`,
-          type: 'document',
-          fileName: `document-${number}.pdf`,
-          pages: [
-            {
-              page: 0,
-              text: `page-${number}`,
-              is_scanned: true,
-              imageId: `image-${number}`,
-            },
-          ],
-        }))
-      else
-        value.local.chats[0].messages[0].attachments = [
-          { id: 'attachment-1', type: 'image', imageId: 'image-1' },
-          {
-            id: duplicateIds ? 'attachment-1' : 'attachment-2',
-            type: 'image',
-            imageId: 'image-2',
-          },
-        ]
-      value.local.images = [1, 2].map((number) => ({
-        metadata: {
-          id: `image-${number}`,
-          chatId: 'source-chat',
-          messageIndex: 0,
-          attachmentId: duplicateIds ? 'attachment-1' : `attachment-${number}`,
-          fileName: `image-${number}.png`,
-          mimeType: 'image/png',
-          ...(documents ? { page: 0 } : {}),
-        },
-        source: {
-          file: sourceFile,
-          path: `image-${number}`,
-          sizeBytes: 1,
-          sha256: 'hash',
-        },
-      }))
-      dependencies.validate.mockResolvedValue(value)
-      dependencies.forEachImage.mockImplementation(async (images, consume) => {
-        for (const image of images) {
-          await consume({
-            metadata: image.metadata,
-            bytes: new Uint8Array([image.metadata.id === 'image-1' ? 1 : 2]),
-          })
-        }
-      })
-
-      const imported = await restoreNativeBackup(
-        sourceFile,
-        'owner-a',
-        new AbortController().signal,
-        {},
-        dependencies,
-      )
-      const id = saveChat.mock.calls[0][0].id
-      dependencies.getChat.mockResolvedValue({
-        ...saveChat.mock.calls[0][0],
-        id,
-        syncUserId: 'owner-a',
-      })
-      const skipped = await restoreNativeBackup(
-        sourceFile,
-        'owner-a',
-        new AbortController().signal,
-        {},
-        dependencies,
-      )
-      dependencies.getChat.mockResolvedValue(null)
-      saveChat.mockRejectedValueOnce(new Error('save failed'))
-      const failed = await restoreNativeBackup(
-        sourceFile,
-        'owner-b',
-        new AbortController().signal,
-        {},
-        dependencies,
-      )
-
-      expect(saveChat.mock.calls[0][0].messages[0].attachments).toMatchObject(
-        documents
-          ? [
-              {
-                id: 'attachment-1',
-                fileName: 'document-1.pdf',
-                pages: [{ page: 0, text: 'page-1', image: 'AQ==' }],
-              },
-              {
-                id: duplicateIds ? 'attachment-1' : 'attachment-2',
-                fileName: 'document-2.pdf',
-                pages: [{ page: 0, text: 'page-2', image: 'Ag==' }],
-              },
-            ]
-          : [
-              { id: 'attachment-1', fileName: 'image-1.png', base64: 'AQ==' },
-              {
-                id: duplicateIds ? 'attachment-1' : 'attachment-2',
-                fileName: 'image-2.png',
-                base64: 'Ag==',
-              },
-            ],
-      )
-      expect(imported.report.attachments.imported).toBe(2)
-      expect(skipped.report.attachments.skipped).toBe(2)
-      expect(failed.report.attachments.failed).toBe(2)
-      expect(dependencies.forEachImage).toHaveBeenCalledTimes(2)
-    },
-  )
-
-  it.each(['running', 'failed'] as const)(
-    'does not restore local chats when the cloud job is %s',
-    async (status) => {
-      dependencies.upload.mockResolvedValue({
-        jobId: 'job-1',
-        status: { status, imported: 0, failed: 0, total: 1 },
-      })
-      dependencies.status.mockResolvedValue({
-        status,
-        imported: 0,
-        failed: status === 'failed' ? 1 : 0,
-        total: 1,
-      })
-
-      const result = await restoreNativeBackup(
-        sourceFile,
-        'owner-a',
-        new AbortController().signal,
-        {},
-        dependencies,
-      )
-
-      expect(result.state).toBe(status === 'running' ? 'pending' : 'failed')
-      expect(saveChat).not.toHaveBeenCalled()
-    },
-  )
-
-  it('carries the enclave failure reason on a failed cloud job', async () => {
-    dependencies.upload.mockResolvedValue({
-      jobId: 'job-1',
-      status: { status: 'running', imported: 0, failed: 0, total: 1 },
-    })
-    dependencies.status.mockResolvedValue({
-      status: 'failed',
-      imported: 0,
-      failed: 0,
-      total: 1,
-      errors: ['import timed out'],
-      failure_reason: 'timeout',
-    })
-
-    const result = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-
-    expect(result).toMatchObject({ state: 'failed', failureReason: 'timeout' })
-    expect(result.report.cloud_chats.errors).toEqual(['import timed out'])
-    expect(saveChat).not.toHaveBeenCalled()
-  })
-
-  it('reports an interrupted restore when the enclave forgets the job mid-poll', async () => {
-    dependencies.upload.mockResolvedValue({
-      jobId: 'job-1',
-      status: { status: 'running', imported: 0, failed: 0, total: 1 },
-    })
-    dependencies.status.mockRejectedValue(
-      new SyncEnclaveError('import job not found', 404, 'NOT_FOUND'),
-    )
-
-    const result = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-
-    expect(result).toMatchObject({ state: 'interrupted', jobId: 'job-1' })
-    expect(dependencies.status).toHaveBeenCalledOnce()
-    expect(saveChat).not.toHaveBeenCalled()
-  })
-
-  it('rethrows status poll failures other than a missing job', async () => {
-    dependencies.upload.mockResolvedValue({
-      jobId: 'job-1',
-      status: { status: 'running', imported: 0, failed: 0, total: 1 },
-    })
-    dependencies.status.mockRejectedValue(
-      new SyncEnclaveError('sync enclave request failed: 503', 503, 'HTTP_503'),
-    )
-
-    await expect(
-      restoreNativeBackup(
-        sourceFile,
-        'owner-a',
-        new AbortController().signal,
-        {},
-        dependencies,
-      ),
-    ).rejects.toMatchObject({ status: 503 })
-  })
-
-  it('detaches chats from failed projects and treats warnings as partial', async () => {
-    dependencies.upload.mockResolvedValue({
-      jobId: 'job-1',
-      status: {
-        status: 'completed',
-        imported: 0,
-        failed: 1,
-        total: 1,
-        counts: {
-          chat: { imported: 0, skipped: 0, failed: 1, blocked: 0 },
-        },
-        warnings: ['thumbnail unavailable'],
-        errors: ['chat failed'],
-        phase: 'complete',
-      },
-    })
-
-    const onPhase = vi.fn()
-    const result = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      { onPhase },
-      dependencies,
-    )
-
-    expect(saveChat.mock.calls[0][0].projectId).toBeUndefined()
-    expect(result.report.local_chats.warnings).toHaveLength(1)
-    expect(result.report.cloud_chats.failed).toBe(1)
-    expect(result.report.cloud_chats.errors).toEqual(['chat failed'])
-    expect(result.report.attachments.warnings).toEqual([
-      'thumbnail unavailable',
-    ])
-    expect(onPhase).toHaveBeenCalledWith('complete')
-    expect(result.state).toBe('partial')
-    expect(result.report.local_chats.warnings).toEqual([
-      'Restored "Local chat" without its unavailable project.',
-    ])
-    dependencies.upload.mockResolvedValue({
-      jobId: 'job-1',
-      status: {
-        status: 'completed',
-        imported: 1,
-        failed: 0,
-        total: 1,
-        counts: { project: { imported: 1, skipped: 0, failed: 0, blocked: 0 } },
-        project_mappings: { 'source-project': 'destination-project' },
-        warnings: ['thumbnail unavailable'],
-        errors: [],
-      },
-    })
-    const warningOnly = await restoreNativeBackup(
-      sourceFile,
-      'owner-a',
-      new AbortController().signal,
-      {},
-      dependencies,
-    )
-    expect(warningOnly.state).toBe('partial')
-    expect(warningOnly.report.local_chats.warnings).toEqual([])
-    expect(warningOnly.report.cloud_chats.errors).toEqual([])
-    expect(warningOnly.report.attachments.warnings).toEqual([
-      'thumbnail unavailable',
-    ])
+    expect(result.report.attachments).toMatchObject({ imported: 0, failed: 2 })
+    expect(await localThreadStore('device').list()).toEqual([])
   })
 })

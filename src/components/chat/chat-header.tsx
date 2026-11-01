@@ -1,14 +1,6 @@
 'use client'
 
-import { useSyncFailedChats } from '@/hooks/use-sync-health'
-import { chatActivityTime } from '@/utils/chat-timestamps'
-import { CloudArrowUpIcon } from '@heroicons/react/24/outline'
-import {
-  TfCloud,
-  TfFloppyDisk,
-  TfGhost2,
-  TfWarning,
-} from '@tinfoilsh/tinfoil-icons'
+import { TfFloppyDisk, TfGhost2 } from '@tinfoilsh/tinfoil-icons'
 import { cn } from '../ui/utils'
 import { formatRelativeTime } from './chat-list-utils'
 import type { Chat } from './types'
@@ -25,25 +17,11 @@ interface ChatHeaderProps {
   className?: string
 }
 
-type SyncStatus =
-  | { kind: 'temporary' }
-  | { kind: 'local' }
-  | { kind: 'failed' }
-  | { kind: 'syncing' }
-  | { kind: 'synced' }
-  | null
+type StorageStatus = { kind: 'temporary' } | { kind: 'local' } | null
 
-function resolveSyncStatus(
-  chat: Chat,
-  isStreaming: boolean,
-  syncFailed: boolean,
-): SyncStatus {
+function resolveStorageStatus(chat: Chat): StorageStatus {
   if (chat.isTemporary) return { kind: 'temporary' }
   if (chat.isLocalOnly) return { kind: 'local' }
-  if (syncFailed) return { kind: 'failed' }
-  if (chat.pendingSave || chat.locallyModified)
-    return isStreaming ? null : { kind: 'syncing' }
-  if (chat.syncedAt != null) return { kind: 'synced' }
   return null
 }
 
@@ -61,17 +39,10 @@ export function ChatHeader({
   notice,
   className,
 }: ChatHeaderProps) {
-  const syncFailedChats = useSyncFailedChats()
-  const syncStatus = resolveSyncStatus(
-    chat,
-    isStreaming,
-    Boolean(syncFailedChats[chat.id]),
-  )
+  const storageStatus = resolveStorageStatus(chat)
 
   const createdAt = toDate(chat.createdAt)
-  // "Updated" is the last conversation activity, the same time the chat
-  // list is ordered by.
-  const updatedAt = createdAt ? new Date(chatActivityTime(chat)) : null
+  const updatedAt = toDate(chat.updatedAt) ?? createdAt
   const referenceTime = Date.now()
   const createdRelativeTime = createdAt
     ? formatRelativeTime(createdAt, referenceTime)
@@ -98,33 +69,18 @@ export function ChatHeader({
   if (showUpdatedTime) {
     metaItems.push(<span key="updated">Updated {updatedRelativeTime}</span>)
   }
-  if (syncStatus) {
+  if (storageStatus) {
     metaItems.push(
-      <span key="sync" className="flex items-center gap-1">
-        {syncStatus.kind === 'temporary' ? (
+      <span key="storage" className="flex items-center gap-1">
+        {storageStatus.kind === 'temporary' ? (
           <span className="flex items-center gap-1 text-orange-500">
             <TfGhost2 className="h-3 w-3" aria-hidden="true" />
             Temporary chat
           </span>
-        ) : syncStatus.kind === 'local' ? (
+        ) : (
           <>
             <TfFloppyDisk className="h-3.5 w-3.5" aria-hidden="true" />
             Only saved locally
-          </>
-        ) : syncStatus.kind === 'failed' ? (
-          <span className="flex items-center gap-1 text-orange-500">
-            <TfWarning className="h-3 w-3" aria-hidden="true" />
-            Couldn&apos;t sync
-          </span>
-        ) : syncStatus.kind === 'syncing' ? (
-          <span className="flex items-center gap-1 text-blue-500">
-            <CloudArrowUpIcon className="h-3.5 w-3.5" aria-hidden="true" />
-            Syncing
-          </span>
-        ) : (
-          <>
-            <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
-            Synced
           </>
         )}
       </span>,

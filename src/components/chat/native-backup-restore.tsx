@@ -9,10 +9,13 @@ export function NativeBackupRestore({
   available,
   ownerId,
   onChatsUpdated,
+  onProjectsUpdated,
 }: {
   available?: boolean
   ownerId?: string
   onChatsUpdated?: () => void | Promise<void>
+  // A backup can restore projects as well as chats.
+  onProjectsUpdated?: () => void | Promise<void>
 }) {
   const input = useRef<HTMLInputElement>(null)
   const controller = useRef<AbortController | null>(null)
@@ -69,6 +72,7 @@ export function NativeBackupRestore({
       if (next.state === 'completed' || next.state === 'partial') {
         try {
           await onChatsUpdated?.()
+          await onProjectsUpdated?.()
         } catch {
           refreshFailed = true
         }

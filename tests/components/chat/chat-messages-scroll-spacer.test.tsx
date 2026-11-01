@@ -1,9 +1,6 @@
 import { ChatMessages } from '@/components/chat/chat-messages'
 import type { Message } from '@/components/chat/types'
-import {
-  DEFAULT_AUTO_INTELLIGENCE_LEVEL,
-  type BaseModel,
-} from '@/config/models'
+import type { BaseModel } from '@/config/models'
 import { render } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -35,7 +32,6 @@ const models: BaseModel[] = [
     description: '',
     type: 'chat',
     chat: true,
-    chatConfig: { contextWindowTokens: 1000 },
   },
 ]
 
@@ -65,7 +61,7 @@ function props(messages: Message[]): ComponentProps<typeof ChatMessages> {
     isDarkMode: false,
     models,
     selectedModel: models[0].modelName,
-    autoIntelligence: DEFAULT_AUTO_INTELLIGENCE_LEVEL,
+    autoIntelligence: 'high',
     setAutoIntelligence: () => {
       throw new Error('Unexpected intelligence change while rendering messages')
     },

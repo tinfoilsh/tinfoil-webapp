@@ -74,7 +74,6 @@ describe('buildForkedChat', () => {
     webSearchEnabled: false,
     syncedAt: 123,
     locallyModified: true,
-    pendingRecoveries: [{ turnId: 't1' } as never],
     codeExecutionAccessToken: 'secret',
     messageCount: 3,
   })
@@ -103,7 +102,6 @@ describe('buildForkedChat', () => {
       'updatedAt',
       'syncedAt',
       'locallyModified',
-      'pendingRecoveries',
       'codeExecutionAccessToken',
       'messageCount',
     ]) {

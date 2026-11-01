@@ -1,16 +1,4 @@
-/**
- * Generative UI widget abstraction.
- *
- * A `GenUIWidget` is a self-contained module: it declares everything the rest
- * of the system needs to know about a model-renderable component — its tool
- * name/description, its Zod input schema (used as the single source of truth
- * for both JSON Schema sent to the model and runtime validation), its render
- * surface, and its React render functions.
- *
- * Adding a new widget is a single file under `./widgets/` plus one entry in
- * `./registry.ts`. The chat pipeline has no direct knowledge of any specific
- * widget — it only speaks `GenUIWidget`.
- */
+// Browser renderer contracts. Tool declarations and prompts live in the harness.
 import type { JSX } from 'react'
 import type { ZodTypeAny, z } from 'zod'
 
@@ -38,6 +26,7 @@ export function defineGenUIWidget<Schema extends ZodTypeAny>(
  * Context passed to all widgets when rendering.
  */
 export interface GenUIRenderContext {
+  result?: unknown
   isActive?: boolean
   isDarkMode?: boolean
   isStreaming?: boolean
@@ -76,17 +65,10 @@ export type GenUIWidgetSurface = 'inline' | 'input' | 'artifact'
 export interface GenUIWidget<Schema extends ZodTypeAny = ZodTypeAny> {
   /** Tool name sent to the model. Must be unique and `render_*` snake_case. */
   name: string
-  /** Description sent to the model as the tool's description. */
-  description: string
-  /** Zod schema — SSOT for JSON Schema generation and runtime validation. */
+  /** Validates renderer arguments received from the harness. */
   schema: Schema
   /** Where this widget renders (default `'inline'`). */
   surface?: GenUIWidgetSurface
-  /**
-   * One-line hint concatenated into the system prompt guidance block so the
-   * model knows when to reach for this widget.
-   */
-  promptHint?: string
 
   /** Inline render (default surface). */
   render?: (
@@ -119,6 +101,7 @@ export interface GenUIWidget<Schema extends ZodTypeAny = ZodTypeAny> {
  * `delta.tool_calls[].function.arguments` chunks.
  */
 export interface GenUIToolCall {
+  result?: unknown
   id: string
   name: string
   arguments: string

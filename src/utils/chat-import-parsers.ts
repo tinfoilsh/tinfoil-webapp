@@ -47,22 +47,6 @@ export type ClaudeConversation = {
   }>
 }
 
-// Types for Claude projects export format
-export type ClaudeProject = {
-  uuid: string
-  name: string
-  description?: string
-  prompt_template?: string
-  created_at: string
-  updated_at: string
-  docs?: Array<{
-    uuid: string
-    filename: string
-    content: string
-    created_at: string
-  }>
-}
-
 export type ParseOptions = {
   generateChatId: (createdAt?: Date) => string
   isCloudSyncEnabled: boolean
@@ -252,48 +236,4 @@ export function parseClaudeConversations(
   }
 
   return chats
-}
-
-export type ParsedProject = {
-  name: string
-  description: string
-  systemInstructions: string
-  docs: Array<{
-    filename: string
-    content: string
-  }>
-}
-
-export function parseClaudeProjects(data: ClaudeProject[]): ParsedProject[] {
-  const projects: ParsedProject[] = []
-
-  for (const project of data) {
-    const docs: ParsedProject['docs'] = []
-
-    if (project.docs && Array.isArray(project.docs)) {
-      for (const doc of project.docs) {
-        if (doc.content && doc.filename) {
-          docs.push({
-            filename: doc.filename,
-            content: doc.content,
-          })
-        }
-      }
-    }
-
-    // Claude exports include an untouched starter project with no name,
-    // instructions, or documents; importing it would only add clutter.
-    if (!project.name && !project.prompt_template && docs.length === 0) {
-      continue
-    }
-
-    projects.push({
-      name: project.name || 'Imported Project',
-      description: project.description || '',
-      systemInstructions: project.prompt_template || '',
-      docs,
-    })
-  }
-
-  return projects
 }

@@ -7,13 +7,13 @@
  */
 
 import { encryptionService } from '@/services/encryption/encryption-service'
+import { HarnessError } from '@/services/harness/sse'
 import {
   deletePasskeyCredential,
   getPasskeyCredentialState,
   loadPasskeyCredentials,
   loadRecoveryCandidates,
 } from '@/services/passkey/passkey-key-storage'
-import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
@@ -35,10 +35,10 @@ const LEGACY_CREDENTIAL = {
   sync_version: 1,
 }
 
-vi.mock('@/services/sync-enclave/sync-api', async () => {
-  const real = await vi.importActual<
-    typeof import('@/services/sync-enclave/sync-api')
-  >('@/services/sync-enclave/sync-api')
+vi.mock('@/services/harness/keys', async () => {
+  const real = await vi.importActual<typeof import('@/services/harness/keys')>(
+    '@/services/harness/keys',
+  )
   return {
     ...real,
     keyCurrent: (...args: unknown[]) => mockKeyCurrent(...args),
@@ -69,7 +69,10 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
   describe('loadPasskeyCredentials', () => {
     it('returns empty on 404 from the enclave probe when legacy is empty', async () => {
       mockKeyCurrent.mockRejectedValue(
-        new SyncEnclaveError('not found', 404, undefined),
+        new HarnessError(
+          { code: 'THREAD_NOT_FOUND', message: 'not found' },
+          404,
+        ),
       )
       mockFetchLegacy.mockResolvedValue([])
       expect(await loadPasskeyCredentials()).toEqual([])
@@ -112,7 +115,10 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
 
     it('falls back to the legacy passkey-credentials API on 404 from the enclave', async () => {
       mockKeyCurrent.mockRejectedValue(
-        new SyncEnclaveError('not found', 404, undefined),
+        new HarnessError(
+          { code: 'THREAD_NOT_FOUND', message: 'not found' },
+          404,
+        ),
       )
       mockFetchLegacy.mockResolvedValue([
         {

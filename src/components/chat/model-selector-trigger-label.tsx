@@ -1,6 +1,6 @@
 import {
-  AUTO_INTELLIGENCE_LEVELS,
   getAutoDisplayName,
+  getAutoIntelligenceLevels,
   getSelectedModelLabel,
   isAutoModelId,
   type AutoIntelligenceLevelId,
@@ -33,7 +33,7 @@ export function ModelSelectorTriggerLabel({
     <>
       {isAutoModelId(selectedModel) ? (
         <span className="grid whitespace-nowrap text-right text-xs font-medium">
-          {AUTO_INTELLIGENCE_LEVELS.map((level) => {
+          {getAutoIntelligenceLevels().map((level) => {
             const isCurrent = level.id === autoIntelligence
             return (
               <span

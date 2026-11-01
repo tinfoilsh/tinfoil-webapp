@@ -12,16 +12,12 @@ const schema = z.object({
         trend: z.enum(['up', 'down']).optional(),
       }),
     )
-    .min(1)
-    .describe('Metrics or KPIs to display in a responsive grid'),
+    .min(1),
 })
 
 export const widget = defineGenUIWidget({
   name: 'render_stat_cards',
-  description:
-    'Display a grid of metrics or KPIs. Use when presenting multiple numeric summaries.',
   schema,
-  promptHint: 'grid of numeric KPIs or metrics',
   render: ({ stats }) => (
     <div className="my-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
       {stats.map((stat, i) => (

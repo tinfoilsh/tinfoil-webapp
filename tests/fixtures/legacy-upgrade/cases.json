@@ -1,0 +1,174 @@
+[
+  {
+    "id": "0000000000001_chat-a",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Find it",
+        "timestamp": "2026-01-01T00:00:01.000Z",
+        "documentContent": "Doc body",
+        "imageData": [
+          { "base64": "aW1n", "mimeType": "image/jpeg" },
+          { "base64": "" },
+          { "base64": "cG5n" }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": "Here it is",
+        "timestamp": "2026-01-01T00:00:02.500Z",
+        "thoughts": "Thinking...",
+        "thinkingDuration": 3,
+        "webSearch": {
+          "query": "where <is> it & why",
+          "status": "completed",
+          "sources": [
+            {
+              "url": "https://a.example",
+              "title": "A",
+              "snippet": "a snippet"
+            },
+            { "title": "No url", "description": "described" }
+          ]
+        },
+        "webSearchBeforeThinking": true,
+        "urlFetches": [
+          { "id": "f1", "url": "https://b.example", "status": "completed" },
+          { "url": "https://c.example", "status": "failed" }
+        ],
+        "codeExecCalls": [
+          {
+            "id": "c1",
+            "toolName": "bash",
+            "arguments": { "command": "ls" },
+            "status": "completed",
+            "output": "file.txt"
+          },
+          {
+            "toolName": "present",
+            "arguments": { "path": "/out/report.md" },
+            "status": "completed",
+            "output": "```markdown\n# Report\n```"
+          },
+          {
+            "toolName": "bash",
+            "arguments": "{\"command\":\"cat x\"}",
+            "status": "completed",
+            "output": "{\"stdout\":\"from json\"}"
+          },
+          {
+            "toolName": "render_chart",
+            "arguments": {},
+            "status": "completed",
+            "output": "[1,2]"
+          }
+        ],
+        "toolCalls": [
+          {
+            "id": "w1",
+            "name": "render_chart",
+            "arguments": "{\"title\":\"T\"}"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": "Search after thinking",
+        "timestamp": 1767225603000,
+        "thoughts": "First",
+        "webSearch": { "query": "later", "status": "completed" }
+      },
+      {
+        "role": "user",
+        "content": "Older multimodal",
+        "multimodalText": "Scanned text"
+      }
+    ]
+  },
+  {
+    "id": "0000000000002_chat-b",
+    "createdAt": 1767225600000,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello",
+        "timestamp": "2026-01-01T10:00:00.120+02:00",
+        "attachments": [
+          {
+            "type": "image",
+            "fileName": "cat.png",
+            "mimeType": "image/png",
+            "base64": "Y2F0",
+            "thumbnailBase64": "dGh1bWI="
+          },
+          {
+            "id": "doc-1",
+            "type": "document",
+            "fileName": "notes.txt",
+            "textContent": "notes"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": "Answer",
+        "timestamp": "not a date",
+        "timeline": [
+          {
+            "type": "thinking",
+            "id": "t1",
+            "content": "hmm",
+            "isThinking": false,
+            "duration": 2
+          },
+          {
+            "type": "web_search",
+            "id": "s1",
+            "state": { "query": "q", "status": "completed", "sources": [] }
+          },
+          {
+            "type": "url_fetches",
+            "id": "u1",
+            "fetches": [
+              { "id": "", "url": "https://d.example", "status": "completed" }
+            ]
+          },
+          {
+            "type": "code_exec",
+            "id": "x1",
+            "calls": [
+              {
+                "id": "",
+                "toolName": "view",
+                "arguments": { "path": "a.txt" },
+                "status": "completed"
+              }
+            ]
+          },
+          { "type": "content", "id": "", "content": "Answer" },
+          {
+            "type": "tool_call",
+            "id": "g1",
+            "toolCallId": "g1",
+            "name": "render_clock",
+            "arguments": "{}",
+            "resolvedAt": 1767225600000,
+            "resolution": { "text": "ok" }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "timestamp": "2026-02-30T00:00:00Z"
+      },
+      {
+        "id": "kept-id",
+        "role": "user",
+        "content": "Has an id",
+        "createdAt": "2026-01-02T00:00:00Z"
+      }
+    ]
+  }
+]

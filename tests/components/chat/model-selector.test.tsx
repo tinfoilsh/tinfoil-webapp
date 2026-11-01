@@ -1,6 +1,6 @@
 import { ModelSelector } from '@/components/chat/model-selector'
 import { ModelSelectorTriggerLabel } from '@/components/chat/model-selector-trigger-label'
-import { AUTO_MODEL_ID, type BaseModel } from '@/config/models'
+import { AUTO_MODEL_ID, displayModels, type BaseModel } from '@/config/models'
 import {
   act,
   cleanup,
@@ -10,6 +10,7 @@ import {
   within,
 } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { testSession } from '../../harness-fixture'
 
 const MODEL: BaseModel = {
   modelName: 'gpt-oss-120b',
@@ -191,6 +192,36 @@ describe('model lifecycle tags', () => {
     expect(screen.getByText('Chat 0')).toBeVisible()
     expect(screen.queryByText('API only')).not.toBeInTheDocument()
   })
+
+  it.each(['auto-smart', 'auto-fast'])(
+    "shows the previous design's %s tier as Auto",
+    (legacyId) => {
+      const models = displayModels(testSession)
+      render(
+        <>
+          <ModelSelectorTriggerLabel
+            selectedModel={legacyId}
+            models={models}
+            autoIntelligence="high"
+            isOpen={false}
+          />
+          <ModelSelector
+            selectedModel={legacyId}
+            models={models}
+            onSelect={vi.fn()}
+            isDarkMode={false}
+          />
+        </>,
+      )
+      expect(screen.getByText('Auto · High')).toBeVisible()
+      expect(
+        screen.getByRole('menuitemradio', { name: /^Auto/ }),
+      ).toHaveAttribute('aria-checked', 'true')
+      expect(
+        screen.getByRole('menuitemradio', { name: /Test model/ }),
+      ).toHaveAttribute('aria-checked', 'false')
+    },
+  )
 
   it('does not inherit tags from candidates when Auto is selected', () => {
     render(
