@@ -129,9 +129,11 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   }
   completeStep(SIGNOUT_STEPS.CLEAR_BROWSING_DATA)
 
+  // A key kept for its account to save stays tied to that account, so
+  // another account signing in here clears it as an account switch.
   if (preserveUserId) {
     localStorage.setItem(AUTH_ACTIVE_USER_ID, preserveUserId)
-  } else {
+  } else if (!preserveEncryptionKey) {
     localStorage.removeItem(AUTH_ACTIVE_USER_ID)
   }
 }
@@ -175,11 +177,13 @@ export async function performSignoutCleanup(opts?: {
 }
 
 /**
- * Delete just the encryption key from localStorage and clear the in-memory copy.
+ * Delete just the encryption key from localStorage and clear the in-memory copy,
+ * with the account it was kept for.
  * Called after the user downloads their key from the signout modal.
  */
 export function deleteEncryptionKey(): void {
   encryptionService.clearKey({ persist: true })
+  localStorage.removeItem(AUTH_ACTIVE_USER_ID)
 }
 
 export async function performUserSwitchCleanup(
