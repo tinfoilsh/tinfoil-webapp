@@ -8,7 +8,6 @@ export const USER_ENCRYPTION_KEY = 'tinfoil-user-personal-encryption-key'
 export const USER_ENCRYPTION_KEY_HISTORY =
   'tinfoil-user-personal-encryption-key-history'
 export const LEGACY_ENCRYPTION_KEY = 'tinfoil-encryption-key'
-export const LEGACY_ENCRYPTION_KEY_HISTORY = 'tinfoil-encryption-key-history'
 export const SECRET_PASSKEY_PRF_OUTPUT = 'tinfoil-secret-passkey-prf-output'
 export const SECRET_PASSKEY_BACKED_UP = 'tinfoil-secret-passkey-backed-up'
 // Per-device record of the WebAuthn credential id the user most recently

@@ -675,7 +675,6 @@ function PasskeyBundleInventory({
         {sorted.map((entry) => {
           const isCurrentPlatform = entry.id === localCredentialId
           const isRoaming = roamingCredentialIds.includes(entry.id)
-          const isLegacy = entry.source === 'legacy'
           const isRemoving = removingId === entry.id
           return (
             <li
@@ -695,11 +694,6 @@ function PasskeyBundleInventory({
                         ? 'Security key or phone'
                         : 'Other platform'}
                   </span>
-                  {isLegacy && (
-                    <span className="rounded bg-surface-chat px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted">
-                      Legacy
-                    </span>
-                  )}
                 </div>
                 <p className="mt-0.5 truncate font-mono text-xs text-content-muted">
                   {formatCredentialId(entry.id)} ·{' '}
@@ -711,17 +705,15 @@ function PasskeyBundleInventory({
                 onClick={() => {
                   void onRemove(entry.id)
                 }}
-                disabled={removingId !== null || isLegacy || !canManage}
+                disabled={removingId !== null || !canManage}
                 title={
-                  isLegacy
-                    ? 'Legacy credentials cannot be removed from settings yet'
-                    : !canManage
-                      ? "This device's key must match your current cloud key to remove passkeys"
-                      : undefined
+                  !canManage
+                    ? "This device's key must match your current cloud key to remove passkeys"
+                    : undefined
                 }
                 className={cn(
                   'shrink-0 rounded-md border border-border-subtle px-2.5 py-1 text-xs font-medium transition-colors',
-                  removingId !== null || isLegacy || !canManage
+                  removingId !== null || !canManage
                     ? 'cursor-not-allowed opacity-50'
                     : 'hover:bg-surface-chat/80',
                 )}

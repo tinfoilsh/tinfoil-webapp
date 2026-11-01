@@ -49,10 +49,7 @@ export function enableCloudSyncForExistingKey(): void {
 export function isCloudSyncEnabled(): boolean {
   if (typeof window === 'undefined') return false
   try {
-    const setting =
-      localStorage.getItem(SETTINGS_CLOUD_SYNC_ENABLED) ??
-      localStorage.getItem('cloudSyncEnabled')
-    return setting === 'true'
+    return localStorage.getItem(SETTINGS_CLOUD_SYNC_ENABLED) === 'true'
   } catch {
     return false
   }
