@@ -28,7 +28,7 @@ import {
 } from './open-chat'
 import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import { useHarness } from './provider'
-import { initialChat, type ChatState } from './reducer'
+import { initialChat, isStopping, type ChatState } from './reducer'
 import { RunController } from './run-controller'
 import { getView, reportHarnessError } from './runtime'
 import { HarnessError } from './sse'
@@ -250,7 +250,12 @@ export function useThread(
     controller.view.set(
       thread
         ? initialChat(thread)
-        : { ...controller.view.get(), status: 'idle', error: undefined },
+        : {
+            ...controller.view.get(),
+            status: 'idle',
+            error: undefined,
+            stopping: undefined,
+          },
     )
   }
   controller.hooks = {
@@ -774,6 +779,8 @@ export function useThread(
         : undefined,
     status: state.status,
     running,
+    // The user stopped the reply, which has not ended yet.
+    stopping: isStopping(state),
     // The harness stores the open chat as it shows: it opened from the
     // harness, or its last run ended once the harness saved it.
     synced:

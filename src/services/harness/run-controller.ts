@@ -4,6 +4,7 @@ import { scopedTurn } from './prompt-cache-secret'
 import { ERROR_ACTIONS, ERROR_CODES, ROUTES, type RunRoute } from './protocol'
 import {
   initialChat,
+  isStopping,
   isTerminal,
   reduceEvent,
   runErrorOf,
@@ -259,15 +260,11 @@ export class RunController {
             this.hooks.summary?.(next.snapshot.thread)
         }
         if (options.submission?.cancelled && runId) {
-          await this.api.post(
-            ROUTES.cancel,
-            {
-              ...(input.key ? { key: this.api.key() } : {}),
-              threadId,
-              runId,
-            },
-            { keyless: true },
-          )
+          await this.stop({
+            ...(input.key ? { key: this.api.key() } : {}),
+            threadId,
+            runId,
+          })
           options.submission.cancelled = false
         }
         if (event.type === 'RUN_FINISHED')
@@ -395,7 +392,7 @@ export class RunController {
       ...(!started &&
       (state.status === 'streaming' || state.status === 'queued')
         ? {}
-        : { status: 'error' }),
+        : { status: 'error', stopping: undefined }),
       ...(detail.code === ERROR_CODES.chatFlagged ? { flagged: true } : {}),
     }))
     this.api.reportRateLimit(detail.rateLimit)
@@ -421,7 +418,41 @@ export class RunController {
       this.submission.cancelled = true
       return Promise.resolve()
     }
-    return this.api.post(ROUTES.cancel, input, { keyless: true })
+    return this.stop(input)
+  }
+
+  // Stops a run. One that ended, or is ending, as the stop arrived needs no
+  // stop.
+  private async stop(input: {
+    key?: string
+    threadId: string | null
+    runId?: string
+  }) {
+    try {
+      await this.api.post(ROUTES.cancel, input, { keyless: true })
+    } catch (cause) {
+      if (
+        cause instanceof HarnessError &&
+        (cause.code === ERROR_CODES.runNotFound ||
+          cause.code === ERROR_CODES.runInFlight)
+      )
+        return
+      throw cause
+    }
+  }
+
+  // Resolves once the run the open chat stops has ended, or the view moved
+  // to another chat.
+  stopped(): Promise<void> {
+    return new Promise((resolve) => {
+      const check = () => {
+        if (isStopping(this.view.get())) return
+        unsubscribe()
+        resolve()
+      }
+      const unsubscribe = this.view.subscribe(check)
+      check()
+    })
   }
 
   sendQueued(input: {

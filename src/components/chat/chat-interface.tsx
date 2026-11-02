@@ -284,7 +284,9 @@ export function ChatInterface({
       : (session?.defaultModel ?? chatModel)
   const isLoadingConfig = !session
   const hasValidatedModel = !!session
-  const loadingState = isStreaming ? 'loading' : 'idle'
+  // A reply the user stopped leaves the composer ready for the next message,
+  // which goes once the reply has stopped.
+  const loadingState = isStreaming && !thread.stopping ? 'loading' : 'idle'
   const isWaitingForResponse =
     isStreaming && currentChat.messages.at(-1)?.role !== 'assistant'
   const historyProblem: ChatHistoryProblem | null =

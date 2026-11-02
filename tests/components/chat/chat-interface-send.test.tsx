@@ -10,6 +10,7 @@ import NewChatPage from '@/pages/newchat'
 import ProjectPage from '@/pages/project/[[...slug]]'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Turn } from '@/services/harness/types'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import {
@@ -516,4 +517,128 @@ it('shows a chat the locked key keeps closed as unavailable, then loads it once 
   expect(screen.getByRole('article', { name: 'You said' })).toHaveTextContent(
     'Saved question',
   )
+})
+
+// A run that streams the start of its reply, unless it stops before it
+// replies, then ends once `end` settles: stopped, with the reply the harness
+// committed as interrupted, or not.
+function scriptStoppedRun(
+  end: Promise<void>,
+  { cancelled = true, started = Promise.resolve(), replied = true } = {},
+) {
+  client.events.mockImplementationOnce(async function* (
+    _path: string,
+    input: Turn,
+  ): AsyncGenerator<Frame> {
+    await started
+    yield {
+      id: 0,
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'reply',
+        threadId: input.threadId!,
+        instance: 'instance-1',
+      },
+    }
+    if (replied)
+      yield {
+        id: 1,
+        event: {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'answer',
+          role: 'assistant',
+          delta: 'The answer is',
+        },
+      }
+    await end
+    yield {
+      id: 2,
+      event: {
+        type: 'RUN_FINISHED',
+        runId: 'reply',
+        threadId: input.threadId!,
+        metadata: {
+          cancelled,
+          messages: replied ? [{ id: 'answer', isInterrupted: cancelled }] : [],
+        },
+      },
+    }
+  })
+}
+
+// Answers the chat list, and each stop with `stop`.
+function answerStops(stop: (input: unknown) => unknown = () => ({})) {
+  const stops: unknown[] = []
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/cancel') {
+      stops.push(input)
+      return stop(input)
+    }
+    throw new Error(`Unexpected ${path}`)
+  })
+  return stops
+}
+
+const renderChat = () =>
+  render(
+    <ProjectProvider>
+      <ChatInterface suppressIntroModals />
+    </ProjectProvider>,
+  )
+
+it('shows no error for a stop that arrives after the reply ended', async () => {
+  signIn({ cloud: true })
+  const ended = gate()
+  scriptStoppedRun(ended.promise, { cancelled: false })
+  const stops = answerStops(() => {
+    throw new HarnessError(
+      {
+        code: 'RUN_NOT_FOUND',
+        message: 'The run is not live on this instance',
+        action: 'reload',
+      },
+      404,
+    )
+  })
+  renderChat()
+  await send()
+  await screen.findByText('The answer is')
+
+  fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }))
+  await waitFor(() => expect(stops).toHaveLength(1))
+  await act(async () => ended.resolve())
+
+  expect(screen.getByRole('article', { name: 'Al said' })).toHaveTextContent(
+    'The answer is',
+  )
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  expect(screen.queryByText(/^Response /)).not.toBeInTheDocument()
+})
+
+it('sends a message written while the reply stops once it has stopped', async () => {
+  signIn({ cloud: true })
+  const stopped = gate()
+  scriptStoppedRun(stopped.promise)
+  scriptStoppedRun(Promise.resolve(), { cancelled: false })
+  answerStops()
+  renderChat()
+  await send()
+  await screen.findByText('The answer is')
+  fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }))
+
+  const input = screen.getByRole('textbox', { name: /message/i })
+  fireEvent.change(input, { target: { value: 'Something else' } })
+  await act(async () =>
+    fireEvent.click(screen.getByRole('button', { name: 'Send' })),
+  )
+
+  // The harness ends a turn queued behind a reply it stops.
+  expect(client.events).toHaveBeenCalledTimes(1)
+  await act(async () => stopped.resolve())
+  await waitFor(() => expect(client.events).toHaveBeenCalledTimes(2))
+  expect(client.events.mock.calls[1][1]).toMatchObject({
+    kind: 'send',
+    content: 'Something else',
+  })
 })

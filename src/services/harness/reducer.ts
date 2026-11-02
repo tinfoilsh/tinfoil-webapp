@@ -41,7 +41,15 @@ export interface ChatState {
   summaries?: Record<string, string>
   // The harness refused a turn because the safeguards flagged the chat.
   flagged?: boolean
+  // The user stopped the run the chat shows, which has not ended yet.
+  stopping?: boolean
 }
+
+export const isRunning = ({ status }: ChatState) =>
+  status === 'submitting' || status === 'streaming' || status === 'queued'
+
+export const isStopping = (state: ChatState) =>
+  isRunning(state) && !!state.stopping
 
 export function initialChat(thread?: Thread): ChatState {
   return {
@@ -508,8 +516,9 @@ export function reduceEvent(
       const committed = new Map(
         event.metadata?.messages?.map((message) => [message.id, message]),
       )
+      const { stopping: _stopping, ...rest } = next
       return {
-        ...next,
+        ...rest,
         snapshot: withoutQueued(next.snapshot, runId),
         status: failed ? 'error' : 'idle',
         ...(failed
