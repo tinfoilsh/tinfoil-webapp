@@ -36,9 +36,11 @@ info:
     - A client keeps a ThreadRecord whole, members it does not know included,
       and sends it back as it was returned.
     - A change to what a ThreadRecord or a stored row holds changes its
-      recordVersion. The harness reads a record in its current version as
+      recordVersion. The harness reads a record in a version it knows as
       written, reads one without a version as an older client kept it, and
-      refuses any other with RECORD_UNSUPPORTED. A member of a stored row it
+      refuses any other with RECORD_UNSUPPORTED. It knows versions 1 and 2;
+      version 2 adds compaction markers to chats and is otherwise version 1.
+      A harness reads a version before it writes it. A member of a stored row it
       does not name is read past, since other clients of the same rows write
       members of their own; the harness leaves such members out when it
       writes the row back, except in the profile row. There it keeps them,
@@ -58,8 +60,8 @@ info:
     each client replays in its tests. A fixture's frames are a run's events
     with their cursors. A client applies them in order, skipping any whose
     cursor it has already applied for that run, and must then show what
-    expected names: each message's id and role, a question's content, and a
-    reply's timeline steps with their id, type, and whichever of content,
+    expected names: each message's id and role, a question's or compaction
+    marker's content, and a reply's timeline steps with their id, type, and whichever of content,
     toolCallId, name, arguments, complete, result, progress and display they
     have; the chat's title and titleState; and whether the run ended idle, or
     with an error: every member of its RUN_ERROR but type, timestamp,
@@ -377,6 +379,7 @@ paths:
       operationId: messageDelete
       summary: Delete a message
       tags: [threads]
+      description: Deletes a message, and every compaction marker after it, whose summary covered it. A compaction marker itself is not deleted.
       requestBody:
         required: true
         content:
@@ -391,7 +394,7 @@ paths:
       operationId: messageUpdate
       summary: Edit a reply
       tags: [threads]
-      description: Edits a reply's text in place.
+      description: Edits a reply's text in place, and deletes every compaction marker after it, whose summary covered the reply as it was.
       requestBody:
         required: true
         content:
@@ -1526,6 +1529,7 @@ components:
             - ATTACHMENTS_UNAVAILABLE
             - BAD_REQUEST
             - CHAT_FLAGGED
+            - COMPACTION_FAILED
             - CONTEXT_TOO_LARGE
             - CREDENTIAL_REQUIRED
             - IMPORT_INVALID
@@ -1599,7 +1603,7 @@ components:
         composer: {$ref: "#/components/schemas/Composer"}
         presets: {type: array, items: {$ref: "#/components/schemas/Preset"}}
         features:
-          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here.
+          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused.
           type: object
           additionalProperties: {type: boolean}
 
@@ -1781,6 +1785,8 @@ components:
         - {$ref: "#/components/schemas/ToolCallResultEvent"}
         - {$ref: "#/components/schemas/ActivitySnapshotEvent"}
         - {$ref: "#/components/schemas/ActivityDeltaEvent"}
+        - {$ref: "#/components/schemas/CompactionStartEvent"}
+        - {$ref: "#/components/schemas/CompactionEndEvent"}
         - {$ref: "#/components/schemas/RunFinishedEvent"}
         - {$ref: "#/components/schemas/RunErrorEvent"}
       discriminator:
@@ -1799,6 +1805,8 @@ components:
           TOOL_CALL_RESULT: "#/components/schemas/ToolCallResultEvent"
           ACTIVITY_SNAPSHOT: "#/components/schemas/ActivitySnapshotEvent"
           ACTIVITY_DELTA: "#/components/schemas/ActivityDeltaEvent"
+          COMPACTION_START: "#/components/schemas/CompactionStartEvent"
+          COMPACTION_END: "#/components/schemas/CompactionEndEvent"
           RUN_FINISHED: "#/components/schemas/RunFinishedEvent"
           RUN_ERROR: "#/components/schemas/RunErrorEvent"
 
@@ -2018,6 +2026,38 @@ components:
             path: {const: /output/-}
             value: {type: string}
 
+    CompactionStartEvent:
+      description: |
+        Opens a compaction marker while its summary is written. A turn whose
+        prompt would not fit the share of the model's window a prompt may
+        fill summarizes every message before its question, from the chat's
+        latest marker on, into a new marker before that question. A run
+        compacts at most once, before its first model turn or between two of
+        them. A client shows the marker before the message beforeMessageId
+        names, and the messages before it as ones the model no longer reads.
+      type: object
+      required: [type, messageId, beforeMessageId]
+      properties:
+        type: {const: COMPACTION_START}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        messageId: {type: string}
+        beforeMessageId: {type: string}
+
+    CompactionEndEvent:
+      description: Closes a compaction marker. A completed one carries the marker, which the chat keeps even if the reply then fails, and is followed by a STATE_SNAPSHOT with the context the turn's prompt now fills. A client removes a failed one, after which the run ends with COMPACTION_FAILED.
+      type: object
+      required: [type, messageId, outcome]
+      properties:
+        type: {const: COMPACTION_END}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        messageId: {type: string}
+        outcome:
+          description: A client treats an outcome it does not know as failed.
+          anyOf:
+            - {type: string, enum: [completed, failed]}
+            - {type: string}
+        marker: {$ref: "#/components/schemas/MessageView"}
+
     RunFinishedEvent:
       type: object
       required: [type, threadId, runId, metadata]
@@ -2087,7 +2127,7 @@ components:
         - {type: string}
 
     ContextUsage:
-      description: How much of the model's window the chat's last prompt filled.
+      description: What the chat's last prompt filled of the share of the model's window a prompt may fill. A prompt over that share compacts the chat, after which a run reports what its prompt fills then.
       type: object
       required: [usedTokens, limitTokens, percentage]
       properties:
@@ -2175,7 +2215,7 @@ components:
         id: {type: string}
         role: {$ref: "#/components/schemas/Role"}
         createdAt: {type: string}
-        content: {type: string, description: "A question's text."}
+        content: {type: string, description: "A question's text, or a compaction marker's summary."}
         timeline: {type: array, items: {$ref: "#/components/schemas/Block"}, description: "A reply's steps."}
         quote: {type: string}
         model: {type: string}
@@ -2186,6 +2226,26 @@ components:
         annotations: {type: array, items: {$ref: "#/components/schemas/Annotation"}}
         attachments: {type: array, items: {$ref: "#/components/schemas/AttachmentView"}}
         answers: {type: array, items: {$ref: "#/components/schemas/WidgetAnswers"}, description: "A question's answers to questions widgets, as it sent them to the model."}
+        compaction: {$ref: "#/components/schemas/Compaction"}
+
+    Compaction:
+      description: |
+        What a compaction marker records of its summary. A compaction marker
+        is a message of role compaction whose content summarizes every message
+        before it, which the model reads in their place. It always sits
+        directly before a question. A client shows the messages before a
+        chat's latest marker as ones the model no longer reads, and the marker
+        as a step the user can open to read the summary. The marker is not one
+        of the chat's messages: messageCount leaves it out, and a client offers
+        no action on it.
+      type: object
+      required: [messages, startedAt, endedAt, model, version]
+      properties:
+        messages: {type: integer, description: "How many messages the summary covers, those an earlier marker covered included."}
+        startedAt: {type: number, description: "When the summary was started, in epoch milliseconds."}
+        endedAt: {type: number, description: "When the summary was written, in epoch milliseconds."}
+        model: {type: string, description: "The model that wrote the summary."}
+        version: {type: integer, description: "The version of the instructions it was written under."}
 
     WidgetAnswers:
       description: What the user had answered of one questions widget when they sent a question, with the questions' text, so it reads the same however the widget changes later.
@@ -2213,9 +2273,9 @@ components:
         label: {type: string}
 
     Role:
-      description: Who wrote a message. A client leaves out a message whose role it does not know.
+      description: Who wrote a message, or compaction for a compaction marker. A client leaves out a message whose role it does not know.
       anyOf:
-        - {type: string, enum: [user, assistant]}
+        - {type: string, enum: [user, assistant, compaction]}
         - {type: string}
 
     MessageUsage:
@@ -2391,6 +2451,7 @@ components:
         isError: {type: boolean}
         isInterrupted: {type: boolean}
         answers: {type: array, items: {$ref: "#/components/schemas/WidgetAnswers"}}
+        compaction: {$ref: "#/components/schemas/Compaction"}
 
     ThreadInput:
       description: "A device chat as its client sends it: a ThreadRecord the harness returned, sent back whole, or a record without a recordVersion that an older client kept or a client made for a new chat. The harness refuses a ThreadRecord with a member its version does not have."

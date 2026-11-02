@@ -52,7 +52,9 @@ describe('recorded harness runs', () => {
       messages: state.messages.map((message) => ({
         id: message.id,
         role: message.role,
-        ...(message.role === 'user' ? { content: message.content ?? '' } : {}),
+        ...(message.role === 'user' || message.role === 'compaction'
+          ? { content: message.content ?? '' }
+          : {}),
         timeline: (message.timeline ?? []).map((step) =>
           Object.fromEntries(
             STEP_MEMBERS.flatMap((member) =>

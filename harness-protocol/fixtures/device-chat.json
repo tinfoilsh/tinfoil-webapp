@@ -211,7 +211,7 @@
               "limitTokens": 6553,
               "percentage": 2.2279871814436136
             },
-            "recordVersion": 1
+            "recordVersion": 2
           },
           "usage": {
             "prompt_tokens": 0,

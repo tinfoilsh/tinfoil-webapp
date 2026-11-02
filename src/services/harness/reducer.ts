@@ -1,5 +1,7 @@
 import {
   actionOf,
+  COMPACTION_COMPLETED,
+  COMPACTION_ROLE,
   ERROR_ACTIONS,
   ERROR_CODES,
   invalidResponse,
@@ -238,6 +240,21 @@ function withToolCall(
       })
   }
   return null
+}
+
+// Puts a compaction marker before the message `before` names, or, when that
+// message is not loaded, before the run's question: the last user message.
+function withMarker(
+  messages: Message[],
+  marker: Message,
+  before?: string,
+): Message[] {
+  const named = messages.findIndex(({ id }) => id === before)
+  const at =
+    named >= 0 ? named : messages.findLastIndex(({ role }) => role === 'user')
+  return at < 0
+    ? [...messages, marker]
+    : [...messages.slice(0, at), marker, ...messages.slice(at)]
 }
 
 // The leading blocks of a continued reply that new text does not extend.
@@ -571,6 +588,41 @@ function applyEvent(
               ...(event.display ? { display: event.display } : {}),
             }
           }) ?? next.messages,
+      }
+    }
+    // A compaction marker shows before the run's question while its summary
+    // is written, and holds the summary once a completed compaction closes
+    // it; a compaction that did not complete leaves no marker.
+    case 'COMPACTION_START':
+      return next.messages.some(({ id }) => id === event.messageId)
+        ? next
+        : {
+            ...next,
+            messages: withMarker(
+              next.messages,
+              {
+                id: event.messageId,
+                role: COMPACTION_ROLE,
+                createdAt: event.timestamp ?? '',
+              },
+              event.beforeMessageId,
+            ),
+          }
+    case 'COMPACTION_END': {
+      const at = next.messages.findIndex(({ id }) => id === event.messageId)
+      if (event.outcome !== COMPACTION_COMPLETED || !event.marker)
+        return at < 0
+          ? next
+          : {
+              ...next,
+              messages: next.messages.filter((_, index) => index !== at),
+            }
+      return {
+        ...next,
+        messages:
+          at < 0
+            ? withMarker(next.messages, event.marker)
+            : replaceAt(next.messages, at, event.marker),
       }
     }
     case 'RUN_FINISHED':
