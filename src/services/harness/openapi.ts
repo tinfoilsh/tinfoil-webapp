@@ -1915,7 +1915,7 @@ export interface components {
     DeviceThreadReply: {
       thread: components['schemas']['ThreadRecord']
     }
-    /** @description An opened share, whose attachments name the key that reads each blob. */
+    /** @description An opened share, whose attachments name the key that reads each blob. A share holds the conversation without its compaction markers. */
     SharedThread: {
       title: string
       createdAt: string | null
