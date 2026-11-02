@@ -388,3 +388,123 @@ it('retries an unacknowledged stop when the run is rejoined after a failed cance
     })
   }
 })
+
+// Streams a turn's run: it starts, reports its chat, then ends with `end`
+// once `release` settles.
+function runOf(
+  runId: string,
+  end: 'finished' | 'failed',
+  release: Promise<void> = Promise.resolve(),
+) {
+  return async function* (_path: string, input: Turn): AsyncGenerator<Frame> {
+    const threadId = input.threadId!
+    const thread = storedThread(threadId, {
+      messages: [
+        {
+          id: input.clientRequestId,
+          role: 'user',
+          content: input.content ?? '',
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    })
+    yield {
+      id: 0,
+      event: { type: 'RUN_STARTED', threadId, runId, instance: 'instance-1' },
+    }
+    yield {
+      id: 1,
+      event: {
+        type: 'STATE_SNAPSHOT',
+        snapshot: {
+          thread: localSummary(thread),
+          queue: [],
+          rateLimit: { kind: null },
+        },
+      },
+    }
+    await release
+    yield {
+      id: 2,
+      event:
+        end === 'finished'
+          ? {
+              type: 'RUN_FINISHED',
+              threadId,
+              runId,
+              metadata: input.local
+                ? { thread: { ...thread, recordVersion: RECORD_VERSION } }
+                : {},
+            }
+          : {
+              type: 'RUN_ERROR',
+              threadId,
+              runId,
+              code: 'MODEL_UNAVAILABLE',
+              message: 'The model is temporarily unavailable',
+              action: 'retry',
+            },
+    }
+  }
+}
+
+it.each([
+  { name: 'stored', local: false },
+  { name: 'local', local: true },
+])(
+  'shows a $name chat as synced only once the harness saved its reply',
+  async ({ local }) => {
+    signIn({ cloud: true })
+    const finished = gate()
+    client.post.mockImplementation(async (path) => {
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      throw new Error(`Unexpected ${path}`)
+    })
+    client.events.mockImplementation(
+      runOf('run-1', 'finished', finished.promise),
+    )
+    const { result } = renderHook(() =>
+      useThread(null, null, { newChatLocal: local }),
+    )
+    await waitFor(() => expect(result.current.loadingChats).toBe(false))
+    let sending: Promise<boolean> | undefined
+    try {
+      act(() => {
+        sending = result.current.send({ content: 'Keep this' })
+      })
+      await waitFor(() => expect(result.current.status).toBe('streaming'))
+      expect(result.current.synced).toBe(false)
+      await act(async () => {
+        finished.resolve()
+        await sending
+      })
+      expect(result.current.status).toBe('idle')
+      expect(result.current.synced).toBe(!local)
+    } finally {
+      await act(async () => {
+        finished.resolve()
+        await sending
+      })
+    }
+  },
+)
+
+it('stops showing a stored chat as synced when its next run fails', async () => {
+  signIn({ cloud: true })
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    throw new Error(`Unexpected ${path}`)
+  })
+  client.events
+    .mockImplementationOnce(runOf('run-1', 'finished'))
+    .mockImplementationOnce(runOf('run-2', 'failed'))
+  const { result } = renderHook(() => useThread())
+  await waitFor(() => expect(result.current.loadingChats).toBe(false))
+  await act(() => result.current.send({ content: 'one' }))
+  expect(result.current.synced).toBe(true)
+
+  await act(() => result.current.send({ content: 'two' }))
+
+  expect(result.current.status).toBe('error')
+  expect(result.current.synced).toBe(false)
+})

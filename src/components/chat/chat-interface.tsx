@@ -2406,6 +2406,7 @@ export function ChatInterface({
                 isStreaming={isStreaming}
                 isLoading={showChatLoading}
                 isUnavailable={!!historyProblem}
+                isSynced={thread.synced}
                 actions={topControls}
                 leadingAction={sidebarToggle}
                 notice={

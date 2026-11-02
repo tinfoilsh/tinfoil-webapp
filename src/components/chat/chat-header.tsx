@@ -1,6 +1,6 @@
 'use client'
 
-import { TfFloppyDisk } from '@tinfoilsh/tinfoil-icons'
+import { TfCloud, TfFloppyDisk } from '@tinfoilsh/tinfoil-icons'
 import { TfGhost2Animated } from '@tinfoilsh/tinfoil-icons/animated'
 import { cn } from '../ui/utils'
 import { formatRelativeTime } from './chat-list-utils'
@@ -14,6 +14,8 @@ interface ChatHeaderProps {
   isLoading?: boolean
   /** The chat could not be opened, so it has no title or times to show. */
   isUnavailable?: boolean
+  /** The harness has saved the chat as it shows. */
+  isSynced?: boolean
   /** Action buttons rendered at the trailing edge of the header. */
   actions: React.ReactNode
   leadingAction?: React.ReactNode
@@ -21,11 +23,13 @@ interface ChatHeaderProps {
   className?: string
 }
 
-type StorageStatus = { kind: 'temporary' } | { kind: 'local' } | null
+type StorageStatus =
+  { kind: 'temporary' } | { kind: 'local' } | { kind: 'synced' } | null
 
-function resolveStorageStatus(chat: Chat): StorageStatus {
+function resolveStorageStatus(chat: Chat, isSynced: boolean): StorageStatus {
   if (chat.isTemporary) return { kind: 'temporary' }
   if (chat.isLocalOnly) return { kind: 'local' }
+  if (isSynced) return { kind: 'synced' }
   return null
 }
 
@@ -40,12 +44,13 @@ export function ChatHeader({
   isStreaming,
   isLoading = false,
   isUnavailable = false,
+  isSynced = false,
   actions,
   leadingAction,
   notice,
   className,
 }: ChatHeaderProps) {
-  const storageStatus = resolveStorageStatus(chat)
+  const storageStatus = resolveStorageStatus(chat, isSynced)
 
   const createdAt = toDate(chat.createdAt)
   // "Updated" is the last conversation activity, the same time the chat
@@ -85,10 +90,15 @@ export function ChatHeader({
             <TfGhost2Animated className="h-3 w-3" aria-hidden="true" />
             Temporary chat
           </span>
-        ) : (
+        ) : storageStatus.kind === 'local' ? (
           <>
             <TfFloppyDisk className="h-3.5 w-3.5" aria-hidden="true" />
             Only saved locally
+          </>
+        ) : (
+          <>
+            <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
+            Synced
           </>
         )}
       </span>,

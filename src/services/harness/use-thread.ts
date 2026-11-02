@@ -774,6 +774,14 @@ export function useThread(
         : undefined,
     status: state.status,
     running,
+    // The harness stores the open chat as it shows: it opened from the
+    // harness, or its last run ended once the harness saved it.
+    synced:
+      !onDevice(openState) &&
+      !loading &&
+      !openState.failedId &&
+      !!state.snapshot.thread &&
+      state.status === 'idle',
     // The open chat takes turns once its settings load and, for a chat the
     // harness stores, once the content key is unlocked.
     canSend:
