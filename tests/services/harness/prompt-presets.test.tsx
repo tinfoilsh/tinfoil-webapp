@@ -234,21 +234,34 @@ describe('the default prompt of a new stored chat', () => {
     })
   })
 
-  it('does not show a model the catalog no longer offers', async () => {
-    signIn({
-      cloud: true,
-      profile: {
-        customPromptPresets: [{ ...RESEARCH, model: 'retired-model' }],
-      },
-    })
-    const { result } = renderHook(() => useThread())
-    await waitFor(() => expect(result.current.model).toBe('test-model'))
+  // The harness applies neither a model it no longer lists nor a deprecated
+  // one.
+  it.each(['retired-model', 'old-model'])(
+    'does not show %s, which the catalog no longer offers',
+    async (model) => {
+      signIn({
+        cloud: true,
+        profile: { customPromptPresets: [{ ...RESEARCH, model }] },
+      })
+      publish({
+        session: {
+          ...session,
+          features: getView().session!.features,
+          models: [
+            ...session.models,
+            { ...session.models.at(-1)!, id: 'old-model', deprecated: true },
+          ],
+        },
+      })
+      const { result } = renderHook(() => useThread())
+      await waitFor(() => expect(result.current.model).toBe('test-model'))
 
-    await act(() => result.current.selectPreset(RESEARCH.id))
+      await act(() => result.current.selectPreset(RESEARCH.id))
 
-    expect(result.current.model).toBe('test-model')
-    expect(result.current.chat.webSearchEnabled).toBe(true)
-  })
+      expect(result.current.model).toBe('test-model')
+      expect(result.current.chat.webSearchEnabled).toBe(true)
+    },
+  )
 })
 
 describe('the default prompt of a new device chat', () => {

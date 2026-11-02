@@ -33,10 +33,12 @@ export const optionToWebSearch = (
 }
 
 // Whether the catalog still offers a model a preset names, Auto included.
+// The harness applies no deprecated model.
 export const isPresetModelAvailable = (
   modelName: string,
   models: BaseModel[],
-): boolean => models.some((model) => model.id === modelName)
+): boolean =>
+  models.some((model) => model.id === modelName && !model.deprecated)
 
 /**
  * Models offered in the preset editor: Auto followed by the same chat models
