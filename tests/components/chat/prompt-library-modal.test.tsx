@@ -159,11 +159,12 @@ describe('PromptLibraryModal default prompt', () => {
       string,
       unknown
     >[]
+    // The prompt text the user left alone is kept as stored.
     expect(saved).toEqual({
       id: SAVED.id,
       name: SAVED.name,
       description: SAVED.description,
-      systemPrompt: '<system>\nCite sources.\n</system>',
+      systemPrompt: SAVED.systemPrompt,
       createdAt: SAVED.createdAt,
       updatedAt: expect.any(Number),
       webSearchEnabled: true,

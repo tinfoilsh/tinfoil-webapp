@@ -62,19 +62,26 @@ function signIn({
   profile = {},
   profileDefaults = {},
   edits = true,
+  updates = false,
 }: {
   cloud: boolean
   profile?: Record<string, unknown>
   profileDefaults?: Session['profileDefaults']
   // The harness takes edits to saved prompts and favorites by id.
   edits?: boolean
+  // The harness changes a saved prompt by the members an update names.
+  updates?: boolean
 }) {
   const api = signInTo({
     cloud,
     session: {
       ...session,
       profileDefaults,
-      features: { ...session.features, promptPresetEdits: edits },
+      features: {
+        ...session.features,
+        promptPresetEdits: edits,
+        promptPresetUpdates: updates,
+      },
     },
     profile: { customPromptPresets: [RESEARCH, QUIET], ...profile },
   })
@@ -227,21 +234,34 @@ describe('the default prompt of a new stored chat', () => {
     })
   })
 
-  it('does not show a model the catalog no longer offers', async () => {
-    signIn({
-      cloud: true,
-      profile: {
-        customPromptPresets: [{ ...RESEARCH, model: 'retired-model' }],
-      },
-    })
-    const { result } = renderHook(() => useThread())
-    await waitFor(() => expect(result.current.model).toBe('test-model'))
+  // The harness applies neither a model it no longer lists nor a deprecated
+  // one.
+  it.each(['retired-model', 'old-model'])(
+    'does not show %s, which the catalog no longer offers',
+    async (model) => {
+      signIn({
+        cloud: true,
+        profile: { customPromptPresets: [{ ...RESEARCH, model }] },
+      })
+      publish({
+        session: {
+          ...session,
+          features: getView().session!.features,
+          models: [
+            ...session.models,
+            { ...session.models.at(-1)!, id: 'old-model', deprecated: true },
+          ],
+        },
+      })
+      const { result } = renderHook(() => useThread())
+      await waitFor(() => expect(result.current.model).toBe('test-model'))
 
-    await act(() => result.current.selectPreset(RESEARCH.id))
+      await act(() => result.current.selectPreset(RESEARCH.id))
 
-    expect(result.current.model).toBe('test-model')
-    expect(result.current.chat.webSearchEnabled).toBe(true)
-  })
+      expect(result.current.model).toBe('test-model')
+      expect(result.current.chat.webSearchEnabled).toBe(true)
+    },
+  )
 })
 
 describe('the default prompt of a new device chat', () => {
@@ -498,6 +518,19 @@ describe('the prompt library', () => {
     expect(result.current.userPresets).toEqual([])
   })
 
+  it('changes no prompt before the profile loads on a harness without updates', async () => {
+    signIn({ cloud: true })
+    publish({ profileReady: false })
+    const { result } = renderHook(() => usePromptLibrary())
+
+    await act(async () => {
+      result.current.updateUserPreset(RESEARCH.id, { name: 'Sources' })
+    })
+
+    expect(profileUpdates()).toEqual([])
+    expect(result.current.userPresets[0]).toMatchObject({ name: 'Research' })
+  })
+
   it('keeps both prompts favorited in quick succession', async () => {
     signIn({ cloud: true })
     const { result } = renderHook(() => usePromptLibrary())
@@ -536,6 +569,66 @@ describe('the prompt library', () => {
       RESEARCH.id,
       QUIET.id,
     ])
+  })
+
+  it('sends only what changed, so settings another device saved since stay', async () => {
+    // This device still shows the prompt from before another device chose
+    // its model and web search.
+    const STORED = { ...RESEARCH, model: 'deep-model', webSearchEnabled: false }
+    const shown = { ...RESEARCH }
+    delete (shown as Partial<typeof RESEARCH>).model
+    delete (shown as Partial<typeof RESEARCH>).webSearchEnabled
+    signIn({
+      cloud: true,
+      updates: true,
+      profile: { customPromptPresets: [shown, QUIET] },
+    })
+    let stored = STORED
+    client.post.mockImplementation(
+      async (path: string, input: Record<string, unknown>) => {
+        if (path !== '/v1/profile/update')
+          throw new Error(`Unexpected harness request: ${path}`)
+        const [update] = input.updatePromptPresets as Record<string, unknown>[]
+        stored = Object.fromEntries(
+          Object.entries({ ...stored, ...update }).filter(
+            ([, value]) => value !== null,
+          ),
+        ) as typeof STORED
+        return { customPromptPresets: [stored, QUIET] }
+      },
+    )
+    const { result } = renderHook(() => usePromptLibrary())
+
+    act(() => result.current.updateUserPreset(RESEARCH.id, { name: 'Sources' }))
+
+    await waitFor(() =>
+      expect(result.current.userPresets[0]).toMatchObject({
+        name: 'Sources',
+        model: 'deep-model',
+        webSearchEnabled: false,
+      }),
+    )
+    expect(profileUpdates()).toEqual([
+      {
+        key: KEY,
+        updatePromptPresets: [
+          { id: RESEARCH.id, name: 'Sources', updatedAt: expect.any(Number) },
+        ],
+      },
+    ])
+
+    // A setting the user clears is sent as null.
+    act(() =>
+      result.current.updateUserPreset(RESEARCH.id, { model: undefined }),
+    )
+
+    await waitFor(() => expect(profileUpdates()).toHaveLength(2))
+    expect(profileUpdates()[1].updatePromptPresets).toEqual([
+      { id: RESEARCH.id, model: null, updatedAt: expect.any(Number) },
+    ])
+    await waitFor(() =>
+      expect(result.current.userPresets[0]).not.toHaveProperty('model'),
+    )
   })
 
   it('stores the settings a saved prompt chooses, and removes unset ones', async () => {

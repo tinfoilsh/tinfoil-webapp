@@ -45,9 +45,9 @@
             "webSearchEnabled": true,
             "pinned": false,
             "contextUsage": {
-              "usedTokens": 396,
+              "usedTokens": 424,
               "limitTokens": 6553,
-              "percentage": 6.043033725011445
+              "percentage": 6.470318937891042
             },
             "activeRun": {
               "runId": "00000000000000000000000000000002",
@@ -169,9 +169,9 @@
             "webSearchEnabled": true,
             "pinned": false,
             "contextUsage": {
-              "usedTokens": 396,
+              "usedTokens": 424,
               "limitTokens": 6553,
-              "percentage": 6.043033725011445
+              "percentage": 6.470318937891042
             },
             "activeRun": null,
             "messageCount": 2

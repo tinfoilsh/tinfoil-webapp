@@ -1,5 +1,5 @@
 import { reportProfileError, useHarness } from '@/services/harness/provider'
-import type { PromptEdits } from '@/services/harness/types'
+import type { PresetUpdate, PromptEdits } from '@/services/harness/types'
 import {
   TfLightbulb,
   TfLightning,
@@ -28,6 +28,13 @@ const presetIcons: Record<string, IconType> = {
   'mask-happy': TfMask,
 }
 export const MAX_FAVORITE_PRESETS = 3
+
+// What a change to a saved prompt sets: the text it names, and each setting
+// it names, which one named as undefined clears.
+export type PresetChanges = Partial<
+  Pick<UserPromptPreset, 'name' | 'description' | 'systemPrompt'>
+> &
+  PromptPresetSettings
 
 // Applies the settings a change names. A setting set to undefined is
 // removed rather than stored as undefined; one the change leaves out stays.
@@ -101,18 +108,17 @@ export function usePromptLibrary() {
     favoritePresetIds,
     getPresetById,
     createUserPreset,
-    updateUserPreset: (
-      id: string,
-      patch: Partial<Omit<UserPromptPreset, keyof PromptPresetSettings>> &
-        PromptPresetSettings,
-    ) => {
-      const current = raw.find((p) => p.id === id)
-      if (!current) return
-      edit({
-        savePromptPresets: [
-          withSettings({ ...current, ...patch, updatedAt: Date.now() }, patch),
-        ],
-      })
+    // Only what changed is sent, so what another device saved since this
+    // one read the prompt stays.
+    updateUserPreset: (id: string, changes: PresetChanges) => {
+      if (!raw.some((p) => p.id === id)) return
+      const update: PresetUpdate = { id, updatedAt: Date.now() }
+      for (const key of ['name', 'description', 'systemPrompt'] as const)
+        if (changes[key] !== undefined) update[key] = changes[key]
+      for (const key of ['model', 'webSearchEnabled'] as const)
+        if (key in changes)
+          Object.assign(update, { [key]: changes[key] ?? null })
+      edit({ updatePromptPresets: [update] })
     },
     // A deleted preset is no longer a favorite or the default.
     deleteUserPreset: (id: string) => edit({ deletePromptPresetIds: [id] }),

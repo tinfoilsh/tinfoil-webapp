@@ -411,6 +411,44 @@ paths:
         "200": {$ref: "#/components/responses/ChangedThread"}
         default: {$ref: "#/components/responses/Error"}
 
+  /v1/threads/messages/answer:
+    post:
+      operationId: messageAnswer
+      summary: Answer a reply's questions
+      tags: [threads]
+      description: |
+        Saves the options the user picked in a questions widget of a reply,
+        without starting a turn. Each question named takes the options picked,
+        and the others keep their answers. The next question the user sends
+        carries the answers that changed, which is how the model reads them.
+        A widget, question or option the chat no longer holds is refused with
+        REVISION_CONFLICT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [threadId, messageId, toolCallId, answers]
+              properties:
+                key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
+                local: {type: boolean}
+                thread: {$ref: "#/components/schemas/ThreadInput"}
+                profile: {$ref: "#/components/schemas/ProfileInput"}
+                threadId: {$ref: "#/components/schemas/Identifier"}
+                messageId: {$ref: "#/components/schemas/Identifier"}
+                toolCallId: {type: string, description: "The questions widget's call."}
+                answers:
+                  type: object
+                  minProperties: 1
+                  description: "By question id, the ids of the options picked, or null to leave the question unanswered. A single-choice question takes one option."
+                  additionalProperties:
+                    type: [array, "null"]
+                    items: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/ChangedThread"}
+        default: {$ref: "#/components/responses/Error"}
+
   /v1/threads/delete:
     post:
       operationId: delete
@@ -638,7 +676,7 @@ paths:
       operationId: profileUpdate
       summary: Change the profile
       tags: [profile]
-      description: Sets the fields a patch names, then applies the saved prompt and favorite edits to the profile as stored when they apply. A client changes saved prompts and favorites by these edits while the session's features.promptPresetEdits is true, rather than sending whole lists it read earlier.
+      description: Sets the fields a patch names, then applies the saved prompt and favorite edits to the profile as stored when they apply. A client changes saved prompts and favorites by these edits while the session's features.promptPresetEdits is true, rather than sending whole lists it read earlier, and changes a saved prompt by an update naming only what its user changed while features.promptPresetUpdates is true, rather than saving a copy it read earlier.
       requestBody:
         required: true
         content:
@@ -679,6 +717,7 @@ paths:
                     hasSeenWebSearchIntro: {type: boolean}
                     dismissed: {type: object, additionalProperties: {type: boolean}}
                 savePromptPresets: {type: array, items: {$ref: "#/components/schemas/CustomPreset"}, description: "Saved prompts to add, each replacing the stored one with its id where it stands."}
+                updatePromptPresets: {type: array, items: {$ref: "#/components/schemas/PresetUpdate"}, description: "Changes to saved prompts, applied after the saves. Each sets the members it names on the stored prompt with its id; a prompt no longer stored stays deleted."}
                 deletePromptPresetIds: {type: array, items: {type: string}, description: "Saved prompts to remove. A removed prompt is no longer a favorite, and the default prompt it was is cleared."}
                 addFavoritePromptPresetIds: {type: array, items: {type: string}, description: "Prompts to add to the end of the favorites, unless they already are favorites."}
                 removeFavoritePromptPresetIds: {type: array, items: {type: string}, description: "Prompts to remove from the favorites."}
@@ -1667,7 +1706,7 @@ components:
         profile: {$ref: "#/components/schemas/ProfileInput"}
         projectId: {type: [string, "null"]}
         presetId: {type: [string, "null"]}
-        content: {type: string}
+        content: {type: string, description: "A send without content, a quote or an attachment sends only the answers the user changed since their last question, and is refused when there are none."}
         quote: {type: string}
         messageId: {type: string, description: "The message an edit, regenerate, continue or retry acts on."}
         toolCallId: {type: string, description: "The widget call a retryToolCall regenerates."}
@@ -2146,6 +2185,32 @@ components:
         usage: {$ref: "#/components/schemas/MessageUsage"}
         annotations: {type: array, items: {$ref: "#/components/schemas/Annotation"}}
         attachments: {type: array, items: {$ref: "#/components/schemas/AttachmentView"}}
+        answers: {type: array, items: {$ref: "#/components/schemas/WidgetAnswers"}, description: "A question's answers to questions widgets, as it sent them to the model."}
+
+    WidgetAnswers:
+      description: What the user had answered of one questions widget when they sent a question, with the questions' text, so it reads the same however the widget changes later.
+      type: object
+      required: [toolCallId, questions]
+      properties:
+        toolCallId: {type: string}
+        title: {type: string}
+        questions: {type: array, items: {$ref: "#/components/schemas/AnsweredQuestion"}}
+
+    AnsweredQuestion:
+      type: object
+      required: [id, prompt, answered, selected]
+      properties:
+        id: {type: string}
+        prompt: {type: string}
+        answered: {type: boolean, description: "False for a question left unanswered. An answered question may have nothing selected, as a checklist with nothing ticked."}
+        selected: {type: array, items: {$ref: "#/components/schemas/QuestionOption"}}
+
+    QuestionOption:
+      type: object
+      required: [id, label]
+      properties:
+        id: {type: string}
+        label: {type: string}
 
     Role:
       description: Who wrote a message. A client leaves out a message whose role it does not know.
@@ -2184,6 +2249,10 @@ components:
         startedAt: {type: number, description: "Epoch milliseconds."}
         endedAt: {type: number, description: "Epoch milliseconds."}
         duration: {type: number, description: "How long a reasoning step thought, in seconds."}
+        answers:
+          type: object
+          description: "Of a questions widget's call, the ids of the options the user picked, by question id. A question absent from it is unanswered."
+          additionalProperties: {type: array, items: {type: string}}
         invalidArguments: {type: boolean, description: "The widget's current declaration refuses the call's arguments, so the client offers to regenerate them."}
 
     ToolDisplay:
@@ -2321,6 +2390,7 @@ components:
         usage: {$ref: "#/components/schemas/MessageUsage"}
         isError: {type: boolean}
         isInterrupted: {type: boolean}
+        answers: {type: array, items: {$ref: "#/components/schemas/WidgetAnswers"}}
 
     ThreadInput:
       description: "A device chat as its client sends it: a ThreadRecord the harness returned, sent back whole, or a record without a recordVersion that an older client kept or a client made for a new chat. The harness refuses a ThreadRecord with a member its version does not have."
@@ -2392,6 +2462,7 @@ components:
               isInterrupted: {type: boolean}
               usage: {$ref: "#/components/schemas/MessageUsage"}
               annotations: {type: array, items: {$ref: "#/components/schemas/Annotation"}}
+              answers: {type: array, items: {$ref: "#/components/schemas/WidgetAnswers"}}
               attachments:
                 type: array
                 items:
@@ -2523,6 +2594,19 @@ components:
         model: {type: string}
         webSearchEnabled: {type: boolean}
         createdAt: {$ref: "#/components/schemas/Json"}
+        updatedAt: {$ref: "#/components/schemas/Json"}
+
+    PresetUpdate:
+      description: A change to a saved prompt, which sets only the members it names. A null model or webSearchEnabled clears that setting.
+      type: object
+      required: [id]
+      properties:
+        id: {type: string}
+        name: {type: string, minLength: 1}
+        description: {type: string}
+        systemPrompt: {type: string}
+        model: {type: [string, "null"]}
+        webSearchEnabled: {type: [boolean, "null"]}
         updatedAt: {$ref: "#/components/schemas/Json"}
 
     # --- Projects -------------------------------------------------------------
