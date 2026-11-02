@@ -588,3 +588,81 @@ it('no longer says a reply the user stopped was canceled once it is continued', 
   expect(result.current.chat.messages.at(-1)?.content).toBe('Half and the rest')
   expect(result.current.chat.messages.at(-1)?.canceledByUser).toBeUndefined()
 })
+
+it('says a reply the user stopped was canceled though the chat was left before it ended', async () => {
+  signIn({ cloud: true })
+  const ended = gate()
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/cancel') return {}
+    throw new Error(`Unexpected ${path}`)
+  })
+  client.events.mockImplementationOnce(async function* (
+    _path: string,
+    input: Turn,
+  ): AsyncGenerator<Frame> {
+    const threadId = input.threadId!
+    yield {
+      id: 0,
+      event: { type: 'RUN_STARTED', threadId, runId: 'run-1', instance: 'i' },
+    }
+    yield {
+      id: 1,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'answer',
+        role: 'assistant',
+        delta: 'Half',
+      },
+    }
+    await ended.promise
+  })
+  const { result } = renderHook(() => useThread())
+  await waitFor(() => expect(result.current.loadingChats).toBe(false))
+  let sending: Promise<boolean> | undefined
+  act(() => {
+    sending = result.current.send({ content: 'Tell me' })
+  })
+  await waitFor(() =>
+    expect(result.current.chat.messages.at(-1)?.content).toBe('Half'),
+  )
+  const { clientRequestId, threadId } = client.events.mock.calls[0][1] as Turn
+  await act(() => result.current.cancel())
+  act(() => result.current.newChat())
+  ended.resolve()
+  await act(async () => {
+    await sending
+  })
+
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/get')
+      return {
+        ...storedThread(threadId!, {
+          messages: [
+            {
+              id: clientRequestId,
+              role: 'user',
+              content: 'Tell me',
+              createdAt: '2026-04-01T09:00:00Z',
+            },
+            {
+              id: 'answer',
+              role: 'assistant',
+              content: 'Half',
+              createdAt: '2026-04-01T09:00:01Z',
+              isInterrupted: true,
+            },
+          ],
+        }),
+        hasOlder: false,
+      }
+    throw new Error(`Unexpected ${path}`)
+  })
+  await act(() => result.current.open(threadId!))
+
+  expect(result.current.chat.messages.at(-1)).toMatchObject({
+    content: 'Half',
+    canceledByUser: true,
+  })
+})

@@ -588,11 +588,16 @@ export function useThread(
     state.status === 'streaming' ||
     state.status === 'queued'
   const isLocalChat = local && !temporary
+  const shownList = shownMessages(state.messages)
+  // A reply the user stopped shows as stopped at once, before the harness
+  // ends it: the reply, or the message it had not begun answering.
+  const stopped = isStopping(state) ? shownList.at(-1) : undefined
   const viewOf = (message: ShownMessage, streaming: boolean) => {
     // A stopped reply continued since is no longer one.
     const canceled =
-      canceledMessages.has(message.id) &&
-      (message.role === 'user' || !!message.isInterrupted)
+      message === stopped ||
+      (canceledMessages.has(message.id) &&
+        (message.role === 'user' || !!message.isInterrupted))
     const kept = views.get(message)
     if (
       kept?.streaming === streaming &&
@@ -610,8 +615,8 @@ export function useThread(
     })
     return view
   }
-  const messages = shownMessages(state.messages).map((m) => {
-    const view = viewOf(m, running && m === state.messages.at(-1))
+  const messages = shownList.map((m) => {
+    const view = viewOf(m, running && !stopped && m === state.messages.at(-1))
     if (!onDevice(openState) || !view.attachments?.length) return view
     // An image the previous client stored without a thumbnail shows its
     // bytes; others load them when opened in the gallery.

@@ -288,11 +288,12 @@ export function ChatInterface({
       : (session?.defaultModel ?? chatModel)
   const isLoadingConfig = !session
   const hasValidatedModel = !!session
-  // A reply the user stopped leaves the composer ready for the next message,
-  // which goes once the reply has stopped.
-  const loadingState = isStreaming && !thread.stopping ? 'loading' : 'idle'
+  // A reply the user stopped shows as stopped at once, and leaves the
+  // composer ready for the next message, which goes once the reply stopped.
+  const isReplyStreaming = isStreaming && !thread.stopping
+  const loadingState = isReplyStreaming ? 'loading' : 'idle'
   const isWaitingForResponse =
-    isStreaming && currentChat.messages.at(-1)?.role !== 'assistant'
+    isReplyStreaming && currentChat.messages.at(-1)?.role !== 'assistant'
   const historyProblem: ChatHistoryProblem | null =
     initialChatId && !isLocalChatUrl && isAuthLoaded && !isSignedIn
       ? 'sign-in'
@@ -2529,7 +2530,7 @@ export function ChatInterface({
                       isDarkMode={isDarkMode}
                       chatId={currentChat.id}
                       isWaitingForResponse={isWaitingForResponse}
-                      isStreamingResponse={isStreaming}
+                      isStreamingResponse={isReplyStreaming}
                       activeArtifactToolCallId={
                         isArtifactSidebarOpen ? activeArtifactToolCallId : null
                       }

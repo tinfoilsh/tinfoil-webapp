@@ -350,6 +350,10 @@ export function chatTurns({
     if (!isRunning(state)) return controller.cancel(input)
     const shown = controller.track()
     controller.view.update((current) => ({ ...current, stopping: true }))
+    // A reply already streaming is the one stopped, which keeps saying so
+    // even if the chat is left before its run ends.
+    const last = shownMessages(state.messages).at(-1)
+    if (last?.role === 'assistant') controller.markCanceled([last.id])
     try {
       await controller.cancel(input)
     } catch (cause) {

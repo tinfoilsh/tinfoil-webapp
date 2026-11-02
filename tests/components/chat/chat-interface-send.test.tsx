@@ -255,11 +255,12 @@ it('shows the message and loading dot before device storage is ready, and can st
   ).toBeVisible()
   expect(client.events).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }))
+  expect(
+    screen.queryByRole('status', { name: 'Waiting for response' }),
+  ).not.toBeInTheDocument()
   await act(async () => reading.resolve())
-  await waitFor(() =>
-    expect(
-      screen.queryByRole('status', { name: 'Waiting for response' }),
-    ).not.toBeInTheDocument(),
+  await waitFor(async () =>
+    expect(await localThreadStore('device').list()).toHaveLength(1),
   )
   expect(client.events).not.toHaveBeenCalled()
   const [kept] = await localThreadStore('device').list()
@@ -610,6 +611,8 @@ it('stops a reply at once with Escape, and says the user canceled it, also once 
   expect(
     screen.queryByRole('button', { name: 'Stop generation' }),
   ).not.toBeInTheDocument()
+  // It shows as stopped before the harness ends it.
+  expect(screen.getByText('Response canceled by user')).toBeInTheDocument()
   const { threadId } = client.events.mock.calls[0][1] as Turn
   await waitFor(() =>
     expect(stops).toEqual([{ key: KEY, threadId, runId: 'reply' }]),
@@ -675,6 +678,10 @@ it('stops a reply that has not started, and says so under the message', async ()
   fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }))
 
   expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument()
+  expect(
+    screen.queryByRole('status', { name: 'Waiting for response' }),
+  ).not.toBeInTheDocument()
+  expect(screen.getByText('Response canceled by user')).toBeInTheDocument()
   expect(stops).toEqual([])
   await act(async () => accepted.resolve())
   expect(stops).toHaveLength(1)
@@ -702,6 +709,7 @@ it('shows no error for a stop that arrives after the reply ended', async () => {
 
   fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }))
   await waitFor(() => expect(stops).toHaveLength(1))
+  expect(screen.getByText('Response canceled by user')).toBeInTheDocument()
   await act(async () => ended.resolve())
 
   expect(screen.getByRole('article', { name: 'Al said' })).toHaveTextContent(
