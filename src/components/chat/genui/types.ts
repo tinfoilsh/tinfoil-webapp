@@ -1,6 +1,7 @@
 // Browser renderers. Tool declarations, prompts, and argument validation
 // live in the harness, which sends a widget's arguments once they match its
 // declaration.
+import type { SavedAnswers } from '@/services/harness/types'
 import type { JSX } from 'react'
 import type { WidgetArgs } from './widget-args'
 
@@ -31,6 +32,9 @@ export interface GenUIRenderContext {
   isDarkMode?: boolean
   isStreaming?: boolean
   toolCallId?: string
+  // The reply the call is in, and the options the user picked in it.
+  messageId?: string
+  answers?: SavedAnswers
 }
 
 export interface GenUIWidget<Args = any> {
@@ -54,4 +58,5 @@ export interface GenUIToolCall {
   arguments: string
   // The harness found the stored arguments no longer match the widget.
   invalidArguments?: boolean
+  answers?: SavedAnswers
 }

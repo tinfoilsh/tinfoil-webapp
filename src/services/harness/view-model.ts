@@ -262,6 +262,7 @@ export function messageView(
         .join(''),
     timeline,
     quote: message.quote,
+    ...(message.answers?.length ? { answers: message.answers } : {}),
     modelDisplayName: message.modelDisplayName,
     attachments: message.attachments?.map(attachmentView),
     annotations: message.annotations?.flatMap(

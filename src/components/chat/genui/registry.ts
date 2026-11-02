@@ -6,6 +6,7 @@ import { widget as Image } from './widgets/Image'
 import { widget as LinkPreview } from './widgets/LinkPreview'
 import { widget as Map } from './widgets/Map'
 import { widget as MessageCompose } from './widgets/MessageCompose'
+import { widget as Questions } from './widgets/Questions'
 import { widget as RecipeCard } from './widgets/RecipeCard'
 import { widget as SportsData } from './widgets/SportsData'
 import { widget as StatCards } from './widgets/StatCards'
@@ -28,6 +29,7 @@ export const GENUI_WIDGETS: GenUIWidget[] = [
   MessageCompose,
   SportsData,
   Map,
+  Questions,
 ]
 
 /**

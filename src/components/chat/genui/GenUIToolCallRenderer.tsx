@@ -26,6 +26,8 @@ function prettyWidgetName(toolName: string): string {
 
 interface GenUIToolCallRendererProps {
   toolCalls: GenUIToolCall[]
+  // The reply the calls are in.
+  messageId?: string
   isStreaming: boolean
   isDarkMode?: boolean
   activeArtifactToolCallId?: string | null
@@ -56,7 +58,9 @@ function parseInput(
 
 function GenUIWidgetContent({
   toolCallId,
+  messageId,
   result,
+  answers,
   toolName,
   input,
   isActive,
@@ -64,7 +68,9 @@ function GenUIWidgetContent({
   isStreaming,
 }: {
   toolCallId: string
+  messageId?: string
   result?: unknown
+  answers?: GenUIToolCall['answers']
   toolName: string
   input: unknown
   isActive: boolean
@@ -76,7 +82,9 @@ function GenUIWidgetContent({
     isDarkMode,
     isStreaming,
     toolCallId,
+    messageId,
     result,
+    answers,
   })
   if (rendered === null) throw new Error('Widget render returned null')
   return rendered
@@ -84,6 +92,7 @@ function GenUIWidgetContent({
 
 export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
   toolCalls,
+  messageId,
   isStreaming,
   isDarkMode,
   activeArtifactToolCallId,
@@ -149,6 +158,8 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
               <div className="my-4">
                 <GenUIWidgetContent
                   result={tc.result}
+                  answers={tc.answers}
+                  messageId={messageId}
                   toolCallId={tc.id}
                   toolName={tc.name}
                   input={input.data}
