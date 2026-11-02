@@ -587,6 +587,29 @@ const renderChat = () =>
     </ProjectProvider>,
   )
 
+it('stops a reply that has not started, and says so under the message', async () => {
+  signIn({ cloud: true })
+  const accepted = gate()
+  const stopped = gate()
+  scriptStoppedRun(stopped.promise, {
+    started: accepted.promise,
+    replied: false,
+  })
+  const stops = answerStops(() => stopped.resolve())
+  renderChat()
+  await send()
+  await waitFor(() => expect(client.events).toHaveBeenCalledTimes(1))
+
+  fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }))
+
+  expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument()
+  expect(stops).toEqual([])
+  await act(async () => accepted.resolve())
+  expect(stops).toHaveLength(1)
+  expect(screen.queryByText('The answer is')).not.toBeInTheDocument()
+  expect(screen.getByText('Response canceled by user')).toBeInTheDocument()
+})
+
 it('shows no error for a stop that arrives after the reply ended', async () => {
   signIn({ cloud: true })
   const ended = gate()
@@ -641,4 +664,18 @@ it('sends a message written while the reply stops once it has stopped', async ()
     kind: 'send',
     content: 'Something else',
   })
+})
+
+it('says a reply the service stopped stopped, without blaming the user', async () => {
+  signIn({ cloud: true })
+  scriptStoppedRun(Promise.resolve())
+  answerStops()
+  renderChat()
+
+  await send()
+
+  expect(await screen.findByText('Response stopped')).toBeInTheDocument()
+  expect(
+    screen.queryByText('Response canceled by user'),
+  ).not.toBeInTheDocument()
 })

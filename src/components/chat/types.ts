@@ -115,6 +115,9 @@ export type Attachment = {
 export type Message = {
   id?: string
   isInterrupted?: boolean
+  // The user stopped this reply here, or the reply to this message before it
+  // began.
+  canceledByUser?: boolean
   role: 'user' | 'assistant'
   content: string
   turnId?: string

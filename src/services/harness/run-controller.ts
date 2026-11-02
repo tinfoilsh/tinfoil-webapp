@@ -3,6 +3,7 @@ import type { ImagesById, LocalThreadStore, Originals } from './local-threads'
 import { scopedTurn } from './prompt-cache-secret'
 import { ERROR_ACTIONS, ERROR_CODES, ROUTES, type RunRoute } from './protocol'
 import {
+  canceledBy,
   initialChat,
   isStopping,
   isTerminal,
@@ -111,6 +112,9 @@ export class RunController {
   readonly view = createStore<ChatState>(initialChat())
   // The device chats whose runs this page reads, by chat.
   readonly deviceRuns = createStore<ReadonlyMap<string, DeviceRun>>(new Map())
+  // The messages whose reply the user stopped on this page, which keep
+  // saying so as the chat is read again.
+  readonly canceled = createStore<ReadonlySet<string>>(new Set())
   // When the open chat's error happened, so a wait the harness asks for
   // counts from then.
   errorAt = 0
@@ -234,6 +238,7 @@ export class RunController {
             else if (event.type === 'RUN_ERROR' && shown)
               this.errorAt = Date.now()
           }
+          if (isTerminal(event)) this.markCanceled(canceledBy(base, event))
           view = next
           if (shown) this.view.set(next)
           if (event.type === 'RUN_STARTED') {
@@ -439,6 +444,11 @@ export class RunController {
         return
       throw cause
     }
+  }
+
+  markCanceled(messageIds: string[]) {
+    if (messageIds.length)
+      this.canceled.update((canceled) => new Set([...canceled, ...messageIds]))
   }
 
   // Resolves once the run the open chat stops has ended, or the view moved

@@ -51,6 +51,22 @@ export const isRunning = ({ status }: ChatState) =>
 export const isStopping = (state: ChatState) =>
   isRunning(state) && !!state.stopping
 
+// The messages whose reply the user stopped, as the run they stopped ends:
+// the reply it had begun, or the message it stopped before answering.
+export function canceledBy(state: ChatState, event: TerminalEvent): string[] {
+  if (
+    !state.stopping ||
+    event.type !== 'RUN_FINISHED' ||
+    event.runId !== state.runId ||
+    !event.metadata?.cancelled
+  )
+    return []
+  const replies = event.metadata.messages?.map(({ id }) => id) ?? []
+  if (replies.length) return replies
+  const last = state.messages.at(-1)
+  return last?.role === 'user' ? [last.id] : []
+}
+
 export function initialChat(thread?: Thread): ChatState {
   return {
     snapshot: { thread: thread ?? null, queue: [] },

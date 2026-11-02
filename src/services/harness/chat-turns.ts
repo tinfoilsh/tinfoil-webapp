@@ -294,6 +294,10 @@ export function chatTurns({
         if (!shown() || submission?.cancelled) {
           if (turn.run) controller.settle(turn.run)
           if (shown()) controller.pending = null
+          // The message a device chat kept shows the reply it never asked
+          // for as stopped.
+          if (shown() && message && turn.keep)
+            controller.markCanceled([message.id])
           unapply()
           return false
         }
