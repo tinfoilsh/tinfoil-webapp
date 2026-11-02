@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@/components/ui/utils'
+import { useSessionFeature } from '@/services/harness/provider'
 
 export type ContextUsage = {
   percentage: number
@@ -10,6 +11,11 @@ export type ContextUsage = {
 
 // Usage percentage at which the indicator switches to the warning color
 const WARNING_THRESHOLD_PERCENT = 80
+
+// The session feature of a harness that summarizes a chat's earlier messages
+// when its prompt outgrows the budget.
+const COMPACTION_FEATURE = 'compaction'
+const COMPACTION_NOTE = 'Earlier messages will be summarized to make room.'
 
 const RING_RADIUS = 7
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
@@ -22,9 +28,11 @@ function formatTokens(tokens: number): string {
 }
 
 /**
- * Small circular gauge showing how much of the model's context window the
- * current prompt occupies after history selection. If it still exceeds the
- * budget, dropping older history cannot make the remaining prompt fit.
+ * Small circular gauge showing how much of the prompt budget (the share of
+ * the model's context window a prompt may fill) the chat's last prompt used.
+ * A prompt over the budget has its earlier messages summarized when the
+ * harness compacts chats; otherwise older messages are left out, which
+ * cannot make a prompt fit whose latest message alone exceeds the budget.
  */
 export function ContextUsageIndicator({
   usage,
@@ -33,6 +41,7 @@ export function ContextUsageIndicator({
   usage: ContextUsage
   className?: string
 }) {
+  const compacts = useSessionFeature(COMPACTION_FEATURE)
   const percentage = Math.min(Math.round(usage.percentage), 100)
 
   const isNearLimit = percentage >= WARNING_THRESHOLD_PERCENT
@@ -41,9 +50,9 @@ export function ContextUsageIndicator({
   const dashOffset = RING_CIRCUMFERENCE * (1 - percentage / 100)
 
   const tooltip = isOverBudget
-    ? `Context exceeds this model's input budget (~${formatTokens(usage.usedTokens)} of ${formatTokens(usage.limitTokens)} tokens). Replies may fail. Reduce project documents or instructions, remove attachments, or shorten your message.`
+    ? `Context exceeds this model's input budget (~${formatTokens(usage.usedTokens)} of ${formatTokens(usage.limitTokens)} tokens). ${compacts ? COMPACTION_NOTE : 'Replies may fail. Reduce project documents or instructions, remove attachments, or shorten your message.'}`
     : isFull
-      ? `Context window full (~${formatTokens(usage.limitTokens)} tokens). Older messages may be omitted to make room.`
+      ? `Context window full (~${formatTokens(usage.limitTokens)} tokens). ${compacts ? COMPACTION_NOTE : 'Older messages may be omitted to make room.'}`
       : `Context window ${percentage}% used (~${formatTokens(usage.usedTokens)} of ${formatTokens(usage.limitTokens)} tokens)`
 
   return (
