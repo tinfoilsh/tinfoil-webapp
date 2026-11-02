@@ -587,6 +587,78 @@ const renderChat = () =>
     </ProjectProvider>,
   )
 
+it('stops a reply at once with Escape, and says the user canceled it, also once the chat is read again', async () => {
+  signIn({ cloud: true })
+  const stopped = gate()
+  scriptStoppedRun(stopped.promise)
+  const stops = answerStops()
+  renderChat()
+  await send()
+  await screen.findByText('The answer is')
+  // A dialog holding the focus keeps Escape for itself.
+  const dialog = document.body.appendChild(document.createElement('div'))
+  dialog.setAttribute('role', 'dialog')
+  fireEvent.keyDown(dialog.appendChild(document.createElement('button')), {
+    key: 'Escape',
+  })
+  dialog.remove()
+  expect(stops).toEqual([])
+
+  fireEvent.keyDown(document.body, { key: 'Escape' })
+
+  expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Stop generation' }),
+  ).not.toBeInTheDocument()
+  const { threadId } = client.events.mock.calls[0][1] as Turn
+  await waitFor(() =>
+    expect(stops).toEqual([{ key: KEY, threadId, runId: 'reply' }]),
+  )
+  fireEvent.keyDown(document.body, { key: 'Escape' })
+  await act(async () => stopped.resolve())
+  expect(screen.getByText('Response canceled by user')).toBeInTheDocument()
+  expect(stops).toHaveLength(1)
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+  const { clientRequestId, threadId: id } = client.events.mock
+    .calls[0][1] as Turn
+  const stored = {
+    ...storedThread(id!, {
+      messages: [
+        {
+          id: clientRequestId,
+          role: 'user',
+          content: 'Explain this to me',
+          createdAt: '2026-04-01T09:00:00Z',
+        },
+        {
+          id: 'answer',
+          role: 'assistant',
+          content: 'The answer is',
+          createdAt: '2026-04-01T09:00:01Z',
+          isInterrupted: true,
+        },
+      ],
+    }),
+    hasOlder: false,
+  }
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/get') return stored
+    throw new Error(`Unexpected ${path}`)
+  })
+  await act(async () => publish({ chatRevision: 'stopped' }))
+  await waitFor(() =>
+    expect(client.post).toHaveBeenCalledWith(
+      '/v1/threads/get',
+      expect.objectContaining({ id }),
+      expect.anything(),
+    ),
+  )
+  expect(screen.getByText('Response canceled by user')).toBeInTheDocument()
+  expect(screen.queryByText('Response stopped')).not.toBeInTheDocument()
+})
+
 it('stops a reply that has not started, and says so under the message', async () => {
   signIn({ cloud: true })
   const accepted = gate()

@@ -170,6 +170,10 @@ import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
 import { hasPasskeyBackup } from '@/utils/signout-cleanup'
 import { useUIState } from './hooks/use-ui-state'
 
+// Where Escape belongs to what holds the focus rather than to the reply.
+const ESCAPE_KEEPERS =
+  'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"], [role="listbox"]'
+
 type ChatInterfaceProps = {
   initialChatId?: string | null
   initialProjectId?: string | null
@@ -739,6 +743,27 @@ export function ChatInterface({
   const cancelGenerationAndResumeQueue = () => {
     void thread.cancel().catch(thread.report)
   }
+  // Escape stops the reply from anywhere in the chat. A dialog, menu or
+  // field that uses Escape holds the focus, or marks it handled first.
+  const stopReply = useRef(cancelGenerationAndResumeQueue)
+  stopReply.current = cancelGenerationAndResumeQueue
+  useEffect(() => {
+    if (loadingState !== 'loading') return
+    const stopWithEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing)
+        return
+      if (
+        (event.target instanceof Element &&
+          event.target.closest(ESCAPE_KEEPERS)) ||
+        document.querySelector('[aria-modal="true"]')
+      )
+        return
+      event.preventDefault()
+      stopReply.current()
+    }
+    window.addEventListener('keydown', stopWithEscape)
+    return () => window.removeEventListener('keydown', stopWithEscape)
+  }, [loadingState])
   const queuedMessages = thread.queue
   const removeQueuedMessage = (id: string) => {
     void thread.removeQueued(id).catch(thread.report)
