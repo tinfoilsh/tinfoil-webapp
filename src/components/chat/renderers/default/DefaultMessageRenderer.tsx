@@ -917,6 +917,17 @@ const DefaultMessageComponent = ({
           </>
         )}
 
+      {/* A reply stopped early says so. Only one the user stopped here says
+          who stopped it: the service stops replies when it restarts too. */}
+      {!(isStreaming && isLastMessage) &&
+        (message.canceledByUser || (!isUser && message.isInterrupted)) && (
+          <p className="w-full px-4 pt-2 text-left text-xs text-content-muted">
+            {message.canceledByUser
+              ? 'Response canceled by user'
+              : 'Response stopped'}
+          </p>
+        )}
+
       {/* Actions for assistant messages - hidden while streaming the last response */}
       {showAssistantFooter && (
         <div className="mt-4 flex w-full flex-col items-start gap-2 px-4 md:flex-row-reverse md:items-center md:justify-between md:gap-3">

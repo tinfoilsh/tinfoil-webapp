@@ -508,3 +508,83 @@ it('stops showing a stored chat as synced when its next run fails', async () => 
   expect(result.current.status).toBe('error')
   expect(result.current.synced).toBe(false)
 })
+
+it('no longer says a reply the user stopped was canceled once it is continued', async () => {
+  signIn({ cloud: true })
+  const stopped = gate()
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/cancel') {
+      stopped.resolve()
+      return {}
+    }
+    throw new Error(`Unexpected ${path}`)
+  })
+  const reply = (
+    runId: string,
+    delta: string,
+    isInterrupted: boolean,
+    end: Promise<void>,
+  ) =>
+    async function* (_path: string, input: Turn): AsyncGenerator<Frame> {
+      const threadId = input.threadId!
+      yield {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          threadId,
+          runId,
+          instance: 'instance-1',
+          ...(input.kind === 'continue' ? { messageId: 'answer' } : {}),
+        },
+      }
+      yield {
+        id: 1,
+        event: {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'answer',
+          role: 'assistant',
+          delta,
+        },
+      }
+      await end
+      yield {
+        id: 2,
+        event: {
+          type: 'RUN_FINISHED',
+          threadId,
+          runId,
+          metadata: {
+            cancelled: isInterrupted,
+            messages: [{ id: 'answer', isInterrupted }],
+          },
+        },
+      }
+    }
+  client.events
+    .mockImplementationOnce(reply('run-1', 'Half', true, stopped.promise))
+    .mockImplementationOnce(
+      reply('run-2', ' and the rest', false, Promise.resolve()),
+    )
+  const { result } = renderHook(() => useThread())
+  await waitFor(() => expect(result.current.loadingChats).toBe(false))
+  let sending: Promise<boolean> | undefined
+  act(() => {
+    sending = result.current.send({ content: 'Tell me' })
+  })
+  await waitFor(() =>
+    expect(result.current.chat.messages.at(-1)?.content).toBe('Half'),
+  )
+  await act(() => result.current.cancel())
+  await act(async () => {
+    await sending
+  })
+  expect(result.current.chat.messages.at(-1)?.canceledByUser).toBe(true)
+
+  await act(async () => {
+    await result.current.continueReply(1)
+  })
+
+  expect(result.current.chat.messages.at(-1)?.content).toBe('Half and the rest')
+  expect(result.current.chat.messages.at(-1)?.canceledByUser).toBeUndefined()
+})

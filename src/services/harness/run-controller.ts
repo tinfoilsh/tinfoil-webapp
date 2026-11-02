@@ -3,7 +3,9 @@ import type { ImagesById, LocalThreadStore, Originals } from './local-threads'
 import { scopedTurn } from './prompt-cache-secret'
 import { ERROR_ACTIONS, ERROR_CODES, ROUTES, type RunRoute } from './protocol'
 import {
+  canceledBy,
   initialChat,
+  isStopping,
   isTerminal,
   reduceEvent,
   runErrorOf,
@@ -110,6 +112,9 @@ export class RunController {
   readonly view = createStore<ChatState>(initialChat())
   // The device chats whose runs this page reads, by chat.
   readonly deviceRuns = createStore<ReadonlyMap<string, DeviceRun>>(new Map())
+  // The messages whose reply the user stopped on this page, which keep
+  // saying so as the chat is read again.
+  readonly canceled = createStore<ReadonlySet<string>>(new Set())
   // When the open chat's error happened, so a wait the harness asks for
   // counts from then.
   errorAt = 0
@@ -117,6 +122,8 @@ export class RunController {
   // nonce, to reconnect.
   pending: { input: Turn; run?: DeviceRun } | null = null
   submission: Submission | null = null
+  // A turn sent while the open chat's reply stops waits for it to stop.
+  holding = false
   retryPreparation: (() => Promise<boolean>) | null = null
   // Changes each time the view moves to another chat. A run started for
   // the previous one no longer updates the view.
@@ -233,6 +240,7 @@ export class RunController {
             else if (event.type === 'RUN_ERROR' && shown)
               this.errorAt = Date.now()
           }
+          if (isTerminal(event)) this.markCanceled(canceledBy(base, event))
           view = next
           if (shown) this.view.set(next)
           if (event.type === 'RUN_STARTED') {
@@ -259,15 +267,11 @@ export class RunController {
             this.hooks.summary?.(next.snapshot.thread)
         }
         if (options.submission?.cancelled && runId) {
-          await this.api.post(
-            ROUTES.cancel,
-            {
-              ...(input.key ? { key: this.api.key() } : {}),
-              threadId,
-              runId,
-            },
-            { keyless: true },
-          )
+          await this.stop({
+            ...(input.key ? { key: this.api.key() } : {}),
+            threadId,
+            runId,
+          })
           options.submission.cancelled = false
         }
         if (event.type === 'RUN_FINISHED')
@@ -395,7 +399,7 @@ export class RunController {
       ...(!started &&
       (state.status === 'streaming' || state.status === 'queued')
         ? {}
-        : { status: 'error' }),
+        : { status: 'error', stopping: undefined }),
       ...(detail.code === ERROR_CODES.chatFlagged ? { flagged: true } : {}),
     }))
     this.api.reportRateLimit(detail.rateLimit)
@@ -421,7 +425,46 @@ export class RunController {
       this.submission.cancelled = true
       return Promise.resolve()
     }
-    return this.api.post(ROUTES.cancel, input, { keyless: true })
+    return this.stop(input)
+  }
+
+  // Stops a run. One that ended, or is ending, as the stop arrived needs no
+  // stop.
+  private async stop(input: {
+    key?: string
+    threadId: string | null
+    runId?: string
+  }) {
+    try {
+      await this.api.post(ROUTES.cancel, input, { keyless: true })
+    } catch (cause) {
+      if (
+        cause instanceof HarnessError &&
+        (cause.code === ERROR_CODES.runNotFound ||
+          cause.code === ERROR_CODES.runInFlight)
+      )
+        return
+      throw cause
+    }
+  }
+
+  markCanceled(messageIds: string[]) {
+    if (messageIds.length)
+      this.canceled.update((canceled) => new Set([...canceled, ...messageIds]))
+  }
+
+  // Resolves once the run the open chat stops has ended, or the view moved
+  // to another chat.
+  stopped(): Promise<void> {
+    return new Promise((resolve) => {
+      const check = () => {
+        if (isStopping(this.view.get())) return
+        unsubscribe()
+        resolve()
+      }
+      const unsubscribe = this.view.subscribe(check)
+      check()
+    })
   }
 
   sendQueued(input: {

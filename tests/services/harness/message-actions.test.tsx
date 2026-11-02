@@ -286,7 +286,7 @@ describe('regenerating a reply', () => {
     })
   })
 
-  it('stops the run in progress before regenerating', async () => {
+  it('stops the run in progress, and regenerates once it ended', async () => {
     signIn({ cloud: true, session })
     client.post.mockImplementation(async (path: string) =>
       path === '/v1/threads/get'
@@ -317,6 +317,15 @@ describe('regenerating a reply', () => {
         },
       }
       await held
+      yield {
+        id: 1,
+        event: {
+          type: 'RUN_FINISHED',
+          threadId: THREAD_ID,
+          runId: 'run-1',
+          metadata: { cancelled: true },
+        },
+      }
     })
     client.events.mockImplementationOnce(
       regenerated(transcript.slice(0, 3).map(wire)),
@@ -324,22 +333,25 @@ describe('regenerating a reply', () => {
     const { result } = renderHook(() => useThread(THREAD_ID, null))
     await waitFor(() => expect(result.current.running).toBe(true))
 
-    await act(() => result.current.regenerate(3))
-
-    const cancel = client.post.mock.calls.findIndex(
-      ([path]) => path === '/v1/threads/cancel',
-    )
-    expect(cancel).toBeGreaterThanOrEqual(0)
-    expect(client.post.mock.calls[cancel][1]).toEqual({
-      key: KEY,
-      threadId: THREAD_ID,
-      runId: 'run-1',
+    let regenerating!: Promise<unknown>
+    act(() => {
+      regenerating = result.current.regenerate(3)
     })
-    expect(client.post.mock.invocationCallOrder[cancel]).toBeLessThan(
-      client.events.mock.invocationCallOrder[1],
+    await waitFor(() =>
+      expect(
+        client.post.mock.calls
+          .find(([path]) => path === '/v1/threads/cancel')
+          ?.slice(1, 2),
+      ).toEqual([{ key: KEY, threadId: THREAD_ID, runId: 'run-1' }]),
     )
+    // The harness ends a turn queued behind a reply it stops, so the
+    // regeneration waits for the stopped reply to end.
+    expect(client.events).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      release()
+      await regenerating
+    })
     expect(turn(1)).toMatchObject({ kind: 'regenerate', messageId: 'a2' })
-    release()
   })
 })
 

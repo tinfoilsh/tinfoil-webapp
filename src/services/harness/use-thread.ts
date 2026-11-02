@@ -28,7 +28,7 @@ import {
 } from './open-chat'
 import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import { useHarness } from './provider'
-import { initialChat, type ChatState } from './reducer'
+import { initialChat, isStopping, type ChatState } from './reducer'
 import { RunController } from './run-controller'
 import { getView, reportHarnessError } from './runtime'
 import { HarnessError } from './sse'
@@ -98,9 +98,9 @@ export function useThread(
       temporaryChats: { store: memoryThreadStore() },
     }),
   )
-  // The view of each message, kept until the message, whether it streams or
-  // the reasoning summaries change, so a message that did not change keeps
-  // its view.
+  // The view of each message, kept until the message, whether it streams,
+  // the reasoning summaries or whether the user stopped its reply change, so
+  // a message that did not change keeps its view.
   const [views] = useState(
     () =>
       new WeakMap<
@@ -108,6 +108,7 @@ export function useThread(
         {
           streaming: boolean
           summaries: ChatState['summaries']
+          canceled: boolean
           view: Message
         }
       >(),
@@ -250,7 +251,12 @@ export function useThread(
     controller.view.set(
       thread
         ? initialChat(thread)
-        : { ...controller.view.get(), status: 'idle', error: undefined },
+        : {
+            ...controller.view.get(),
+            status: 'idle',
+            error: undefined,
+            stopping: undefined,
+          },
     )
   }
   controller.hooks = {
@@ -397,6 +403,7 @@ export function useThread(
   const openState = useStore(open)
   const state = useStore(controller.view)
   const deviceRuns = useStore(controller.deviceRuns)
+  const canceledMessages = useStore(controller.canceled)
   const refreshedChat = useRef<{ id: string; revision: string } | null>(null)
   useEffect(() => {
     if (
@@ -582,11 +589,25 @@ export function useThread(
     state.status === 'queued'
   const isLocalChat = local && !temporary
   const viewOf = (message: ShownMessage, streaming: boolean) => {
+    // A stopped reply continued since is no longer one.
+    const canceled =
+      canceledMessages.has(message.id) &&
+      (message.role === 'user' || !!message.isInterrupted)
     const kept = views.get(message)
-    if (kept?.streaming === streaming && kept.summaries === state.summaries)
+    if (
+      kept?.streaming === streaming &&
+      kept.summaries === state.summaries &&
+      kept.canceled === canceled
+    )
       return kept.view
-    const view = messageView(message, streaming, state.summaries)
-    views.set(message, { streaming, summaries: state.summaries, view })
+    const shown = messageView(message, streaming, state.summaries)
+    const view = canceled ? { ...shown, canceledByUser: true } : shown
+    views.set(message, {
+      streaming,
+      summaries: state.summaries,
+      canceled,
+      view,
+    })
     return view
   }
   const messages = shownMessages(state.messages).map((m) => {
@@ -774,6 +795,8 @@ export function useThread(
         : undefined,
     status: state.status,
     running,
+    // The user stopped the reply, which has not ended yet.
+    stopping: isStopping(state),
     // The harness stores the open chat as it shows: it opened from the
     // harness, or its last run ended once the harness saved it.
     synced:

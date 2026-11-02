@@ -14,6 +14,7 @@ import {
   type PresetChoice,
 } from './open-chat'
 import { ERROR_CODES, ROUTES } from './protocol'
+import { isRunning, isStopping } from './reducer'
 import type { RunController } from './run-controller'
 import { getView, type HarnessAPI, type Profile } from './runtime'
 import { HarnessError } from './sse'
@@ -210,6 +211,18 @@ export function chatTurns({
     ]
   }
   function send(fields: Partial<Turn> = {}): Promise<boolean> | undefined {
+    // A turn sent while the reply stops goes once it stopped, since the
+    // harness ends the turns queued behind a reply it stops. Another turn
+    // is refused until then, as one sent while a turn is submitted is.
+    if (isStopping(controller.view.get())) {
+      if (controller.holding) return
+      controller.holding = true
+      const shown = controller.track()
+      return controller.stopped().then(() => {
+        controller.holding = false
+        return (shown() && send(fields)) || false
+      })
+    }
     const threads = openStore()
     if (controller.view.get().status === 'submitting') return
     if (threads.local && controller.startingThread() !== undefined) return
@@ -254,6 +267,7 @@ export function chatTurns({
           status: 'submitting',
           runId: undefined,
           error: undefined,
+          stopping: undefined,
         }))
       }
       return (async () => {
@@ -286,6 +300,10 @@ export function chatTurns({
         if (!shown() || submission?.cancelled) {
           if (turn.run) controller.settle(turn.run)
           if (shown()) controller.pending = null
+          // The message a device chat kept shows the reply it never asked
+          // for as stopped.
+          if (shown() && message && turn.keep)
+            controller.markCanceled([message.id])
           unapply()
           return false
         }
@@ -309,7 +327,7 @@ export function chatTurns({
             controller.submission = null
             controller.view.update((state) =>
               state.status === 'submitting'
-                ? { ...state, status: 'idle' }
+                ? { ...state, status: 'idle', stopping: undefined }
                 : state,
             )
           }
@@ -319,13 +337,29 @@ export function chatTurns({
   }
   // A refused content key rejects these actions instead of throwing, as
   // their callers report a rejection.
+  // The chat shows its reply stopping at once, and a stop asked again while
+  // it does sends nothing.
   async function cancel() {
     const state = controller.view.get()
-    return controller.cancel({
+    if (isStopping(state)) return
+    const input = {
       ...openStore().runKey(),
       threadId: open.get().id,
       runId: state.snapshot.thread?.activeRun?.runId ?? state.runId,
-    })
+    }
+    if (!isRunning(state)) return controller.cancel(input)
+    const shown = controller.track()
+    controller.view.update((current) => ({ ...current, stopping: true }))
+    try {
+      await controller.cancel(input)
+    } catch (cause) {
+      if (shown())
+        controller.view.update((current) => ({
+          ...current,
+          stopping: undefined,
+        }))
+      throw cause
+    }
   }
   // The harness regenerates the reply it is named. The message actions name
   // a message by its index: a reply, or the user message it answers. A user
