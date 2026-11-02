@@ -206,8 +206,8 @@ export function PromptLibraryModal({
     } else if (editor.presetId) {
       const opened = editorOpened.current
       const changes: PresetChanges = {}
-      if (editor.name !== opened?.name) changes.name = name
-      if (editor.description !== opened?.description)
+      if (name !== opened?.name.trim()) changes.name = name
+      if (input.description !== opened?.description.trim())
         changes.description = input.description
       if (editor.systemPrompt !== opened?.systemPrompt)
         changes.systemPrompt = promptWithTags

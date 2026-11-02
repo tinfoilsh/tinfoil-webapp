@@ -561,9 +561,9 @@ export class HarnessAPI {
       (features.promptPresetUpdates || !updated.length)
     )
       return this.saveProfile(change, edits)
-    // A harness without updates takes each changed prompt whole, as this
-    // device has it.
-    if (features?.promptPresetEdits === true) {
+    // A harness without updates takes each changed prompt whole, which only
+    // the loaded profile holds.
+    if (features?.promptPresetEdits === true && view.profileReady) {
       const presets: Profile[] = change(view.profile).customPromptPresets ?? []
       return this.saveProfile(change, {
         ...rest,

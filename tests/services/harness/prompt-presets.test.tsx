@@ -518,6 +518,19 @@ describe('the prompt library', () => {
     expect(result.current.userPresets).toEqual([])
   })
 
+  it('changes no prompt before the profile loads on a harness without updates', async () => {
+    signIn({ cloud: true })
+    publish({ profileReady: false })
+    const { result } = renderHook(() => usePromptLibrary())
+
+    await act(async () => {
+      result.current.updateUserPreset(RESEARCH.id, { name: 'Sources' })
+    })
+
+    expect(profileUpdates()).toEqual([])
+    expect(result.current.userPresets[0]).toMatchObject({ name: 'Research' })
+  })
+
   it('keeps both prompts favorited in quick succession', async () => {
     signIn({ cloud: true })
     const { result } = renderHook(() => usePromptLibrary())
@@ -576,7 +589,11 @@ describe('the prompt library', () => {
         if (path !== '/v1/profile/update')
           throw new Error(`Unexpected harness request: ${path}`)
         const [update] = input.updatePromptPresets as Record<string, unknown>[]
-        stored = { ...stored, ...update } as typeof STORED
+        stored = Object.fromEntries(
+          Object.entries({ ...stored, ...update }).filter(
+            ([, value]) => value !== null,
+          ),
+        ) as typeof STORED
         return { customPromptPresets: [stored, QUIET] }
       },
     )
@@ -609,6 +626,9 @@ describe('the prompt library', () => {
     expect(profileUpdates()[1].updatePromptPresets).toEqual([
       { id: RESEARCH.id, model: null, updatedAt: expect.any(Number) },
     ])
+    await waitFor(() =>
+      expect(result.current.userPresets[0]).not.toHaveProperty('model'),
+    )
   })
 
   it('stores the settings a saved prompt chooses, and removes unset ones', async () => {
