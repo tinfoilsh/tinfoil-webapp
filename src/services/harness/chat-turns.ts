@@ -212,10 +212,16 @@ export function chatTurns({
   }
   function send(fields: Partial<Turn> = {}): Promise<boolean> | undefined {
     // A turn sent while the reply stops goes once it stopped, since the
-    // harness ends the turns queued behind a reply it stops.
+    // harness ends the turns queued behind a reply it stops. Another turn
+    // is refused until then, as one sent while a turn is submitted is.
     if (isStopping(controller.view.get())) {
+      if (controller.holding) return
+      controller.holding = true
       const shown = controller.track()
-      return controller.stopped().then(() => (shown() && send(fields)) || false)
+      return controller.stopped().then(() => {
+        controller.holding = false
+        return (shown() && send(fields)) || false
+      })
     }
     const threads = openStore()
     if (controller.view.get().status === 'submitting') return

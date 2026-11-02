@@ -711,7 +711,7 @@ it('shows no error for a stop that arrives after the reply ended', async () => {
   expect(screen.queryByText(/^Response /)).not.toBeInTheDocument()
 })
 
-it('sends a message written while the reply stops once it has stopped', async () => {
+it('sends a message written while the reply stops once it has stopped, and keeps a second', async () => {
   signIn({ cloud: true })
   const stopped = gate()
   scriptStoppedRun(stopped.promise)
@@ -730,6 +730,16 @@ it('sends a message written while the reply stops once it has stopped', async ()
 
   // The harness ends a turn queued behind a reply it stops.
   expect(client.events).toHaveBeenCalledTimes(1)
+  // Another message stays in the composer until the first has gone.
+  const cleared = screen.getByRole('textbox', { name: /message/i })
+  expect(cleared).toHaveValue('')
+  fireEvent.change(cleared, { target: { value: 'Another thing' } })
+  await act(async () =>
+    fireEvent.click(screen.getByRole('button', { name: 'Send' })),
+  )
+  expect(screen.getByRole('textbox', { name: /message/i })).toHaveValue(
+    'Another thing',
+  )
   await act(async () => stopped.resolve())
   await waitFor(() => expect(client.events).toHaveBeenCalledTimes(2))
   expect(client.events.mock.calls[1][1]).toMatchObject({

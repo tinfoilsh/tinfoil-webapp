@@ -122,6 +122,8 @@ export class RunController {
   // nonce, to reconnect.
   pending: { input: Turn; run?: DeviceRun } | null = null
   submission: Submission | null = null
+  // A turn sent while the open chat's reply stops waits for it to stop.
+  holding = false
   retryPreparation: (() => Promise<boolean>) | null = null
   // Changes each time the view moves to another chat. A run started for
   // the previous one no longer updates the view.
