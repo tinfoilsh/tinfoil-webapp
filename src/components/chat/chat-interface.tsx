@@ -2557,6 +2557,7 @@ export function ChatInterface({
                   ) : (
                     <ChatMessages
                       messages={currentChat.messages}
+                      compactions={thread.compactions}
                       isDarkMode={isDarkMode}
                       chatId={currentChat.id}
                       isWaitingForResponse={isWaitingForResponse}

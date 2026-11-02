@@ -47,6 +47,7 @@ import type {
   Message as WireMessage,
 } from './types'
 import {
+  compactionViews,
   lastActive,
   messageView,
   queuedAttachmentViews,
@@ -815,6 +816,9 @@ export function useThread(
   }))
   return {
     chat,
+    // The compaction markers the open chat shows, by the message each shows
+    // before.
+    compactions: compactionViews(state.messages, running),
     chats,
     favoriteIds,
     model,

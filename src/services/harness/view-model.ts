@@ -1,13 +1,14 @@
 import type {
   Attachment,
   Chat,
+  Compaction,
   Message,
   TimelineBlock,
   TitleState,
   Annotation as UIAnnotation,
 } from '@/components/chat/types'
 import { DEFAULT_CHAT_TITLE, PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
-import { WIDGET_PREFIX } from './protocol'
+import { COMPACTION_ROLE, WIDGET_PREFIX } from './protocol'
 import type {
   QueueItem,
   ThreadSummary,
@@ -221,6 +222,41 @@ export type ShownMessage = Known<WireMessage>
 export const shownMessages = <M extends Pick<WireMessage, 'role'>>(
   messages: readonly M[],
 ) => messages.filter((message): message is Known<M> => ROLES.has(message.role))
+// The compaction markers a chat shows, by the id of the shown message each
+// shows before. A marker whose summary is being written shows only while
+// the chat's run goes on to write it.
+export function compactionViews(
+  messages: readonly WireMessage[],
+  running: boolean,
+): Record<string, Compaction> {
+  const views: Record<string, Compaction> = {}
+  let pending: Compaction | undefined
+  for (const message of messages) {
+    if (message.role === COMPACTION_ROLE) {
+      if (message.compaction)
+        pending = {
+          id: message.id,
+          isRunning: false,
+          summary: message.content ?? '',
+          messageCount: message.compaction.messages,
+        }
+      else if (running) {
+        const startedAt = Date.parse(message.createdAt)
+        pending = {
+          id: message.id,
+          isRunning: true,
+          summary: '',
+          messageCount: 0,
+          ...(Number.isNaN(startedAt) ? {} : { startedAt }),
+        }
+      }
+    } else if (pending && ROLES.has(message.role)) {
+      views[message.id] = pending
+      pending = undefined
+    }
+  }
+  return views
+}
 // A message as the view shows it, with the latest summary of each thinking
 // block's reasoning.
 export function messageView(

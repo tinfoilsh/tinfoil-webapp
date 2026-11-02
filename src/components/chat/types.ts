@@ -156,6 +156,19 @@ export type Message = {
   }>
 }
 
+// A summary of the messages before it, which the model reads in their place.
+export type Compaction = {
+  id: string
+  // The chat's run is still writing the summary.
+  isRunning: boolean
+  // The summary, in Markdown, once written.
+  summary: string
+  // How many earlier messages the summary covers.
+  messageCount: number
+  // When the summary was started, in epoch milliseconds.
+  startedAt?: number
+}
+
 export type TitleState = 'placeholder' | 'generated' | 'manual'
 
 export type Chat = {

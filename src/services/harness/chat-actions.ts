@@ -2,7 +2,7 @@ import { logError } from '@/utils/error-handling'
 import type { ChatList } from './chat-list'
 import { localSummary, type LocalThreadStore } from './local-threads'
 import type { OpenChat, OpenChatResult } from './open-chat'
-import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
+import { COMPACTION_ROLE, ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import {
   withAnswers,
   type AnswerSaves,
@@ -64,6 +64,17 @@ function rewrittenReply(message: Message, text: string): Message {
     content: text,
     ...(blocks.length ? { timeline: blocks } : {}),
   }
+}
+
+// The messages left when a message changes, as the harness leaves them: the
+// compaction markers after it go, since their summaries covered it.
+function withoutMarkersAfter(messages: Message[], messageId: string) {
+  const changed = messages.findIndex(({ id }) => id === messageId)
+  return changed < 0
+    ? messages
+    : messages.filter(
+        ({ role }, index) => index <= changed || role !== COMPACTION_ROLE,
+      )
 }
 
 export interface ChatContext {
@@ -353,7 +364,9 @@ export function chatActions({
         (store, threadId, messageId) =>
           store.deleteMessage(threadId, messageId),
         (messages, messageId) =>
-          messages.filter((message) => message.id !== messageId),
+          withoutMarkersAfter(messages, messageId).filter(
+            (message) => message.id !== messageId,
+          ),
       )
     },
     // Rewrites a reply's text in place; later messages stay.
@@ -368,7 +381,7 @@ export function chatActions({
         (store, threadId, messageId) =>
           store.editReply(threadId, messageId, content),
         (messages, messageId) =>
-          messages.map((message) =>
+          withoutMarkersAfter(messages, messageId).map((message) =>
             message.id === messageId
               ? rewrittenReply(message, content)
               : message,

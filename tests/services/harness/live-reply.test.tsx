@@ -1,10 +1,11 @@
 import { ChatMessages } from '@/components/chat/chat-messages'
 import { initializeRenderers } from '@/components/chat/renderers/client'
 import type { BaseModel } from '@/config/models'
-import type { Frame } from '@/services/harness/types'
+import type { Frame, Message } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import {
   act,
+  fireEvent,
   render,
   renderHook,
   screen,
@@ -43,7 +44,11 @@ function Conversation() {
     <ChatMessages
       chatId={thread.chat.id}
       messages={thread.chat.messages}
+      compactions={thread.compactions}
       isStreamingResponse={thread.running}
+      isWaitingForResponse={
+        thread.running && thread.chat.messages.at(-1)?.role !== 'assistant'
+      }
       isDarkMode={false}
       models={models}
       selectedModel="test-model"
@@ -457,5 +462,153 @@ describe('the views of a streaming chat', () => {
     })
     expect(result.current.chat.messages[0]).toBe(question)
     expect(thought()).toMatchObject({ content: 'Hmm.', isThinking: false })
+  })
+})
+
+describe('a chat compacted for a reply', () => {
+  const question = (id: string, content: string): Message => ({
+    id,
+    role: 'user',
+    createdAt: '2026-10-01T00:00:00Z',
+    content,
+  })
+  const answer = (id: string, content: string): Message => ({
+    id,
+    role: 'assistant',
+    createdAt: '2026-10-01T00:00:01Z',
+    timeline: [{ id: `${id}-text`, type: 'content', content }],
+  })
+  const marker = (id: string, messages: number, content: string): Message => ({
+    id,
+    role: 'compaction',
+    createdAt: '2026-10-01T00:00:02Z',
+    content,
+    compaction: {
+      messages,
+      startedAt: 1,
+      endedAt: 2,
+      model: 'long-summary',
+      version: 1,
+    },
+  })
+  // A chat compacted once already, whose next question compacts it again.
+  const window = [
+    question('u0', 'Where do we start?'),
+    answer('a0', 'At the beginning.'),
+    marker('c0', 2, 'An earlier summary.'),
+    question('u1', 'And then?'),
+    answer('a1', 'Then the middle.'),
+    question('u2', 'Why?'),
+  ]
+  const summary =
+    '## Goals and context\nThe user is walking through a story.\n\n## Open threads\nWhy it ends.'
+
+  it('shows the summary that replaced the messages above, which the model no longer reads', async () => {
+    let summarize!: () => void
+    const summarized = new Promise<void>((resolve) => {
+      summarize = resolve
+    })
+    client.events.mockImplementation(async function* (_path, input) {
+      const threadId = input.threadId as string
+      const frames: Frame['event'][] = [
+        {
+          type: 'RUN_STARTED',
+          threadId,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+        { type: 'MESSAGES_SNAPSHOT', messages: window, hasOlder: false },
+        {
+          type: 'COMPACTION_START',
+          messageId: 'c1',
+          beforeMessageId: 'u2',
+          timestamp: at(0),
+        },
+      ]
+      for (const [id, event] of frames.entries()) yield { id, event }
+      await summarized
+      yield {
+        id: 3,
+        event: {
+          type: 'COMPACTION_END',
+          messageId: 'c1',
+          outcome: 'completed',
+          marker: marker('c1', 4, summary),
+        },
+      }
+      yield {
+        id: 4,
+        event: {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'm1',
+          role: 'assistant',
+          delta: 'Because.',
+        },
+      }
+      yield {
+        id: 5,
+        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1', metadata: {} },
+      }
+    })
+    render(<Conversation />)
+    let sending!: Promise<unknown>
+    act(() => {
+      sending = send!()
+    })
+    const outOfContext = (text: string) =>
+      screen.getByText(text).closest('[role="article"]')
+
+    const compacting = await screen.findByRole('note', {
+      name: 'Earlier messages above are being summarized for the assistant',
+    })
+    expect(compacting).toHaveTextContent('Compacting conversation')
+    expect(
+      screen.getByRole('status', { name: 'Compacting conversation' }),
+    ).toBeInTheDocument()
+    expect(outOfContext('Then the middle.')).toHaveAttribute(
+      'data-out-of-context',
+    )
+    expect(outOfContext('Why?')).not.toHaveAttribute('data-out-of-context')
+
+    await act(async () => {
+      summarize()
+      await sending
+    })
+
+    const notes = screen.getAllByRole('note', {
+      name: 'Earlier messages above were summarized and are no longer read by the assistant',
+    })
+    expect(notes).toHaveLength(2)
+    // The earlier marker is above the latest one, so the model no longer
+    // reads it either.
+    expect(notes[0]).toHaveAttribute('data-out-of-context')
+    expect(notes[1]).not.toHaveAttribute('data-out-of-context')
+    const header = screen.getByRole('button', {
+      name: 'Compacted 4 earlier messages',
+    })
+    expect(notes[1]).toContainElement(header)
+    const details = document.getElementById(
+      header.getAttribute('aria-controls')!,
+    )
+    expect(details).toHaveAttribute('inert')
+    fireEvent.click(header)
+    expect(header).toHaveAttribute('aria-expanded', 'true')
+    expect(details).not.toHaveAttribute('inert')
+    expect(details).toContainElement(
+      screen.getByRole('heading', { name: 'Open threads' }),
+    )
+
+    for (const text of [
+      'Where do we start?',
+      'At the beginning.',
+      'And then?',
+      'Then the middle.',
+    ])
+      expect(outOfContext(text)).toHaveAttribute('data-out-of-context')
+    for (const text of ['Why?', 'Because.'])
+      expect(outOfContext(text)).not.toHaveAttribute('data-out-of-context')
+    expect(
+      screen.queryByRole('status', { name: 'Compacting conversation' }),
+    ).not.toBeInTheDocument()
   })
 })
