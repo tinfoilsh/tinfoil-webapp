@@ -557,10 +557,11 @@ export function ChatMessages({
 
   // Show loading dots only if waiting and no assistant thinking message exists yet
   const showLoadingPlaceholder = isWaitingForResponse
-  // The messages before the chat's latest compaction marker, which the model
-  // reads only as the marker's summary.
+  // The messages before the chat's latest written compaction marker, which
+  // the model reads only as the marker's summary. A marker still being
+  // written may fail, so the messages before it stay as they are until then.
   const contextStart = messages.findLastIndex(
-    ({ id }) => !!id && !!compactions[id],
+    ({ id }) => !!id && compactions[id]?.isRunning === false,
   )
   return (
     <ImageGalleryProvider

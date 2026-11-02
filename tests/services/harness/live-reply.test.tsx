@@ -565,7 +565,12 @@ describe('a chat compacted for a reply', () => {
     expect(
       screen.getByRole('status', { name: 'Compacting conversation' }),
     ).toBeInTheDocument()
-    expect(outOfContext('Then the middle.')).toHaveAttribute(
+    // A summary still being written may fail, so only the messages the
+    // earlier marker covers are out of context yet.
+    expect(outOfContext('At the beginning.')).toHaveAttribute(
+      'data-out-of-context',
+    )
+    expect(outOfContext('Then the middle.')).not.toHaveAttribute(
       'data-out-of-context',
     )
     expect(outOfContext('Why?')).not.toHaveAttribute('data-out-of-context')
