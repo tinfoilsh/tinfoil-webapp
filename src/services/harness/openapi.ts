@@ -283,6 +283,31 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/v1/threads/messages/answer': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Answer a reply's questions
+     * @description Saves the options the user picked in a questions widget of a reply,
+     *     without starting a turn. Each question named takes the options picked,
+     *     and the others keep their answers. The next question the user sends
+     *     carries the answers that changed, which is how the model reads them.
+     *     A widget, question or option the chat no longer holds is refused with
+     *     REVISION_CONFLICT.
+     */
+    post: operations['messageAnswer']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/v1/threads/delete': {
     parameters: {
       query?: never
@@ -473,7 +498,7 @@ export interface paths {
     put?: never
     /**
      * Change the profile
-     * @description Sets the fields a patch names, then applies the saved prompt and favorite edits to the profile as stored when they apply. A client changes saved prompts and favorites by these edits while the session's features.promptPresetEdits is true, rather than sending whole lists it read earlier.
+     * @description Sets the fields a patch names, then applies the saved prompt and favorite edits to the profile as stored when they apply. A client changes saved prompts and favorites by these edits while the session's features.promptPresetEdits is true, rather than sending whole lists it read earlier, and changes a saved prompt by an update naming only what its user changed while features.promptPresetUpdates is true, rather than saving a copy it read earlier.
      */
     post: operations['profileUpdate']
     delete?: never
@@ -1191,6 +1216,7 @@ export interface components {
       profile?: components['schemas']['ProfileInput']
       projectId?: string | null
       presetId?: string | null
+      /** @description A send without content, a quote or an attachment sends only the answers the user changed since their last question, and is refused when there are none. */
       content?: string
       quote?: string
       /** @description The message an edit, regenerate, continue or retry acts on. */
@@ -1628,6 +1654,25 @@ export interface components {
       usage?: components['schemas']['MessageUsage']
       annotations?: components['schemas']['Annotation'][]
       attachments?: components['schemas']['AttachmentView'][]
+      /** @description A question's answers to questions widgets, as it sent them to the model. */
+      answers?: components['schemas']['WidgetAnswers'][]
+    }
+    /** @description What the user had answered of one questions widget when they sent a question, with the questions' text, so it reads the same however the widget changes later. */
+    WidgetAnswers: {
+      toolCallId: string
+      title?: string
+      questions: components['schemas']['AnsweredQuestion'][]
+    }
+    AnsweredQuestion: {
+      id: string
+      prompt: string
+      /** @description False for a question left unanswered. An answered question may have nothing selected, as a checklist with nothing ticked. */
+      answered: boolean
+      selected: components['schemas']['QuestionOption'][]
+    }
+    QuestionOption: {
+      id: string
+      label: string
     }
     /** @description Who wrote a message. A client leaves out a message whose role it does not know. */
     Role: ('user' | 'assistant') | string
@@ -1656,6 +1701,10 @@ export interface components {
       endedAt?: number
       /** @description How long a reasoning step thought, in seconds. */
       duration?: number
+      /** @description Of a questions widget's call, the ids of the options the user picked, by question id. A question absent from it is unanswered. */
+      answers?: {
+        [key: string]: string[]
+      }
       /** @description The widget's current declaration refuses the call's arguments, so the client offers to regenerate them. */
       invalidArguments?: boolean
     }
@@ -1766,6 +1815,7 @@ export interface components {
       usage?: components['schemas']['MessageUsage']
       isError?: boolean
       isInterrupted?: boolean
+      answers?: components['schemas']['WidgetAnswers'][]
     }
     /** @description A device chat as its client sends it: a ThreadRecord the harness returned, sent back whole, or a record without a recordVersion that an older client kept or a client made for a new chat. The harness refuses a ThreadRecord with a member its version does not have. */
     ThreadInput: {
@@ -1822,6 +1872,7 @@ export interface components {
         isInterrupted?: boolean
         usage?: components['schemas']['MessageUsage']
         annotations?: components['schemas']['Annotation'][]
+        answers?: components['schemas']['WidgetAnswers'][]
         attachments?: {
           id: string
           kind: components['schemas']['AttachmentKind']
@@ -1930,6 +1981,16 @@ export interface components {
       model?: string
       webSearchEnabled?: boolean
       createdAt?: components['schemas']['Json']
+      updatedAt?: components['schemas']['Json']
+    }
+    /** @description A change to a saved prompt, which sets only the members it names. A null model or webSearchEnabled clears that setting. */
+    PresetUpdate: {
+      id: string
+      name?: string
+      description?: string
+      systemPrompt?: string
+      model?: string | null
+      webSearchEnabled?: boolean | null
       updatedAt?: components['schemas']['Json']
     }
     Project: {
@@ -2531,6 +2592,37 @@ export interface operations {
       default: components['responses']['Error']
     }
   }
+  messageAnswer: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @description The account's content key, base64. Absent for device chats and signed-out callers. */
+          key?: string
+          local?: boolean
+          thread?: components['schemas']['ThreadInput']
+          profile?: components['schemas']['ProfileInput']
+          threadId: components['schemas']['Identifier']
+          messageId: components['schemas']['Identifier']
+          /** @description The questions widget's call. */
+          toolCallId: string
+          /** @description By question id, the ids of the options picked, or null to leave the question unanswered. A single-choice question takes one option. */
+          answers: {
+            [key: string]: string[] | null
+          }
+        }
+      }
+    }
+    responses: {
+      200: components['responses']['ChangedThread']
+      default: components['responses']['Error']
+    }
+  }
   delete: {
     parameters: {
       query?: never
@@ -2837,6 +2929,8 @@ export interface operations {
           }
           /** @description Saved prompts to add, each replacing the stored one with its id where it stands. */
           savePromptPresets?: components['schemas']['CustomPreset'][]
+          /** @description Changes to saved prompts, applied after the saves. Each sets the members it names on the stored prompt with its id; a prompt no longer stored stays deleted. */
+          updatePromptPresets?: components['schemas']['PresetUpdate'][]
           /** @description Saved prompts to remove. A removed prompt is no longer a favorite, and the default prompt it was is cleared. */
           deletePromptPresetIds?: string[]
           /** @description Prompts to add to the end of the favorites, unless they already are favorites. */

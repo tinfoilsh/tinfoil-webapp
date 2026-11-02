@@ -63,9 +63,9 @@
             "webSearchEnabled": false,
             "pinned": false,
             "contextUsage": {
-              "usedTokens": 90,
+              "usedTokens": 146,
               "limitTokens": 6553,
-              "percentage": 1.3734167556844195
+              "percentage": 2.2279871814436136
             },
             "activeRun": {
               "runId": "00000000000000000000000000000002",
@@ -109,9 +109,9 @@
             "webSearchEnabled": false,
             "pinned": false,
             "contextUsage": {
-              "usedTokens": 90,
+              "usedTokens": 146,
               "limitTokens": 6553,
-              "percentage": 1.3734167556844195
+              "percentage": 2.2279871814436136
             },
             "activeRun": null,
             "messageCount": 4
@@ -207,9 +207,9 @@
             "lastRequestKind": "send",
             "activeRun": null,
             "contextUsage": {
-              "usedTokens": 90,
+              "usedTokens": 146,
               "limitTokens": 6553,
-              "percentage": 1.3734167556844195
+              "percentage": 2.2279871814436136
             },
             "recordVersion": 1
           },
