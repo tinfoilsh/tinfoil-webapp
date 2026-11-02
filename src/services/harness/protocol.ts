@@ -85,6 +85,9 @@ export const ERROR_CODES = {
   quotaExhausted: 'QUOTA_EXHAUSTED',
   rateLimited: 'RATE_LIMITED',
   contextTooLarge: 'CONTEXT_TOO_LARGE',
+  // The chat's earlier messages could not be summarized to make room for a
+  // turn.
+  compactionFailed: 'COMPACTION_FAILED',
   modelUnavailable: 'MODEL_UNAVAILABLE',
   // A stream that closed before its run ended. The run may go on.
   streamInterrupted: 'STREAM_INTERRUPTED',

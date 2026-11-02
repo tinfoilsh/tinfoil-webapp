@@ -156,6 +156,30 @@ describe('StreamErrorBanner', () => {
     )
   })
 
+  it('explains a chat that could not be compacted, and offers to try again', () => {
+    const onRetry = vi.fn()
+    render(
+      <StreamErrorBanner
+        error={{
+          code: 'COMPACTION_FAILED',
+          action: 'retry',
+          message: 'The chat could not be compacted to fit the context window',
+        }}
+        isDarkMode={false}
+        onRetry={onRetry}
+        onDismiss={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Earlier messages could not be summarized to make room',
+    )
+    expect(screen.getByRole('alert')).not.toHaveTextContent(
+      'The service is having trouble',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
   it.each(['RUN_IN_FLIGHT', 'PII_BLOCKED', 'INVALID_STREAM'])(
     'treats %s, which the service answered with, as a service error',
     (code) => {
