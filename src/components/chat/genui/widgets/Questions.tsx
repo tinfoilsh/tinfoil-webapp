@@ -125,7 +125,7 @@ function QuestionsCard({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p role="status" className="text-xs text-content-muted">
               {status}
-              {save === 'failed' && (
+              {save === 'failed' && editable && (
                 <button
                   type="button"
                   onClick={answering.retry}
