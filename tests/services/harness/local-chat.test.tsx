@@ -980,6 +980,83 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(await stored(SEEDED_ID)).toEqual(returned)
   })
 
+  it('stores the compaction marker a run returns and sends it back unchanged', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const marker: ThreadMessage = {
+      id: 'msg_marker',
+      role: 'compaction',
+      createdAt: 't5',
+      content: '## Goals and context\nTwo questions so far.',
+      compaction: {
+        messages: 4,
+        startedAt: 1767225600000,
+        endedAt: 1767225601000,
+        model: 'long-summary',
+        version: 1,
+      },
+    }
+    let returned!: ReturnedThread
+    client.events.mockImplementationOnce((_path: string, input: Turn) => {
+      returned = {
+        ...seeded({
+          lastRequestId: input.clientRequestId,
+          messages: [
+            ...SEEDED_MESSAGES,
+            marker,
+            {
+              id: input.clientRequestId,
+              role: 'user',
+              createdAt: 't6',
+              content: 'third',
+            },
+            {
+              id: 'msg_third',
+              role: 'assistant',
+              createdAt: 't7',
+              content: 'third answer',
+              timeline: [
+                { id: 'b3', type: 'content', content: 'third answer' },
+              ],
+            },
+          ],
+        }),
+        // The record version that holds compaction markers.
+        recordVersion: 2,
+      }
+      return deviceRun(SEEDED_ID, returned)()
+    })
+    client.events.mockImplementationOnce((_path: string, input: Turn) =>
+      deviceRun(SEEDED_ID, {
+        ...returned,
+        lastRequestId: input.clientRequestId,
+      })(),
+    )
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+    await act(() => result.current.send({ content: 'third' }))
+
+    expect(await stored(SEEDED_ID)).toEqual(returned)
+    expect(result.current.chat.messages.map(({ id }) => id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+      turn().clientRequestId,
+      'msg_third',
+    ])
+    expect(Object.keys(result.current.compactions)).toEqual([
+      turn().clientRequestId,
+    ])
+
+    await act(() => result.current.send({ content: 'fourth' }))
+
+    expect(turn(1).thread).toEqual(returned)
+  })
+
   it("sends an image's model copy, and keeps the picked file apart to show", async () => {
     signIn('alice')
     const bytes = new Uint8Array([137, 80, 78, 71])
