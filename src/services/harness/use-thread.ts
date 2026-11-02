@@ -589,7 +589,10 @@ export function useThread(
     state.status === 'queued'
   const isLocalChat = local && !temporary
   const viewOf = (message: ShownMessage, streaming: boolean) => {
-    const canceled = canceledMessages.has(message.id)
+    // A stopped reply continued since is no longer one.
+    const canceled =
+      canceledMessages.has(message.id) &&
+      (message.role === 'user' || !!message.isInterrupted)
     const kept = views.get(message)
     if (
       kept?.streaming === streaming &&
