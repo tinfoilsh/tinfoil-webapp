@@ -23,6 +23,7 @@ import { CONSTANTS } from './constants'
 import {
   MAX_FAVORITE_PRESETS,
   usePromptLibrary,
+  type PresetChanges,
 } from './hooks/use-prompt-library'
 import {
   EMPTY_PRESET_EDITOR_STATE,
@@ -75,6 +76,8 @@ export function PromptLibraryModal({
     activePresetId ?? builtInPresets[0]?.id ?? null,
   )
   const [editor, setEditor] = useState<PresetEditorState | null>(null)
+  // The prompt as the editor opened it, so saving sends only what changed.
+  const editorOpened = useRef<PresetEditorState | null>(null)
   const [mobileView, setMobileView] = useState<'list' | 'detail'>('list')
   const [presetPendingDelete, setPresetPendingDelete] =
     useState<PromptPreset | null>(null)
@@ -141,17 +144,20 @@ export function PromptLibraryModal({
     }),
   })
 
-  const startEdit = (preset: PromptPreset) => {
-    setEditor(toEditorState(preset))
+  const openEditor = (preset: PromptPreset) => {
+    const opened = toEditorState(preset)
+    editorOpened.current = opened
+    setEditor(opened)
     setMobileView('detail')
   }
+
+  const startEdit = (preset: PromptPreset) => openEditor(preset)
 
   const handleDuplicate = (preset: PromptPreset) => {
     const copy = duplicatePreset(preset.id)
     if (copy) {
       setSelectedId(copy.id)
-      setEditor(toEditorState(copy))
-      setMobileView('detail')
+      openEditor(copy)
     }
   }
 
@@ -177,11 +183,7 @@ export function PromptLibraryModal({
     if (preset.isBuiltIn) return
     const trimmed = nextName.trim()
     if (!trimmed || trimmed === preset.name) return
-    updateUserPreset(preset.id, {
-      name: trimmed,
-      description: preset.description,
-      systemPrompt: preset.systemPrompt,
-    })
+    updateUserPreset(preset.id, { name: trimmed })
   }
 
   const handleEditorSave = () => {
@@ -202,7 +204,18 @@ export function PromptLibraryModal({
       const created = createUserPreset(input)
       setSelectedId(created.id)
     } else if (editor.presetId) {
-      updateUserPreset(editor.presetId, input)
+      const opened = editorOpened.current
+      const changes: PresetChanges = {}
+      if (editor.name !== opened?.name) changes.name = name
+      if (editor.description !== opened?.description)
+        changes.description = input.description
+      if (editor.systemPrompt !== opened?.systemPrompt)
+        changes.systemPrompt = promptWithTags
+      if (editor.model !== opened?.model) changes.model = editor.model
+      if (editor.webSearchEnabled !== opened?.webSearchEnabled)
+        changes.webSearchEnabled = editor.webSearchEnabled
+      if (Object.keys(changes).length)
+        updateUserPreset(editor.presetId, changes)
       setSelectedId(editor.presetId)
     }
     setEditor(null)

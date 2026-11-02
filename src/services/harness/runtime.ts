@@ -33,6 +33,7 @@ import {
 import { HarnessError } from './sse'
 import type {
   Json,
+  PresetUpdate,
   PromptEdits,
   RateLimit,
   Session,
@@ -41,23 +42,40 @@ import type {
 
 export type Profile = Record<string, any>
 
+// A saved prompt with the members an update names set, and a null setting
+// cleared.
+function updatedPreset(preset: Profile, update: PresetUpdate): Profile {
+  const next: Profile = { ...preset }
+  for (const [key, value] of Object.entries(update)) {
+    if (value === null) delete next[key]
+    else if (value !== undefined) next[key] = value
+  }
+  return next
+}
+
 // The fields prompt edits change, as the harness applies them to the profile
-// it stores: a saved prompt replaces the one with its id where it stands, and
-// a deleted one is no longer a favorite or the default.
+// it stores: a saved prompt replaces the one with its id where it stands, an
+// update sets the members it names on a prompt still stored, and a deleted
+// one is no longer a favorite or the default.
 function applyPromptEdits(profile: Profile, edits: PromptEdits): Profile {
   const {
     savePromptPresets: saved = [],
+    updatePromptPresets: updated = [],
     deletePromptPresetIds: deleted = [],
     addFavoritePromptPresetIds: favored = [],
     removeFavoritePromptPresetIds: unfavored = [],
   } = edits
   const patch: Profile = {}
-  if (saved.length || deleted.length) {
+  if (saved.length || updated.length || deleted.length) {
     const presets: Profile[] = [...(profile.customPromptPresets ?? [])]
     for (const preset of saved) {
       const index = presets.findIndex((kept) => kept.id === preset.id)
       if (index >= 0) presets[index] = preset
       else presets.push(preset)
+    }
+    for (const update of updated) {
+      const index = presets.findIndex((kept) => kept.id === update.id)
+      if (index >= 0) presets[index] = updatedPreset(presets[index], update)
     }
     patch.customPromptPresets = presets.filter(
       (preset) => !deleted.includes(preset.id),
@@ -536,8 +554,27 @@ export class HarnessAPI {
   editPrompts(edits: PromptEdits): Promise<Profile> {
     const change = (current: Profile) => applyPromptEdits(current, edits)
     if (!this.cloud) return this.saveProfile(change)
-    if (view.session?.features.promptPresetEdits === true)
+    const features = view.session?.features
+    const { updatePromptPresets: updated = [], ...rest } = edits
+    if (
+      features?.promptPresetEdits === true &&
+      (features.promptPresetUpdates || !updated.length)
+    )
       return this.saveProfile(change, edits)
+    // A harness without updates takes each changed prompt whole, as this
+    // device has it.
+    if (features?.promptPresetEdits === true) {
+      const presets: Profile[] = change(view.profile).customPromptPresets ?? []
+      return this.saveProfile(change, {
+        ...rest,
+        savePromptPresets: [
+          ...(rest.savePromptPresets ?? []),
+          ...presets.filter((preset) =>
+            updated.some((update) => update.id === preset.id),
+          ),
+        ] as PromptEdits['savePromptPresets'],
+      })
+    }
     // A harness without edits takes whole lists, which only the loaded
     // profile holds.
     if (!view.profileReady)

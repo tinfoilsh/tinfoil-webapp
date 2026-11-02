@@ -71,10 +71,12 @@ export type StoredThread = Omit<Schemas['ThreadRecord'], 'recordVersion'> & {
 export type PromptEdits = Pick<
   ProfileUpdate,
   | 'savePromptPresets'
+  | 'updatePromptPresets'
   | 'deletePromptPresetIds'
   | 'addFavoritePromptPresetIds'
   | 'removeFavoritePromptPresetIds'
 >
+export type PresetUpdate = Schemas['PresetUpdate']
 
 export type TokenBudget = Schemas['TokenBudget']
 export type RateLimit = Schemas['RateLimit']
