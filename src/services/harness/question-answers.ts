@@ -81,6 +81,23 @@ function picksOf(widget: WidgetAnswers): SavedAnswers {
   )
 }
 
+// A widget's picks a save did not cover: the questions it did not name, or
+// that were changed again while it was out.
+function unsavedChanges(
+  unsent: Unsent | undefined,
+  saved: AnswerChanges,
+): Unsent | undefined {
+  if (!unsent) return undefined
+  const changes = Object.fromEntries(
+    Object.entries(unsent.changes).filter(
+      ([questionId, picked]) =>
+        !(questionId in saved) ||
+        JSON.stringify(picked) !== JSON.stringify(saved[questionId]),
+    ),
+  )
+  return Object.keys(changes).length ? { ...unsent, changes } : undefined
+}
+
 // Whether two sets of answers pick the same options for the same questions.
 export function sameAnswers(
   a: SavedAnswers | undefined,
@@ -108,6 +125,8 @@ export class AnswerSaves {
   private unsent = new Map<string, Map<string, Unsent>>()
   private savers = new Map<string, SaveAnswers>()
   private saving = new Map<string, Promise<void>>()
+  // The widget whose save failed last, by chat.
+  private failed = new Map<string, string>()
 
   // Adds picks to those a widget has not saved, and saves them once the
   // chat's earlier saves end. Rejects with why a save failed; the picks
@@ -152,11 +171,15 @@ export class AnswerSaves {
     return shown
   }
 
-  // Forgets the picks a chat has not saved, as when it no longer holds the
-  // widgets they are for.
-  forget(threadId: string) {
-    this.unsent.delete(threadId)
-    this.status.update(({ [threadId]: _forgotten, ...rest }) => rest)
+  // Forgets the picks of the widget whose save failed last, as when the
+  // chat no longer offers them. Reports whether there were any.
+  forgetFailed(threadId: string): boolean {
+    const toolCallId = this.failed.get(threadId)
+    this.failed.delete(threadId)
+    if (!toolCallId || !this.unsent.get(threadId)?.delete(toolCallId))
+      return false
+    this.mark(threadId, toolCallId, undefined)
+    return true
   }
 
   private mark(
@@ -184,20 +207,21 @@ export class AnswerSaves {
       try {
         let next = chat?.entries().next().value
         while (save && chat && next) {
+          // The picks stay unsent, and shown, until their save succeeds.
           const [toolCallId, { messageId, changes }] = next
-          chat.delete(toolCallId)
           try {
             await save(messageId, toolCallId, changes)
           } catch (cause) {
-            // The picks made since go over those that failed.
-            chat.set(toolCallId, {
-              messageId,
-              changes: { ...changes, ...chat.get(toolCallId)?.changes },
-            })
+            this.failed.set(threadId, toolCallId)
             for (const [unsaved] of chat) this.mark(threadId, unsaved, 'failed')
             throw cause
           }
-          if (!chat.has(toolCallId)) this.mark(threadId, toolCallId, undefined)
+          const left = unsavedChanges(chat.get(toolCallId), changes)
+          if (left) chat.set(toolCallId, left)
+          else {
+            chat.delete(toolCallId)
+            this.mark(threadId, toolCallId, undefined)
+          }
           next = chat.entries().next().value
         }
       } finally {

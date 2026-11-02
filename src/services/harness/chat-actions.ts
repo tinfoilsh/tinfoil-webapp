@@ -133,7 +133,12 @@ export function chatActions({
   // reopening included. A change made to a chat during its move would stay
   // with the copy the move deletes.
   async function whileMoving<T>(threadId: string, move: () => Promise<T>) {
-    const moved = move()
+    // A move copies the chat as stored, so the answers picked in it are
+    // saved first.
+    const moved = (async () => {
+      await answers.flush(threadId)
+      return move()
+    })()
     moving.set(threadId, moved)
     try {
       return await moved
@@ -228,11 +233,13 @@ export function chatActions({
   }
   // A save of answers that failed leaves its widget showing so, to save
   // again. One the chat refused because it no longer holds the widget or
-  // its options forgets the chat's unsaved picks and shows it as stored.
+  // its options forgets that widget's picks and shows the chat as stored,
+  // and the chat's other widgets go on saving theirs. A chat that cannot
+  // be read keeps the picks to save again.
   async function settleAnswers(
     threadId: string,
     saving: Promise<void> | undefined,
-  ) {
+  ): Promise<void> {
     try {
       await saving
     } catch (cause) {
@@ -240,12 +247,13 @@ export function chatActions({
         cause instanceof HarnessError &&
         cause.detail.action === ERROR_ACTIONS.reload
       ) {
-        answers.forget(threadId)
         const thread = await storeOf(threadId)
           .get(threadId)
           .catch(() => null)
-        if (thread) showAnswered(threadId, thread)
-        return
+        if (!thread) return
+        answers.forgetFailed(threadId)
+        showAnswered(threadId, thread)
+        return settleAnswers(threadId, answers.flush(threadId))
       }
       logError('Failed to save answers to questions', cause, {
         component: 'chatActions',

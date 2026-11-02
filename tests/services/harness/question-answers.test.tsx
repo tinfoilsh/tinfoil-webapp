@@ -1,5 +1,6 @@
 import type { TimelineToolCallBlock } from '@/components/chat/types'
 import { localThreadStore } from '@/services/harness/local-threads'
+import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type {
   Frame,
@@ -272,6 +273,59 @@ describe('answering the questions of a stored chat', () => {
     client.events.mockImplementationOnce(answeredRun(quiz().map(wire)))
     await act(() => hook.result.current.send({ content: 'grade me' }))
     expect(posted('/v1/threads/messages/answer')).toHaveLength(1)
+  })
+
+  it('keeps refused picks to save again when the chat cannot be read', async () => {
+    let opened = 0
+    const { hook, saves } = await openCloud(() => {
+      if (opened++) throw new TypeError('Failed to fetch')
+      return cloudThread(quiz())
+    })
+    let answering!: Promise<void>
+    act(() => {
+      answering = hook.result.current.answerQuestions('a1', 'quiz', {
+        q1: ['b'],
+      })
+    })
+    await waitFor(() => expect(saves).toHaveLength(1))
+
+    await act(async () => {
+      saves[0].reject(
+        new HarnessError(
+          {
+            code: 'REVISION_CONFLICT',
+            message: 'The widget was removed',
+            action: 'reload',
+          },
+          409,
+        ),
+      )
+      await answering
+    })
+
+    expect(opened).toBe(2)
+    expect(shownAnswers(hook)).toEqual({ q1: ['b'] })
+    expect(hook.result.current.answerSaves).toEqual({ quiz: 'failed' })
+  })
+
+  it('keeps showing unsaved picks when the chat is read again', async () => {
+    const { hook, saves } = await openCloud()
+    act(() => {
+      void hook.result.current.answerQuestions('a1', 'quiz', { q2: ['y'] })
+    })
+    await waitFor(() => expect(saves).toHaveLength(1))
+    const reads = () =>
+      client.post.mock.calls.filter(([path]) => path === '/v1/threads/get')
+        .length
+    const before = reads()
+
+    await act(async () => publish({ chatRevision: 'changed' }))
+    await waitFor(() => expect(reads()).toBe(before + 1))
+
+    expect(shownAnswers(hook)).toEqual({ q2: ['y'] })
+    await act(async () => saves[0].resolve(cloudThread(quiz({ q2: ['y'] }))))
+    expect(shownAnswers(hook)).toEqual({ q2: ['y'] })
+    expect(hook.result.current.answerSaves).toEqual({})
   })
 })
 

@@ -276,18 +276,24 @@ export function chatTurns({
       }
       return (async () => {
         // A question sends the answers the user picked, so it waits for the
-        // chat to save them. Picks for widgets the chat no longer holds are
-        // left out.
-        const saving = answers.flush(threadId)
-        if (saving)
-          await saving.catch((cause) => {
+        // chat to save them. The picks of a widget the chat no longer offers
+        // are left out.
+        for (
+          let saving = answers.flush(threadId);
+          saving;
+          saving = answers.flush(threadId)
+        ) {
+          try {
+            await saving
+          } catch (cause) {
             if (
               !(cause instanceof HarnessError) ||
-              cause.detail.action !== ERROR_ACTIONS.reload
+              cause.detail.action !== ERROR_ACTIONS.reload ||
+              !answers.forgetFailed(threadId)
             )
               throw cause
-            answers.forget(threadId)
-          })
+          }
+        }
         const turn = await threads.prepareTurn(
           threadId,
           {

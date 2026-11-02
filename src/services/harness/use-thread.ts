@@ -42,6 +42,7 @@ import { cloudThreads, type AskContext, type ThreadStore } from './thread-store'
 import type {
   AttachmentDescriptor,
   SavedAnswers,
+  Thread,
   Turn,
   Message as WireMessage,
 } from './types'
@@ -250,6 +251,18 @@ export function useThread(
         : {}),
     }
   }
+  // A chat as its store holds it, under the answers picked in it that are
+  // not saved yet.
+  const storedChat = useCallback(
+    (thread: Thread) => {
+      const loaded = initialChat(thread)
+      return {
+        ...loaded,
+        messages: answers.overlay(thread.id, loaded.messages),
+      }
+    },
+    [answers],
+  )
   // Shows the open chat as it is stored once its run is over, as when the
   // harness no longer has the run or had applied a turn sent again. A chat
   // never saved keeps what it shows.
@@ -261,7 +274,7 @@ export function useThread(
     if (thread) markSaved(threadId)
     controller.view.set(
       thread
-        ? initialChat(thread)
+        ? storedChat(thread)
         : {
             ...controller.view.get(),
             status: 'idle',
@@ -344,7 +357,7 @@ export function useThread(
         patch({ temporary: false, local, notFound: true, failedId: threadId })
         return { status: 'not-found' }
       }
-      controller.view.set(initialChat(thread))
+      controller.view.set(storedChat(thread))
       patch({
         id: thread.id,
         temporary: false,
@@ -457,7 +470,7 @@ export function useThread(
       }
       if (cancelled || !shown() || controller.view.get().status !== 'idle')
         return
-      controller.view.set(initialChat(thread))
+      controller.view.set(storedChat(thread))
       refreshedChat.current = { id, revision: chatRevision }
       patch({
         model: thread.model,
@@ -488,6 +501,7 @@ export function useThread(
     report,
     reset,
     state.status,
+    storedChat,
   ])
   // A new chat follows the model the user picked last, as the profile
   // loads, until the user chooses one in it or sends its first message. A
