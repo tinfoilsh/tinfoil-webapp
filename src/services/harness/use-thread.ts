@@ -28,6 +28,11 @@ import {
 } from './open-chat'
 import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import { useHarness } from './provider'
+import {
+  AnswerSaves,
+  sentAnswers,
+  type AnswerSaveStatus,
+} from './question-answers'
 import { initialChat, isStopping, type ChatState } from './reducer'
 import { RunController } from './run-controller'
 import { getView, reportHarnessError } from './runtime'
@@ -36,6 +41,7 @@ import { createStore, useStore } from './store'
 import { cloudThreads, type AskContext, type ThreadStore } from './thread-store'
 import type {
   AttachmentDescriptor,
+  SavedAnswers,
   Turn,
   Message as WireMessage,
 } from './types'
@@ -47,6 +53,9 @@ import {
   threadView,
   type ShownMessage,
 } from './view-model'
+
+// A chat none of whose answers are saving.
+const NO_ANSWER_SAVES: Record<string, AnswerSaveStatus> = {}
 
 export interface ThreadRoute {
   // The route names a chat stored on this device (/chat/local/:id).
@@ -98,6 +107,8 @@ export function useThread(
       temporaryChats: { store: memoryThreadStore() },
     }),
   )
+  // The answers picked in questions widgets that are not saved yet.
+  const [answers] = useState(() => new AnswerSaves())
   // The view of each message, kept until the message, whether it streams,
   // the reasoning summaries or whether the user stopped its reply change, so
   // a message that did not change keeps its view.
@@ -376,6 +387,7 @@ export function useThread(
     temporary: () => temporaryChats.store,
     storeOf,
     moving,
+    answers,
     reset,
     openChat,
   })
@@ -390,6 +402,7 @@ export function useThread(
     profile,
     projectId,
     moving,
+    answers,
     openStore,
     patch,
     report,
@@ -404,6 +417,14 @@ export function useThread(
   const state = useStore(controller.view)
   const deviceRuns = useStore(controller.deviceRuns)
   const canceledMessages = useStore(controller.canceled)
+  const answerSaves = useStore(answers.status)
+  // What the open chat's questions last sent the model of each widget's
+  // answers, the same while that does not change.
+  const sentKey = JSON.stringify(sentAnswers(state.messages))
+  const sent = useMemo(
+    (): Record<string, SavedAnswers> => JSON.parse(sentKey),
+    [sentKey],
+  )
   const refreshedChat = useRef<{ id: string; revision: string } | null>(null)
   useEffect(() => {
     if (
@@ -818,6 +839,10 @@ export function useThread(
       profileReady &&
       (onDevice(openState) || keyReady),
     canChangeMessages: !loading && !openState.failedId && !!chat.id,
+    // The saves of the open chat's questions widgets, by widget call, and
+    // what its questions last sent the model of each widget's answers.
+    answerSaves: (id && answerSaves[id]) || NO_ANSWER_SAVES,
+    sentAnswers: sent,
     queue,
     contextUsage: summary?.contextUsage ?? undefined,
     error: failure?.message || state.error?.message || '',

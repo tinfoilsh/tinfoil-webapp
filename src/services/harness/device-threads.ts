@@ -52,6 +52,7 @@ type ChangeRoute =
   | typeof ROUTES.update
   | typeof ROUTES.messageDelete
   | typeof ROUTES.messageUpdate
+  | typeof ROUTES.messageAnswer
   | typeof ROUTES.fork
 
 // A device run's final event carries the whole thread, which this device
@@ -212,6 +213,15 @@ export function deviceThreads({
         threadId,
         messageId,
         content,
+      })
+      return changed && localThreadView(changed)
+    },
+    async answerQuestions(threadId, messageId, toolCallId, answers) {
+      const changed = await change(threadId, ROUTES.messageAnswer, {
+        threadId,
+        messageId,
+        toolCallId,
+        answers,
       })
       return changed && localThreadView(changed)
     },

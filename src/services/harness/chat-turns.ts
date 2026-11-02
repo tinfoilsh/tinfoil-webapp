@@ -13,7 +13,8 @@ import {
   type OpenChatResult,
   type PresetChoice,
 } from './open-chat'
-import { ERROR_CODES, ROUTES } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
+import type { AnswerSaves } from './question-answers'
 import { isRunning, isStopping, unstopped } from './reducer'
 import type { RunController } from './run-controller'
 import { getView, type HarnessAPI, type Profile } from './runtime'
@@ -56,6 +57,8 @@ export interface TurnContext {
   projectId?: string | null
   // Chats moving between the cloud and this device take no turns.
   moving: Map<string, Promise<unknown>>
+  // The answers picked in questions widgets that are not saved yet.
+  answers: AnswerSaves
   openStore(): ThreadStore
   patch(fields: Partial<OpenChat>): void
   report(cause: unknown): void
@@ -78,6 +81,7 @@ export function chatTurns({
   profile,
   projectId,
   moving,
+  answers,
   openStore,
   patch,
   report,
@@ -271,6 +275,19 @@ export function chatTurns({
         }))
       }
       return (async () => {
+        // A question sends the answers the user picked, so it waits for the
+        // chat to save them. Picks for widgets the chat no longer holds are
+        // left out.
+        const saving = answers.flush(threadId)
+        if (saving)
+          await saving.catch((cause) => {
+            if (
+              !(cause instanceof HarnessError) ||
+              cause.detail.action !== ERROR_ACTIONS.reload
+            )
+              throw cause
+            answers.forget(threadId)
+          })
         const turn = await threads.prepareTurn(
           threadId,
           {

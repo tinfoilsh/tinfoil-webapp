@@ -1,10 +1,17 @@
+import { logError } from '@/utils/error-handling'
 import type { ChatList } from './chat-list'
 import { localSummary, type LocalThreadStore } from './local-threads'
 import type { OpenChat, OpenChatResult } from './open-chat'
-import { ROUTES } from './protocol'
+import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
+import {
+  withAnswers,
+  type AnswerSaves,
+  type SaveAnswers,
+} from './question-answers'
 import { afterLoaded } from './reducer'
 import type { RunController } from './run-controller'
 import type { HarnessAPI } from './runtime'
+import { HarnessError } from './sse'
 import type { Store } from './store'
 import type { ThreadPatch, ThreadStore } from './thread-store'
 import {
@@ -15,11 +22,26 @@ import {
   transferInFlight,
   type DeviceChatCopy,
 } from './transfer'
-import type { Message, Thread, ThreadSummary, TimelineBlock } from './types'
+import type {
+  AnswerChanges,
+  Message,
+  Thread,
+  ThreadSummary,
+  TimelineBlock,
+} from './types'
 import { shownMessages } from './view-model'
 
 // The id of the block holding a reply's rewritten text when it had none.
 const EDITED_CONTENT_ID = 'edited-content'
+
+// Why answers were not saved to a chat on this device: a run stored the
+// chat while they saved.
+const answersNotKept = () =>
+  new HarnessError({
+    code: ERROR_CODES.revisionConflict,
+    action: ERROR_ACTIONS.reload,
+    message: 'The chat changed before the answers were saved.',
+  })
 
 // A reply with its text rewritten, as the harness rewrites it: its content
 // blocks collapse into one holding the text, where the first was.
@@ -57,6 +79,8 @@ export interface ChatContext {
   storeOf(threadId: string): ThreadStore
   // Chats moving between the cloud and this device, and their moves.
   moving: Map<string, Promise<unknown>>
+  // The answers picked in questions widgets that are not saved yet.
+  answers: AnswerSaves
   reset(): void
   openChat(
     threadId: string,
@@ -82,6 +106,7 @@ export function chatActions({
   temporary,
   storeOf,
   moving,
+  answers,
   reset,
   openChat,
 }: ChatContext) {
@@ -164,6 +189,69 @@ export function chatActions({
       ),
       snapshot: { ...state.snapshot, thread: summary },
     }))
+  }
+  // Shows the open chat as its store answered a save of answers with, after
+  // the earlier messages the view loaded and under the picks still unsaved.
+  // A run's frames show the chat while it runs.
+  function showAnswered(threadId: string, thread: Thread) {
+    if (!isOpen(threadId)) return
+    const {
+      messages,
+      hasOlder,
+      revision: _revision,
+      presetId: _presetId,
+      ...summary
+    } = thread
+    controller.view.update((state) => {
+      if (state.status !== 'idle' && state.status !== 'error') return state
+      const loaded = afterLoaded(state, messages, hasOlder)
+      return {
+        ...state,
+        ...loaded,
+        messages: answers.overlay(threadId, loaded.messages),
+        snapshot: { ...state.snapshot, thread: summary },
+      }
+    })
+  }
+  const saveAnswersOf = (threadId: string): SaveAnswers => {
+    const store = storeOf(threadId)
+    return async (messageId, toolCallId, changes) => {
+      const thread = await store.answerQuestions(
+        threadId,
+        messageId,
+        toolCallId,
+        changes,
+      )
+      if (!thread) throw answersNotKept()
+      showAnswered(threadId, thread)
+    }
+  }
+  // A save of answers that failed leaves its widget showing so, to save
+  // again. One the chat refused because it no longer holds the widget or
+  // its options forgets the chat's unsaved picks and shows it as stored.
+  async function settleAnswers(
+    threadId: string,
+    saving: Promise<void> | undefined,
+  ) {
+    try {
+      await saving
+    } catch (cause) {
+      if (
+        cause instanceof HarnessError &&
+        cause.detail.action === ERROR_ACTIONS.reload
+      ) {
+        answers.forget(threadId)
+        const thread = await storeOf(threadId)
+          .get(threadId)
+          .catch(() => null)
+        if (thread) showAnswered(threadId, thread)
+        return
+      }
+      logError('Failed to save answers to questions', cause, {
+        component: 'chatActions',
+        action: 'answerQuestions',
+      })
+    }
   }
   return {
     // A new title or favorite state shows at once, and goes back when the
@@ -278,6 +366,38 @@ export function chatActions({
               : message,
           ),
       )
+    },
+    // Saves options the user picked in a questions widget of the open chat.
+    // They show at once, and stay shown while they wait for the chat's
+    // earlier saves.
+    answerQuestions(
+      messageId: string,
+      toolCallId: string,
+      changes: AnswerChanges,
+    ) {
+      const threadId = open.get().id
+      if (!threadId || moving.has(threadId)) return Promise.resolve()
+      controller.view.update((state) => ({
+        ...state,
+        messages: withAnswers(state.messages, messageId, toolCallId, changes),
+      }))
+      return settleAnswers(
+        threadId,
+        answers.pick(
+          threadId,
+          messageId,
+          toolCallId,
+          changes,
+          saveAnswersOf(threadId),
+        ),
+      )
+    },
+    // Saves again the picks of the open chat that a save failed to keep.
+    retryAnswers() {
+      const threadId = open.get().id
+      return threadId
+        ? settleAnswers(threadId, answers.flush(threadId))
+        : Promise.resolve()
     },
     share: (threadId: string) => storeOf(threadId).share(threadId),
     // Every message before those shown, which the store gives a page at a

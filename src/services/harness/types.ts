@@ -5,6 +5,8 @@ import type { components, operations } from './openapi'
 type Schemas = components['schemas']
 type ProfileUpdate =
   operations['profileUpdate']['requestBody']['content']['application/json']
+type MessageAnswer =
+  operations['messageAnswer']['requestBody']['content']['application/json']
 
 export type Json =
   null | boolean | number | string | Json[] | { [key: string]: Json }
@@ -42,6 +44,12 @@ export type Annotation = Schemas['Annotation']
 export type ToolActivity = Partial<Schemas['ToolActivity']> &
   Pick<Schemas['ToolActivity'], 'output'>
 export type TimelineBlock = Schemas['Block']
+
+// The options the user picked in a questions widget, by question id; what a
+// question sent the model of them; and the change a save makes to them.
+export type SavedAnswers = NonNullable<TimelineBlock['answers']>
+export type WidgetAnswers = Schemas['WidgetAnswers']
+export type AnswerChanges = MessageAnswer['answers']
 
 // A message as this client shows it, whose attachments may hold the bytes
 // this device keeps for them.

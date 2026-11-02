@@ -33,6 +33,7 @@ export const ROUTES = {
   fork: '/v1/threads/fork',
   messageDelete: '/v1/threads/messages/delete',
   messageUpdate: '/v1/threads/messages/update',
+  messageAnswer: '/v1/threads/messages/answer',
   share: '/v1/threads/share',
   shareStatus: '/v1/threads/share/status',
   shareRevoke: '/v1/threads/share/revoke',
