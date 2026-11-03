@@ -43,12 +43,10 @@ export function ChatExportStatus({
   onCancel: () => void
   onRetry: () => void
 }) {
+  // Only how an export ended is announced; its progress changes too often.
   if (state.status === 'running')
     return (
-      <div
-        role="status"
-        className="flex items-center justify-between gap-3 font-aeonik-fono text-xs text-content-muted"
-      >
+      <div className="flex items-center justify-between gap-3 font-aeonik-fono text-xs text-content-muted">
         <span>
           {state.received > 0
             ? `Downloading archive... ${formatFileSize(state.received)}`
