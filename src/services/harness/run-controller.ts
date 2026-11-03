@@ -10,6 +10,7 @@ import {
   reduceEvent,
   runErrorOf,
   runOf,
+  unstopped,
   type ChatState,
 } from './reducer'
 import type { HarnessAPI } from './runtime'
@@ -128,7 +129,12 @@ export class RunController {
   // Changes each time the view moves to another chat. A run started for
   // the previous one no longer updates the view.
   private generation = 0
-  private readonly followers = new Set<AbortController>()
+  // The streams of stored chats' runs the view reads, with the turn each
+  // sent.
+  private readonly followers = new Map<
+    AbortController,
+    Submission | undefined
+  >()
   // The device turn sent and not started yet. Its chat takes no other
   // device turn until the turn starts or its stream ends, as when it was
   // queued and then removed.
@@ -146,10 +152,12 @@ export class RunController {
   ) {}
 
   // The view moves to another chat: runs it followed stop, other than
-  // device runs, which go on to save their replies.
+  // device runs, which go on to save their replies, and turns the user
+  // stopped before their runs started, which read on until the stop is sent.
   reset(next: ChatState = initialChat()) {
     this.generation++
-    for (const controller of this.followers) controller.abort()
+    for (const [controller, submission] of this.followers)
+      if (!submission?.cancelled) controller.abort()
     this.followers.clear()
     this.starting = null
     this.pending = null
@@ -204,7 +212,7 @@ export class RunController {
     const { device, quiet = false, widgetRetry } = options
     let started = options.started ?? 'runId' in input
     const controller = new AbortController()
-    if (!device) this.followers.add(controller)
+    if (!device) this.followers.set(controller, options.submission)
     const version = this.generation
     const attached = () => version === this.generation
     let runId = 'runId' in input ? input.runId : undefined
@@ -215,6 +223,17 @@ export class RunController {
       'clientRequestId' in input
         ? scopedTurn(input, this.api.userId)
         : resumed(input, view.cursors[input.runId])
+    // A turn the user stopped before its run started is stopped once the run
+    // names itself.
+    const stopSubmitted = async () => {
+      if (!options.submission?.cancelled || !runId) return
+      await this.stop({
+        ...(input.key ? { key: this.api.key() } : {}),
+        threadId,
+        runId,
+      })
+      options.submission.cancelled = false
+    }
     try {
       for await (const frame of this.api.client.events(
         route,
@@ -222,10 +241,15 @@ export class RunController {
         this.api.signal({ signal: controller.signal, keyless: !input.key }),
       )) {
         const shown = attached()
-        if (!shown && !device) break
         const { event } = frame
         if ('threadId' in event && event.threadId) threadId = event.threadId
         runId = runOf(event) ?? runId
+        if (!shown && !device) {
+          if (!options.submission?.cancelled) break
+          if (!runId) continue
+          await stopSubmitted()
+          break
+        }
         if (event.type === 'RUN_STARTED') started = true
         const base = shown ? this.view.get() : view
         const next = reduceEvent(base, frame, runId, !!widgetRetry)
@@ -266,14 +290,7 @@ export class RunController {
           )
             this.hooks.summary?.(next.snapshot.thread)
         }
-        if (options.submission?.cancelled && runId) {
-          await this.stop({
-            ...(input.key ? { key: this.api.key() } : {}),
-            threadId,
-            runId,
-          })
-          options.submission.cancelled = false
-        }
+        await stopSubmitted()
         if (event.type === 'RUN_FINISHED')
           succeeded = event.metadata?.cancelled !== true
         if (replayed) continue
@@ -393,13 +410,14 @@ export class RunController {
     const detail =
       cause instanceof HarnessError ? cause.detail : CONNECTION_LOST
     this.errorAt = Date.now()
+    // A run whose stream ended while it stopped may go on, so the chat shows
+    // all it streamed, which rejoining it continues from.
     this.view.update((state) => ({
-      ...state,
-      error: detail,
       ...(!started &&
       (state.status === 'streaming' || state.status === 'queued')
-        ? {}
-        : { status: 'error', stopping: undefined }),
+        ? state
+        : { ...unstopped(state), status: 'error' as const }),
+      error: detail,
       ...(detail.code === ERROR_CODES.chatFlagged ? { flagged: true } : {}),
     }))
     this.api.reportRateLimit(detail.rateLimit)
@@ -416,34 +434,43 @@ export class RunController {
     }
   }
 
-  cancel(input: { key?: string; threadId: string | null; runId?: string }) {
-    if (
-      this.view.get().status === 'submitting' &&
-      !input.runId &&
-      this.submission?.threadId === input.threadId
-    ) {
-      this.submission.cancelled = true
-      return Promise.resolve()
-    }
-    return this.stop(input)
-  }
-
-  // Stops a run. One that ended, or is ending, as the stop arrived needs no
-  // stop.
-  private async stop(input: {
+  async cancel(input: {
     key?: string
     threadId: string | null
     runId?: string
   }) {
+    const submission =
+      this.view.get().status === 'submitting' &&
+      this.submission?.threadId === input.threadId
+        ? this.submission
+        : null
+    if (submission && !input.runId) {
+      submission.cancelled = true
+      return
+    }
+    // The run a chat names while its turn is sent may be one that is over,
+    // as one a restart ended, so the turn's own run is stopped once it
+    // starts.
+    if (!(await this.stop(input)) && submission) submission.cancelled = true
+  }
+
+  // Stops a run, and says whether it was live. One that ended, or is
+  // ending, as the stop arrived needs no stop.
+  private async stop(input: {
+    key?: string
+    threadId: string | null
+    runId?: string
+  }): Promise<boolean> {
     try {
       await this.api.post(ROUTES.cancel, input, { keyless: true })
+      return true
     } catch (cause) {
       if (
         cause instanceof HarnessError &&
         (cause.code === ERROR_CODES.runNotFound ||
           cause.code === ERROR_CODES.runInFlight)
       )
-        return
+        return false
       throw cause
     }
   }

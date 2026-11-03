@@ -605,7 +605,8 @@ function createStore(
   }
   // Rows the previous client wrote are rewritten as threads once, before
   // anything reads them. A row the harness cannot upgrade, or fails to, stays
-  // as it was and is left out until a later attempt upgrades it.
+  // as it was and is left out until a later attempt upgrades it, as does one
+  // this device cannot read, such as one missing an attachment's content.
   let upgrading: Promise<void> | null = null
   const upgradeOldRows = () => {
     upgrading ??= (async () => {
@@ -614,7 +615,17 @@ function createStore(
         .map(({ row }) => str(row.id))
       async function* rows() {
         for (const id of ids) {
-          const row = await backend.read(id)
+          let row: Value | null
+          try {
+            row = await backend.read(id)
+          } catch (cause) {
+            logError('Failed to read a chat stored on this device', cause, {
+              component: 'localThreads',
+              action: 'upgradeOldRows',
+              metadata: { chatId: id },
+            })
+            continue
+          }
           if (row && !isThreadRow(row)) yield row
         }
       }

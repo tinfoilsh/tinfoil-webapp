@@ -364,6 +364,52 @@ describe('device store', () => {
       )
       expect(await store.get(OTHER_ID)).toEqual(upgraded(OTHER_ID, 'Dogs'))
     })
+
+    it('lists the others when one cannot be read on this device', async () => {
+      signIn()
+      // An attachment the previous client stored without its content, which
+      // no read of the row can restore.
+      await indexedDBStorage.saveChat({
+        ...legacyRow(OTHER_ID, 'Lost photo'),
+        messages: [
+          {
+            role: 'user',
+            content: 'Look at this',
+            timestamp: new Date('2026-01-01T00:00:01.000Z'),
+            attachments: [
+              { id: 'att-lost', type: 'image', fileName: 'lost.png' },
+            ],
+          },
+        ],
+      })
+      await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/upgrade')
+          return { threads: [upgraded(CHAT_ID, 'Cats')] }
+        throw new Error(`Unexpected ${path}`)
+      })
+
+      expect((await store.list()).map((summary) => summary.id)).toEqual([
+        CHAT_ID,
+      ])
+
+      expect(
+        upgrades().map(([, input]) =>
+          input.threads.map((row: { id: string }) => row.id),
+        ),
+      ).toEqual([[CHAT_ID]])
+      expect(await store.get(CHAT_ID)).toEqual(upgraded(CHAT_ID, 'Cats'))
+      expect(logError).toHaveBeenCalledWith(
+        'Failed to read a chat stored on this device',
+        expect.objectContaining({ name: 'AttachmentPayloadMissingError' }),
+        expect.objectContaining({ metadata: { chatId: OTHER_ID } }),
+      )
+      const unreadable = (await rawRows('chats')).find(
+        (row) => row.id === OTHER_ID,
+      )
+      expect(unreadable).toMatchObject({ title: 'Lost photo' })
+      expect(unreadable).not.toHaveProperty('threadFormat')
+    })
   })
 
   it('does not write back a chat deleted while its run was finishing', async () => {

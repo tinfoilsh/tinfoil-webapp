@@ -43,6 +43,10 @@ export interface ChatState {
   flagged?: boolean
   // The user stopped the run the chat shows, which has not ended yet.
   stopping?: boolean
+  // What the stopped run streamed after the user stopped it. The chat shows
+  // it only if the run goes on: when the stop fails, or the run ends without
+  // being stopped.
+  held?: Frame[]
 }
 
 export const isRunning = ({ status }: ChatState) =>
@@ -61,7 +65,10 @@ export function canceledBy(state: ChatState, event: TerminalEvent): string[] {
     !event.metadata?.cancelled
   )
     return []
-  const replies = event.metadata.messages?.map(({ id }) => id) ?? []
+  // A reply the user stopped before any of it showed stays unshown.
+  const replies = (event.metadata.messages ?? [])
+    .map(({ id }) => id)
+    .filter((id) => state.messages.some((message) => message.id === id))
   if (replies.length) return replies
   const last = state.messages.at(-1)
   return last?.role === 'user' ? [last.id] : []
@@ -299,6 +306,28 @@ const WIDGET_RETRY_EVENTS: ReadonlySet<HarnessEvent['type']> = new Set([
   'TOOL_CALL_RESULT',
 ])
 
+// The events of a stopped run the chat goes on applying: how the run goes,
+// and the messages it started from, but nothing its model streams.
+const RUN_STATE_EVENTS: ReadonlySet<HarnessEvent['type']> = new Set([
+  'RUN_STARTED',
+  'STATE_SNAPSHOT',
+  'STATE_DELTA',
+  'MESSAGES_SNAPSHOT',
+  'RUN_FINISHED',
+  'RUN_ERROR',
+])
+
+// The chat no longer stops its run, and shows what the run streamed since
+// the user stopped it.
+export function unstopped(state: ChatState): ChatState {
+  const { stopping, held, ...rest } = state
+  if (!stopping || !held) return rest
+  return held.reduce<ChatState>(
+    (current, { event }) => applyEvent(current, event, current.runId),
+    rest,
+  )
+}
+
 // Applies one frame of a run. A frame the state applied already, as when a
 // run is replayed from its first frame, returns the state itself. A widget's
 // retry redraws the widget and leaves the chat's run, status and error as
@@ -337,6 +366,24 @@ export function reduceEvent(
     return isTerminal(event)
       ? { ...next, snapshot: withoutQueued(next.snapshot, runId) }
       : next
+  // The reply the user stopped stays as it showed when they stopped it,
+  // unless the run turns out to go on.
+  if (!widgetRetry && next.stopping && !RUN_STATE_EVENTS.has(event.type))
+    return { ...next, held: [...(next.held ?? []), frame] }
+  if (isTerminal(event)) {
+    const { held: _held, ...kept } = next
+    const stopped =
+      event.type === 'RUN_FINISHED' && event.metadata?.cancelled === true
+    return applyEvent(stopped ? kept : unstopped(next), event, runId)
+  }
+  return applyEvent(next, event, runId)
+}
+
+function applyEvent(
+  next: ChatState,
+  event: HarnessEvent,
+  runId: string | undefined,
+): ChatState {
   switch (event.type) {
     case 'RUN_STARTED': {
       const {
