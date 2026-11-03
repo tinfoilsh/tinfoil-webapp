@@ -127,6 +127,23 @@ describe('runImports', () => {
     ).toEqual([accountChat.id])
   })
 
+  it('reports an export saved whose manifest cannot be read', async () => {
+    vi.doMock('@zip.js/zip.js', () => {
+      throw new Error('The archive reader failed to load')
+    })
+    try {
+      await localThreadStore('device').add(storedThread('device-chat'))
+      client.multipart.mockResolvedValue(new Response(new Blob(['zip'])))
+
+      expect(await exportArchive('conversations', { cloud: false })).toEqual({
+        chats: 1,
+        warnings: [],
+      })
+    } finally {
+      vi.doUnmock('@zip.js/zip.js')
+    }
+  })
+
   it("exports a signed-out tab's chats, never an account's chats on this device", async () => {
     const accountChat = storedThread('account-chat', { title: 'Account data' })
     await localThreadStore('device').add(accountChat)

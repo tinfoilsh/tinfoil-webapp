@@ -1,5 +1,6 @@
 import type { AttachmentOriginal } from '@/services/storage/indexed-db'
 import { logError } from '@/utils/error-handling'
+import type { ZipReader } from '@zip.js/zip.js'
 import { isThread, localThreadStore, type Originals } from './local-threads'
 import { imageBlob } from './open-attachments'
 import {
@@ -65,11 +66,10 @@ const EXPORT_MANIFEST = 'manifest.json'
 // An archive whose manifest cannot be read was still saved, so it lists
 // nothing.
 async function exportWarnings(archive: Blob): Promise<string[]> {
-  const { BlobReader, TextWriter, ZipReader } = await import('@zip.js/zip.js')
-  const reader = new ZipReader(new BlobReader(archive), {
-    useWebWorkers: false,
-  })
+  let reader: ZipReader<Blob> | undefined
   try {
+    const { BlobReader, TextWriter, ZipReader } = await import('@zip.js/zip.js')
+    reader = new ZipReader(new BlobReader(archive), { useWebWorkers: false })
     const entry = (await reader.getEntries()).find(
       (candidate) => candidate.filename === EXPORT_MANIFEST,
     )
@@ -86,7 +86,7 @@ async function exportWarnings(archive: Blob): Promise<string[]> {
     })
     return []
   } finally {
-    await reader.close().catch(() => undefined)
+    await reader?.close().catch(() => undefined)
   }
 }
 
