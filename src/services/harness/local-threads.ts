@@ -334,15 +334,53 @@ function refusedAsNull(cause: unknown): null {
   throw cause
 }
 
+// An old row without its attachments' bytes: an image keeps its id and
+// thumbnail, and a document its pages' text.
+function withoutAttachmentBytes(row: Value): Value {
+  return {
+    ...row,
+    messages: arr(row.messages).map((item) => {
+      const message = obj(item)
+      if (!Array.isArray(message.attachments)) return message
+      return {
+        ...message,
+        attachments: message.attachments.map((value) => {
+          const { base64: _, ...attachment } = obj(value)
+          return Array.isArray(attachment.pages)
+            ? {
+                ...attachment,
+                pages: attachment.pages.map((page) => ({
+                  ...obj(page),
+                  image: '',
+                })),
+              }
+            : attachment
+        }),
+      }
+    }),
+  }
+}
+
 // Upgrades a chat this device stored in the previous client's format into a
 // thread through the harness's reader of old chats, one chat per request. A
-// chat the harness refuses, as one too large to send, is handed back as null.
+// chat too large to send goes again without its attachments' bytes; this
+// device keeps the originals of its images, which it still shows. A chat the
+// harness refuses is handed back as null.
 async function upgradeRow(row: Value): Promise<StoredThread | null> {
   let result: { threads?: unknown }
   try {
     result = await requestUpgrade(row)
   } catch (cause) {
-    return refusedAsNull(cause)
+    if (
+      !(cause instanceof HarnessError) ||
+      cause.code !== ERROR_CODES.payloadTooLarge
+    )
+      return refusedAsNull(cause)
+    try {
+      result = await requestUpgrade(withoutAttachmentBytes(row))
+    } catch (retry) {
+      return refusedAsNull(retry)
+    }
   }
   const [thread, ...rest] = arr(result?.threads)
   if (rest.length || !isThread(thread))

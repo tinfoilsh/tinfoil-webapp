@@ -360,6 +360,103 @@ describe('device store', () => {
       expect(unreadable).not.toHaveProperty('threadFormat')
     })
 
+    it('sends one too large to send again without its attachments’ bytes, keeping its images’ originals', async () => {
+      signIn()
+      const page = {
+        page: 1,
+        text: 'Page one',
+        image: 'cGFnZQ==',
+        is_scanned: false,
+      }
+      await indexedDBStorage.saveChat({
+        ...legacyRow(CHAT_ID, 'Large'),
+        messages: [
+          {
+            role: 'user',
+            content: 'Look at these',
+            timestamp: new Date('2026-01-01T00:00:01.000Z'),
+            attachments: [
+              {
+                id: 'att-photo',
+                type: 'image',
+                fileName: 'photo.png',
+                mimeType: 'image/png',
+                base64: 'cGhvdG8=',
+                thumbnailBase64: 'dGh1bWI=',
+              },
+              {
+                id: 'att-doc',
+                type: 'document',
+                fileName: 'doc.pdf',
+                textContent: 'Page one',
+                pages: [page],
+              },
+            ],
+          },
+        ],
+      })
+      const tooLarge = new HarnessError(
+        {
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'The request exceeds the size limit',
+          action: 'revise',
+        },
+        413,
+      )
+      const returned = storedThread(CHAT_ID, {
+        title: 'Large',
+        titleState: 'generated',
+        messages: [
+          {
+            id: `${CHAT_ID}-message-0`,
+            role: 'user',
+            createdAt: '2026-01-01T00:00:01Z',
+            content: 'Look at these',
+            attachments: [
+              {
+                id: 'att-photo',
+                kind: 'image',
+                fileName: 'photo.png',
+                mimeType: 'image/png',
+                thumbnail: 'dGh1bWI=',
+              },
+              {
+                id: 'att-doc',
+                kind: 'document',
+                fileName: 'doc.pdf',
+                mimeType: '',
+                textContent: 'Page one',
+                pages: [{ ...page, image: '' }],
+              },
+            ],
+          },
+        ],
+      })
+      client.post.mockImplementation(async (path: string) => {
+        if (path !== '/v1/threads/upgrade')
+          throw new Error(`Unexpected ${path}`)
+        if (upgrades().length === 1) throw tooLarge
+        return { threads: [returned] }
+      })
+
+      expect(await store.get(CHAT_ID)).toEqual(returned)
+
+      const [first, retry] = upgrades().map(
+        ([, input]) => input.threads[0].messages[0].attachments,
+      )
+      const [photo, doc] = first
+      expect(photo).toMatchObject({ base64: 'cGhvdG8=' })
+      expect(doc).toMatchObject({ pages: [page] })
+      const { base64: _, ...photoWithoutBytes } = photo
+      expect(retry).toEqual([
+        photoWithoutBytes,
+        { ...doc, pages: [{ ...page, image: '' }] },
+      ])
+      expect(await store.originals(CHAT_ID, ['att-photo'])).toEqual(
+        new Map([['att-photo', { base64: 'cGhvdG8=', mimeType: 'image/png' }]]),
+      )
+    })
+
     it('lists one the harness fails on, opens it once it can, and rewrites it on a later listing', async () => {
       signIn()
       await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))
