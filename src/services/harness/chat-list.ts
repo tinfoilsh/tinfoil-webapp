@@ -16,6 +16,7 @@ import type { ThreadSummary } from './types'
 
 // Chats listed per request; more load with the cursor the last page ends at.
 const PAGE_SIZE = 100
+const DEVICE_LIST_FAILED = 'The chats on this device could not be read.'
 
 interface CloudPage {
   threads: ThreadSummary[]
@@ -111,6 +112,7 @@ export function useChatList({
     const scope = { projectId: projectId ?? null, restored: cloud }
     const cloudThreads = createStore<ThreadSummary[]>(cached?.threads ?? [])
     const deviceThreads = createStore<ThreadSummary[]>([])
+    const deviceFailure = createStore<string | null>(null)
     const pinnedThreads = createStore<ThreadSummary[]>(cached?.pinned ?? [])
     const cursor = createStore<string | null>(null)
     const edits = createStore(0)
@@ -136,6 +138,8 @@ export function useChatList({
     // Counts listings of the stored chats apart from the open chat, so that
     // opening a chat keeps the list and only the latest listing applies.
     const listing = { version: 0 }
+    // Counts listings of the chats this device keeps; the latest applies.
+    const deviceListing = { version: 0 }
     const persist = () => {
       if (!api.cloud || api.lifetime.signal.aborted || !scope.restored) return
       writeChatListCache(api.userId, scope.projectId, {
@@ -146,11 +150,13 @@ export function useChatList({
     return {
       cloudThreads,
       deviceThreads,
+      deviceFailure,
       pinnedThreads,
       cursor,
       edits,
       loadState,
       listing,
+      deviceListing,
       persist,
       restore(projectId: string | null | undefined) {
         const next = projectId ?? null
@@ -373,25 +379,30 @@ export function useChatList({
   useEffect(() => {
     reload()
   }, [reload, revision, editVersion])
-  useEffect(() => {
-    let sequence = 0
-    const load = () => {
-      const request = ++sequence
-      void device
-        .list()
-        .then((list) => {
-          if (request === sequence) lists.deviceThreads.set(list)
+  // Reads the chats this device keeps again. A failure shows in the list,
+  // which offers a retry.
+  const loadDevice = useCallback(() => {
+    const request = ++lists.deviceListing.version
+    void device
+      .list()
+      .then((list) => {
+        if (request !== lists.deviceListing.version) return
+        lists.deviceThreads.set(list)
+        lists.deviceFailure.set(null)
+      })
+      .catch((cause) => {
+        logError('Failed to list local chats', cause, {
+          component: 'useChatList',
+          action: 'listLocal',
         })
-        .catch((cause) =>
-          logError('Failed to list local chats', cause, {
-            component: 'useChatList',
-            action: 'listLocal',
-          }),
-        )
-    }
-    load()
-    return chatEvents.on(load)
+        if (request === lists.deviceListing.version)
+          lists.deviceFailure.set(DEVICE_LIST_FAILED)
+      })
   }, [device, lists])
+  useEffect(() => {
+    loadDevice()
+    return chatEvents.on(loadDevice)
+  }, [loadDevice])
   const loadState = useStore(lists.loadState)
   const currentScope = loadState.projectId === (projectId ?? null)
   return {
@@ -399,6 +410,8 @@ export function useChatList({
     cloudListed: useStore(lists.cloudThreads),
     pinnedListed: useStore(lists.pinnedThreads),
     deviceListed: useStore(lists.deviceThreads),
+    deviceError: useStore(lists.deviceFailure),
+    retryDevice: loadDevice,
     nextCursor: useStore(lists.cursor),
     loading: cloud && (!currentScope || !loadState.loaded),
     error: cloud && currentScope ? loadState.error : null,

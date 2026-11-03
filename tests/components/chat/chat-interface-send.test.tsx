@@ -442,9 +442,11 @@ it('clears a failed preparation and retries it without duplicating the message',
     screen.getByRole('status', { name: 'Waiting for response' }),
   ).toBeVisible()
   await act(async () => reading.resolve())
-  expect(
-    screen.queryByRole('status', { name: 'Waiting for response' }),
-  ).not.toBeInTheDocument()
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('status', { name: 'Waiting for response' }),
+    ).not.toBeInTheDocument(),
+  )
   expect(screen.getByRole('article', { name: 'You said' })).toHaveTextContent(
     'Explain this to me',
   )

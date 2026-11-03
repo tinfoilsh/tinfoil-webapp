@@ -179,19 +179,52 @@ describe('device store', () => {
     const upgrades = () =>
       client.post.mock.calls.filter(([path]) => path === '/v1/threads/upgrade')
 
-    it('rewrites each one in the thread format once, through the harness', async () => {
+    // Resolves with the chats the next save names, as a listing's rewrite in
+    // the background saves the chats it rewrote.
+    const nextSave = () =>
+      new Promise<string[] | undefined>((resolve) => {
+        const off = chatEvents.on(({ reason, ids }) => {
+          if (reason !== 'save') return
+          off()
+          resolve(ids)
+        })
+      })
+    const sent = () =>
+      upgrades().map(([, input]) =>
+        input.threads.map((row: { id: string }) => row.id),
+      )
+    const listedIds = async () =>
+      (await store.list()).map((summary) => summary.id).sort()
+    const cannotOpen = {
+      detail: { code: 'LOCAL_CHAT_UNREADABLE', action: 'stop' },
+    }
+
+    it('lists each one at once and rewrites it in the thread format once, in the background', async () => {
       signIn()
       await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))
-      client.post.mockImplementation(async (path: string) => {
-        if (path === '/v1/threads/upgrade')
-          return { threads: [upgraded(CHAT_ID, 'Cats')] }
-        throw new Error(`Unexpected ${path}`)
+      let answer!: () => void
+      const answered = new Promise<void>((resolve) => {
+        answer = resolve
       })
+      client.post.mockImplementation(async (path: string) => {
+        if (path !== '/v1/threads/upgrade')
+          throw new Error(`Unexpected ${path}`)
+        await answered
+        return { threads: [upgraded(CHAT_ID, 'Cats')] }
+      })
+      const saved = nextSave()
 
-      expect((await store.list()).map((summary) => summary.id)).toEqual([
-        CHAT_ID,
+      expect(await store.list()).toEqual([
+        expect.objectContaining({
+          id: CHAT_ID,
+          title: 'Cats',
+          messageCount: 1,
+          activityAt: '2026-01-02T00:00:00.000Z',
+        }),
       ])
+      answer()
 
+      expect(await saved).toEqual([CHAT_ID])
       expect(upgrades()).toHaveLength(1)
       expect(upgrades()[0][1]).toEqual({
         threads: [
@@ -290,7 +323,7 @@ describe('device store', () => {
       )
     })
 
-    it('sends each one alone, and upgrades the others when the harness refuses one', async () => {
+    it('lists one the harness refuses, says it cannot be opened, and sends it once', async () => {
       signIn()
       await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))
       await indexedDBStorage.saveChat(legacyRow(OTHER_ID, 'Unreadable'))
@@ -310,14 +343,16 @@ describe('device store', () => {
           return { threads: [upgraded(CHAT_ID, 'Cats')] }
         },
       )
+      const saved = nextSave()
 
+      expect(await listedIds()).toEqual([CHAT_ID, OTHER_ID].sort())
+      expect(await saved).toEqual([CHAT_ID])
+
+      expect(sent()).toEqual([[OTHER_ID], [CHAT_ID]])
       expect(await store.get(CHAT_ID)).toEqual(upgraded(CHAT_ID, 'Cats'))
-
-      const sent = upgrades().map(([, input]) =>
-        input.threads.map((row: { id: string }) => row.id),
-      )
-      expect(sent.sort()).toEqual([[OTHER_ID], [CHAT_ID]])
-      expect(await store.get(OTHER_ID)).toBeNull()
+      await expect(store.get(OTHER_ID)).rejects.toMatchObject(cannotOpen)
+      expect(await listedIds()).toEqual([CHAT_ID, OTHER_ID].sort())
+      expect(sent()).toEqual([[OTHER_ID], [CHAT_ID]])
       const unreadable = (await rawRows('chats')).find(
         (row) => row.id === OTHER_ID,
       )
@@ -325,7 +360,104 @@ describe('device store', () => {
       expect(unreadable).not.toHaveProperty('threadFormat')
     })
 
-    it('lists the others when the harness fails on one, and upgrades it on a later load', async () => {
+    it('sends one too large to send again without its attachments’ bytes, keeping its images’ originals', async () => {
+      signIn()
+      const page = {
+        page: 1,
+        text: 'Page one',
+        image: 'cGFnZQ==',
+        is_scanned: false,
+      }
+      await indexedDBStorage.saveChat({
+        ...legacyRow(CHAT_ID, 'Large'),
+        messages: [
+          {
+            role: 'user',
+            content: 'Look at these',
+            timestamp: new Date('2026-01-01T00:00:01.000Z'),
+            attachments: [
+              {
+                id: 'att-photo',
+                type: 'image',
+                fileName: 'photo.png',
+                mimeType: 'image/png',
+                base64: 'cGhvdG8=',
+                thumbnailBase64: 'dGh1bWI=',
+              },
+              {
+                id: 'att-doc',
+                type: 'document',
+                fileName: 'doc.pdf',
+                textContent: 'Page one',
+                pages: [page],
+              },
+            ],
+          },
+        ],
+      })
+      const tooLarge = new HarnessError(
+        {
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'The request exceeds the size limit',
+          action: 'revise',
+        },
+        413,
+      )
+      const returned = storedThread(CHAT_ID, {
+        title: 'Large',
+        titleState: 'generated',
+        messages: [
+          {
+            id: `${CHAT_ID}-message-0`,
+            role: 'user',
+            createdAt: '2026-01-01T00:00:01Z',
+            content: 'Look at these',
+            attachments: [
+              {
+                id: 'att-photo',
+                kind: 'image',
+                fileName: 'photo.png',
+                mimeType: 'image/png',
+                thumbnail: 'dGh1bWI=',
+              },
+              {
+                id: 'att-doc',
+                kind: 'document',
+                fileName: 'doc.pdf',
+                mimeType: '',
+                textContent: 'Page one',
+                pages: [{ ...page, image: '' }],
+              },
+            ],
+          },
+        ],
+      })
+      client.post.mockImplementation(async (path: string) => {
+        if (path !== '/v1/threads/upgrade')
+          throw new Error(`Unexpected ${path}`)
+        if (upgrades().length === 1) throw tooLarge
+        return { threads: [returned] }
+      })
+
+      expect(await store.get(CHAT_ID)).toEqual(returned)
+
+      const [first, retry] = upgrades().map(
+        ([, input]) => input.threads[0].messages[0].attachments,
+      )
+      const [photo, doc] = first
+      expect(photo).toMatchObject({ base64: 'cGhvdG8=' })
+      expect(doc).toMatchObject({ pages: [page] })
+      const { base64: _, ...photoWithoutBytes } = photo
+      expect(retry).toEqual([
+        photoWithoutBytes,
+        { ...doc, pages: [{ ...page, image: '' }] },
+      ])
+      expect(await store.originals(CHAT_ID, ['att-photo'])).toEqual(
+        new Map([['att-photo', { base64: 'cGhvdG8=', mimeType: 'image/png' }]]),
+      )
+    })
+
+    it('lists one the harness fails on, opens it once it can, and rewrites it on a later listing', async () => {
       signIn()
       await indexedDBStorage.saveChat(legacyRow(CHAT_ID, 'Cats'))
       await indexedDBStorage.saveChat(legacyRow(OTHER_ID, 'Dogs'))
@@ -347,25 +479,25 @@ describe('device store', () => {
           return { threads: [upgraded(id, id === CHAT_ID ? 'Cats' : 'Dogs')] }
         },
       )
+      const saved = nextSave()
 
-      expect((await store.list()).map((summary) => summary.id)).toEqual([
-        CHAT_ID,
-      ])
-      expect(await store.get(OTHER_ID)).toBeNull()
+      expect(await listedIds()).toEqual([CHAT_ID, OTHER_ID].sort())
+      expect(await saved).toEqual([CHAT_ID])
       expect(logError).toHaveBeenCalledWith(
         'Failed to upgrade a chat stored on this device',
         failure,
         expect.objectContaining({ metadata: { chatId: OTHER_ID } }),
       )
+      await expect(store.get(OTHER_ID)).rejects.toBe(failure)
       failing = false
 
-      expect((await store.list()).map((summary) => summary.id).sort()).toEqual(
-        [CHAT_ID, OTHER_ID].sort(),
-      )
+      const later = nextSave()
+      expect(await listedIds()).toEqual([CHAT_ID, OTHER_ID].sort())
+      expect(await later).toEqual([OTHER_ID])
       expect(await store.get(OTHER_ID)).toEqual(upgraded(OTHER_ID, 'Dogs'))
     })
 
-    it('lists the others when one cannot be read on this device', async () => {
+    it('lists one this device cannot read, and says it cannot be opened', async () => {
       signIn()
       // An attachment the previous client stored without its content, which
       // no read of the row can restore.
@@ -388,17 +520,21 @@ describe('device store', () => {
           return { threads: [upgraded(CHAT_ID, 'Cats')] }
         throw new Error(`Unexpected ${path}`)
       })
-
-      expect((await store.list()).map((summary) => summary.id)).toEqual([
-        CHAT_ID,
-      ])
+      const saved = nextSave()
 
       expect(
-        upgrades().map(([, input]) =>
-          input.threads.map((row: { id: string }) => row.id),
-        ),
-      ).toEqual([[CHAT_ID]])
+        (await store.list()).map(({ id, title }) => ({ id, title })),
+      ).toEqual(
+        expect.arrayContaining([
+          { id: CHAT_ID, title: 'Cats' },
+          { id: OTHER_ID, title: 'Lost photo' },
+        ]),
+      )
+      expect(await saved).toEqual([CHAT_ID])
+
+      expect(sent()).toEqual([[CHAT_ID]])
       expect(await store.get(CHAT_ID)).toEqual(upgraded(CHAT_ID, 'Cats'))
+      await expect(store.get(OTHER_ID)).rejects.toMatchObject(cannotOpen)
       expect(logError).toHaveBeenCalledWith(
         'Failed to read a chat stored on this device',
         expect.objectContaining({ name: 'AttachmentPayloadMissingError' }),
@@ -475,7 +611,7 @@ describe('tab store', () => {
     expect(await store.get(CHAT_ID)).toBeNull()
   })
 
-  it('lists the chats it holds when it has no room to rewrite an old one', async () => {
+  it('lists an old chat it has no room to rewrite, and says why it cannot open it', async () => {
     const store = localThreadStore('tab')
     const kept = storedThread(OTHER_ID, { title: 'Kept' })
     await store.add(kept)
@@ -509,16 +645,23 @@ describe('tab store', () => {
       )
     })
     try {
-      expect((await store.list()).map(({ id }) => id)).toEqual([OTHER_ID])
-      expect(await store.get(CHAT_ID)).toBeNull()
+      expect((await store.list()).map(({ id }) => id)).toEqual([
+        OTHER_ID,
+        CHAT_ID,
+      ])
+      await vi.waitFor(() =>
+        expect(logError).toHaveBeenCalledWith(
+          'Failed to upgrade a chat stored on this device',
+          expect.objectContaining({ code: 'LOCAL_SAVE_FAILED' }),
+          expect.objectContaining({ metadata: { chatId: CHAT_ID } }),
+        ),
+      )
+      await expect(store.get(CHAT_ID)).rejects.toMatchObject({
+        detail: { code: 'LOCAL_SAVE_FAILED', action: 'revise' },
+      })
     } finally {
       full.mockRestore()
     }
-    expect(logError).toHaveBeenCalledWith(
-      'Failed to upgrade a chat stored on this device',
-      expect.objectContaining({ code: 'LOCAL_SAVE_FAILED' }),
-      expect.objectContaining({ metadata: { chatId: CHAT_ID } }),
-    )
   })
 
   it('keeps a signed-out chat in session storage without opening IndexedDB', async () => {

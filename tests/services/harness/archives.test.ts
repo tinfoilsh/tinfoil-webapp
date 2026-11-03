@@ -7,6 +7,7 @@ import {
 import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
 import type { StoredThread } from '@/services/harness/types'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
 import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
@@ -142,6 +143,48 @@ describe('runImports', () => {
     } finally {
       vi.doUnmock('@zip.js/zip.js')
     }
+  })
+
+  it('leaves out an old chat on this device that cannot be opened, and says so', async () => {
+    const kept = storedThread('kept-chat', { title: 'Kept' })
+    await localThreadStore('device').add(kept)
+    await indexedDBStorage.saveChat({
+      id: 'old-chat',
+      title: 'Old trip',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+      isLocalOnly: true,
+      messages: [
+        {
+          role: 'user',
+          content: 'Plan a trip',
+          timestamp: new Date('2026-01-01T00:00:01.000Z'),
+        },
+      ],
+    })
+    client.post.mockImplementation(async (path: string) => {
+      if (path !== '/v1/threads/upgrade') throw new Error(`Unexpected ${path}`)
+      throw new HarnessError(
+        {
+          code: 'BAD_REQUEST',
+          message: 'The chat cannot be read',
+          action: 'stop',
+        },
+        400,
+      )
+    })
+    client.multipart.mockResolvedValue(new Response(new Blob(['zip'])))
+
+    expect(await exportArchive('native', { cloud: false })).toEqual({
+      chats: 1,
+      warnings: [
+        '"Old trip" was saved by an earlier version of Tinfoil Chat and could not be exported.',
+      ],
+    })
+    const [, form] = client.multipart.mock.calls[0] as [string, FormData]
+    expect(
+      form.getAll('thread').map((value) => JSON.parse(value as string)),
+    ).toEqual([kept])
   })
 
   it("exports a signed-out tab's chats, never an account's chats on this device", async () => {

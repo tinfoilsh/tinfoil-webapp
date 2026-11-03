@@ -1,11 +1,8 @@
+import { localThreadStore } from '@/services/harness/local-threads'
 import type { StoredThread } from '@/services/harness/types'
 import { chatEvents } from '@/services/storage/chat-events'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
-import {
-  DB_NAME,
-  DB_VERSION,
-  indexedDBStorage,
-} from '@/services/storage/indexed-db'
+import { DB_NAME, DB_VERSION } from '@/services/storage/indexed-db'
 import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeAll, beforeEach } from 'vitest'
 
@@ -42,9 +39,12 @@ export function resetChatStoresAroundEachTest() {
     })
   })
 
+  // The stores delete through their own API, which forgets what they
+  // learned about the chats they held.
   beforeEach(async () => {
+    await localThreadStore('device').deleteAll()
+    await localThreadStore('tab').deleteAll()
     deletedChatsTracker.clear()
-    await indexedDBStorage.deleteAllChats()
   })
 
   afterEach(() => {

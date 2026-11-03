@@ -1270,6 +1270,93 @@ describe('attested harness transport', () => {
       ['/v1/threads/cancel', 'instance-3'],
     ])
   })
+  it("presents the free key a signed-out chat's turn was sent with in requests about its runs", async () => {
+    const keys = ['free_monday', 'free_tuesday']
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        Response.json({
+          key: keys.shift(),
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+          is_free_tier: true,
+        }),
+      ),
+    )
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const secure = transport()
+      const run = (threadId: string) =>
+        new Response(
+          stream(
+            `id: 0\ndata: ${JSON.stringify({ type: 'RUN_STARTED', threadId, runId: 'r', instance: 'i' })}\n\n` +
+              `id: 1\ndata: ${JSON.stringify({ type: 'RUN_FINISHED', threadId, runId: 'r', metadata: {} })}\n\n`,
+          ),
+          { headers: { 'Content-Type': 'text/event-stream' } },
+        )
+      secure.fetch.mockImplementation(async (url: string, init: RequestInit) =>
+        url.endsWith('/v1/threads/turn')
+          ? run(JSON.parse(init.body as string).threadId)
+          : Response.json({}),
+      )
+      const client = new HarnessClient(
+        'https://harness.example',
+        async () => null,
+        () => secure,
+      )
+      const turn = async (threadId: string) => {
+        for await (const _ of client.events('/v1/threads/turn', {
+          clientRequestId: `nonce-${threadId}`,
+          threadId,
+        }));
+      }
+      await turn('monday-chat')
+      // The key's day ends, and the next request fetches another.
+      vi.setSystemTime(Date.now() + 2 * 60_000)
+      await client.post('/v1/threads/cancel', {
+        threadId: 'monday-chat',
+        runId: 'r',
+      })
+      await turn('tuesday-chat')
+      await client.post('/v1/threads/cancel', {
+        threadId: 'tuesday-chat',
+        runId: 'r',
+      })
+      // A harness that refuses the expired key is asked with the current one.
+      secure.fetch.mockResolvedValueOnce(
+        Response.json(
+          {
+            error: {
+              code: 'UNAUTHENTICATED',
+              message: 'The free key expired',
+              action: 'reauthenticate',
+            },
+          },
+          { status: 401, headers: SEALED },
+        ),
+      )
+      await client.post('/v1/threads/queue/remove', {
+        threadId: 'monday-chat',
+        queueId: 'q',
+      })
+
+      expect(
+        secure.fetch.mock.calls.map(([url, init]) => [
+          new URL(url).pathname,
+          new Headers(init.headers).get('Authorization'),
+        ]),
+      ).toEqual([
+        ['/v1/threads/turn', 'Bearer free_monday'],
+        ['/v1/threads/cancel', 'Bearer free_monday'],
+        ['/v1/threads/turn', 'Bearer free_tuesday'],
+        ['/v1/threads/cancel', 'Bearer free_tuesday'],
+        ['/v1/threads/queue/remove', 'Bearer free_monday'],
+        ['/v1/threads/queue/remove', 'Bearer free_tuesday'],
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('uses the same verified connection for multipart, binary, and follow requests', async () => {
     const secure = transport()
     const client = new HarnessClient(

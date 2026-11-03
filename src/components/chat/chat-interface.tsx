@@ -308,13 +308,16 @@ export function ChatInterface({
           ? 'wrong-key'
           : thread.notFound
             ? 'not-found'
-            : thread.loadFailed ||
-                (initialChatId &&
-                  !isLocalChatUrl &&
-                  !profileReady &&
-                  sessionError)
-              ? 'failed'
-              : null
+            : thread.loadFailed &&
+                thread.errorDetail?.code === ERROR_CODES.localChatUnreadable
+              ? 'unreadable'
+              : thread.loadFailed ||
+                  (initialChatId &&
+                    !isLocalChatUrl &&
+                    !profileReady &&
+                    sessionError)
+                ? 'failed'
+                : null
   const isTemporaryMode = thread.temporary
   useSafeguardsReset()
   // A chat the safeguards flagged is read-only, as the harness reports it.
@@ -2161,6 +2164,8 @@ export function ChatInterface({
                 isLoadingChats={thread.loadingChats}
                 chatListError={thread.chatListError}
                 onRetryChats={thread.retryChatList}
+                localChatListError={thread.localChatListError}
+                onRetryLocalChats={thread.retryLocalChatList}
                 onUnlockChats={keyLocked ? handleOpenCloudSyncSetup : undefined}
                 isOpen={isSidebarOpen}
                 setIsOpen={setIsSidebarOpen}

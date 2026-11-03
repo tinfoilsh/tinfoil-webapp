@@ -132,6 +132,9 @@ export const ERROR_CODES = {
   credentialRequired: 'CREDENTIAL_REQUIRED',
   // Set by this client, not the harness: a reply this device could not store.
   localSaveFailed: 'LOCAL_SAVE_FAILED',
+  // Set by this client, not the harness: an old chat on this device that the
+  // harness refused to upgrade, or that this device cannot read.
+  localChatUnreadable: 'LOCAL_CHAT_UNREADABLE',
   // Set by this client, not the harness: a change that needs the account's
   // settings before they have loaded.
   profileLoading: 'PROFILE_LOADING',

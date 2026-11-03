@@ -24,6 +24,7 @@ export type ClientErrorCode =
   | 'INVALID_RESPONSE'
   | 'STREAM_INTERRUPTED'
   | 'LOCAL_SAVE_FAILED'
+  | 'LOCAL_CHAT_UNREADABLE'
   | 'PROFILE_LOADING'
 
 // Why a request or run failed: as the harness reports it, or as this client

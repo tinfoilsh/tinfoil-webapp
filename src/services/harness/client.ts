@@ -42,10 +42,18 @@ type Transport = Pick<
 // last event of the run it applied, which it sends as Last-Event-ID.
 export type FollowRequest = FollowInput & { lastEventId?: number }
 
-// What a request says in its headers beyond who is asking.
+// What a request says in its headers beyond who is asking, and the chat
+// whose run it starts or is about.
 interface RouteHeaders {
   instance?: string
   lastEventId?: number
+  threadId?: string
+}
+
+const threadOf = (input: unknown): string | undefined => {
+  if (!input || typeof input !== 'object') return
+  const { threadId } = input as { threadId?: unknown }
+  return typeof threadId === 'string' ? threadId : undefined
 }
 
 // The routes about a chat's run, which go to the instance holding it.
@@ -74,6 +82,11 @@ export class HarnessClient {
   // The instance holding each chat's latest run, by chat, which requests
   // about the chat's runs are routed to.
   private readonly instances = new Map<string, string>()
+  // The free key each signed-out chat's latest turn was sent with, by chat.
+  // The harness keeps a signed-out caller's runs under the key, so requests
+  // about the chat's runs present it even once another key replaced it, as
+  // at the end of the key's day.
+  private readonly runKeys = new Map<string, string>()
 
   dispose() {
     this.lifetime.abort()
@@ -186,7 +199,7 @@ export class HarnessClient {
     path: HarnessRoute,
     body: string | FormData,
     signal?: AbortSignal,
-    { instance, lastEventId }: RouteHeaders = {},
+    { instance, lastEventId, threadId }: RouteHeaders = {},
   ): Promise<Response> {
     if (!/^\/v1\/(?:[a-z-]+\/)*[a-z-]+$/.test(path)) {
       throw new HarnessError({
@@ -200,7 +213,9 @@ export class HarnessClient {
     let token = await this.getToken()
     const anonymous = !token
     if (anonymous) {
-      token = await this.anonymous.get(signal)
+      token =
+        (threadId && RUN_ROUTES.has(path) && this.runKeys.get(threadId)) ||
+        (await this.anonymous.get(signal))
       // The provider's getter rejects calls after an account change.
       if (await this.getToken())
         throw new DOMException('Account changed', 'AbortError')
@@ -245,7 +260,11 @@ export class HarnessClient {
         cache: 'no-store',
         credentials: 'omit',
       })
-      if (response.ok) return response
+      if (response.ok) {
+        if (anonymous && threadId && path === ROUTES.turn)
+          this.runKeys.set(threadId, token!)
+        return response
+      }
       if (!response.headers.has(RESPONSE_NONCE_HEADER))
         throw new HarnessError(unsealedRefusal())
       // A refusal without the harness's error envelope, or one that names
@@ -320,6 +339,7 @@ export class HarnessClient {
   ): Promise<T> {
     const response = await this.request(path, JSON.stringify(input), signal, {
       instance: this.instanceFor(path, input),
+      threadId: threadOf(input),
     })
     try {
       return (await response.json()) as T
@@ -339,9 +359,8 @@ export class HarnessClient {
   // The instance a request about a chat's run goes to, once the chat's run
   // named it.
   private instanceFor(path: HarnessRoute, input: unknown): string | undefined {
-    if (!RUN_ROUTES.has(path) || !input || typeof input !== 'object') return
-    const { threadId } = input as { threadId?: unknown }
-    return typeof threadId === 'string'
+    const threadId = threadOf(input)
+    return RUN_ROUTES.has(path) && threadId
       ? this.instances.get(threadId)
       : undefined
   }
@@ -394,6 +413,7 @@ export class HarnessClient {
     const response = await this.request(path, JSON.stringify(body), signal, {
       instance: this.instanceFor(path, input),
       lastEventId,
+      threadId: threadOf(input),
     })
     if (
       !response.headers
