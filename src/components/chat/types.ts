@@ -1,3 +1,5 @@
+import type { SavedAnswers, WidgetAnswers } from '@/services/harness/types'
+
 export type URLCitation = {
   title: string
   url: string
@@ -81,6 +83,8 @@ export type TimelineToolCallBlock = TimelineTiming & {
   progress?: unknown[]
   // The harness found the stored arguments no longer match the widget.
   invalidArguments?: boolean
+  // The options the user picked in a questions widget.
+  answers?: SavedAnswers
 }
 
 export type TimelineBlock =
@@ -141,6 +145,8 @@ export type Message = {
   annotations?: Annotation[] // URL citations from web search
   searchReasoning?: string // Search agent's reasoning for multi-turn context
   quote?: string // Highlighted text the user is replying to
+  // The answers to questions widgets a user message sent the model.
+  answers?: WidgetAnswers[]
   timeline?: TimelineBlock[] // Chronological sequence of blocks for rendering
   // GenUI tool calls emitted by the model (derived from timeline)
   toolCalls?: Array<{

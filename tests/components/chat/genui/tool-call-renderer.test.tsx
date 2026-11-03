@@ -267,6 +267,16 @@ describe('GenUIToolCallRenderer', () => {
     render_message_compose: { variants: [{ label: 'Short', body: 'Hi' }] },
     render_sports_data: { kind: 'standings' },
     render_map: { locations: [{ name: 'Paris' }] },
+    render_questions: {
+      questions: [
+        {
+          id: 'q1',
+          prompt: 'Ready?',
+          selection: 'single',
+          options: [{ id: 'yes', label: 'Yes' }],
+        },
+      ],
+    },
   }
 
   it.each(Object.entries(requiredOnly))(

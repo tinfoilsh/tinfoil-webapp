@@ -29,6 +29,7 @@ import {
   type MessageOverflowMenuItem,
 } from '../components/MessageOverflowMenu'
 import { ReadAloudButton } from '../components/ReadAloudButton'
+import { SentAnswers } from '../components/SentAnswers'
 import { SourcesButton } from '../components/SourcesButton'
 import { StreamingChunkedText } from '../components/StreamingChunkedText'
 import { StreamingContentWrapper } from '../components/StreamingContentWrapper'
@@ -84,6 +85,7 @@ const DefaultMessageComponent = ({
 }: MessageRenderProps) => {
   const isUser = message.role === 'user'
   const hasUserAttachments = isUser && !!message.attachments?.length
+  const hasUserAnswers = isUser && !!message.answers?.length
   const enterToNewline = useEnterToNewline()
   const [isEditing, setIsEditing] = React.useState(false)
   const [editContent, setEditContent] = React.useState(message.content || '')
@@ -426,6 +428,12 @@ const DefaultMessageComponent = ({
         />
       )}
 
+      {hasUserAnswers && !isEditing && (
+        <div className="flex w-full justify-end px-4 pt-2">
+          <SentAnswers answers={message.answers ?? []} />
+        </div>
+      )}
+
       {/* Chronological timeline rendering (assistant only) */}
       {!isUser &&
         !isEditing &&
@@ -492,8 +500,10 @@ const DefaultMessageComponent = ({
                         arguments: block.arguments,
                         result: block.result,
                         invalidArguments: block.invalidArguments,
+                        answers: block.answers,
                       },
                     ]}
+                    messageId={message.id}
                     isStreaming={!!isStreaming && !!isLastMessage}
                     isDarkMode={isDarkMode}
                     activeArtifactToolCallId={activeArtifactToolCallId}
@@ -630,7 +640,7 @@ const DefaultMessageComponent = ({
       )}
 
       {/* User message content (or assistant without timeline) */}
-      {(message.content || hasUserAttachments) &&
+      {(message.content || hasUserAttachments || hasUserAnswers) &&
         !(!isUser && message.timeline && message.timeline.length > 0) && (
           <>
             {!isEditing && message.content && (

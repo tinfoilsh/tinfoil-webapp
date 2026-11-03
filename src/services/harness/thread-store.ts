@@ -4,6 +4,7 @@ import { ROUTES } from './protocol'
 import type { DeviceRun } from './run-controller'
 import type { HarnessAPI, Profile } from './runtime'
 import type {
+  AnswerChanges,
   FollowInput,
   Thread,
   ThreadMessage,
@@ -67,6 +68,13 @@ export interface ThreadStore {
     threadId: string,
     messageId: string,
     content: string,
+  ): Promise<Thread | null>
+  // Saves the options picked in a questions widget of a reply.
+  answerQuestions(
+    threadId: string,
+    messageId: string,
+    toolCallId: string,
+    answers: AnswerChanges,
   ): Promise<Thread | null>
   share(threadId: string): Promise<string>
   // The audio of a message read aloud, as one stream.
@@ -136,8 +144,17 @@ export function cloudThreads(
   // The harness changes a stored chat's message and answers with its
   // latest window.
   const changeMessage = async (
-    path: typeof ROUTES.messageDelete | typeof ROUTES.messageUpdate,
-    input: { threadId: string; messageId: string; content?: string },
+    path:
+      | typeof ROUTES.messageDelete
+      | typeof ROUTES.messageUpdate
+      | typeof ROUTES.messageAnswer,
+    input: {
+      threadId: string
+      messageId: string
+      content?: string
+      toolCallId?: string
+      answers?: AnswerChanges
+    },
   ) => {
     const thread = await api.post<Thread>(path, input)
     list.replace(summaryOf(thread))
@@ -182,6 +199,13 @@ export function cloudThreads(
       changeMessage(ROUTES.messageDelete, { threadId, messageId }),
     editReply: (threadId, messageId, content) =>
       changeMessage(ROUTES.messageUpdate, { threadId, messageId, content }),
+    answerQuestions: (threadId, messageId, toolCallId, answers) =>
+      changeMessage(ROUTES.messageAnswer, {
+        threadId,
+        messageId,
+        toolCallId,
+        answers,
+      }),
     async share(threadId) {
       const { url } = await api.post<{ url: string }>(ROUTES.share, {
         threadId,

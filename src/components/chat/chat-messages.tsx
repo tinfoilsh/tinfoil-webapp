@@ -24,6 +24,10 @@ import {
   DocumentTextProvider,
   type LoadDocumentText,
 } from './document-text-context'
+import {
+  QuestionsContext,
+  type QuestionAnswering,
+} from './genui/questions-context'
 import type { ReasoningEffort } from './hooks/use-reasoning-effort'
 import { ImageGalleryProvider } from './image-gallery-context'
 import { MessageRendererHost } from './message-renderer-host'
@@ -81,6 +85,9 @@ type ChatMessagesProps = {
   loadImage?: (attachment: Attachment, signal: AbortSignal) => Promise<Blob>
   loadDocumentText?: LoadDocumentText
   speak?: Speak
+  // What the chat's questions widgets can do; without it they take no
+  // answers.
+  questions?: QuestionAnswering
   // The chat keeps its images only while the page is open.
   imagesUnsaved?: boolean
   // Messages before those shown: how many, and loading them, which resolves
@@ -294,6 +301,7 @@ export function ChatMessages({
   loadImage,
   loadDocumentText,
   speak,
+  questions,
   imagesUnsaved = false,
   earlierMessageCount = 0,
   loadEarlierMessages,
@@ -566,25 +574,27 @@ export function ChatMessages({
               </div>
             )}
             <UnsavedImagesProvider value={imagesUnsaved}>
-              {messages.map((message, index) => (
-                <ChatMessage
-                  key={message.id ?? `${chatId}-${index}`}
-                  message={message}
-                  messageIndex={index}
-                  model={currentModel}
-                  isDarkMode={isDarkMode}
-                  isLastMessage={index === messages.length - 1}
-                  isStreaming={
-                    index === messages.length - 1 && isStreamingResponse
-                  }
-                  activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
-                    message,
-                    activeArtifactToolCallId,
-                  )}
-                  hideActions={readOnly}
-                  {...messageActions}
-                />
-              ))}
+              <QuestionsContext.Provider value={questions ?? null}>
+                {messages.map((message, index) => (
+                  <ChatMessage
+                    key={message.id ?? `${chatId}-${index}`}
+                    message={message}
+                    messageIndex={index}
+                    model={currentModel}
+                    isDarkMode={isDarkMode}
+                    isLastMessage={index === messages.length - 1}
+                    isStreaming={
+                      index === messages.length - 1 && isStreamingResponse
+                    }
+                    activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
+                      message,
+                      activeArtifactToolCallId,
+                    )}
+                    hideActions={readOnly}
+                    {...messageActions}
+                  />
+                ))}
+              </QuestionsContext.Provider>
             </UnsavedImagesProvider>
             {showLoadingPlaceholder && (
               <LoadingMessage

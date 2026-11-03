@@ -82,6 +82,7 @@ import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { DragProvider } from './drag-context'
 import { ForkOverlay } from './fork-overlay'
+import { type QuestionAnswering } from './genui/questions-context'
 import { ArtifactRetryError } from './genui/retry'
 import {
   artifactPreviewTargetsEqual,
@@ -690,6 +691,35 @@ export function ChatInterface({
     if (generationBlocked) return
     void thread.retry({ options }).catch(thread.report)
   }
+  // The open chat's questions widgets take answers while the chat is idle
+  // and can change, and their button sends a question of the answers alone.
+  const questionActions = useRef({
+    answer: thread.answerQuestions,
+    retry: thread.retryAnswers,
+    submit: () => void handleQuery(''),
+  })
+  useEffect(() => {
+    questionActions.current = {
+      answer: thread.answerQuestions,
+      retry: thread.retryAnswers,
+      submit: () => void handleQuery(''),
+    }
+  })
+  const canAnswer = canChangeMessages && !isStreaming && !currentChatIsFlagged
+  const canSubmitAnswers = canChat && !isStreaming && !generationBlocked
+  const questionAnswering = useMemo<QuestionAnswering>(
+    () => ({
+      canAnswer,
+      canSubmit: canSubmitAnswers,
+      saves: thread.answerSaves,
+      sent: thread.sentAnswers,
+      answer: (messageId, toolCallId, changes) =>
+        void questionActions.current.answer(messageId, toolCallId, changes),
+      retry: () => void questionActions.current.retry(),
+      submit: () => questionActions.current.submit(),
+    }),
+    [canAnswer, canSubmitAnswers, thread.answerSaves, thread.sentAnswers],
+  )
   // Message actions wait for the reply in progress, as on main.
   const deleteMessage = (index: number) => {
     if (isStreaming || currentChatIsFlagged) return
@@ -2572,6 +2602,7 @@ export function ChatInterface({
                       loadImage={thread.loadImage}
                       loadDocumentText={thread.documentText}
                       speak={thread.speak}
+                      questions={questionAnswering}
                       imagesUnsaved={!isSignedIn && !isTemporaryMode}
                       earlierMessageCount={Math.max(
                         0,

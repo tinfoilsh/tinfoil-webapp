@@ -28,6 +28,11 @@ import {
 } from './open-chat'
 import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import { useHarness } from './provider'
+import {
+  AnswerSaves,
+  sentAnswers,
+  type AnswerSaveStatus,
+} from './question-answers'
 import { initialChat, isStopping, type ChatState } from './reducer'
 import { RunController } from './run-controller'
 import { getView, reportHarnessError } from './runtime'
@@ -36,6 +41,8 @@ import { createStore, useStore } from './store'
 import { cloudThreads, type AskContext, type ThreadStore } from './thread-store'
 import type {
   AttachmentDescriptor,
+  SavedAnswers,
+  Thread,
   Turn,
   Message as WireMessage,
 } from './types'
@@ -47,6 +54,9 @@ import {
   threadView,
   type ShownMessage,
 } from './view-model'
+
+// A chat none of whose answers are saving.
+const NO_ANSWER_SAVES: Record<string, AnswerSaveStatus> = {}
 
 export interface ThreadRoute {
   // The route names a chat stored on this device (/chat/local/:id).
@@ -98,6 +108,8 @@ export function useThread(
       temporaryChats: { store: memoryThreadStore() },
     }),
   )
+  // The answers picked in questions widgets that are not saved yet.
+  const [answers] = useState(() => new AnswerSaves())
   // The view of each message, kept until the message, whether it streams,
   // the reasoning summaries or whether the user stopped its reply change, so
   // a message that did not change keeps its view.
@@ -239,6 +251,18 @@ export function useThread(
         : {}),
     }
   }
+  // A chat as its store holds it, under the answers picked in it that are
+  // not saved yet.
+  const storedChat = useCallback(
+    (thread: Thread) => {
+      const loaded = initialChat(thread)
+      return {
+        ...loaded,
+        messages: answers.overlay(thread.id, loaded.messages),
+      }
+    },
+    [answers],
+  )
   // Shows the open chat as it is stored once its run is over, as when the
   // harness no longer has the run or had applied a turn sent again. A chat
   // never saved keeps what it shows.
@@ -250,7 +274,7 @@ export function useThread(
     if (thread) markSaved(threadId)
     controller.view.set(
       thread
-        ? initialChat(thread)
+        ? storedChat(thread)
         : {
             ...controller.view.get(),
             status: 'idle',
@@ -333,7 +357,7 @@ export function useThread(
         patch({ temporary: false, local, notFound: true, failedId: threadId })
         return { status: 'not-found' }
       }
-      controller.view.set(initialChat(thread))
+      controller.view.set(storedChat(thread))
       patch({
         id: thread.id,
         temporary: false,
@@ -376,6 +400,7 @@ export function useThread(
     temporary: () => temporaryChats.store,
     storeOf,
     moving,
+    answers,
     reset,
     openChat,
   })
@@ -390,6 +415,7 @@ export function useThread(
     profile,
     projectId,
     moving,
+    answers,
     openStore,
     patch,
     report,
@@ -404,6 +430,14 @@ export function useThread(
   const state = useStore(controller.view)
   const deviceRuns = useStore(controller.deviceRuns)
   const canceledMessages = useStore(controller.canceled)
+  const answerSaves = useStore(answers.status)
+  // What the open chat's questions last sent the model of each widget's
+  // answers, the same while that does not change.
+  const sentKey = JSON.stringify(sentAnswers(state.messages))
+  const sent = useMemo(
+    (): Record<string, SavedAnswers> => JSON.parse(sentKey),
+    [sentKey],
+  )
   const refreshedChat = useRef<{ id: string; revision: string } | null>(null)
   useEffect(() => {
     if (
@@ -436,7 +470,7 @@ export function useThread(
       }
       if (cancelled || !shown() || controller.view.get().status !== 'idle')
         return
-      controller.view.set(initialChat(thread))
+      controller.view.set(storedChat(thread))
       refreshedChat.current = { id, revision: chatRevision }
       patch({
         model: thread.model,
@@ -467,6 +501,7 @@ export function useThread(
     report,
     reset,
     state.status,
+    storedChat,
   ])
   // A new chat follows the model the user picked last, as the profile
   // loads, until the user chooses one in it or sends its first message. A
@@ -818,6 +853,10 @@ export function useThread(
       profileReady &&
       (onDevice(openState) || keyReady),
     canChangeMessages: !loading && !openState.failedId && !!chat.id,
+    // The saves of the open chat's questions widgets, by widget call, and
+    // what its questions last sent the model of each widget's answers.
+    answerSaves: (id && answerSaves[id]) || NO_ANSWER_SAVES,
+    sentAnswers: sent,
     queue,
     contextUsage: summary?.contextUsage ?? undefined,
     error: failure?.message || state.error?.message || '',
