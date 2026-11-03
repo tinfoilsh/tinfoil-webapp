@@ -666,3 +666,216 @@ it('says a reply the user stopped was canceled though the chat was left before i
     canceledByUser: true,
   })
 })
+
+it.each([
+  {
+    name: 'stays as it showed once its run stops',
+    cancel: async () => ({}),
+    cancelled: true,
+    shown: 'Half',
+    canceledByUser: true,
+  },
+  {
+    name: 'shows the rest once its run finishes before the stop reaches it',
+    cancel: async () => {
+      throw new HarnessError(
+        {
+          code: 'RUN_NOT_FOUND',
+          message: 'The run is not live on this instance',
+          action: 'reload',
+        },
+        404,
+      )
+    },
+    cancelled: false,
+    shown: 'Half and the rest',
+    canceledByUser: undefined,
+  },
+])(
+  'a reply the user stopped $name',
+  async ({ cancel, cancelled, shown, canceledByUser }) => {
+    signIn({ cloud: true })
+    const stopAsked = gate()
+    const lateApplied = gate()
+    const end = gate()
+    client.post.mockImplementation(async (path) => {
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      if (path === '/v1/threads/cancel') {
+        stopAsked.resolve()
+        return cancel()
+      }
+      throw new Error(`Unexpected ${path}`)
+    })
+    client.events.mockImplementationOnce(async function* (
+      _path: string,
+      input: Turn,
+    ): AsyncGenerator<Frame> {
+      const threadId = input.threadId!
+      yield {
+        id: 0,
+        event: { type: 'RUN_STARTED', threadId, runId: 'run-1', instance: 'i' },
+      }
+      yield {
+        id: 1,
+        event: {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'answer',
+          role: 'assistant',
+          delta: 'Half',
+        },
+      }
+      // Text the model wrote before the stop reached it.
+      await stopAsked.promise
+      yield {
+        id: 2,
+        event: {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'answer',
+          role: 'assistant',
+          delta: ' and the rest',
+        },
+      }
+      lateApplied.resolve()
+      await end.promise
+      yield {
+        id: 3,
+        event: {
+          type: 'RUN_FINISHED',
+          threadId,
+          runId: 'run-1',
+          metadata: {
+            cancelled,
+            messages: [{ id: 'answer', isInterrupted: cancelled }],
+          },
+        },
+      }
+    })
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.loadingChats).toBe(false))
+    let sending: Promise<boolean> | undefined
+    try {
+      act(() => {
+        sending = result.current.send({ content: 'Tell me' })
+      })
+      await waitFor(() =>
+        expect(result.current.chat.messages.at(-1)?.content).toBe('Half'),
+      )
+      await act(() => result.current.cancel())
+      await act(() => lateApplied.promise)
+
+      expect(result.current.chat.messages.at(-1)).toMatchObject({
+        content: 'Half',
+        canceledByUser: true,
+      })
+
+      await act(async () => {
+        end.resolve()
+        await sending
+      })
+      expect(result.current.status).toBe('idle')
+      expect(result.current.chat.messages.at(-1)?.content).toBe(shown)
+      expect(result.current.chat.messages.at(-1)?.canceledByUser).toBe(
+        canceledByUser,
+      )
+    } finally {
+      await act(async () => {
+        stopAsked.resolve()
+        end.resolve()
+        await sending
+      })
+    }
+  },
+)
+
+it('shows what a reply streamed while it stopped when the stop fails', async () => {
+  signIn({ cloud: true })
+  const stopAsked = gate()
+  const lateApplied = gate()
+  const end = gate()
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/cancel') {
+      stopAsked.resolve()
+      await lateApplied.promise
+      throw new HarnessError(
+        {
+          code: 'UPSTREAM_REFUSED',
+          message: 'Stop unavailable',
+          action: 'retry',
+        },
+        503,
+      )
+    }
+    throw new Error(`Unexpected ${path}`)
+  })
+  client.events.mockImplementationOnce(async function* (
+    _path: string,
+    input: Turn,
+  ): AsyncGenerator<Frame> {
+    const threadId = input.threadId!
+    yield {
+      id: 0,
+      event: { type: 'RUN_STARTED', threadId, runId: 'run-1', instance: 'i' },
+    }
+    yield {
+      id: 1,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'answer',
+        role: 'assistant',
+        delta: 'Half',
+      },
+    }
+    await stopAsked.promise
+    yield {
+      id: 2,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'answer',
+        role: 'assistant',
+        delta: ' and the rest',
+      },
+    }
+    lateApplied.resolve()
+    await end.promise
+    yield {
+      id: 3,
+      event: {
+        type: 'RUN_FINISHED',
+        threadId,
+        runId: 'run-1',
+        metadata: { messages: [{ id: 'answer' }] },
+      },
+    }
+  })
+  const { result } = renderHook(() => useThread())
+  await waitFor(() => expect(result.current.loadingChats).toBe(false))
+  let sending: Promise<boolean> | undefined
+  try {
+    act(() => {
+      sending = result.current.send({ content: 'Tell me' })
+    })
+    await waitFor(() =>
+      expect(result.current.chat.messages.at(-1)?.content).toBe('Half'),
+    )
+
+    await act(() =>
+      expect(result.current.cancel()).rejects.toMatchObject({
+        detail: { code: 'UPSTREAM_REFUSED' },
+      }),
+    )
+
+    expect(result.current.stopping).toBe(false)
+    expect(result.current.status).toBe('streaming')
+    expect(result.current.chat.messages.at(-1)).toMatchObject({
+      content: 'Half and the rest',
+    })
+    expect(result.current.chat.messages.at(-1)?.canceledByUser).toBeUndefined()
+  } finally {
+    await act(async () => {
+      stopAsked.resolve()
+      end.resolve()
+      await sending
+    })
+  }
+})

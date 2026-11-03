@@ -10,6 +10,7 @@ import {
   reduceEvent,
   runErrorOf,
   runOf,
+  unstopped,
   type ChatState,
 } from './reducer'
 import type { HarnessAPI } from './runtime'
@@ -393,13 +394,14 @@ export class RunController {
     const detail =
       cause instanceof HarnessError ? cause.detail : CONNECTION_LOST
     this.errorAt = Date.now()
+    // A run whose stream ended while it stopped may go on, so the chat shows
+    // all it streamed, which rejoining it continues from.
     this.view.update((state) => ({
-      ...state,
-      error: detail,
       ...(!started &&
       (state.status === 'streaming' || state.status === 'queued')
-        ? {}
-        : { status: 'error', stopping: undefined }),
+        ? state
+        : { ...unstopped(state), status: 'error' as const }),
+      error: detail,
       ...(detail.code === ERROR_CODES.chatFlagged ? { flagged: true } : {}),
     }))
     this.api.reportRateLimit(detail.rateLimit)
