@@ -182,7 +182,7 @@ function createMarkdownComponents(): Components {
         <th
           {...props}
           scope="col"
-          className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-content-primary"
+          className="px-4 py-3 text-left text-sm font-medium text-content-primary"
           style={{
             maxWidth: CONSTANTS.TABLE_COLUMN_MAX_WIDTH_PX,
             wordWrap: 'break-word',
