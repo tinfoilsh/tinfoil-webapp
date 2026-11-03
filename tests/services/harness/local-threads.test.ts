@@ -401,6 +401,34 @@ describe('device store', () => {
 })
 
 describe('tab store', () => {
+  it('refuses a chat the full session storage cannot hold instead of reporting it kept', async () => {
+    const store = localThreadStore('tab')
+    const kept = storedThread(OTHER_ID, { title: 'Kept' })
+    await store.add(kept)
+    const full = vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException(
+        'The quota has been exceeded.',
+        'QuotaExceededError',
+      )
+    })
+    try {
+      await expect(
+        store.add(thread({ title: 'Too much' })),
+      ).rejects.toMatchObject({
+        detail: {
+          code: 'LOCAL_SAVE_FAILED',
+          action: 'revise',
+          message:
+            'This browser tab has no room for more chats. Delete some chats, or sign in to keep more.',
+        },
+      })
+    } finally {
+      full.mockRestore()
+    }
+    expect((await store.list()).map(({ id }) => id)).toEqual([OTHER_ID])
+    expect(await store.get(CHAT_ID)).toBeNull()
+  })
+
   it('keeps a signed-out chat in session storage without opening IndexedDB', async () => {
     const shared = globalThis.indexedDB
     const isolated = new IDBFactory()

@@ -86,6 +86,7 @@ export const sessionChatStorage = {
         action: 'saveChat',
         metadata: { chatId: chat?.id || 'undefined' },
       })
+      throw error
     }
   },
 
