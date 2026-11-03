@@ -53,17 +53,10 @@ const EXPORT_FILENAMES: Record<ExportFormat, string> = {
   conversations: 'tinfoil-chats.zip',
 }
 
-// The chats the account keeps on this device. Archives are for signed-in
-// accounts, so a signed-out visitor's tab has none to send or receive.
-const deviceStore = (api: HarnessAPI) => {
-  if (!api.userId)
-    throw new HarnessError({
-      code: ERROR_CODES.unauthenticated,
-      action: ERROR_ACTIONS.stop,
-      message: 'Sign in to import or export chats.',
-    })
-  return localThreadStore('device')
-}
+// The chats kept on this device: the account's, or a signed-out visitor's,
+// which last as long as the browser tab.
+const deviceStore = (api: HarnessAPI) =>
+  localThreadStore(api.userId ? 'device' : 'tab')
 
 // The manifest a conversations export lists what it left out in.
 const EXPORT_MANIFEST = 'manifest.json'
@@ -357,6 +350,12 @@ async function importFile(
   onStored?: (stored: number) => void,
 ): Promise<FileImport> {
   const api = harnessAPI()
+  if (target === 'cloud' && !api.userId)
+    throw new HarnessError({
+      code: ERROR_CODES.unauthenticated,
+      action: ERROR_ACTIONS.stop,
+      message: 'Sign in to import into the cloud.',
+    })
   const store = deviceStore(api)
   const key = target === 'cloud' ? api.key() : undefined
   const form = new FormData()

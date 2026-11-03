@@ -385,6 +385,32 @@ describe('exporting chats from the Data tab', () => {
     expect(screen.getByRole('status')).toHaveTextContent(leftOut)
   })
 
+  it("exports this tab's chats when signed out, never an account's chats on this device", async () => {
+    await localThreadStore('device').update(FORK_ID, () =>
+      storedThread(FORK_ID, { title: 'Account chat' }),
+    )
+    page.isSignedIn = false
+    connect()
+    const tabChat = storedThread(LOCAL_ID, { title: 'Tab chat' })
+    await localThreadStore('tab').update(LOCAL_ID, () => tabChat)
+    answerExport()
+    renderData()
+
+    await exportChats()
+
+    expect(await sentForm()).toEqual({
+      path: '/v1/export',
+      parts: [
+        ['options', { format: 'conversations' }],
+        ['thread', tabChat],
+      ],
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Exported 1 conversation successfully.',
+    )
+    expect(downloads.map(({ name }) => name)).toEqual(['tinfoil-chats.zip'])
+  })
+
   it('explains an export refused while other archives fill the temporary space', async () => {
     connect({ cloud: true })
     answerCloudChats([deviceChat])
@@ -684,6 +710,30 @@ describe('importing chats from the Data tab', () => {
     const status = screen.getByRole('status')
     expect(status).toHaveTextContent('1 chat imported')
     expect(status).toHaveTextContent('1 attachment could not be read.')
+  })
+
+  it('keeps the chats a signed-out import returns in this tab', async () => {
+    page.isSignedIn = false
+    connect()
+    answerImport([importedLine], { jobId: null, warnings: [] })
+    renderData()
+
+    expect(
+      screen.getByText(/imported chats stay in this browser tab/),
+    ).toBeVisible()
+    pickFiles('ChatGPT', [chatGptExport])
+    await importStaged()
+
+    expect((await sentForm()).parts[0]).toEqual([
+      'options',
+      { target: 'device' },
+    ])
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Import complete',
+      description: 'Imported 1 chat from ChatGPT',
+    })
+    expect(await localThreadStore('tab').get(imported.id)).toEqual(imported)
+    expect(await localThreadStore('device').list()).toEqual([])
   })
 
   it('reports the chats a repeated import found already on this device', async () => {

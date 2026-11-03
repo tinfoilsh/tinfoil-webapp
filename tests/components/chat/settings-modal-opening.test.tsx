@@ -80,7 +80,7 @@ describe('settings opening', () => {
     signOut.mockReset().mockResolvedValue(undefined)
   })
 
-  it("lets a signed-out visitor delete this browser's chats but not move or reach account data", () => {
+  it("lets a signed-out visitor delete, import and export this browser's chats but not reach account data", () => {
     render(
       <Harness
         initialTab="data"
@@ -103,9 +103,14 @@ describe('settings opening', () => {
     ).toBeInTheDocument()
     for (const name of [
       'Import from ChatGPT',
-      'Import from Claude',
       'Import from Tinfoil',
       'Export Chats',
+    ])
+      expect(screen.getByRole('button', { name })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Import from Claude' }))
+    expect(screen.getByRole('button', { name: 'Conversations' })).toBeEnabled()
+    for (const name of [
+      'Projects',
       'Cloud Sync',
       'Delete all projects',
       'Export Projects for Claude',
