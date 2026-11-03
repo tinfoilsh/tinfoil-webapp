@@ -1,6 +1,7 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { CONSTANTS } from '@/components/chat/constants'
 import { ProjectProvider } from '@/components/project/project-provider'
+import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
@@ -10,6 +11,7 @@ import type {
   StoredThread,
   Turn,
 } from '@/services/harness/types'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
 import {
   fireEvent,
   render,
@@ -575,6 +577,58 @@ it.each([
     expect(chatPage.router.push).not.toHaveBeenCalled()
   },
 )
+
+it('explains an old chat on this device that could not be opened, and keeps it listed', async () => {
+  signIn()
+  sessionStorage.setItem(UI_SIDEBAR_OPEN, 'true')
+  const id = '8233746419999_8a3b4f1e-6f7d-4d52-9c3a-0e1f2a3b4c5d'
+  await indexedDBStorage.saveChat({
+    id,
+    title: 'Old trip',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-02T00:00:00.000Z',
+    isLocalOnly: true,
+    messages: [
+      {
+        role: 'user',
+        content: 'Plan a trip',
+        timestamp: new Date('2026-01-01T00:00:01.000Z'),
+      },
+    ],
+  })
+  answerChatPage({
+    '/v1/threads/upgrade': () => {
+      throw new HarnessError(
+        {
+          code: 'BAD_REQUEST',
+          message: 'The chat cannot be read',
+          action: 'stop',
+        },
+        400,
+      )
+    },
+  })
+  render(view({ initialChatId: id, isLocalChatUrl: true }))
+
+  await screen.findByRole('heading', { name: "Couldn't open chat" })
+  const status = within(
+    screen.getByRole('region', { name: 'Chat history unavailable' }),
+  )
+  expect(status.getByRole('alert')).toHaveTextContent(
+    'This chat was saved by an earlier version of Tinfoil Chat and could not be opened.',
+  )
+  expect(
+    await screen.findByRole('link', { name: 'Old trip' }),
+  ).toBeInTheDocument()
+
+  fireEvent.click(status.getByRole('button', { name: 'Start new chat' }))
+
+  expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
+    '/',
+    undefined,
+    { shallow: true },
+  )
+})
 
 it('explains a chat that failed to load once and offers a new chat', async () => {
   signIn({ cloud: true })

@@ -9,7 +9,7 @@ import {
 import Link from 'next/link'
 
 export type ChatHistoryProblem =
-  'sign-in' | 'unlock' | 'wrong-key' | 'not-found' | 'failed'
+  'sign-in' | 'unlock' | 'wrong-key' | 'not-found' | 'unreadable' | 'failed'
 
 const descriptions = {
   'sign-in': ['Sign in required', 'You need to sign in to access this chat.'],
@@ -25,6 +25,10 @@ const descriptions = {
     'Chat not found',
     'This chat may have been deleted or is no longer available.',
   ],
+  unreadable: [
+    "Couldn't open chat",
+    'This chat was saved by an earlier version of Tinfoil Chat and could not be opened. You can delete it from the sidebar.',
+  ],
   failed: [
     "Couldn't load chat",
     'A network error occurred while loading this chat. Please try again.',
@@ -39,6 +43,7 @@ const icons = {
   unlock: TfLockLockedAnimated,
   'wrong-key': TfLockLockedAnimated,
   'not-found': TfChat2Animated,
+  unreadable: TfTinSad,
   failed: TfTinSad,
 } as const
 
@@ -66,6 +71,8 @@ export function ChatHistoryStatus({
   const [title, description] = descriptions[problem]
   const Icon = icons[problem]
   const isKeyProblem = problem === 'unlock' || problem === 'wrong-key'
+  // Opening the chat again cannot help.
+  const isFinal = problem === 'not-found' || problem === 'unreadable'
   return (
     <section
       className="flex min-h-full flex-1 items-center justify-center px-4"
@@ -103,17 +110,11 @@ export function ChatHistoryStatus({
             <button
               type="button"
               className={ACTION_CLASS_NAME}
-              onClick={
-                isKeyProblem
-                  ? onUnlock
-                  : problem === 'not-found'
-                    ? onNewChat
-                    : onRetry
-              }
+              onClick={isKeyProblem ? onUnlock : isFinal ? onNewChat : onRetry}
             >
               {isKeyProblem
                 ? 'Unlock'
-                : problem === 'not-found'
+                : isFinal
                   ? 'Start new chat'
                   : 'Try again'}
             </button>

@@ -308,13 +308,16 @@ export function ChatInterface({
           ? 'wrong-key'
           : thread.notFound
             ? 'not-found'
-            : thread.loadFailed ||
-                (initialChatId &&
-                  !isLocalChatUrl &&
-                  !profileReady &&
-                  sessionError)
-              ? 'failed'
-              : null
+            : thread.loadFailed &&
+                thread.errorDetail?.code === ERROR_CODES.localChatUnreadable
+              ? 'unreadable'
+              : thread.loadFailed ||
+                  (initialChatId &&
+                    !isLocalChatUrl &&
+                    !profileReady &&
+                    sessionError)
+                ? 'failed'
+                : null
   const isTemporaryMode = thread.temporary
   useSafeguardsReset()
   // A chat the safeguards flagged is read-only, as the harness reports it.

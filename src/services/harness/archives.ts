@@ -145,10 +145,25 @@ export async function exportArchive(
   const store = deviceStore(api)
   // A fork keeps the attachments of its chat, whose originals go once.
   const sent = new Set<string>()
+  // Old chats this device keeps that cannot be opened are left out.
+  const unreadable: string[] = []
   let chats = 0
-  for (const { id } of await store.list()) {
+  for (const { id, title } of await store.list()) {
     signal?.throwIfAborted()
-    const thread = await store.get(id)
+    let thread: StoredThread | null
+    try {
+      thread = await store.get(id)
+    } catch (cause) {
+      if (
+        !(cause instanceof HarnessError) ||
+        cause.code !== ERROR_CODES.localChatUnreadable
+      )
+        throw cause
+      unreadable.push(
+        `"${title}" was saved by an earlier version of Tinfoil Chat and could not be exported.`,
+      )
+      continue
+    }
     if (!thread) continue
     form.append('thread', JSON.stringify(thread))
     chats++
@@ -178,8 +193,10 @@ export async function exportArchive(
   const archive = await receive(response, onProgress)
   signal?.throwIfAborted()
   saveDownload(archive, EXPORT_FILENAMES[format])
-  const warnings =
-    format === 'conversations' ? await exportWarnings(archive) : []
+  const warnings = [
+    ...unreadable,
+    ...(format === 'conversations' ? await exportWarnings(archive) : []),
+  ]
   return key ? { warnings } : { chats, warnings }
 }
 

@@ -58,8 +58,27 @@ const THREAD_FORMAT = 1
 // Statuses with which the harness refuses an old row itself, rather than
 // the request that carried it.
 const REFUSED_ROW_STATUSES = new Set([400, 413])
+// How long the harness has to upgrade one old row, which may carry its
+// images.
+const UPGRADE_TIMEOUT_MS = 120_000
 // The name of the DOMException a full web storage throws.
 const QUOTA_EXCEEDED = 'QuotaExceededError'
+const READ_FAILED = 'Failed to read a chat stored on this device'
+const UPGRADE_FAILED = 'Failed to upgrade a chat stored on this device'
+
+// How rewriting one old row as a thread ended.
+type Upgrade =
+  | { status: 'written' | 'skipped' | 'unreadable' }
+  | { status: 'failed'; cause: unknown }
+
+// An old chat the harness refused to upgrade, or this device cannot read.
+const cannotOpen = () =>
+  new HarnessError({
+    code: ERROR_CODES.localChatUnreadable,
+    action: ERROR_ACTIONS.stop,
+    message:
+      'This chat was saved by an earlier version of Tinfoil Chat and could not be opened.',
+  })
 
 type Value = Record<string, unknown>
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
@@ -136,6 +155,31 @@ function summaryOf(
     contextUsage: thread.contextUsage ?? null,
     ...(thread.flagged ? { flagged: true } : {}),
   }
+}
+
+// An old row as the list shows it until the harness rewrites it.
+function legacySummary(row: Value, messageCount: number): ThreadSummary {
+  const title = str(row.title)
+  const createdAt = str(row.createdAt) || undefined
+  const updatedAt = str(row.updatedAt) || undefined
+  return summaryOf(
+    {
+      id: str(row.id),
+      title: title || PLACEHOLDER_CHAT_TITLE,
+      titleState: str(row.titleState) || (title ? 'generated' : 'placeholder'),
+      createdAt,
+      updatedAt,
+      activityAt: str(row.activityAt) || updatedAt || createdAt,
+      model: str(row.model),
+      projectId: null,
+      presetId: null,
+      pinned: false,
+      webSearchEnabled:
+        typeof row.webSearchEnabled === 'boolean' ? row.webSearchEnabled : true,
+      activeRun: null,
+    },
+    messageCount,
+  )
 }
 
 // The chat as the view shows it, without the image bytes and page images
@@ -272,24 +316,33 @@ export function isThread(value: unknown): value is StoredThread {
   )
 }
 
+const requestUpgrade = (row: Value) =>
+  harnessAPI().post<{ threads?: unknown }>(
+    ROUTES.upgrade,
+    { threads: [row] },
+    { keyless: true, signal: AbortSignal.timeout(UPGRADE_TIMEOUT_MS) },
+  )
+
+// A row the harness refuses itself is handed back as null; the failure of
+// the request that carried it is thrown.
+function refusedAsNull(cause: unknown): null {
+  if (
+    cause instanceof HarnessError &&
+    REFUSED_ROW_STATUSES.has(cause.status ?? 0)
+  )
+    return null
+  throw cause
+}
+
 // Upgrades a chat this device stored in the previous client's format into a
-// thread through the harness's reader of old chats, one chat per request. A chat the harness refuses, as one too large to
-// send, is handed back as null.
+// thread through the harness's reader of old chats, one chat per request. A
+// chat the harness refuses, as one too large to send, is handed back as null.
 async function upgradeRow(row: Value): Promise<StoredThread | null> {
   let result: { threads?: unknown }
   try {
-    result = await harnessAPI().post<{ threads?: unknown }>(
-      ROUTES.upgrade,
-      { threads: [row] },
-      { keyless: true },
-    )
+    result = await requestUpgrade(row)
   } catch (cause) {
-    if (
-      cause instanceof HarnessError &&
-      REFUSED_ROW_STATUSES.has(cause.status ?? 0)
-    )
-      return null
-    throw cause
+    return refusedAsNull(cause)
   }
   const [thread, ...rest] = arr(result?.threads)
   if (rest.length || !isThread(thread))
@@ -603,98 +656,131 @@ function createStore(
       if (deleted) deletedChatsTracker.markAsDeleted(id)
       else deletedChatsTracker.removeDeletion(id)
   }
-  // Rows the previous client wrote are rewritten as threads once, before
-  // anything reads them. A row the harness cannot upgrade, or fails to, stays
-  // as it was and is left out until a later attempt upgrades it, as does one
-  // this device cannot read, such as one missing an attachment's content.
-  let upgrading: Promise<void> | null = null
-  const upgradeOldRows = () => {
-    upgrading ??= (async () => {
-      const ids = (await backend.summaries())
-        .filter(({ row }) => !isThreadRow(row))
-        .map(({ row }) => str(row.id))
-      async function* rows() {
-        for (const id of ids) {
-          let row: Value | null
-          try {
-            row = await backend.read(id)
-          } catch (cause) {
-            logError('Failed to read a chat stored on this device', cause, {
-              component: 'localThreads',
-              action: 'upgradeOldRows',
-              metadata: { chatId: id },
-            })
-            continue
-          }
-          if (row && !isThreadRow(row)) yield row
-        }
+  // Rows the previous client wrote are listed as they are and rewritten as
+  // threads one at a time in the background; a chat opened first is
+  // rewritten at once. A row the harness refuses, or this device cannot
+  // read, such as one missing an attachment's content, stays as it was, is
+  // not sent again from this page, and says it cannot be opened. One that
+  // failed in any other way is tried again by a later listing.
+  const unreadable = new Set<string>()
+  const upgrades = new Map<string, Promise<Upgrade>>()
+  const logUpgradeFailure = (id: string, message: string, cause: unknown) =>
+    logError(message, cause, {
+      component: 'localThreads',
+      action: 'upgradeOldRows',
+      metadata: { chatId: id },
+    })
+  const upgradeOne = (id: string): Promise<Upgrade> => {
+    let upgrade = upgrades.get(id)
+    if (upgrade) return upgrade
+    upgrade = (async (): Promise<Upgrade> => {
+      let row: Value | null
+      try {
+        row = await backend.read(id)
+      } catch (cause) {
+        logUpgradeFailure(id, READ_FAILED, cause)
+        unreadable.add(id)
+        return { status: 'unreadable' }
       }
-      const written: string[] = []
-      for await (const row of rows()) {
-        const id = str(row.id)
-        let thread: StoredThread | null = null
-        let failure: unknown
-        try {
-          thread = await upgradeRow(row)
-        } catch (cause) {
-          failure = cause
-        }
-        if (!thread) {
-          logError('Failed to upgrade a chat stored on this device', failure, {
-            component: 'localThreads',
-            action: 'upgradeOldRows',
-            metadata: { chatId: id },
-          })
-          continue
-        }
-        // A row this device fails to rewrite, as when its storage is full,
-        // stays as it was until a later attempt.
+      if (!row || isThreadRow(row)) return { status: 'skipped' }
+      let thread: StoredThread | null
+      try {
+        thread = await upgradeRow(row)
+      } catch (cause) {
+        logUpgradeFailure(id, UPGRADE_FAILED, cause)
+        return { status: 'failed', cause }
+      }
+      if (!thread) {
+        logUpgradeFailure(id, UPGRADE_FAILED, undefined)
+        unreadable.add(id)
+        return { status: 'unreadable' }
+      }
+      // A row this device fails to rewrite, as when its storage is full,
+      // stays as it was until a later attempt.
+      try {
         const saved = await serialize(id, async () => {
           const current = await backend.read(id)
           if (!current || isThreadRow(current) || isDeleted(id)) return false
           return backend.write({ ...thread, id }, legacyOriginals(row, thread))
-        }).catch((cause) => {
-          logError('Failed to upgrade a chat stored on this device', cause, {
-            component: 'localThreads',
-            action: 'upgradeOldRows',
-            metadata: { chatId: id },
-          })
-          return false
         })
-        if (saved) written.push(id)
+        return { status: saved ? 'written' : 'skipped' }
+      } catch (cause) {
+        logUpgradeFailure(id, UPGRADE_FAILED, cause)
+        return { status: 'failed', cause }
       }
+    })().finally(() => upgrades.delete(id))
+    upgrades.set(id, upgrade)
+    return upgrade
+  }
+  let upgrading: Promise<void> | null = null
+  const upgradeOldRows = (ids: string[]) => {
+    upgrading ??= (async () => {
+      const written: string[] = []
+      for (const id of ids)
+        if (!unreadable.has(id) && (await upgradeOne(id)).status === 'written')
+          written.push(id)
       if (written.length) emit({ reason: 'save', ids: written })
     })().finally(() => {
       upgrading = null
     })
     return upgrading
   }
+  const isOldRow = async (id: string) =>
+    (await backend.summaries()).some(
+      ({ row }) => str(row.id) === id && !isThreadRow(row),
+    )
   const readThread = async (id: string): Promise<StoredThread | null> => {
-    let row = await backend.read(id)
+    if (unreadable.has(id)) throw cannotOpen()
+    let row: Value | null
+    try {
+      row = await backend.read(id)
+    } catch (cause) {
+      if (!(await isOldRow(id))) throw cause
+      logUpgradeFailure(id, READ_FAILED, cause)
+      unreadable.add(id)
+      throw cannotOpen()
+    }
     if (row && !isThreadRow(row)) {
-      await upgradeOldRows()
+      const upgrade = await upgradeOne(id)
+      if (upgrade.status === 'unreadable') throw cannotOpen()
+      if (upgrade.status === 'failed') throw upgrade.cause
+      if (upgrade.status === 'written') emit({ reason: 'save', ids: [id] })
       row = await backend.read(id)
     }
     return row && isThreadRow(row) ? threadOf(row) : null
   }
   return {
     async list() {
-      let rows = await backend.summaries()
-      if (rows.some(({ row }) => !isThreadRow(row))) {
-        await upgradeOldRows()
-        rows = await backend.summaries()
-      }
+      const rows = (await backend.summaries()).filter(
+        ({ row }) => !isDeleted(str(row.id)),
+      )
+      const oldIds = new Set(
+        rows
+          .filter(({ row }) => !isThreadRow(row))
+          .map(({ row }) => str(row.id)),
+      )
+      // A chat deleted or replaced since, as in another tab, is forgotten.
+      for (const id of unreadable) if (!oldIds.has(id)) unreadable.delete(id)
+      const old = [...oldIds].filter((id) => !unreadable.has(id))
+      if (old.length)
+        void upgradeOldRows(old).catch((cause) =>
+          logError('Failed to upgrade chats stored on this device', cause, {
+            component: 'localThreads',
+            action: 'upgradeOldRows',
+          }),
+        )
       return rows
-        .filter(({ row }) => isThreadRow(row) && !isDeleted(str(row.id)))
         .map(({ row, messageCount }) =>
-          summaryOf(
-            {
-              ...(obj(row.thread) as Omit<StoredThread, 'messages'>),
-              id: str(row.id),
-              activityAt: str(row.activityAt) || undefined,
-            },
-            messageCount,
-          ),
+          isThreadRow(row)
+            ? summaryOf(
+                {
+                  ...(obj(row.thread) as Omit<StoredThread, 'messages'>),
+                  id: str(row.id),
+                  activityAt: str(row.activityAt) || undefined,
+                },
+                messageCount,
+              )
+            : legacySummary(row, messageCount),
         )
         .sort((a, b) => Date.parse(b.activityAt!) - Date.parse(a.activityAt!))
     },
@@ -719,6 +805,7 @@ function createStore(
       return serialize(thread.id, async () => {
         if (await backend.read(thread.id)) return null
         markDeleted([thread.id], false)
+        unreadable.delete(thread.id)
         if (!(await backend.write(thread, originals))) return null
         emit({ reason: 'save', ids: [thread.id] })
         return thread
@@ -737,6 +824,7 @@ function createStore(
           markDeleted([id], false)
           throw error
         }
+        unreadable.delete(id)
         emit({ reason: 'delete', ids: [id] })
       })
     },
@@ -749,6 +837,7 @@ function createStore(
         markDeleted(ids, false)
         throw error
       }
+      unreadable.clear()
       emit({ reason: 'delete-all' })
       return ids.length
     },
