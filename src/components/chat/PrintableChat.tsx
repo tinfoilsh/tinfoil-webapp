@@ -132,7 +132,7 @@ const PrintableMessage = memo(function PrintableMessage({
             return (
               <th
                 {...props}
-                className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700"
+                className="px-4 py-3 text-left text-sm font-medium text-gray-700"
                 style={{
                   maxWidth: '300px',
                   wordWrap: 'break-word',
