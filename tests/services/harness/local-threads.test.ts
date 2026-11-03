@@ -429,6 +429,52 @@ describe('tab store', () => {
     expect(await store.get(CHAT_ID)).toBeNull()
   })
 
+  it('lists the chats it holds when it has no room to rewrite an old one', async () => {
+    const store = localThreadStore('tab')
+    const kept = storedThread(OTHER_ID, { title: 'Kept' })
+    await store.add(kept)
+    const [row] = JSON.parse(
+      sessionStorage.getItem('tinfoil-sync-session-chats')!,
+    )
+    const old = {
+      id: CHAT_ID,
+      title: 'Old chat',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      messages: [
+        {
+          role: 'user',
+          content: 'Hi',
+          timestamp: '2026-01-01T00:00:01.000Z',
+        },
+      ],
+    }
+    sessionStorage.setItem(
+      'tinfoil-sync-session-chats',
+      JSON.stringify([row, old]),
+    )
+    client.post.mockImplementation(async (path: string) => {
+      if (path !== '/v1/threads/upgrade') throw new Error(`Unexpected ${path}`)
+      return { threads: [storedThread(CHAT_ID, { title: 'Old chat' })] }
+    })
+    const full = vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException(
+        'The quota has been exceeded.',
+        'QuotaExceededError',
+      )
+    })
+    try {
+      expect((await store.list()).map(({ id }) => id)).toEqual([OTHER_ID])
+      expect(await store.get(CHAT_ID)).toBeNull()
+    } finally {
+      full.mockRestore()
+    }
+    expect(logError).toHaveBeenCalledWith(
+      'Failed to upgrade a chat stored on this device',
+      expect.objectContaining({ code: 'LOCAL_SAVE_FAILED' }),
+      expect.objectContaining({ metadata: { chatId: CHAT_ID } }),
+    )
+  })
+
   it('keeps a signed-out chat in session storage without opening IndexedDB', async () => {
     const shared = globalThis.indexedDB
     const isolated = new IDBFactory()

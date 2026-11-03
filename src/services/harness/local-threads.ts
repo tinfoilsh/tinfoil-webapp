@@ -636,10 +636,19 @@ function createStore(
           })
           continue
         }
+        // A row this device fails to rewrite, as when its storage is full,
+        // stays as it was until a later attempt.
         const saved = await serialize(id, async () => {
           const current = await backend.read(id)
           if (!current || isThreadRow(current) || isDeleted(id)) return false
           return backend.write({ ...thread, id }, legacyOriginals(row, thread))
+        }).catch((cause) => {
+          logError('Failed to upgrade a chat stored on this device', cause, {
+            component: 'localThreads',
+            action: 'upgradeOldRows',
+            metadata: { chatId: id },
+          })
+          return false
         })
         if (saved) written.push(id)
       }
