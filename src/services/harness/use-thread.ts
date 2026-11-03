@@ -875,6 +875,8 @@ export function useThread(
     retryChatList: profileFailed
       ? () => void api.refresh().catch(reportHarnessError)
       : list.retry,
+    localChatListError: list.deviceError,
+    retryLocalChatList: list.retryDevice,
     report,
     open: openChat,
     ...turns,

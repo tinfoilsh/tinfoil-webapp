@@ -2164,6 +2164,8 @@ export function ChatInterface({
                 isLoadingChats={thread.loadingChats}
                 chatListError={thread.chatListError}
                 onRetryChats={thread.retryChatList}
+                localChatListError={thread.localChatListError}
+                onRetryLocalChats={thread.retryLocalChatList}
                 onUnlockChats={keyLocked ? handleOpenCloudSyncSetup : undefined}
                 isOpen={isSidebarOpen}
                 setIsOpen={setIsSidebarOpen}

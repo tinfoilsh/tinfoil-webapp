@@ -1327,6 +1327,30 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(turn().thread).toEqual(upgraded)
   })
 
+  it('says when the chats on this device cannot be read, and lists them on a retry', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const summaries = vi
+      .spyOn(indexedDBStorage, 'getChatSummaries')
+      .mockRejectedValue(new Error('The database is unavailable'))
+    const { result } = renderHook(() => useThread())
+
+    await waitFor(() =>
+      expect(result.current.localChatListError).toBe(
+        'The chats on this device could not be read.',
+      ),
+    )
+    expect(result.current.chats).toEqual([])
+    summaries.mockRestore()
+
+    act(() => result.current.retryLocalChatList())
+
+    await waitFor(() =>
+      expect(result.current.chats.map((chat) => chat.id)).toEqual([SEEDED_ID]),
+    )
+    expect(result.current.localChatListError).toBeNull()
+  })
+
   it("keeps showing the messages before a run's window", async () => {
     signIn('alice')
     await localThreadStore('device').update(SEEDED_ID, () => seeded())

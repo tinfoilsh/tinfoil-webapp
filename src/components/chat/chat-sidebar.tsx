@@ -102,6 +102,9 @@ type ChatSidebarProps = {
   isLoadingChats?: boolean
   chatListError?: string | null
   onRetryChats?: () => void
+  // The chats this device keeps could not be read.
+  localChatListError?: string | null
+  onRetryLocalChats?: () => void
   // Unlocks the content key, which the synced chats wait for.
   onUnlockChats?: () => void
   onLoadMore?: () => Promise<void>
@@ -171,6 +174,8 @@ export function ChatSidebar({
   isLoadingChats = false,
   chatListError,
   onRetryChats,
+  localChatListError,
+  onRetryLocalChats,
   onUnlockChats,
   onLoadMore,
   isOpen,
@@ -2091,8 +2096,14 @@ export function ChatSidebar({
                           isLoadingChats &&
                           sortedChats.length === 0
                         }
-                        error={paginatesCloudChats ? chatListError : null}
-                        onRetry={onRetryChats}
+                        error={
+                          paginatesCloudChats
+                            ? chatListError
+                            : localChatListError
+                        }
+                        onRetry={
+                          paginatesCloudChats ? onRetryChats : onRetryLocalChats
+                        }
                         currentChatId={currentChat?.id}
                         currentChatIsBlank={currentChat?.isBlankChat}
                         currentChatIsLocalOnly={currentChat?.isLocalOnly}
