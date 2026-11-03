@@ -808,6 +808,142 @@ describe('continuing a reply', () => {
   })
 })
 
+describe('compacting a chat', () => {
+  const window: Message[] = [
+    { id: 'u1', role: 'user', createdAt: 't0', content: 'first' },
+    {
+      id: 'a1',
+      role: 'assistant',
+      createdAt: 't1',
+      timeline: [{ id: 'b1', type: 'content', content: 'first answer' }],
+    },
+    { id: 'u2', role: 'user', createdAt: 't2', content: 'second' },
+  ]
+  const marker: Message = {
+    id: 'c1',
+    role: 'compaction',
+    createdAt: 't3',
+    content: '## Goals and context\nThe user asked a first question.',
+    compaction: {
+      messages: 2,
+      startedAt: 1,
+      endedAt: 2,
+      model: 'long-summary',
+      version: 1,
+    },
+  }
+  const started: Frame['event'] = {
+    type: 'COMPACTION_START',
+    messageId: 'c1',
+    beforeMessageId: 'u2',
+    timestamp: 't3',
+  }
+  const ended = (outcome: string, closing?: Message): Frame['event'] => ({
+    type: 'COMPACTION_END',
+    messageId: 'c1',
+    outcome,
+    ...(closing ? { marker: closing } : {}),
+  })
+  const completed = ended('completed', marker)
+  const chunk = (delta: string): Frame['event'] => ({
+    type: 'TEXT_MESSAGE_CHUNK',
+    messageId: 'a2',
+    role: 'assistant',
+    delta,
+  })
+  // Applies a run's frames, numbered from its start, after its window.
+  function run(events: Frame['event'][], state = initialChat()) {
+    return [
+      {
+        type: 'RUN_STARTED',
+        threadId: 't',
+        runId: 'run-1',
+        instance: 'instance-1',
+      } as const,
+      { type: 'MESSAGES_SNAPSHOT', messages: window, hasOlder: false } as const,
+      ...events,
+    ].reduce((chat, event, id) => reduceEvent(chat, { id, event }), state)
+  }
+
+  it("opens a marker before the run's question and keeps the summary that closes it", () => {
+    const opened = run([started])
+    expect(opened.messages).toEqual([
+      ...window.slice(0, 2),
+      { id: 'c1', role: 'compaction', createdAt: 't3' },
+      window[2],
+    ])
+
+    const closed = run([started, completed, chunk('Second answer.')])
+    expect(closed.messages).toEqual([
+      ...window.slice(0, 2),
+      marker,
+      window[2],
+      {
+        id: 'a2',
+        role: 'assistant',
+        createdAt: '',
+        timeline: [
+          { id: 'a2_content_0', type: 'content', content: 'Second answer.' },
+        ],
+      },
+    ])
+  })
+
+  it('opens a marker before the question of a reply already streaming', () => {
+    const state = run([chunk('Looking'), started, chunk(' it up.')])
+    expect(state.messages.map(({ id }) => id)).toEqual([
+      'u1',
+      'a1',
+      'c1',
+      'u2',
+      'a2',
+    ])
+    expect(state.messages[4].timeline).toEqual([
+      { id: 'a2_content_0', type: 'content', content: 'Looking it up.' },
+    ])
+  })
+
+  it.each([
+    ['failed', 'failed', marker],
+    ['ended in a way this client does not know', 'abandoned', marker],
+    ['completed without its marker', 'completed', undefined],
+  ])('leaves no marker for a compaction that %s', (_, outcome, closing) => {
+    const state = run([started, ended(outcome, closing)])
+    expect(state.messages).toEqual(window)
+  })
+
+  it("opens a marker before the run's question when the message it names is not loaded", () => {
+    const state = run([{ ...started, beforeMessageId: 'u9' }])
+    expect(state.messages.map(({ id }) => id)).toEqual(['u1', 'a1', 'c1', 'u2'])
+  })
+
+  it('keeps a completed marker whose opening a new window replaced', () => {
+    const state = run([
+      started,
+      { type: 'MESSAGES_SNAPSHOT', messages: window, hasOlder: false },
+      completed,
+    ])
+    expect(state.messages).toEqual([...window.slice(0, 2), marker, window[2]])
+  })
+
+  it('shows one marker however often its frames arrive', () => {
+    const events = [started, completed, chunk('Second answer.')]
+    const once = run(events)
+    expect(run(events, once)).toBe(once)
+
+    // Frames without a cursor apply again: a compaction opened again does
+    // not reopen the marker its summary closed.
+    const reapplied = [started, completed, started, completed]
+      .map((event) => ({ event }))
+      .reduce((chat, frame) => reduceEvent(chat, frame, 'run-1'), run([]))
+    expect(reapplied.messages).toEqual([
+      ...window.slice(0, 2),
+      marker,
+      window[2],
+    ])
+  })
+})
+
 describe('attested harness transport', () => {
   beforeEach(() => {
     stubChatAccess()

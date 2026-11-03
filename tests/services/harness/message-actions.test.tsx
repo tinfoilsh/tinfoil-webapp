@@ -1249,3 +1249,108 @@ describe('keeping the earlier messages the user loaded', () => {
     expect(result.current.hasOlder).toBe(false)
   })
 })
+
+describe('a chat whose earlier messages were compacted', () => {
+  const summarized = {
+    id: 'c1',
+    role: 'compaction',
+    createdAt: '2026-04-01T09:00:30Z',
+    content: '## Goals and context\nCounting.',
+    compaction: {
+      messages: 2,
+      startedAt: 1,
+      endedAt: 2,
+      model: 'long-summary',
+      version: 1,
+    },
+  }
+  const marker: ThreadMessage = summarized
+  const shownMarker: Message = summarized
+  const compacted = [...transcript.slice(0, 2), marker, ...transcript.slice(2)]
+
+  it('names the messages the actions are used on among those shown', async () => {
+    signIn({ cloud: false, session })
+    await localThreadStore('device').update(THREAD_ID, () =>
+      localThread(compacted),
+    )
+    client.events.mockImplementation(
+      regenerated([...transcript.slice(0, 2).map(wire), shownMarker]),
+    )
+    const { result } = renderHook(() =>
+      useThread(THREAD_ID, null, { local: true }),
+    )
+    await waitFor(() =>
+      expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+        'u1',
+        'a1',
+        'u2',
+        'a2',
+      ]),
+    )
+    expect(Object.keys(result.current.compactions)).toEqual(['u2'])
+
+    // The second question's index, as its Regenerate button passes it.
+    await act(() => result.current.regenerate(2))
+
+    expect(turn()).toMatchObject({ kind: 'regenerate', messageId: 'a2' })
+    expect(turn().thread).toEqual(localThread(compacted))
+  })
+
+  it.each([
+    [
+      'deleted',
+      (thread: ReturnType<typeof useThread>) => thread.deleteMessage(1),
+      ['u1', 'u2', 'a2'],
+    ],
+    [
+      'rewritten',
+      (thread: ReturnType<typeof useThread>) =>
+        thread.editReply(1, 'Better first'),
+      ['u1', 'a1', 'u2', 'a2'],
+    ],
+  ])(
+    'drops the markers after a message %s above them',
+    async (_, change, left) => {
+      signIn({ cloud: true, session })
+      client.post.mockImplementation(async (path: string, input: unknown) => {
+        if (path === '/v1/threads/get')
+          return (input as { before?: string }).before === 'u2'
+            ? {
+                ...cloudThread(transcript.slice(0, 2)),
+                messages: [...transcript.slice(0, 2).map(wire), shownMarker],
+                hasOlder: false,
+              }
+            : { ...cloudThread(transcript.slice(2)), hasOlder: true }
+        if (path === '/v1/threads/list')
+          return { threads: [], nextCursor: null }
+        // The harness answers with the chat's last exchange, after which
+        // more are stored.
+        if (
+          path === '/v1/threads/messages/delete' ||
+          path === '/v1/threads/messages/update'
+        )
+          return {
+            ...cloudThread(transcript.slice(2)),
+            messageCount: left.length,
+            hasOlder: true,
+          }
+        throw new Error(`Unexpected ${path}`)
+      })
+      const { result } = renderHook(() => useThread(THREAD_ID, null))
+      await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))
+      await act(() => result.current.older())
+      expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+        'u1',
+        'a1',
+        'u2',
+        'a2',
+      ])
+      expect(Object.keys(result.current.compactions)).toEqual(['u2'])
+
+      await act(() => change(result.current))
+
+      expect(result.current.chat.messages.map((m) => m.id)).toEqual(left)
+      expect(result.current.compactions).toEqual({})
+    },
+  )
+})

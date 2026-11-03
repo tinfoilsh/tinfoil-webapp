@@ -66,6 +66,13 @@ export type HarnessRoute = (typeof ROUTES)[keyof typeof ROUTES]
 // Every widget the harness declares is named with this prefix.
 export const WIDGET_PREFIX = 'render_'
 
+// The role of a compaction marker: a summary of the messages before it,
+// which the model reads in their place.
+export const COMPACTION_ROLE = 'compaction'
+// The outcome of a compaction that wrote its marker. A client treats any
+// other as failed.
+export const COMPACTION_COMPLETED = 'completed'
+
 // A run's stream: a turn starts one, and following one replays it.
 export type RunRoute = typeof ROUTES.turn | typeof ROUTES.follow
 
@@ -78,6 +85,9 @@ export const ERROR_CODES = {
   quotaExhausted: 'QUOTA_EXHAUSTED',
   rateLimited: 'RATE_LIMITED',
   contextTooLarge: 'CONTEXT_TOO_LARGE',
+  // The chat's earlier messages could not be summarized to make room for a
+  // turn.
+  compactionFailed: 'COMPACTION_FAILED',
   modelUnavailable: 'MODEL_UNAVAILABLE',
   // A stream that closed before its run ended. The run may go on.
   streamInterrupted: 'STREAM_INTERRUPTED',

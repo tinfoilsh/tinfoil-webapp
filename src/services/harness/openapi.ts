@@ -255,7 +255,10 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Delete a message */
+    /**
+     * Delete a message
+     * @description Deletes a message, and every compaction marker after it, whose summary covered it. A compaction marker itself is not deleted.
+     */
     post: operations['messageDelete']
     delete?: never
     options?: never
@@ -274,7 +277,7 @@ export interface paths {
     put?: never
     /**
      * Edit a reply
-     * @description Edits a reply's text in place.
+     * @description Edits a reply's text in place, and deletes every compaction marker after it, whose summary covered the reply as it was.
      */
     post: operations['messageUpdate']
     delete?: never
@@ -1063,6 +1066,7 @@ export interface components {
           | 'ATTACHMENTS_UNAVAILABLE'
           | 'BAD_REQUEST'
           | 'CHAT_FLAGGED'
+          | 'COMPACTION_FAILED'
           | 'CONTEXT_TOO_LARGE'
           | 'CREDENTIAL_REQUIRED'
           | 'IMPORT_INVALID'
@@ -1124,7 +1128,7 @@ export interface components {
       profileDefaults: components['schemas']['Profile']
       composer: components['schemas']['Composer']
       presets: components['schemas']['Preset'][]
-      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. */
+      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. */
       features: {
         [key: string]: boolean
       }
@@ -1283,6 +1287,8 @@ export interface components {
       | components['schemas']['ToolCallResultEvent']
       | components['schemas']['ActivitySnapshotEvent']
       | components['schemas']['ActivityDeltaEvent']
+      | components['schemas']['CompactionStartEvent']
+      | components['schemas']['CompactionEndEvent']
       | components['schemas']['RunFinishedEvent']
       | components['schemas']['RunErrorEvent']
     /** @description Opens a run. A continuation names the reply it streams into. */
@@ -1510,6 +1516,38 @@ export interface components {
           path: '/output/-'
           value: string
         }
+    /**
+     * @description Opens a compaction marker while its summary is written. A turn whose
+     *     prompt would not fit the share of the model's window a prompt may
+     *     fill summarizes every message before its question, from the chat's
+     *     latest marker on, into a new marker before that question. A run
+     *     compacts at most once, before its first model turn or between two of
+     *     them. A client shows the marker before the message beforeMessageId
+     *     names, and the messages before it as ones the model no longer reads.
+     */
+    CompactionStartEvent: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'COMPACTION_START'
+      timestamp?: components['schemas']['Timestamp']
+      messageId: string
+      beforeMessageId: string
+    }
+    /** @description Closes a compaction marker. A completed one carries the marker, which the chat keeps even if the reply then fails, and is followed by a STATE_SNAPSHOT with the context the turn's prompt now fills. A client removes a failed one, after which the run ends with COMPACTION_FAILED. */
+    CompactionEndEvent: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'COMPACTION_END'
+      timestamp?: components['schemas']['Timestamp']
+      messageId: string
+      /** @description A client treats an outcome it does not know as failed. */
+      outcome: ('completed' | 'failed') | string
+      marker?: components['schemas']['MessageView']
+    }
     RunFinishedEvent: {
       /**
        * @description discriminator enum property added by openapi-typescript
@@ -1567,7 +1605,7 @@ export interface components {
     }
     /** @description How a chat came by its title. A client shows the title of a state it does not know as it is. */
     TitleState: ('placeholder' | 'generated' | 'manual') | string
-    /** @description How much of the model's window the chat's last prompt filled. */
+    /** @description What the chat's last prompt filled of the share of the model's window a prompt may fill. A prompt over that share compacts the chat, after which a run reports what its prompt fills then. */
     ContextUsage: {
       usedTokens: number
       limitTokens: number
@@ -1642,7 +1680,7 @@ export interface components {
       id: string
       role: components['schemas']['Role']
       createdAt: string
-      /** @description A question's text. */
+      /** @description A question's text, or a compaction marker's summary. */
       content?: string
       /** @description A reply's steps. */
       timeline?: components['schemas']['Block'][]
@@ -1656,6 +1694,29 @@ export interface components {
       attachments?: components['schemas']['AttachmentView'][]
       /** @description A question's answers to questions widgets, as it sent them to the model. */
       answers?: components['schemas']['WidgetAnswers'][]
+      compaction?: components['schemas']['Compaction']
+    }
+    /**
+     * @description What a compaction marker records of its summary. A compaction marker
+     *     is a message of role compaction whose content summarizes every message
+     *     before it, which the model reads in their place. It always sits
+     *     directly before a question. A client shows the messages before a
+     *     chat's latest marker as ones the model no longer reads, and the marker
+     *     as a step the user can open to read the summary. The marker is not one
+     *     of the chat's messages: messageCount leaves it out, and a client offers
+     *     no action on it.
+     */
+    Compaction: {
+      /** @description How many messages the summary covers, those an earlier marker covered included. */
+      messages: number
+      /** @description When the summary was started, in epoch milliseconds. */
+      startedAt: number
+      /** @description When the summary was written, in epoch milliseconds. */
+      endedAt: number
+      /** @description The model that wrote the summary. */
+      model: string
+      /** @description The version of the instructions it was written under. */
+      version: number
     }
     /** @description What the user had answered of one questions widget when they sent a question, with the questions' text, so it reads the same however the widget changes later. */
     WidgetAnswers: {
@@ -1674,8 +1735,8 @@ export interface components {
       id: string
       label: string
     }
-    /** @description Who wrote a message. A client leaves out a message whose role it does not know. */
-    Role: ('user' | 'assistant') | string
+    /** @description Who wrote a message, or compaction for a compaction marker. A client leaves out a message whose role it does not know. */
+    Role: ('user' | 'assistant' | 'compaction') | string
     MessageUsage: {
       promptTokens: number
       completionTokens: number
@@ -1816,6 +1877,7 @@ export interface components {
       isError?: boolean
       isInterrupted?: boolean
       answers?: components['schemas']['WidgetAnswers'][]
+      compaction?: components['schemas']['Compaction']
     }
     /** @description A device chat as its client sends it: a ThreadRecord the harness returned, sent back whole, or a record without a recordVersion that an older client kept or a client made for a new chat. The harness refuses a ThreadRecord with a member its version does not have. */
     ThreadInput: {
@@ -1853,7 +1915,7 @@ export interface components {
     DeviceThreadReply: {
       thread: components['schemas']['ThreadRecord']
     }
-    /** @description An opened share, whose attachments name the key that reads each blob. */
+    /** @description An opened share, whose attachments name the key that reads each blob. A share holds the conversation without its compaction markers. */
     SharedThread: {
       title: string
       createdAt: string | null

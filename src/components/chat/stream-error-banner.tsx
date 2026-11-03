@@ -45,6 +45,7 @@ type ErrorKind =
   | 'busy'
   | 'queue-full'
   | 'context-length'
+  | 'compaction'
   | 'too-large'
   | 'model'
   | 'document'
@@ -146,6 +147,11 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
     suggestion:
       'Remove an attachment, shorten your message, or switch to a model with a larger context window.',
   },
+  compaction: {
+    kind: 'compaction',
+    title: 'Earlier messages could not be summarized to make room',
+    suggestion: 'Try again. Your message was not lost.',
+  },
   storage: {
     kind: 'storage',
     title: 'This chat could not be saved on this device',
@@ -236,6 +242,8 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
       return CLASSIFICATIONS['queue-full']
     case ERROR_CODES.contextTooLarge:
       return CLASSIFICATIONS['context-length']
+    case ERROR_CODES.compactionFailed:
+      return CLASSIFICATIONS.compaction
     case ERROR_CODES.threadTooLarge:
       return CLASSIFICATIONS['too-large']
     case ERROR_CODES.modelUnavailable:

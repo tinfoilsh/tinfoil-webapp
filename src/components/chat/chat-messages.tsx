@@ -33,13 +33,19 @@ import { ImageGalleryProvider } from './image-gallery-context'
 import { MessageRendererHost } from './message-renderer-host'
 import { PrintableChat } from './PrintableChat'
 import type { PromptPreset } from './prompts/types'
+import {
+  COMPACTING_LABEL,
+  CompactionMarker,
+} from './renderers/components/CompactionMarker'
 import { StreamingTracerDot } from './renderers/components/StreamingTracerDot'
 import { SpeechProvider, type Speak } from './speech-context'
-import type { Attachment, LabelType, Message } from './types'
+import type { Attachment, Compaction, LabelType, Message } from './types'
 import { WelcomeScreen } from './WelcomeScreen'
 
 type ChatMessagesProps = {
   messages: Message[]
+  // The compaction markers the chat shows, by the message each shows before.
+  compactions?: Readonly<Record<string, Compaction>>
   isDarkMode: boolean
   chatId: string
   isWaitingForResponse?: boolean
@@ -141,6 +147,7 @@ const ChatMessage = memo(
     isStreaming = false,
     activeArtifactToolCallId,
     hideActions = false,
+    outOfContext = false,
     onEditMessage,
     onRegenerateMessage,
     onDeleteMessage,
@@ -157,6 +164,7 @@ const ChatMessage = memo(
     isStreaming?: boolean
     activeArtifactToolCallId?: string | null
     hideActions?: boolean
+    outOfContext?: boolean
     onEditMessage?: (messageIndex: number, newContent: string) => void
     onRegenerateMessage?: (messageIndex: number) => void
     onDeleteMessage?: (messageIndex: number) => void
@@ -181,6 +189,7 @@ const ChatMessage = memo(
         isStreaming={isStreaming}
         activeArtifactToolCallId={activeArtifactToolCallId}
         hideActions={hideActions}
+        outOfContext={outOfContext}
         onEditMessage={onEditMessage}
         onRegenerateMessage={onRegenerateMessage}
         onDeleteMessage={onDeleteMessage}
@@ -205,6 +214,7 @@ const ChatMessage = memo(
       prevProps.activeArtifactToolCallId ===
         nextProps.activeArtifactToolCallId &&
       prevProps.hideActions === nextProps.hideActions &&
+      prevProps.outOfContext === nextProps.outOfContext &&
       prevProps.onEditMessage === nextProps.onEditMessage &&
       prevProps.onRegenerateMessage === nextProps.onRegenerateMessage &&
       prevProps.onDeleteMessage === nextProps.onDeleteMessage &&
@@ -221,10 +231,12 @@ const ChatMessage = memo(
 const LoadingMessage = memo(function LoadingMessage({
   isDarkMode,
   isRetrying = false,
+  isCompacting = false,
   retryInfo,
 }: {
   isDarkMode: boolean
   isRetrying?: boolean
+  isCompacting?: boolean
   retryInfo?: { attempt: number; maxRetries: number; error?: string } | null
 }) {
   const getRetryMessage = () => {
@@ -255,7 +267,10 @@ const LoadingMessage = memo(function LoadingMessage({
   return (
     <div className="no-scroll-anchoring group mx-auto mb-6 flex w-full max-w-3xl flex-col items-start px-4 pt-6">
       <div className="flex w-full flex-col gap-2">
-        <StreamingTracerDot tone="secondary" label="Waiting for response" />
+        <StreamingTracerDot
+          tone="secondary"
+          label={isCompacting ? COMPACTING_LABEL : 'Waiting for response'}
+        />
         {isRetrying && (
           <span className="text-sm text-content-secondary">
             {getRetryMessage()}
@@ -268,6 +283,7 @@ const LoadingMessage = memo(function LoadingMessage({
 
 export function ChatMessages({
   messages,
+  compactions = {},
   isDarkMode,
   chatId,
   isWaitingForResponse = false,
@@ -541,6 +557,12 @@ export function ChatMessages({
 
   // Show loading dots only if waiting and no assistant thinking message exists yet
   const showLoadingPlaceholder = isWaitingForResponse
+  // The messages before the chat's latest written compaction marker, which
+  // the model reads only as the marker's summary. A marker still being
+  // written may fail, so the messages before it stay as they are until then.
+  const contextStart = messages.findLastIndex(
+    ({ id }) => !!id && compactions[id]?.isRunning === false,
+  )
   return (
     <ImageGalleryProvider
       key={chatId}
@@ -575,31 +597,50 @@ export function ChatMessages({
             )}
             <UnsavedImagesProvider value={imagesUnsaved}>
               <QuestionsContext.Provider value={questions ?? null}>
-                {messages.map((message, index) => (
-                  <ChatMessage
-                    key={message.id ?? `${chatId}-${index}`}
-                    message={message}
-                    messageIndex={index}
-                    model={currentModel}
-                    isDarkMode={isDarkMode}
-                    isLastMessage={index === messages.length - 1}
-                    isStreaming={
-                      index === messages.length - 1 && isStreamingResponse
-                    }
-                    activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
-                      message,
-                      activeArtifactToolCallId,
-                    )}
-                    hideActions={readOnly}
-                    {...messageActions}
-                  />
-                ))}
+                {messages.map((message, index) => {
+                  const compaction = message.id
+                    ? compactions[message.id]
+                    : undefined
+                  return (
+                    <React.Fragment key={message.id ?? `${chatId}-${index}`}>
+                      {compaction && (
+                        <CompactionMarker
+                          isRunning={compaction.isRunning}
+                          summary={compaction.summary}
+                          messageCount={compaction.messageCount}
+                          startedAt={compaction.startedAt}
+                          outOfContext={index < contextStart}
+                        />
+                      )}
+                      <ChatMessage
+                        message={message}
+                        messageIndex={index}
+                        model={currentModel}
+                        isDarkMode={isDarkMode}
+                        isLastMessage={index === messages.length - 1}
+                        isStreaming={
+                          index === messages.length - 1 && isStreamingResponse
+                        }
+                        activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
+                          message,
+                          activeArtifactToolCallId,
+                        )}
+                        hideActions={readOnly}
+                        outOfContext={index < contextStart}
+                        {...messageActions}
+                      />
+                    </React.Fragment>
+                  )
+                })}
               </QuestionsContext.Provider>
             </UnsavedImagesProvider>
             {showLoadingPlaceholder && (
               <LoadingMessage
                 isDarkMode={isDarkMode}
                 isRetrying={loadingState === 'retrying'}
+                isCompacting={Object.values(compactions).some(
+                  ({ isRunning }) => isRunning,
+                )}
                 retryInfo={retryInfo}
               />
             )}

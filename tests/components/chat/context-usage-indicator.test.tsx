@@ -1,6 +1,7 @@
 import { ContextUsageIndicator } from '@/components/chat/components/context-usage-indicator'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { signIn, testSession } from '../../harness-fixture'
 
 describe('context usage indicator', () => {
   it('explains an oversized prompt and clears the warning when it fits again', () => {
@@ -45,5 +46,31 @@ describe('context usage indicator', () => {
       'Context window full (~800 tokens). Older messages may be omitted to make room.',
     )
     expect(screen.queryByText('Over limit')).not.toBeInTheDocument()
+  })
+
+  it('says earlier messages will be summarized when the harness compacts chats', () => {
+    signIn({
+      session: {
+        ...testSession,
+        features: { ...testSession.features, compaction: true },
+      },
+    })
+    const { rerender } = render(
+      <ContextUsageIndicator
+        usage={{ usedTokens: 800, limitTokens: 800, percentage: 100 }}
+      />,
+    )
+    expect(screen.getByRole('img')).toHaveAccessibleName(
+      'Context window full (~800 tokens). Earlier messages will be summarized to make room.',
+    )
+
+    rerender(
+      <ContextUsageIndicator
+        usage={{ usedTokens: 1000, limitTokens: 800, percentage: 125 }}
+      />,
+    )
+    expect(screen.getByRole('img')).toHaveAccessibleName(
+      "Context exceeds this model's input budget (~1k of 800 tokens). Earlier messages will be summarized to make room.",
+    )
   })
 })
