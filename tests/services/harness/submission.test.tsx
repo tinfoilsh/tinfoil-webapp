@@ -879,3 +879,178 @@ it('shows what a reply streamed while it stopped when the stop fails', async () 
     })
   }
 })
+
+it('stops the run a turn starts when the run its chat names is over', async () => {
+  signIn({ cloud: true })
+  const threadId = '8233746419999_8a3b4f1e-6f7d-4d52-9c3a-0e1f2a3b4c5d'
+  const accepted = gate()
+  const stopped = gate()
+  const cancels: unknown[] = []
+  const notLive = () =>
+    new HarnessError(
+      {
+        code: 'RUN_NOT_FOUND',
+        message: 'The run is not live on this instance',
+        action: 'reload',
+      },
+      404,
+    )
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    // A run a restart ended still names itself as the chat's for a while.
+    if (path === '/v1/threads/get')
+      return {
+        ...storedThread(threadId, {
+          activeRun: {
+            runId: 'ended-run',
+            instance: 'instance-0',
+            expiresAt: '2026-04-01T09:30:00Z',
+          },
+          messages: [
+            {
+              id: 'm1',
+              role: 'user',
+              content: 'First question',
+              createdAt: '2026-04-01T09:00:00Z',
+            },
+          ],
+        }),
+        hasOlder: false,
+      }
+    if (path === '/v1/threads/cancel') {
+      cancels.push(input)
+      if ((input as { runId?: string }).runId === 'ended-run') throw notLive()
+      stopped.resolve()
+      return {}
+    }
+    throw new Error(`Unexpected ${path}`)
+  })
+  client.events.mockImplementation(async function* (
+    path: string,
+    input: Turn,
+  ): AsyncGenerator<Frame> {
+    if (path === '/v1/threads/follow') throw notLive()
+    await accepted.promise
+    yield {
+      id: 0,
+      event: {
+        type: 'RUN_STARTED',
+        threadId: input.threadId!,
+        runId: 'new-run',
+        instance: 'instance-1',
+      },
+    }
+    await stopped.promise
+    yield {
+      id: 1,
+      event: {
+        type: 'RUN_FINISHED',
+        threadId: input.threadId!,
+        runId: 'new-run',
+        metadata: { cancelled: true },
+      },
+    }
+  })
+  const { result } = renderHook(() => useThread(threadId))
+  await waitFor(() =>
+    expect(
+      client.post.mock.calls.filter(([p]) => p === '/v1/threads/get'),
+    ).toHaveLength(2),
+  )
+  await waitFor(() => expect(result.current.status).toBe('idle'))
+  let sending: Promise<boolean> | undefined
+  try {
+    act(() => {
+      sending = result.current.send({ content: 'Next question' })
+    })
+    await waitFor(() => expect(client.events).toHaveBeenCalledTimes(2))
+    await act(() => result.current.cancel())
+    expect(cancels).toEqual([{ key: KEY, threadId, runId: 'ended-run' }])
+    await act(async () => accepted.resolve())
+
+    await waitFor(() =>
+      expect(cancels).toEqual([
+        { key: KEY, threadId, runId: 'ended-run' },
+        { key: KEY, threadId, runId: 'new-run' },
+      ]),
+    )
+    await act(async () => {
+      await sending
+    })
+    expect(result.current.status).toBe('idle')
+  } finally {
+    await act(async () => {
+      accepted.resolve()
+      stopped.resolve()
+      await sending
+    })
+  }
+})
+
+it('stops a turn stopped before its run started though the chat is left', async () => {
+  signIn({ cloud: true })
+  const accepted = gate()
+  const stopped = gate()
+  const cancels: unknown[] = []
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/cancel') {
+      cancels.push(input)
+      stopped.resolve()
+      return {}
+    }
+    throw new Error(`Unexpected ${path}`)
+  })
+  client.events.mockImplementationOnce(async function* (
+    _path: string,
+    input: Turn,
+    signal: AbortSignal,
+  ): AsyncGenerator<Frame> {
+    await accepted.promise
+    // The stream of a request whose signal aborted ends.
+    signal.throwIfAborted()
+    yield {
+      id: 0,
+      event: {
+        type: 'RUN_STARTED',
+        threadId: input.threadId!,
+        runId: 'run-1',
+        instance: 'instance-1',
+      },
+    }
+    await stopped.promise
+    yield {
+      id: 1,
+      event: {
+        type: 'RUN_FINISHED',
+        threadId: input.threadId!,
+        runId: 'run-1',
+        metadata: { cancelled: true },
+      },
+    }
+  })
+  const { result } = renderHook(() => useThread())
+  await waitFor(() => expect(result.current.loadingChats).toBe(false))
+  let sending: Promise<boolean> | undefined
+  try {
+    act(() => {
+      sending = result.current.send({ content: 'Never mind' })
+    })
+    const threadId = result.current.chat.id
+    await waitFor(() => expect(client.events).toHaveBeenCalledTimes(1))
+    await act(() => result.current.cancel())
+    expect(cancels).toEqual([])
+    act(() => result.current.newChat())
+    await act(async () => accepted.resolve())
+
+    await waitFor(() =>
+      expect(cancels).toEqual([{ key: KEY, threadId, runId: 'run-1' }]),
+    )
+  } finally {
+    await act(async () => {
+      accepted.resolve()
+      stopped.resolve()
+      await sending
+    })
+  }
+})
