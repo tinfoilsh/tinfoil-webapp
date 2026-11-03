@@ -265,13 +265,17 @@ describe('exporting chats from the Data tab', () => {
     expect(downloads).toEqual([])
   })
 
-  it('reports an export the chat service refuses', async () => {
+  it("keeps the chat service's reason an export failed in the Data tab, and tries again", async () => {
     connect({ cloud: true })
     answerCloudChats([deviceChat])
-    client.multipart.mockRejectedValue(
+    client.multipart.mockRejectedValueOnce(
       new HarnessError(
-        { code: 'UPSTREAM_REFUSED', message: 'Down', action: 'retry' },
-        503,
+        {
+          code: 'UPSTREAM_REFUSED',
+          message: 'The storage service could not fetch the data in time',
+          action: 'retry',
+        },
+        502,
       ),
     )
     renderData()
@@ -280,10 +284,131 @@ describe('exporting chats from the Data tab', () => {
 
     expect(page.toast).toHaveBeenCalledExactlyOnceWith({
       title: 'Export failed',
-      description: 'Failed to export chats. Please try again.',
+      description: 'The storage service could not fetch the data in time',
       variant: 'destructive',
     })
+    // The report outlasts the toast, as the user moves around the settings.
+    fireEvent.click(screen.getAllByRole('button', { name: 'General' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: 'Data' })[0])
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'The storage service could not fetch the data in time',
+    )
     expect(downloads).toEqual([])
+
+    answerExport()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Your chats were exported.',
+      ),
+    )
+    expect(client.multipart).toHaveBeenCalledTimes(2)
+    expect(downloads.map(({ name }) => name)).toEqual(['tinfoil-chats.zip'])
+  })
+
+  it('shows what a running export has received, and cancels it', async () => {
+    connect()
+    await keepPhotoChats('device')
+    // An archive that arrives as it is sent, and ends when its request is
+    // aborted, as a fetched body does.
+    let send!: ReadableStreamDefaultController<Uint8Array>
+    client.multipart.mockImplementation(
+      async (_path: string, _form: FormData, signal: AbortSignal) =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start: (controller) => {
+              send = controller
+              signal.addEventListener(
+                'abort',
+                () => controller.error(signal.reason),
+                { once: true },
+              )
+            },
+          }),
+        ),
+    )
+    renderData()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export Chats' }))
+    expect(await screen.findByText(/Preparing your chats/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Exporting...' })).toBeDisabled()
+    await waitFor(() => expect(send).toBeDefined())
+    send.enqueue(new Uint8Array(2048))
+    expect(
+      await screen.findByText(/Downloading archive\.\.\. 2\.0 KB/),
+    ).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(
+      await screen.findByText('Export canceled. No file was saved.'),
+    ).toBeVisible()
+    expect((client.multipart.mock.calls[0][2] as AbortSignal).aborted).toBe(
+      true,
+    )
+    expect(page.toast).not.toHaveBeenCalled()
+    expect(downloads).toEqual([])
+  })
+
+  it('says how many items an export could not include', async () => {
+    connect()
+    await keepPhotoChats('device')
+    const { BlobWriter, TextReader, ZipWriter } = await import('@zip.js/zip.js')
+    const zip = new ZipWriter(new BlobWriter('application/zip'), {
+      useWebWorkers: false,
+    })
+    await zip.add('conversations.json', new TextReader('[]'))
+    await zip.add(
+      'manifest.json',
+      new TextReader(
+        JSON.stringify({
+          version: 1,
+          warnings: [
+            'Could not fetch attachment att_photo',
+            'Could not read chat chat-2',
+          ],
+        }),
+      ),
+    )
+    client.multipart.mockResolvedValue(new Response(await zip.close()))
+    renderData()
+
+    await exportChats()
+
+    const leftOut =
+      "2 items could not be included. The archive's manifest.json lists them."
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Export complete',
+      description: `Exported 2 conversations successfully. ${leftOut}`,
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(leftOut)
+  })
+
+  it("exports this tab's chats when signed out, never an account's chats on this device", async () => {
+    await localThreadStore('device').update(FORK_ID, () =>
+      storedThread(FORK_ID, { title: 'Account chat' }),
+    )
+    page.isSignedIn = false
+    connect()
+    const tabChat = storedThread(LOCAL_ID, { title: 'Tab chat' })
+    await localThreadStore('tab').update(LOCAL_ID, () => tabChat)
+    answerExport()
+    renderData()
+
+    await exportChats()
+
+    expect(await sentForm()).toEqual({
+      path: '/v1/export',
+      parts: [
+        ['options', { format: 'conversations' }],
+        ['thread', tabChat],
+      ],
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Exported 1 conversation successfully.',
+    )
+    expect(downloads.map(({ name }) => name)).toEqual(['tinfoil-chats.zip'])
   })
 
   it('explains an export refused while other archives fill the temporary space', async () => {
@@ -585,6 +710,30 @@ describe('importing chats from the Data tab', () => {
     const status = screen.getByRole('status')
     expect(status).toHaveTextContent('1 chat imported')
     expect(status).toHaveTextContent('1 attachment could not be read.')
+  })
+
+  it('keeps the chats a signed-out import returns in this tab', async () => {
+    page.isSignedIn = false
+    connect()
+    answerImport([importedLine], { jobId: null, warnings: [] })
+    renderData()
+
+    expect(
+      screen.getByText(/imported chats stay in this browser tab/),
+    ).toBeVisible()
+    pickFiles('ChatGPT', [chatGptExport])
+    await importStaged()
+
+    expect((await sentForm()).parts[0]).toEqual([
+      'options',
+      { target: 'device' },
+    ])
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Import complete',
+      description: 'Imported 1 chat from ChatGPT',
+    })
+    expect(await localThreadStore('tab').get(imported.id)).toEqual(imported)
+    expect(await localThreadStore('device').list()).toEqual([])
   })
 
   it('reports the chats a repeated import found already on this device', async () => {

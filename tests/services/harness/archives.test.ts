@@ -91,31 +91,83 @@ beforeEach(() => {
 })
 
 describe('runImports', () => {
-  it.each(['device', 'cloud'] as const)(
-    'refuses a signed-out %s import before uploading its archive',
-    async (target) => {
-      signIn({ userId: null })
-      client.multipart.mockResolvedValue(
-        importResponse([], { jobId: 'unexpected-job', warnings: [] }),
-      )
-      await expect(
-        runImports(target, [namedFile('private.json')], { wait: noWait }),
-      ).rejects.toMatchObject({ cause: { code: 'UNAUTHENTICATED' } })
-      expect(client.multipart).not.toHaveBeenCalled()
-    },
-  )
-
-  it('refuses signed-out exports before reading account chats', async () => {
-    const privateChat = storedThread('account-chat', { title: 'Account data' })
-    await localThreadStore('device').add(privateChat)
+  it('refuses a signed-out cloud import before uploading its archive', async () => {
     signIn({ userId: null })
-    await expect(
-      exportArchive('conversations', { cloud: false }),
-    ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' })
-    expect(client.multipart).not.toHaveBeenCalled()
-    expect(await localThreadStore('device').get(privateChat.id)).toEqual(
-      privateChat,
+    client.multipart.mockResolvedValue(
+      importResponse([], { jobId: 'unexpected-job', warnings: [] }),
     )
+    await expect(
+      runImports('cloud', [namedFile('private.json')], { wait: noWait }),
+    ).rejects.toMatchObject({ cause: { code: 'UNAUTHENTICATED' } })
+    expect(client.multipart).not.toHaveBeenCalled()
+  })
+
+  it("keeps a signed-out import in the tab, apart from an account's chats on this device", async () => {
+    const accountChat = storedThread('account-chat', { title: 'Account data' })
+    await localThreadStore('device').add(accountChat)
+    signIn({ userId: null })
+    const imported = storedThread('imported-chat', { title: 'Imported' })
+    client.multipart.mockResolvedValue(
+      importResponse([imported], { jobId: null, warnings: [] }),
+    )
+
+    const result = await runImports(
+      'device',
+      [namedFile('conversations.json')],
+      { wait: noWait },
+    )
+
+    expect(importRequests()).toEqual([
+      ['/v1/import', { target: 'device' }, 'conversations.json'],
+    ])
+    expect(result).toMatchObject({ imported: 1, skipped: 0 })
+    expect(await localThreadStore('tab').get(imported.id)).toEqual(imported)
+    expect(
+      (await localThreadStore('device').list()).map(({ id }) => id),
+    ).toEqual([accountChat.id])
+  })
+
+  it('reports an export saved whose manifest cannot be read', async () => {
+    vi.doMock('@zip.js/zip.js', () => {
+      throw new Error('The archive reader failed to load')
+    })
+    try {
+      await localThreadStore('device').add(storedThread('device-chat'))
+      client.multipart.mockResolvedValue(new Response(new Blob(['zip'])))
+
+      expect(await exportArchive('conversations', { cloud: false })).toEqual({
+        chats: 1,
+        warnings: [],
+      })
+    } finally {
+      vi.doUnmock('@zip.js/zip.js')
+    }
+  })
+
+  it("exports a signed-out tab's chats, never an account's chats on this device", async () => {
+    const accountChat = storedThread('account-chat', { title: 'Account data' })
+    await localThreadStore('device').add(accountChat)
+    signIn({ userId: null })
+    const tabChat = storedThread('tab-chat', { title: 'Tab chat' })
+    await localThreadStore('tab').add(tabChat)
+    client.multipart.mockResolvedValue(new Response(new Blob(['zip'])))
+
+    expect(await exportArchive('conversations', { cloud: true })).toEqual({
+      chats: 1,
+      warnings: [],
+    })
+    const [path, form] = client.multipart.mock.calls[0] as [string, FormData]
+    expect([
+      path,
+      ...[...form.entries()].map(([name, value]) => [
+        name,
+        JSON.parse(value as string),
+      ]),
+    ]).toEqual([
+      '/v1/export',
+      ['options', { format: 'conversations' }],
+      ['thread', tabChat],
+    ])
   })
 
   it('finishes each file before uploading the next and leaves the last running', async () => {

@@ -1,4 +1,6 @@
 import type { AttachmentOriginal } from '@/services/storage/indexed-db'
+import { logError } from '@/utils/error-handling'
+import type { ZipReader } from '@zip.js/zip.js'
 import { isThread, localThreadStore, type Originals } from './local-threads'
 import { imageBlob } from './open-attachments'
 import {
@@ -52,16 +54,40 @@ const EXPORT_FILENAMES: Record<ExportFormat, string> = {
   conversations: 'tinfoil-chats.zip',
 }
 
-// The chats the account keeps on this device. Archives are for signed-in
-// accounts, so a signed-out visitor's tab has none to send or receive.
-const deviceStore = (api: HarnessAPI) => {
-  if (!api.userId)
-    throw new HarnessError({
-      code: ERROR_CODES.unauthenticated,
-      action: ERROR_ACTIONS.stop,
-      message: 'Sign in to import or export chats.',
+// The chats kept on this device: the account's, or a signed-out visitor's,
+// which last as long as the browser tab.
+const deviceStore = (api: HarnessAPI) =>
+  localThreadStore(api.userId ? 'device' : 'tab')
+
+// The manifest a conversations export lists what it left out in.
+const EXPORT_MANIFEST = 'manifest.json'
+
+// What a conversations export could not include, as its manifest lists it.
+// An archive whose manifest cannot be read was still saved, so it lists
+// nothing.
+async function exportWarnings(archive: Blob): Promise<string[]> {
+  let reader: ZipReader<Blob> | undefined
+  try {
+    const { BlobReader, TextWriter, ZipReader } = await import('@zip.js/zip.js')
+    reader = new ZipReader(new BlobReader(archive), { useWebWorkers: false })
+    const entry = (await reader.getEntries()).find(
+      (candidate) => candidate.filename === EXPORT_MANIFEST,
+    )
+    if (!entry || entry.directory) return []
+    const { warnings } = (JSON.parse(await entry.getData(new TextWriter())) ??
+      {}) as { warnings?: unknown }
+    return Array.isArray(warnings)
+      ? warnings.filter((warning) => typeof warning === 'string')
+      : []
+  } catch (cause) {
+    logError('Failed to read the export manifest', cause, {
+      component: 'archives',
+      action: 'exportWarnings',
     })
-  return localThreadStore('device')
+    return []
+  } finally {
+    await reader?.close().catch(() => undefined)
+  }
 }
 
 // Reads an archive as it arrives, reporting the bytes received so far.
@@ -106,11 +132,12 @@ async function hasCloudChats(api: HarnessAPI, signal?: AbortSignal) {
 // The chat service writes one archive of the chats kept here, sent as they
 // are stored with the originals of their images, and of the account's cloud
 // data. With nothing to export nothing is sent, and null is returned. An
-// archive of this device's chats alone counts them.
+// archive of this device's chats alone counts them; a conversations export
+// says what it could not include.
 export async function exportArchive(
   format: ExportFormat,
   { cloud, signal, onProgress }: ExportOptions,
-): Promise<{ chats?: number } | null> {
+): Promise<{ chats?: number; warnings: string[] } | null> {
   const api = harnessAPI()
   const key = cloud ? api.key() : undefined
   const form = new FormData()
@@ -151,7 +178,9 @@ export async function exportArchive(
   const archive = await receive(response, onProgress)
   signal?.throwIfAborted()
   saveDownload(archive, EXPORT_FILENAMES[format])
-  return key ? {} : { chats }
+  const warnings =
+    format === 'conversations' ? await exportWarnings(archive) : []
+  return key ? { warnings } : { chats, warnings }
 }
 
 // What a Claude projects export holds.
@@ -321,6 +350,12 @@ async function importFile(
   onStored?: (stored: number) => void,
 ): Promise<FileImport> {
   const api = harnessAPI()
+  if (target === 'cloud' && !api.userId)
+    throw new HarnessError({
+      code: ERROR_CODES.unauthenticated,
+      action: ERROR_ACTIONS.stop,
+      message: 'Sign in to import into the cloud.',
+    })
   const store = deviceStore(api)
   const key = target === 'cloud' ? api.key() : undefined
   const form = new FormData()

@@ -42,6 +42,7 @@
     "@tailwindcss/typography": "^0.5.16",
     "@tinfoilsh/passkey-kit": "0.2.4",
     "@tinfoilsh/tinfoil-icons": "^2.5.0",
+    "@zip.js/zip.js": "2.24.0",
     "autoprefixer": "^10.4.21",
     "boring-avatars": "^2.0.4",
     "class-variance-authority": "^0.7.1",

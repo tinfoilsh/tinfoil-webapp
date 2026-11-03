@@ -58,6 +58,8 @@ const THREAD_FORMAT = 1
 // Statuses with which the harness refuses an old row itself, rather than
 // the request that carried it.
 const REFUSED_ROW_STATUSES = new Set([400, 413])
+// The name of the DOMException a full web storage throws.
+const QUOTA_EXCEEDED = 'QuotaExceededError'
 
 type Value = Record<string, unknown>
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
@@ -490,6 +492,19 @@ function indexedDBBackend(storage: IndexedDBStorage): Backend {
   }
 }
 
+// Why a chat could not be kept in this tab's session storage: most often the
+// storage is full, which only fewer chats, or signing in, makes room for.
+function tabSaveFailure(cause: unknown): HarnessError {
+  const full = cause instanceof DOMException && cause.name === QUOTA_EXCEEDED
+  return new HarnessError({
+    code: ERROR_CODES.localSaveFailed,
+    action: full ? ERROR_ACTIONS.revise : ERROR_ACTIONS.stop,
+    message: full
+      ? 'This browser tab has no room for more chats. Delete some chats, or sign in to keep more.'
+      : 'This chat could not be saved in this browser tab.',
+  })
+}
+
 // A signed-out visitor's chats last as long as the browser tab. Session
 // storage cannot hold large images, so an image's bytes, its original and a
 // document's page images stay in this page's memory only, by chat and
@@ -518,23 +533,27 @@ function sessionBackend(): Backend {
     },
     async write(thread, picked) {
       const kept = heldImages(thread.messages)
-      sessionChatStorage.saveChat(
-        rowOf({
-          ...thread,
-          messages: thread.messages.map((message) =>
-            message.attachments
-              ? {
-                  ...message,
-                  attachments: message.attachments.map((attachment) =>
-                    kept.has(attachment.id)
-                      ? withoutBytes(attachment)
-                      : attachment,
-                  ),
-                }
-              : message,
-          ),
-        }) as unknown as Chat,
-      )
+      try {
+        sessionChatStorage.saveChat(
+          rowOf({
+            ...thread,
+            messages: thread.messages.map((message) =>
+              message.attachments
+                ? {
+                    ...message,
+                    attachments: message.attachments.map((attachment) =>
+                      kept.has(attachment.id)
+                        ? withoutBytes(attachment)
+                        : attachment,
+                    ),
+                  }
+                : message,
+            ),
+          }) as unknown as Chat,
+        )
+      } catch (cause) {
+        throw tabSaveFailure(cause)
+      }
       if (kept.size) images.set(thread.id, kept)
       else images.delete(thread.id)
       originals.write(thread, picked)
@@ -617,10 +636,19 @@ function createStore(
           })
           continue
         }
+        // A row this device fails to rewrite, as when its storage is full,
+        // stays as it was until a later attempt.
         const saved = await serialize(id, async () => {
           const current = await backend.read(id)
           if (!current || isThreadRow(current) || isDeleted(id)) return false
           return backend.write({ ...thread, id }, legacyOriginals(row, thread))
+        }).catch((cause) => {
+          logError('Failed to upgrade a chat stored on this device', cause, {
+            component: 'localThreads',
+            action: 'upgradeOldRows',
+            metadata: { chatId: id },
+          })
+          return false
         })
         if (saved) written.push(id)
       }
