@@ -310,6 +310,41 @@ export interface RenderMapArgs {
   mapType?: 'standard' | 'hybrid' | 'satellite' | 'muted'
 }
 
+export interface RenderQuestionsArgs {
+  title?: string
+  /**
+   * Every question to ask, in order
+   *
+   * @minItems 1
+   * @maxItems 50
+   */
+  questions: {
+    /**
+     * Unique within this call, e.g. "q1"
+     */
+    id: string
+    /**
+     * The question or checklist heading
+     */
+    prompt: string
+    /**
+     * `single` when exactly one option is the answer, as in a quiz; `multiple` when any number may be picked, as in a checklist
+     */
+    selection: 'single' | 'multiple'
+    /**
+     * @minItems 1
+     * @maxItems 20
+     */
+    options: {
+      /**
+       * Unique within its question, e.g. "a"
+       */
+      id: string
+      label: string
+    }[]
+  }[]
+}
+
 // The arguments of each widget, by its tool name.
 export interface WidgetArgs {
   render_stat_cards: RenderStatCardsArgs
@@ -323,4 +358,5 @@ export interface WidgetArgs {
   render_message_compose: RenderMessageComposeArgs
   render_sports_data: RenderSportsDataArgs
   render_map: RenderMapArgs
+  render_questions: RenderQuestionsArgs
 }
