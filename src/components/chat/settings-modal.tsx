@@ -10,7 +10,7 @@ import {
 import type { SettingsTab } from '@/constants/settings-tabs'
 import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
-import { authTokenManager } from '@/services/auth'
+import { authTokenManager, AuthTokenUnavailableError } from '@/services/auth'
 import {
   exportArchive,
   exportClaudeProjects,
@@ -27,12 +27,14 @@ import {
   describeImportFailure,
 } from '@/services/harness/import-failure-copy'
 import { deleteAllProjects } from '@/services/harness/projects'
+import { ERROR_CODES } from '@/services/harness/protocol'
 import {
   reportProfileError,
   useHarness,
   useProfileSetting,
 } from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import { useLocalChatsSetting } from '@/services/harness/storage-mode'
 import { validateCurrentPrimaryKey } from '@/services/keys/cloud-key-preflight'
 import {
@@ -109,6 +111,11 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { BsQrCode } from 'react-icons/bs'
 import { PiSpinner } from 'react-icons/pi'
 import QRCode from 'react-qr-code'
+import {
+  ChatExportStatus,
+  describeExportWarnings,
+  type ChatExportState,
+} from './chat-export-status'
 import { CloudSyncHealthCard } from './cloud-sync-health-card'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
@@ -272,6 +279,23 @@ export function describeImportError(
         : fileFailureErrors(fileNames, err.fileIndex, message),
     warnings: err.warnings,
   }
+}
+
+const UNAUTHORIZED_STATUS = 401
+
+// Why a chats export failed, in the chat service's words where it has some.
+function describeChatExportError(error: unknown): string {
+  const refusal = describeArchiveError(error)
+  if (refusal) return refusal
+  if (error instanceof HarnessError && error.code === ERROR_CODES.keyRequired)
+    return 'Unlock your cloud encryption key on this device, then try again.'
+  if (
+    error instanceof AuthTokenUnavailableError ||
+    (error instanceof HarnessError && error.status === UNAUTHORIZED_STATUS)
+  )
+    return 'Your account session is unavailable. Sign in again, then try the export again.'
+  if (error instanceof HarnessError) return error.message
+  return 'The export stopped before it finished. Check your connection and try again.'
 }
 
 function fileFailureErrors(
@@ -966,10 +990,10 @@ export function SettingsModal({
 
   // Export state
   const [isExporting, setIsExporting] = useState(false)
-  const [isPreparingExport, setIsPreparingExport] = useState(false)
-  const [exportType, setExportType] = useState<'chats' | 'projects' | null>(
-    null,
-  )
+  // The chats export running, or how the last one ended. It goes on while
+  // the user leaves the Data tab, which shows it again on return.
+  const [chatExport, setChatExport] = useState<ChatExportState | null>(null)
+  const chatExportAbortControllerRef = useRef<AbortController | null>(null)
   // What the last projects export did, shown under its button.
   const [projectExportResult, setProjectExportResult] = useState<{
     message: string
@@ -1690,18 +1714,29 @@ export function SettingsModal({
   // sync, the stored chats. An account change ends the export without a
   // download.
   const handleExportAllChats = async () => {
-    setIsPreparingExport(true)
-    setExportType('chats')
+    chatExportAbortControllerRef.current?.abort()
+    const controller = new AbortController()
+    chatExportAbortControllerRef.current = controller
+    const isCurrent = () => chatExportAbortControllerRef.current === controller
+    setChatExport({ status: 'running', startedAt: Date.now(), received: 0 })
     try {
       const exported = await exportArchive('conversations', {
         cloud: cloudSyncEnabled,
-        signal: api.lifetime.signal,
-        onProgress: () => {
-          setIsPreparingExport(false)
-          setIsExporting(true)
+        signal: AbortSignal.any([controller.signal, api.lifetime.signal]),
+        onProgress: (received) => {
+          if (isCurrent())
+            setChatExport((state) =>
+              state?.status === 'running' ? { ...state, received } : state,
+            )
         },
       })
+      if (!isCurrent()) return
       if (!exported) {
+        setChatExport({
+          status: 'done',
+          message: 'You have no chats to export yet.',
+          warnings: [],
+        })
         toast({
           title: 'No chats to export',
           description: 'You have no chats to export yet.',
@@ -1709,31 +1744,45 @@ export function SettingsModal({
         })
         return
       }
-      const { chats: exportedChats } = exported
+      const { chats: exportedChats, warnings } = exported
+      const message =
+        exportedChats === undefined
+          ? 'Your chats were exported.'
+          : `Exported ${exportedChats} conversation${exportedChats !== 1 ? 's' : ''} successfully.`
+      setChatExport({ status: 'done', message, warnings })
       toast({
         title: 'Export complete',
-        description:
-          exportedChats === undefined
-            ? 'Your chats were exported.'
-            : `Exported ${exportedChats} conversation${exportedChats !== 1 ? 's' : ''} successfully.`,
+        description: warnings.length
+          ? `${message} ${describeExportWarnings(warnings.length)}`
+          : message,
       })
     } catch (error) {
-      if (api.lifetime.signal.aborted) return
+      if (!isCurrent()) return
+      if (api.lifetime.signal.aborted) {
+        setChatExport(null)
+        return
+      }
+      if (controller.signal.aborted) {
+        setChatExport({
+          status: 'failed',
+          message: 'Export canceled. No file was saved.',
+          canceled: true,
+        })
+        return
+      }
       logError('Failed to export chats', error, {
         component: 'SettingsModal',
         action: 'handleExportAllChats',
       })
+      const message = describeChatExportError(error)
+      setChatExport({ status: 'failed', message, canceled: false })
       toast({
         title: 'Export failed',
-        description:
-          describeArchiveError(error) ??
-          'Failed to export chats. Please try again.',
+        description: message,
         variant: 'destructive',
       })
     } finally {
-      setIsPreparingExport(false)
-      setIsExporting(false)
-      setExportType(null)
+      if (isCurrent()) chatExportAbortControllerRef.current = null
     }
   }
 
@@ -1811,7 +1860,6 @@ export function SettingsModal({
 
   const downloadProjectsForClaude = async () => {
     setIsExporting(true)
-    setExportType('projects')
     setProjectExportResult(null)
     try {
       const { projects, documents } = await exportClaudeProjects()
@@ -1842,7 +1890,6 @@ export function SettingsModal({
       })
     } finally {
       setIsExporting(false)
-      setExportType(null)
     }
   }
 
@@ -1860,6 +1907,9 @@ export function SettingsModal({
       const abortController = importAbortControllerRef.current
       importAbortControllerRef.current = null
       abortController?.abort()
+      const exportController = chatExportAbortControllerRef.current
+      chatExportAbortControllerRef.current = null
+      exportController?.abort()
     }
   }, [])
 
@@ -4053,10 +4103,10 @@ ${encryptionKey.replace('key_', '')}
                         </div>
                         <button
                           onClick={handleExportAllChats}
-                          disabled={isExporting || isPreparingExport}
+                          disabled={chatExport?.status === 'running'}
                           className={cn(
                             'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                            isExporting || isPreparingExport
+                            chatExport?.status === 'running'
                               ? 'cursor-not-allowed opacity-50'
                               : 'hover:bg-surface-chat',
                             isDarkMode
@@ -4064,8 +4114,7 @@ ${encryptionKey.replace('key_', '')}
                               : 'bg-surface-sidebar text-content-primary',
                           )}
                         >
-                          {(isExporting || isPreparingExport) &&
-                          exportType === 'chats' ? (
+                          {chatExport?.status === 'running' ? (
                             <PiSpinner
                               className="h-4 w-4 animate-spin"
                               aria-hidden="true"
@@ -4076,12 +4125,19 @@ ${encryptionKey.replace('key_', '')}
                               aria-hidden="true"
                             />
                           )}
-                          {isPreparingExport && exportType === 'chats'
-                            ? 'Please wait while we prepare the export...'
-                            : isExporting && exportType === 'chats'
-                              ? 'Exporting...'
-                              : 'Export Chats'}
+                          {chatExport?.status === 'running'
+                            ? 'Exporting...'
+                            : 'Export Chats'}
                         </button>
+                        {chatExport && (
+                          <ChatExportStatus
+                            state={chatExport}
+                            onCancel={() =>
+                              chatExportAbortControllerRef.current?.abort()
+                            }
+                            onRetry={() => void handleExportAllChats()}
+                          />
+                        )}
                       </div>
                     </div>
                   )}
@@ -4118,7 +4174,7 @@ ${encryptionKey.replace('key_', '')}
                               : 'bg-surface-sidebar text-content-primary',
                           )}
                         >
-                          {isExporting && exportType === 'projects' ? (
+                          {isExporting ? (
                             <PiSpinner
                               className="h-4 w-4 animate-spin"
                               aria-hidden="true"
@@ -4129,7 +4185,7 @@ ${encryptionKey.replace('key_', '')}
                               aria-hidden="true"
                             />
                           )}
-                          {isExporting && exportType === 'projects'
+                          {isExporting
                             ? 'Exporting...'
                             : 'Export Projects for Claude'}
                         </button>
