@@ -792,6 +792,33 @@ it('reports a project that could not be created', async () => {
   expect(requested('/v1/projects/get')).toEqual([])
 })
 
+it('says why the harness refused to create a project', async () => {
+  sessionStorage.setItem(UI_SIDEBAR_PROJECTS_EXPANDED, 'true')
+  routes['/v1/projects/create'] = () => {
+    throw new HarnessError(
+      {
+        code: 'KEY_MISMATCH',
+        message: 'Your chats are sealed with another key.',
+        action: 'unlock',
+      },
+      409,
+    )
+  }
+  render(routeView({}))
+  await screen.findByRole('link', { name: /^Research/ })
+
+  fireEvent.click(screen.getByRole('button', { name: 'New Project' }))
+
+  await waitFor(() =>
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Failed to create project',
+      description: 'Your chats are sealed with another key.',
+      variant: 'destructive',
+    }),
+  )
+  expect(requested('/v1/projects/get')).toEqual([])
+})
+
 it('says the projects are locked while the key is refused, without listing them', async () => {
   sessionStorage.setItem(UI_SIDEBAR_PROJECTS_EXPANDED, 'true')
   publish({ keyReady: false, keyLocked: true, profileReady: false })
