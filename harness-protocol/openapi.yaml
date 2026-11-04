@@ -20,7 +20,19 @@ info:
     A run's events arrive as server-sent events. Each frame's `data` is one
     event, described by `x-item-schema` (OpenAPI 3.2's `itemSchema`), and its
     `id` is the event's cursor in the run, which a client following the run
-    again sends back as `Last-Event-ID`.
+    again sends back as `Last-Event-ID`. No event is larger than 8 MiB: a
+    MESSAGES_SNAPSHOT that would be leaves out its oldest messages and sets
+    `hasOlder`, and sends a latest message too large alone with its
+    attachments' text left out, which the client reads as it reads a stored
+    chat's.
+
+    The harness holds only the recent events of a long run. A client
+    following it from before them is sent a checkpoint first: the run's
+    events besides the reply's content and its tools' activity, in order,
+    with a MESSAGES_SNAPSHOT of the chat and the reply so far, then an
+    ACTIVITY_SNAPSHOT of each tool's activity, in the place of the run's
+    first MESSAGES_SNAPSHOT. Only the checkpoint's last frame has an `id`, so
+    a client that misses part of it is sent all of it again.
 
     This document changes by these rules, so a client released against it
     keeps working:
@@ -1317,7 +1329,7 @@ components:
     LastEventId:
       name: Last-Event-ID
       in: header
-      description: The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it. A cursor the run never sent is refused.
+      description: The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it; either starts with a checkpoint when the harness no longer holds the events that follow. A cursor the run never sent is refused.
       schema: {type: integer, minimum: 0}
 
     HarnessInstance:

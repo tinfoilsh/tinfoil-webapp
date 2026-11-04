@@ -2270,7 +2270,7 @@ export interface components {
     }
   }
   parameters: {
-    /** @description The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it. A cursor the run never sent is refused. */
+    /** @description The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it; either starts with a checkpoint when the harness no longer holds the events that follow. A cursor the run never sent is refused. */
     LastEventId: number
     /** @description The instance a run's RUN_STARTED named. A deployment of several harnesses routes a request about the run to it by this header, which says nothing about the caller. */
     HarnessInstance: string
@@ -2373,7 +2373,7 @@ export interface operations {
       header?: {
         /** @description The instance a run's RUN_STARTED named. A deployment of several harnesses routes a request about the run to it by this header, which says nothing about the caller. */
         'X-Tinfoil-Harness-Instance'?: components['parameters']['HarnessInstance']
-        /** @description The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it. A cursor the run never sent is refused. */
+        /** @description The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it; either starts with a checkpoint when the harness no longer holds the events that follow. A cursor the run never sent is refused. */
         'Last-Event-ID'?: components['parameters']['LastEventId']
       }
       path?: never
