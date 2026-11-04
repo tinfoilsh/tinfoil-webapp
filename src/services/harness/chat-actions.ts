@@ -356,9 +356,10 @@ export function chatActions({
       return forkId
     },
     // Removes one message; its reply, or the message it answers, stays. A
-    // chat keeps its last message.
+    // chat keeps the last message it shows.
     deleteMessage(index: number) {
-      if (controller.view.get().messages.length <= 1) return Promise.resolve()
+      if (shownMessages(controller.view.get().messages).length <= 1)
+        return Promise.resolve()
       return changeMessage(
         index,
         (store, threadId, messageId) =>
