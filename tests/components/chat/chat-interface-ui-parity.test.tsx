@@ -11,7 +11,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { client, signIn, testSession } from '../../harness-fixture'
 import {
   resetChatStoresAroundEachTest,
@@ -64,6 +64,14 @@ vi.mock(
 )
 
 resetChatStoresAroundEachTest()
+// The lazy settings modal and verifier panel load before the tests, so
+// opening them is not timed with loading their modules.
+beforeAll(async () => {
+  await Promise.all([
+    import('@/components/chat/settings-modal'),
+    import('@/components/verification-sidebar'),
+  ])
+})
 beforeEach(() => {
   const setAttribute = HTMLIFrameElement.prototype.setAttribute
   vi.spyOn(HTMLIFrameElement.prototype, 'setAttribute').mockImplementation(
