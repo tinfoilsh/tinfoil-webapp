@@ -387,6 +387,45 @@ describe('a message whose role this client does not know', () => {
     expect(turn()).toMatchObject({ kind: 'regenerate', messageId: 'a1' })
     expect(turn().thread).toEqual(localThread(messages))
   })
+
+  it('does not count toward the last message a chat keeps', async () => {
+    signIn({ cloud: true, session })
+    const aside: Message = {
+      id: 'n1',
+      role: 'narrator',
+      createdAt: '2026-04-01T09:00:00.500Z',
+      content: 'an aside',
+    }
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/get')
+        return {
+          ...cloudThread(transcript.slice(0, 1)),
+          messageCount: 2,
+          messages: [wire(transcript[0]), aside],
+        }
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      if (path === '/v1/threads/messages/delete')
+        return {
+          ...cloudThread([]),
+          messageCount: 1,
+          messages: [aside],
+        }
+      throw new Error(`Unexpected ${path}`)
+    })
+    const { result } = renderHook(() => useThread(THREAD_ID, null))
+    await waitFor(() =>
+      expect(result.current.chat.messages.map((m) => m.id)).toEqual(['u1']),
+    )
+
+    await act(() => result.current.deleteMessage(0))
+
+    expect(
+      client.post.mock.calls.filter(
+        ([path]) => path === '/v1/threads/messages/delete',
+      ),
+    ).toEqual([])
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual(['u1'])
+  })
 })
 
 describe('the chat a regenerated or edited turn leaves', () => {
