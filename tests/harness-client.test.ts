@@ -841,6 +841,8 @@ describe('continuing a reply', () => {
 })
 
 describe('compacting a chat', () => {
+  // A chat whose compaction keeps its latest exchange, u2 and a2, before
+  // the run's question.
   const window: Message[] = [
     { id: 'u1', role: 'user', createdAt: 't0', content: 'first' },
     {
@@ -850,6 +852,13 @@ describe('compacting a chat', () => {
       timeline: [{ id: 'b1', type: 'content', content: 'first answer' }],
     },
     { id: 'u2', role: 'user', createdAt: 't2', content: 'second' },
+    {
+      id: 'a2',
+      role: 'assistant',
+      createdAt: 't2',
+      timeline: [{ id: 'b2', type: 'content', content: 'second answer' }],
+    },
+    { id: 'u3', role: 'user', createdAt: 't2', content: 'third' },
   ]
   const marker: Message = {
     id: 'c1',
@@ -870,17 +879,21 @@ describe('compacting a chat', () => {
     beforeMessageId: 'u2',
     timestamp: 't3',
   }
-  const ended = (outcome: string, closing?: Message): Frame['event'] => ({
+  const ended = (
+    outcome: string,
+    closing?: Message,
+    before = 'u2',
+  ): Frame['event'] => ({
     type: 'COMPACTION_END',
     messageId: 'c1',
-    beforeMessageId: 'u2',
+    beforeMessageId: before,
     outcome,
     ...(closing ? { marker: closing } : {}),
   })
   const completed = ended('completed', marker)
   const chunk = (delta: string): Frame['event'] => ({
     type: 'TEXT_MESSAGE_CHUNK',
-    messageId: 'a2',
+    messageId: 'a3',
     role: 'assistant',
     delta,
   })
@@ -898,31 +911,31 @@ describe('compacting a chat', () => {
     ].reduce((chat, event, id) => reduceEvent(chat, { id, event }), state)
   }
 
-  it("opens a marker before the run's question and keeps the summary that closes it", () => {
+  it('opens a marker before the message it names and keeps the summary that closes it', () => {
     const opened = run([started])
     expect(opened.messages).toEqual([
       ...window.slice(0, 2),
       { id: 'c1', role: 'compaction', createdAt: 't3' },
-      window[2],
+      ...window.slice(2),
     ])
 
-    const closed = run([started, completed, chunk('Second answer.')])
+    const closed = run([started, completed, chunk('Third answer.')])
     expect(closed.messages).toEqual([
       ...window.slice(0, 2),
       marker,
-      window[2],
+      ...window.slice(2),
       {
-        id: 'a2',
+        id: 'a3',
         role: 'assistant',
         createdAt: '',
         timeline: [
-          { id: 'a2_content_0', type: 'content', content: 'Second answer.' },
+          { id: 'a3_content_0', type: 'content', content: 'Third answer.' },
         ],
       },
     ])
   })
 
-  it('opens a marker before the question of a reply already streaming', () => {
+  it('opens a marker before the message it names while a reply streams', () => {
     const state = run([chunk('Looking'), started, chunk(' it up.')])
     expect(state.messages.map(({ id }) => id)).toEqual([
       'u1',
@@ -930,9 +943,11 @@ describe('compacting a chat', () => {
       'c1',
       'u2',
       'a2',
+      'u3',
+      'a3',
     ])
-    expect(state.messages[4].timeline).toEqual([
-      { id: 'a2_content_0', type: 'content', content: 'Looking it up.' },
+    expect(state.messages[6].timeline).toEqual([
+      { id: 'a3_content_0', type: 'content', content: 'Looking it up.' },
     ])
   })
 
@@ -945,9 +960,12 @@ describe('compacting a chat', () => {
     expect(state.messages).toEqual(window)
   })
 
-  it("opens a marker before the run's question when the message it names is not loaded", () => {
-    const state = run([{ ...started, beforeMessageId: 'u9' }])
-    expect(state.messages.map(({ id }) => id)).toEqual(['u1', 'a1', 'c1', 'u2'])
+  it('shows no marker before a message that is not loaded', () => {
+    const state = run([
+      { type: 'COMPACTION_START', messageId: 'c1', beforeMessageId: 'u0' },
+      ended('completed', marker, 'u0'),
+    ])
+    expect(state.messages).toEqual(window)
   })
 
   it('keeps a completed marker whose opening a new window replaced', () => {
@@ -956,11 +974,15 @@ describe('compacting a chat', () => {
       { type: 'MESSAGES_SNAPSHOT', messages: window, hasOlder: false },
       completed,
     ])
-    expect(state.messages).toEqual([...window.slice(0, 2), marker, window[2]])
+    expect(state.messages).toEqual([
+      ...window.slice(0, 2),
+      marker,
+      ...window.slice(2),
+    ])
   })
 
   it('shows one marker however often its frames arrive', () => {
-    const events = [started, completed, chunk('Second answer.')]
+    const events = [started, completed, chunk('Third answer.')]
     const once = run(events)
     expect(run(events, once)).toBe(once)
 
@@ -972,7 +994,7 @@ describe('compacting a chat', () => {
     expect(reapplied.messages).toEqual([
       ...window.slice(0, 2),
       marker,
-      window[2],
+      ...window.slice(2),
     ])
   })
 })
