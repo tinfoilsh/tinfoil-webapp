@@ -2209,7 +2209,15 @@ describe('cloud chats', () => {
       client.events
         .mockImplementationOnce(dropsAfter(started))
         .mockImplementationOnce(dropsAfter([]))
-        .mockImplementationOnce(dropsAfter([]))
+        // A request that does not reach the harness is tried again too.
+        .mockImplementationOnce(async function* () {
+          yield* []
+          throw new HarnessError({
+            code: 'CONNECTION',
+            action: 'retry',
+            message: 'The chat service could not be reached.',
+          })
+        })
         .mockImplementationOnce(dropsAfter([]))
         .mockImplementationOnce(resumesUpTo(3))
         .mockImplementationOnce(resumesUpTo(run.length - 1))
