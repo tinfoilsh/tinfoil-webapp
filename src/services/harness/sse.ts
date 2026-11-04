@@ -14,8 +14,6 @@ export class HarnessError extends Error {
   }
 }
 
-const maxFrameCharacters = 8 * 1024 * 1024
-
 // SSE fields are parsed after UTF-8 decoding, so split multibyte characters,
 // CRLF boundaries, comments, and multiline data survive arbitrary chunking.
 export async function* readEvents(
@@ -25,7 +23,6 @@ export async function* readEvents(
   const decoder = new TextDecoder('utf-8', { fatal: true })
   let buffer = ''
   let data: string[] = []
-  let size = 0
   let id: number | undefined
   let terminal = false
   try {
@@ -72,14 +69,12 @@ export async function* readEvents(
           }
           data = []
           id = undefined
-          size = 0
         } else if (!line.startsWith(':')) {
           const colon = line.indexOf(':')
           const field = colon < 0 ? line : line.slice(0, colon)
           const value = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '')
           if (field === 'data') {
             data.push(value)
-            size += value.length
           } else if (field === 'id') {
             if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
               throw new HarnessError({
@@ -91,19 +86,7 @@ export async function* readEvents(
             id = Number(value)
           }
         }
-        if (size > maxFrameCharacters)
-          throw new HarnessError({
-            code: ERROR_CODES.invalidStream,
-            action: ERROR_ACTIONS.stop,
-            message: 'The chat event exceeded its size limit.',
-          })
       }
-      if (size + buffer.length > maxFrameCharacters)
-        throw new HarnessError({
-          code: ERROR_CODES.invalidStream,
-          action: ERROR_ACTIONS.stop,
-          message: 'The chat event exceeded its size limit.',
-        })
       if (chunk.done) break
     }
     if (!terminal)

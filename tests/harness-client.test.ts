@@ -56,6 +56,18 @@ describe('harness SSE', () => {
     expect(frames[0]).toMatchObject({ id: 0, event: { delta: '🙂 café' } })
     expect(frames[1].id).toBeUndefined()
   })
+  // The harness decides how large an event grows.
+  it('reads an event of any size', async () => {
+    const delta = 'x'.repeat(9 << 20)
+    const frames = await collect(
+      stream(
+        `data: {"type":"TEXT_MESSAGE_CHUNK","messageId":"m","delta":"${delta}"}\n\ndata: {"type":"RUN_FINISHED"}\n\n`,
+        1 << 20,
+      ),
+    )
+    expect(frames).toHaveLength(2)
+    expect(frames[0].event).toMatchObject({ messageId: 'm', delta })
+  })
   // A stream that closed early can be rejoined; one that breaks the
   // protocol cannot be read again either.
   it('requires a terminal event and rejects invalid cursors and JSON', async () => {
