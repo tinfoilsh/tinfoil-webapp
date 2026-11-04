@@ -163,7 +163,7 @@ describe('ShareModal', () => {
     )
   })
 
-  it('copies the markdown only once the documents it lists are read', async () => {
+  it('copies at once while a document is read, then with its text', async () => {
     const read = deferred<string>()
     const writeText = vi.fn(async (_text: string) => {})
     vi.spyOn(navigator, 'clipboard', 'get').mockReturnValue({
@@ -185,16 +185,21 @@ describe('ShareModal', () => {
         ]}
       />,
     )
-    const loading = screen.getByRole('button', { name: 'Loading documents...' })
-    expect(loading).toBeDisabled()
-    fireEvent.click(loading)
-    expect(writeText).not.toHaveBeenCalled()
+    // A read that never answers does not hold the copy back.
+    fireEvent.click(screen.getByRole('button', { name: 'Copy to Clipboard' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce())
+    expect(writeText.mock.calls[0][0]).toContain('See attached')
+    expect(writeText.mock.calls[0][0]).toContain('- report.pdf')
+    expect(writeText.mock.calls[0][0]).not.toContain('Document Content')
 
     await act(async () => read.resolve('Revenue grew.'))
-    fireEvent.click(screen.getByRole('button', { name: 'Copy to Clipboard' }))
+    // The button reads "Copied!" for a moment after a copy.
+    fireEvent.click(
+      screen.getByRole('button', { name: /^(Copy to Clipboard|Copied!)$/ }),
+    )
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledOnce())
-    expect(writeText.mock.calls[0][0]).toContain(
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
+    expect(writeText.mock.calls[1][0]).toContain(
       'Document title: report.pdf\nRevenue grew.',
     )
   })
