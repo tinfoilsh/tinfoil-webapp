@@ -115,6 +115,8 @@ type View = {
 const CHANGE_POLL_MS = 20_000
 // The kinds of quota this client shows.
 const RATE_LIMIT_KINDS: ReadonlySet<unknown> = new Set(['free_daily', 'hourly'])
+export const showsRateLimit = (rateLimit: RateLimit | undefined) =>
+  RATE_LIMIT_KINDS.has(rateLimit?.kind)
 interface ChangeTokens {
   chats: string
   profile: string
@@ -378,11 +380,14 @@ export class HarnessAPI {
   // Shows the quota a session, a run, a refusal or the account's chat access
   // reported, for this account only. The harness reports none for a
   // subscriber, whose quota came with its chat access. A quota of a kind this
-  // client does not know replaces the one shown with none.
+  // client does not know replaces the one shown with none, except the hourly
+  // budget the chat access reported, which the account's runs still spend.
   reportRateLimit(rateLimit: RateLimit | undefined) {
     if (active !== this || this.lifetime.signal.aborted || !rateLimit?.kind)
       return
-    const shown = RATE_LIMIT_KINDS.has(rateLimit.kind) ? rateLimit : undefined
+    const known = showsRateLimit(rateLimit)
+    if (!known && view.rateLimit?.kind === 'hourly') return
+    const shown = known ? rateLimit : undefined
     if (JSON.stringify(shown) !== JSON.stringify(view.rateLimit))
       publish({ rateLimit: shown })
   }
