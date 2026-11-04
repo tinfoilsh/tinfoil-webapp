@@ -931,11 +931,30 @@ const DefaultMessageComponent = ({
           who stopped it: the service stops replies when it restarts too. */}
       {!(isStreaming && isLastMessage) &&
         (message.canceledByUser || (!isUser && message.isInterrupted)) && (
-          <p className="w-full px-4 pt-2 text-left text-xs text-content-muted">
-            {message.canceledByUser
-              ? 'Response canceled by user'
-              : 'Response stopped'}
-          </p>
+          <div className="flex w-full items-center gap-2 px-4 pt-2">
+            <p className="text-left text-xs text-content-muted">
+              {message.canceledByUser
+                ? 'Response canceled by user'
+                : 'Response stopped'}
+            </p>
+            {/* The last reply the service stopped goes on where it stopped. */}
+            {!message.canceledByUser &&
+              isLastMessage &&
+              onContinueAssistantMessage &&
+              !hideActions &&
+              !isEditing &&
+              message.content && (
+                <button
+                  type="button"
+                  onClick={handleContinue}
+                  aria-label="Continue response"
+                  className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
+                >
+                  <ForwardIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                  Continue
+                </button>
+              )}
+          </div>
         )}
 
       {/* Actions for assistant messages - hidden while streaming the last response */}

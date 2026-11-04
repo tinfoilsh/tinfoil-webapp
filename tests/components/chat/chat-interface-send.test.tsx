@@ -622,6 +622,10 @@ it('stops a reply at once with Escape, and says the user canceled it, also once 
   fireEvent.keyDown(document.body, { key: 'Escape' })
   await act(async () => stopped.resolve())
   expect(screen.getByText('Response canceled by user')).toBeInTheDocument()
+  // A reply the user stopped is not offered to go on.
+  expect(
+    screen.queryByRole('button', { name: 'Continue response' }),
+  ).not.toBeInTheDocument()
   expect(stops).toHaveLength(1)
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 
@@ -769,5 +773,68 @@ it('says a reply the service stopped stopped, without blaming the user', async (
   expect(await screen.findByText('Response stopped')).toBeInTheDocument()
   expect(
     screen.queryByText('Response canceled by user'),
+  ).not.toBeInTheDocument()
+})
+
+it('continues a reply the service stopped where it stopped, in one tap', async () => {
+  signIn({ cloud: true })
+  scriptStoppedRun(Promise.resolve())
+  answerStops()
+  client.events.mockImplementationOnce(async function* (
+    _path: string,
+    input: Turn,
+  ): AsyncGenerator<Frame> {
+    yield {
+      id: 0,
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'continued',
+        threadId: input.threadId!,
+        instance: 'instance-1',
+        messageId: 'answer',
+      },
+    }
+    yield {
+      id: 1,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'answer',
+        role: 'assistant',
+        delta: ' here.',
+      },
+    }
+    yield {
+      id: 2,
+      event: {
+        type: 'RUN_FINISHED',
+        runId: 'continued',
+        threadId: input.threadId!,
+        metadata: { messages: [{ id: 'answer', isInterrupted: false }] },
+      },
+    }
+  })
+  renderChat()
+  await send()
+
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Continue response' }),
+  )
+
+  await waitFor(() =>
+    expect(screen.getByRole('article', { name: 'Al said' })).toHaveTextContent(
+      'The answer is here.',
+    ),
+  )
+  const { threadId } = client.events.mock.calls[0][1] as Turn
+  expect(client.events.mock.calls[1][0]).toBe('/v1/threads/turn')
+  expect(client.events.mock.calls[1][1]).toMatchObject({
+    kind: 'continue',
+    threadId,
+    messageId: 'answer',
+    content: '',
+  })
+  expect(screen.queryByText('Response stopped')).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Continue response' }),
   ).not.toBeInTheDocument()
 })

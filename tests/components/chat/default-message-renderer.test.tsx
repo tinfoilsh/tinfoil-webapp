@@ -432,6 +432,39 @@ describe('DefaultMessageRenderer message actions', () => {
     expect(onDeleteMessage).toHaveBeenCalledExactlyOnceWith(3)
   })
 
+  // Continuing a reply drops the messages after it, so only the last
+  // reply the service stopped offers it.
+  it.each([
+    [true, true],
+    [false, false],
+  ])(
+    'offers to continue a reply the service stopped when it is the last: %s',
+    (isLastMessage, offered) => {
+      const onContinueAssistantMessage = vi.fn()
+      render(
+        <Renderer
+          message={{ ...assistantMessage, isInterrupted: true }}
+          messageIndex={3}
+          model={model}
+          isDarkMode={false}
+          isLastMessage={isLastMessage}
+          onContinueAssistantMessage={onContinueAssistantMessage}
+        />,
+      )
+
+      expect(screen.getByText('Response stopped')).toBeInTheDocument()
+      const continueButton = screen.queryByRole('button', {
+        name: 'Continue response',
+      })
+      if (!offered) {
+        expect(continueButton).not.toBeInTheDocument()
+        return
+      }
+      fireEvent.click(continueButton!)
+      expect(onContinueAssistantMessage).toHaveBeenCalledExactlyOnceWith(3)
+    },
+  )
+
   it('saves an assistant edit in place', () => {
     const onEditAssistantMessage = vi.fn()
     const onContinueAssistantMessage = vi.fn()
