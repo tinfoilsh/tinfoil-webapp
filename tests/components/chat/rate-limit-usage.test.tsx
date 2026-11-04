@@ -159,9 +159,9 @@ describe('RateLimitUsage', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('shows no quota once one of a kind this client does not know is reported', async () => {
+  it('shows no daily quota once one of a kind this client does not know is reported', async () => {
     const { container } = render(<RateLimitUsage isPremium />)
-    await refreshSession(hourly(500_000))
+    await refreshSession({ ...hourly(500_000), kind: 'free_daily' })
     expect(screen.getByText('500K / 2M')).toBeInTheDocument()
 
     await refreshSession({ ...hourly(1_500_000), kind: 'monthly' })
@@ -300,5 +300,30 @@ describe('usage reported by runs', () => {
     )
     await act(() => result.current.send({ content: 'first' }))
     expect(getView().rateLimit).toEqual(hourly(600_000))
+  })
+
+  it('debits the mint quota when the run reports a quota of a kind this client does not know', async () => {
+    render(<RateLimitUsage isPremium />)
+    const { result } = renderHook(() => useThread())
+    act(() => client.onRateLimit?.(hourly(500_000)))
+    const monthly: RateLimit = { ...hourly(1_500_000), kind: 'monthly' }
+    client.events.mockImplementationOnce(
+      run('run-1', monthly, {
+        type: 'RUN_FINISHED',
+        threadId: 'thread-1',
+        runId: 'run-1',
+        metadata: {
+          rateLimit: monthly,
+          usage: {
+            prompt_tokens: 100_000,
+            completion_tokens: 0,
+            total_tokens: 100_000,
+          },
+        },
+      }),
+    )
+    await act(() => result.current.send({ content: 'first' }))
+    expect(getView().rateLimit).toEqual(hourly(600_000))
+    expect(screen.getByText('600K / 2M')).toBeInTheDocument()
   })
 })

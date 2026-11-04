@@ -13,7 +13,7 @@ import {
   unstopped,
   type ChatState,
 } from './reducer'
-import type { HarnessAPI } from './runtime'
+import { showsRateLimit, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import { createStore } from './store'
 import type {
@@ -465,7 +465,7 @@ export class RunController {
       this.api.reportRateLimit(event.snapshot.rateLimit)
     else if (isTerminal(event)) {
       this.api.reportRateLimit(event.metadata?.rateLimit)
-      if (!event.metadata?.rateLimit?.kind)
+      if (!showsRateLimit(event.metadata?.rateLimit))
         this.api.reportUsage(event.metadata?.usage)
     }
   }
