@@ -532,6 +532,7 @@ describe('a chat compacted for a reply', () => {
         event: {
           type: 'COMPACTION_END',
           messageId: 'c1',
+          beforeMessageId: 'u2',
           outcome: 'completed',
           marker: marker('c1', 4, summary),
         },

@@ -873,6 +873,7 @@ describe('compacting a chat', () => {
   const ended = (outcome: string, closing?: Message): Frame['event'] => ({
     type: 'COMPACTION_END',
     messageId: 'c1',
+    beforeMessageId: 'u2',
     outcome,
     ...(closing ? { marker: closing } : {}),
   })
