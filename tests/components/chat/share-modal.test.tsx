@@ -193,7 +193,10 @@ describe('ShareModal', () => {
     expect(writeText.mock.calls[0][0]).not.toContain('Document Content')
 
     await act(async () => read.resolve('Revenue grew.'))
-    fireEvent.click(await screen.findByRole('button', { name: 'Copied!' }))
+    // The button reads "Copied!" for a moment after a copy.
+    fireEvent.click(
+      screen.getByRole('button', { name: /^(Copy to Clipboard|Copied!)$/ }),
+    )
 
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
     expect(writeText.mock.calls[1][0]).toContain(
