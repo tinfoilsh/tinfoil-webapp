@@ -490,7 +490,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
               </motion.div>
             )}
             {isSignedIn === false && (
-              <p className="mt-4 px-4 text-center text-xs leading-relaxed text-content-secondary">
+              <p className="mt-4 text-balance px-4 text-center text-xs leading-relaxed text-content-secondary">
                 By using this chat, you agree to our{' '}
                 <a
                   href={TERMS_URL}
