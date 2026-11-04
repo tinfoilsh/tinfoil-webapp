@@ -976,9 +976,12 @@ export function ChatInterface({
         component: 'ChatInterface',
         action: 'handleCreateProject',
       })
+      // A harness error, from the service or this client, says why it failed;
+      // anything else may pass on a retry.
       toast({
         title: 'Failed to create project',
-        description: 'Please try again.',
+        description:
+          error instanceof HarnessError ? error.message : 'Please try again.',
         variant: 'destructive',
       })
     }
