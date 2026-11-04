@@ -976,7 +976,8 @@ export function ChatInterface({
         component: 'ChatInterface',
         action: 'handleCreateProject',
       })
-      // The harness says why it refused; anything else may pass on a retry.
+      // A harness error, from the service or this client, says why it failed;
+      // anything else may pass on a retry.
       toast({
         title: 'Failed to create project',
         description:
