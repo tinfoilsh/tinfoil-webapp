@@ -245,18 +245,17 @@ function withToolCall(
   return null
 }
 
-// Puts a compaction marker before the message `before` names, or, when that
-// message is not loaded, before the run's question: the last user message.
+// Puts a compaction marker before the message `before` names. A marker whose
+// message is not loaded sits among earlier messages the view has not loaded,
+// so the view leaves it out.
 function withMarker(
   messages: Message[],
   marker: Message,
-  before?: string,
+  before: string,
 ): Message[] {
-  const named = messages.findIndex(({ id }) => id === before)
-  const at =
-    named >= 0 ? named : messages.findLastIndex(({ role }) => role === 'user')
+  const at = messages.findIndex(({ id }) => id === before)
   return at < 0
-    ? [...messages, marker]
+    ? messages
     : [...messages.slice(0, at), marker, ...messages.slice(at)]
 }
 
@@ -593,9 +592,10 @@ function applyEvent(
           }) ?? next.messages,
       }
     }
-    // A compaction marker shows before the run's question while its summary
-    // is written, and holds the summary once a completed compaction closes
-    // it; a compaction that did not complete leaves no marker.
+    // A compaction marker shows before the first message the model goes on
+    // reading while its summary is written, and holds the summary once a
+    // completed compaction closes it; a compaction that did not complete
+    // leaves no marker.
     case 'COMPACTION_START':
       return next.messages.some(({ id }) => id === event.messageId)
         ? next
@@ -624,7 +624,7 @@ function applyEvent(
         ...next,
         messages:
           at < 0
-            ? withMarker(next.messages, event.marker)
+            ? withMarker(next.messages, event.marker, event.beforeMessageId)
             : replaceAt(next.messages, at, event.marker),
       }
     }

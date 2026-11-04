@@ -491,14 +491,17 @@ describe('a chat compacted for a reply', () => {
       version: 1,
     },
   })
-  // A chat compacted once already, whose next question compacts it again.
+  // A chat compacted once already, whose next question compacts it again
+  // and keeps its latest exchange.
   const window = [
     question('u0', 'Where do we start?'),
     answer('a0', 'At the beginning.'),
     marker('c0', 2, 'An earlier summary.'),
     question('u1', 'And then?'),
     answer('a1', 'Then the middle.'),
-    question('u2', 'Why?'),
+    question('u2', 'And at the end?'),
+    answer('a2', 'It ends.'),
+    question('u3', 'Why?'),
   ]
   const summary =
     '## Goals and context\nThe user is walking through a story.\n\n## Open threads\nWhy it ends.'
@@ -532,6 +535,7 @@ describe('a chat compacted for a reply', () => {
         event: {
           type: 'COMPACTION_END',
           messageId: 'c1',
+          beforeMessageId: 'u2',
           outcome: 'completed',
           marker: marker('c1', 4, summary),
         },
@@ -610,7 +614,7 @@ describe('a chat compacted for a reply', () => {
       'Then the middle.',
     ])
       expect(outOfContext(text)).toHaveAttribute('data-out-of-context')
-    for (const text of ['Why?', 'Because.'])
+    for (const text of ['And at the end?', 'It ends.', 'Why?', 'Because.'])
       expect(outOfContext(text)).not.toHaveAttribute('data-out-of-context')
     expect(
       screen.queryByRole('status', { name: 'Compacting conversation' }),

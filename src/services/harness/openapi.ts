@@ -109,7 +109,7 @@ export interface paths {
     put?: never
     /**
      * Stop a run
-     * @description Stops the chat's running reply. The turns queued behind it end too, each with a cancelled RUN_FINISHED, so the harness keeps nothing of a chat once its reply stops.
+     * @description Stops the chat's running reply. The turns queued behind it end too, each with a cancelled RUN_FINISHED, so the harness keeps nothing of a chat once its reply stops. A turn still queued is removed instead, as queue/remove removes it, and the reply before it goes on.
      */
     post: operations['cancel']
     delete?: never
@@ -885,7 +885,7 @@ export interface paths {
     put?: never
     /**
      * Import an archive
-     * @description Imports an archive, either as device chats streamed back to the client or into the cloud through an import job.
+     * @description Imports an archive, either as device chats streamed back to the client or into the cloud through an import job. A signed-out caller imports device chats only, from an archive of at most 32 MiB, one archive at a time.
      */
     post: operations['import']
     delete?: never
@@ -922,7 +922,7 @@ export interface paths {
     put?: never
     /**
      * Export chats as an archive
-     * @description Exports the account's stored chats and the device chats the client sends, as an archive.
+     * @description Exports the account's stored chats and the device chats the client sends, as an archive. A stored attachment the storage services do not serve is left out, and the archive's manifest lists it, as it lists a stored chat that cannot be read. A signed-out caller exports device chats only, of at most 32 MiB, one archive at a time.
      */
     post: operations['export']
     delete?: never
@@ -1519,11 +1519,14 @@ export interface components {
     /**
      * @description Opens a compaction marker while its summary is written. A turn whose
      *     prompt would not fit the share of the model's window a prompt may
-     *     fill summarizes every message before its question, from the chat's
-     *     latest marker on, into a new marker before that question. A run
+     *     fill summarizes the messages from the chat's latest marker on into a
+     *     new marker, except the latest exchanges before its question, which
+     *     the model goes on reading as they were. The marker sits before the
+     *     first question it keeps, or else before the turn's question. A run
      *     compacts at most once, before its first model turn or between two of
-     *     them. A client shows the marker before the message beforeMessageId
-     *     names, and the messages before it as ones the model no longer reads.
+     *     them. beforeMessageId names a message of the run's MESSAGES_SNAPSHOT.
+     *     A client shows the marker before that message, and the messages
+     *     before it as ones the model no longer reads.
      */
     CompactionStartEvent: {
       /**
@@ -1535,7 +1538,7 @@ export interface components {
       messageId: string
       beforeMessageId: string
     }
-    /** @description Closes a compaction marker. A completed one carries the marker, which the chat keeps even if the reply then fails, and is followed by a STATE_SNAPSHOT with the context the turn's prompt now fills. A client removes a failed one, after which the run ends with COMPACTION_FAILED. */
+    /** @description Closes a compaction marker, which sits before the message beforeMessageId names, as COMPACTION_START named it. A completed one carries the marker, which the chat keeps even if the reply then fails, and is followed by a STATE_SNAPSHOT with the context the turn's prompt now fills. A client removes a failed one, after which the run ends with COMPACTION_FAILED. */
     CompactionEndEvent: {
       /**
        * @description discriminator enum property added by openapi-typescript
@@ -1544,6 +1547,7 @@ export interface components {
       type: 'COMPACTION_END'
       timestamp?: components['schemas']['Timestamp']
       messageId: string
+      beforeMessageId: string
       /** @description A client treats an outcome it does not know as failed. */
       outcome: ('completed' | 'failed') | string
       marker?: components['schemas']['MessageView']
@@ -2266,7 +2270,7 @@ export interface components {
     }
   }
   parameters: {
-    /** @description The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it. A cursor the run never sent is refused. */
+    /** @description The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it; either starts with a checkpoint when the harness no longer holds the events that follow. A cursor the run never sent is refused. */
     LastEventId: number
     /** @description The instance a run's RUN_STARTED named. A deployment of several harnesses routes a request about the run to it by this header, which says nothing about the caller. */
     HarnessInstance: string
@@ -2369,7 +2373,7 @@ export interface operations {
       header?: {
         /** @description The instance a run's RUN_STARTED named. A deployment of several harnesses routes a request about the run to it by this header, which says nothing about the caller. */
         'X-Tinfoil-Harness-Instance'?: components['parameters']['HarnessInstance']
-        /** @description The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it. A cursor the run never sent is refused. */
+        /** @description The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it; either starts with a checkpoint when the harness no longer holds the events that follow. A cursor the run never sent is refused. */
         'Last-Event-ID'?: components['parameters']['LastEventId']
       }
       path?: never

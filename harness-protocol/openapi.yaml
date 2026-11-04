@@ -20,7 +20,19 @@ info:
     A run's events arrive as server-sent events. Each frame's `data` is one
     event, described by `x-item-schema` (OpenAPI 3.2's `itemSchema`), and its
     `id` is the event's cursor in the run, which a client following the run
-    again sends back as `Last-Event-ID`.
+    again sends back as `Last-Event-ID`. No event is larger than 8 MiB: a
+    MESSAGES_SNAPSHOT that would be leaves out its oldest messages and sets
+    `hasOlder`, and sends a latest message too large alone with its
+    attachments' text left out, which the client reads as it reads a stored
+    chat's.
+
+    The harness holds only the recent events of a long run. A client
+    following it from before them is sent a checkpoint first: the run's
+    events besides the reply's content and its tools' activity, in order,
+    with a MESSAGES_SNAPSHOT of the chat and the reply so far, then an
+    ACTIVITY_SNAPSHOT of each tool's activity, in the place of the run's
+    first MESSAGES_SNAPSHOT. Only the checkpoint's last frame has an `id`, so
+    a client that misses part of it is sent all of it again.
 
     This document changes by these rules, so a client released against it
     keeps working:
@@ -192,7 +204,7 @@ paths:
     post:
       operationId: cancel
       summary: Stop a run
-      description: Stops the chat's running reply. The turns queued behind it end too, each with a cancelled RUN_FINISHED, so the harness keeps nothing of a chat once its reply stops.
+      description: Stops the chat's running reply. The turns queued behind it end too, each with a cancelled RUN_FINISHED, so the harness keeps nothing of a chat once its reply stops. A turn still queued is removed instead, as queue/remove removes it, and the reply before it goes on.
       tags: [runs]
       parameters: [{$ref: "#/components/parameters/HarnessInstance"}]
       requestBody:
@@ -1188,7 +1200,7 @@ paths:
       operationId: import
       summary: Import an archive
       tags: [archives]
-      description: Imports an archive, either as device chats streamed back to the client or into the cloud through an import job.
+      description: Imports an archive, either as device chats streamed back to the client or into the cloud through an import job. A signed-out caller imports device chats only, from an archive of at most 32 MiB, one archive at a time.
       requestBody:
         required: true
         content:
@@ -1242,7 +1254,7 @@ paths:
       operationId: export
       summary: Export chats as an archive
       tags: [archives]
-      description: Exports the account's stored chats and the device chats the client sends, as an archive.
+      description: Exports the account's stored chats and the device chats the client sends, as an archive. A stored attachment the storage services do not serve is left out, and the archive's manifest lists it, as it lists a stored chat that cannot be read. A signed-out caller exports device chats only, of at most 32 MiB, one archive at a time.
       requestBody:
         required: true
         content:
@@ -1317,7 +1329,7 @@ components:
     LastEventId:
       name: Last-Event-ID
       in: header
-      description: The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it. A cursor the run never sent is refused.
+      description: The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it; either starts with a checkpoint when the harness no longer holds the events that follow. A cursor the run never sent is refused.
       schema: {type: integer, minimum: 0}
 
     HarnessInstance:
@@ -1330,7 +1342,7 @@ components:
     identity:
       type: http
       scheme: bearer
-      description: A Clerk session token, or a free_ key for a signed-out caller.
+      description: A Clerk session token, or a free_ key for a signed-out caller. A signed-out caller's request about a run already started, to follow or cancel it or to send or remove a turn queued behind it, carries the key the run started under, which is accepted for it even once it has expired.
     chatAccess:
       type: apiKey
       in: header
@@ -2030,11 +2042,14 @@ components:
       description: |
         Opens a compaction marker while its summary is written. A turn whose
         prompt would not fit the share of the model's window a prompt may
-        fill summarizes every message before its question, from the chat's
-        latest marker on, into a new marker before that question. A run
+        fill summarizes the messages from the chat's latest marker on into a
+        new marker, except the latest exchanges before its question, which
+        the model goes on reading as they were. The marker sits before the
+        first question it keeps, or else before the turn's question. A run
         compacts at most once, before its first model turn or between two of
-        them. A client shows the marker before the message beforeMessageId
-        names, and the messages before it as ones the model no longer reads.
+        them. beforeMessageId names a message of the run's MESSAGES_SNAPSHOT.
+        A client shows the marker before that message, and the messages
+        before it as ones the model no longer reads.
       type: object
       required: [type, messageId, beforeMessageId]
       properties:
@@ -2044,13 +2059,14 @@ components:
         beforeMessageId: {type: string}
 
     CompactionEndEvent:
-      description: Closes a compaction marker. A completed one carries the marker, which the chat keeps even if the reply then fails, and is followed by a STATE_SNAPSHOT with the context the turn's prompt now fills. A client removes a failed one, after which the run ends with COMPACTION_FAILED.
+      description: Closes a compaction marker, which sits before the message beforeMessageId names, as COMPACTION_START named it. A completed one carries the marker, which the chat keeps even if the reply then fails, and is followed by a STATE_SNAPSHOT with the context the turn's prompt now fills. A client removes a failed one, after which the run ends with COMPACTION_FAILED.
       type: object
-      required: [type, messageId, outcome]
+      required: [type, messageId, beforeMessageId, outcome]
       properties:
         type: {const: COMPACTION_END}
         timestamp: {$ref: "#/components/schemas/Timestamp"}
         messageId: {type: string}
+        beforeMessageId: {type: string}
         outcome:
           description: A client treats an outcome it does not know as failed.
           anyOf:
