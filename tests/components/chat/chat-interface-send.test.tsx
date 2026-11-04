@@ -825,6 +825,13 @@ it('continues a reply the service stopped where it stopped, in one tap', async (
       'The answer is here.',
     ),
   )
+  // The continuation ends, so the chat no longer streams.
+  expect(
+    await screen.findByRole('button', { name: 'Send' }),
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Stop generation' }),
+  ).not.toBeInTheDocument()
   const { threadId } = client.events.mock.calls[0][1] as Turn
   expect(client.events.mock.calls[1][0]).toBe('/v1/threads/turn')
   expect(client.events.mock.calls[1][1]).toMatchObject({

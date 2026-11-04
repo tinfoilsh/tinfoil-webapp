@@ -1,4 +1,5 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
+import { REJOIN_DELAYS_MS } from '@/services/harness/run-controller'
 import { getView } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Thread, Turn } from '@/services/harness/types'
@@ -342,6 +343,13 @@ describe('a turn the harness refuses', () => {
       if (queued) {
         await passRejoinWaits()
         vi.useRealTimers()
+        expect(
+          client.events.mock.calls.filter(
+            ([path, input]) =>
+              path === '/v1/threads/follow' &&
+              (input as { runId?: string }).runId === 'run-2',
+          ),
+        ).toHaveLength(REJOIN_DELAYS_MS.length)
       }
 
       expect(await screen.findByRole('alert')).toHaveTextContent(explanation)
