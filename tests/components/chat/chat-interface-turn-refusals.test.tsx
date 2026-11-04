@@ -231,6 +231,94 @@ describe('a turn the harness refuses', () => {
     expect(turn(2)).toEqual(turn(1))
     release()
   })
+
+  it('explains a message queued behind the reply that failed before it started, and resends it', async () => {
+    const { messages: _messages, hasOlder: _hasOlder, ...summary } = thread
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    client.events.mockImplementationOnce(async function* () {
+      const frames: Frame['event'][] = [
+        {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+        {
+          type: 'STATE_SNAPSHOT',
+          snapshot: { thread: summary, queue: [], rateLimit: { kind: null } },
+        },
+      ]
+      for (const [id, event] of frames.entries()) yield { id, event }
+      await held
+    })
+    client.events.mockImplementationOnce(async function* () {
+      const frames: Frame['event'][] = [
+        {
+          type: 'STATE_DELTA',
+          runId: 'run-2',
+          delta: [
+            {
+              op: 'add',
+              path: '/queue/-',
+              value: {
+                queueId: 'run-2',
+                kind: 'send',
+                content: 'And one more',
+                quote: null,
+                attachments: [],
+                createdAt: '2026-04-01T09:01:00Z',
+              },
+            },
+          ],
+        },
+        // The service shuts down before the queued turn starts.
+        {
+          type: 'RUN_ERROR',
+          threadId: THREAD_ID,
+          runId: 'run-2',
+          code: 'UPSTREAM_REFUSED',
+          message: 'The service is shutting down',
+          action: 'retry',
+        },
+      ]
+      for (const [id, event] of frames.entries()) yield { id, event }
+    })
+    client.events.mockImplementationOnce(async function* () {
+      await held
+    })
+    render(<ChatInterface initialChatId={THREAD_ID} />)
+    await screen.findByText('Hello there')
+    await waitFor(() =>
+      expect(client.events).toHaveBeenCalledWith(
+        '/v1/threads/follow',
+        expect.objectContaining({ runId: 'run-1' }),
+        expect.any(AbortSignal),
+      ),
+    )
+    const input = screen.getByRole('textbox', { name: /message/i })
+    fireEvent.change(input, { target: { value: 'And one more' } })
+    fireEvent.submit(input.closest('form')!)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The service is having trouble right now',
+    )
+    expect(
+      screen.getByRole('button', { name: 'Stop generation' }),
+    ).toBeInTheDocument()
+
+    // The turn failed, not a reply, so a retry sends it again under its nonce
+    // instead of regenerating the reply.
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+
+    await waitFor(() => expect(client.events).toHaveBeenCalledTimes(3))
+    expect(client.events.mock.calls[2][0]).toBe('/v1/threads/turn')
+    expect(turn(1)).toMatchObject({ kind: 'send', content: 'And one more' })
+    expect(turn(2)).toEqual(turn(1))
+    release()
+  })
   it.each([
     [
       'a lost connection',

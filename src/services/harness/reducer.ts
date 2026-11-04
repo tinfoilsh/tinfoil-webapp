@@ -381,10 +381,22 @@ export function reduceEvent(
     runId !== state.runId &&
     event.type !== 'RUN_STARTED' &&
     event.type !== 'STATE_DELTA'
-  )
-    return isTerminal(event)
-      ? { ...next, snapshot: withoutQueued(next.snapshot, runId) }
-      : next
+  ) {
+    if (!isTerminal(event)) return next
+    const ended = { ...next, snapshot: withoutQueued(next.snapshot, runId) }
+    if (event.type !== 'RUN_ERROR') return ended
+    // A queued turn that fails leaves the queue without a reply, so the chat
+    // shows why, as it does for one refused when sent. A reply still
+    // streaming goes on.
+    const error = runErrorOf(event)
+    return {
+      ...(ended.status === 'streaming' || ended.status === 'queued'
+        ? ended
+        : { ...unstopped(ended), status: 'error' as const }),
+      error,
+      ...(error.code === ERROR_CODES.chatFlagged ? { flagged: true } : {}),
+    }
+  }
   // The reply the user stopped stays as it showed when they stopped it,
   // unless the run turns out to go on.
   if (!widgetRetry && next.stopping && !RUN_STATE_EVENTS.has(event.type))
