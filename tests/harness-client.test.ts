@@ -224,6 +224,38 @@ describe('harness reducer', () => {
     expect(state.status).toBe('streaming')
     expect(state.runId).toBe('next')
   })
+  it('lists a queued turn once when the running reply lists it before its own stream adds it', () => {
+    let state = reduceEvent(initialChat(), {
+      id: 0,
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'active',
+        threadId: 't',
+        instance: 'instance-1',
+      },
+    })
+    state = reduceEvent(state, {
+      id: 1,
+      event: {
+        type: 'STATE_DELTA',
+        delta: [
+          { op: 'replace', path: '/queue', value: [queued('queued', 'Hi')] },
+        ],
+      },
+    })
+    state = reduceEvent(state, {
+      id: 0,
+      event: {
+        type: 'STATE_DELTA',
+        threadId: 't',
+        runId: 'queued',
+        delta: [{ op: 'add', path: '/queue/-', value: queued('queued', 'Hi') }],
+      },
+    })
+    expect(state.snapshot.queue).toEqual([queued('queued', 'Hi')])
+    expect(state.status).toBe('streaming')
+    expect(state.runId).toBe('active')
+  })
   it('replaces the cursor snapshot, deduplicates deltas and retries the same widget', () => {
     let state = initialChat()
     const frames: Frame[] = [

@@ -148,9 +148,12 @@ function applyStateDelta(
 ): Snapshot {
   let next = snapshot
   for (const patch of patches) {
-    if (patch.op === 'add' && patch.path === '/queue/-')
-      next = { ...next, queue: [...next.queue, patch.value] }
-    else if (patch.op === 'replace' && patch.path === '/queue')
+    // The running reply's stream lists a queued turn as the turn's own
+    // stream adds it, in either order, so the chat lists it once.
+    if (patch.op === 'add' && patch.path === '/queue/-') {
+      if (!next.queue.some(({ queueId }) => queueId === patch.value.queueId))
+        next = { ...next, queue: [...next.queue, patch.value] }
+    } else if (patch.op === 'replace' && patch.path === '/queue')
       next = { ...next, queue: patch.value }
     else if (
       patch.op === 'replace' &&
