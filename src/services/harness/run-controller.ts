@@ -31,8 +31,33 @@ const CONNECTION_LOST: HarnessErrorBody = {
   action: ERROR_ACTIONS.retry,
   message: 'The connection closed. Reconnect to continue.',
 }
+// A stream that broke, or a request the harness gave no answer to, as while a
+// new instance of it starts: the run may go on, and following it again
+// changes nothing.
 const interrupted = (cause: unknown) =>
-  !(cause instanceof HarnessError) || cause.code === CONNECTION_LOST.code
+  !(cause instanceof HarnessError) ||
+  cause.code === CONNECTION_LOST.code ||
+  cause.code === ERROR_CODES.connection
+// The waits before each attempt to rejoin a run whose stream dropped, the
+// first at once. Together they outlast a restart of the harness, whose new
+// instance takes about a minute to answer.
+export const REJOIN_DELAYS_MS = [
+  0, 1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 30_000,
+]
+
+// Resolves after ms, or as soon as signal aborts.
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (ms <= 0 || signal.aborted) return resolve()
+    const done = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', done)
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    signal.addEventListener('abort', done, { once: true })
+  })
+}
 // The chat changed from the copy this client shows, as when the harness
 // had applied a turn sent again, or no longer has the run, finished or not.
 const gone = (cause: unknown) =>
@@ -73,7 +98,9 @@ export interface RunOptions {
   device?: DeviceRun
   // Rejoining a run left behind: losing it shows no error.
   quiet?: boolean
-  rejoined?: boolean
+  // The attempts made in a row to rejoin the run since its stream last
+  // delivered a frame.
+  rejoins?: number
   // The run started before this stream: one followed by its id is, unless a
   // stream that only queued it is rejoined.
   started?: boolean
@@ -108,7 +135,8 @@ export interface Receipt {
 
 // Streams the runs of the chat a view shows: a turn's run, or a live run it
 // follows again, which replays from its first frame while the view skips
-// the frames it applied. A run whose stream drops is rejoined once.
+// the frames it applied. A run whose stream drops is rejoined, backing off
+// while the harness cannot be reached.
 export class RunController {
   readonly view = createStore<ChatState>(initialChat())
   // The device chats whose runs this page reads, by chat.
@@ -234,12 +262,14 @@ export class RunController {
       })
       options.submission.cancelled = false
     }
+    const signal = this.api.signal({
+      signal: controller.signal,
+      keyless: !input.key,
+    })
+    // The stream applied a frame the view did not hold yet.
+    let progressed = false
     try {
-      for await (const frame of this.api.client.events(
-        route,
-        sent,
-        this.api.signal({ signal: controller.signal, keyless: !input.key }),
-      )) {
+      for await (const frame of this.api.client.events(route, sent, signal)) {
         const shown = attached()
         const { event } = frame
         if ('threadId' in event && event.threadId) threadId = event.threadId
@@ -265,6 +295,7 @@ export class RunController {
               this.errorAt = Date.now()
           }
           if (isTerminal(event)) this.markCanceled(canceledBy(base, event))
+          progressed = true
           view = next
           if (shown) this.view.set(next)
           if (event.type === 'RUN_STARTED') {
@@ -325,14 +356,19 @@ export class RunController {
       }
     } catch (cause) {
       if (controller.signal.aborted) return false
-      // A stream cut off after its run started rejoins the run once, which
-      // replays it; a device run does so after the view moved on.
+      // A stream cut off after its run started rejoins the run, which
+      // replays it; a device run does so after the view moved on. Attempts
+      // that deliver nothing wait longer each time, so a harness that
+      // restarts is reached once its new instance answers.
+      const rejoins = progressed ? 0 : (options.rejoins ?? 0)
       if (
         runId &&
-        !options.rejoined &&
+        rejoins < REJOIN_DELAYS_MS.length &&
         interrupted(cause) &&
         (device || attached())
       ) {
+        await pause(REJOIN_DELAYS_MS[rejoins], signal)
+        if (signal.aborted || !(device || attached())) return false
         let follow: FollowRequest
         try {
           follow = resumed(
@@ -349,7 +385,7 @@ export class RunController {
         }
         return await this.run(ROUTES.follow, follow, {
           ...options,
-          rejoined: true,
+          rejoins: rejoins + 1,
           started,
         })
       }

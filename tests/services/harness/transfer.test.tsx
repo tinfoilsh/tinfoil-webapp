@@ -1,4 +1,5 @@
 import { localThreadStore } from '@/services/harness/local-threads'
+import { REJOIN_DELAYS_MS } from '@/services/harness/run-controller'
 import { HarnessError } from '@/services/harness/sse'
 import type { DeviceChatCopy } from '@/services/harness/transfer'
 import type { StoredThread, ThreadSummary } from '@/services/harness/types'
@@ -7,7 +8,13 @@ import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { client, KEY, signIn } from '../../harness-fixture'
+import {
+  client,
+  fakeTimeouts,
+  KEY,
+  passRejoinWaits,
+  signIn,
+} from '../../harness-fixture'
 import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
@@ -680,12 +687,20 @@ describe('moving a chat from this device to the cloud', () => {
           }
           throw new TypeError('network error')
         })
-        .mockImplementationOnce(dropped)
+        .mockImplementation(dropped)
       const { result } = await openDeviceChat()
+      fakeTimeouts()
 
-      await act(() => result.current.send({ content: 'More?' }))
+      let sent: Promise<unknown> | undefined
+      act(() => {
+        sent = result.current.send({ content: 'More?' })
+      })
+      await vi.waitFor(() => expect(client.events).toHaveBeenCalled())
+      await passRejoinWaits()
+      await act(() => sent)
+      vi.useRealTimers()
 
-      expect(client.events).toHaveBeenCalledTimes(2)
+      expect(client.events).toHaveBeenCalledTimes(1 + REJOIN_DELAYS_MS.length)
       expect(
         result.current.chats.find((chat) => chat.id === CHAT_ID)?.activeRun,
       ).toBeFalsy()

@@ -1,10 +1,17 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
+import { REJOIN_DELAYS_MS } from '@/services/harness/run-controller'
 import { getView } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Thread, Turn } from '@/services/harness/types'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { client, signIn, testSession } from '../../harness-fixture'
+import {
+  client,
+  fakeTimeouts,
+  passRejoinWaits,
+  signIn,
+  testSession,
+} from '../../harness-fixture'
 import { refuseFetch } from './chat-interface-fixture'
 import { chatPage, errorHandling } from './chat-page-mocks'
 
@@ -322,9 +329,28 @@ describe('a turn the harness refuses', () => {
           expect.any(AbortSignal),
         ),
       )
+      // A queued turn is rejoined until the harness stays out of reach.
+      if (queued) {
+        client.events.mockImplementation(async function* () {
+          yield* []
+          throw refusal
+        })
+        fakeTimeouts()
+      }
       const input = screen.getByRole('textbox', { name: /message/i })
       fireEvent.change(input, { target: { value: 'And one more' } })
       fireEvent.submit(input.closest('form')!)
+      if (queued) {
+        await passRejoinWaits()
+        vi.useRealTimers()
+        expect(
+          client.events.mock.calls.filter(
+            ([path, input]) =>
+              path === '/v1/threads/follow' &&
+              (input as { runId?: string }).runId === 'run-2',
+          ),
+        ).toHaveLength(REJOIN_DELAYS_MS.length)
+      }
 
       expect(await screen.findByRole('alert')).toHaveTextContent(explanation)
       expect(
