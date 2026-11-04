@@ -31,8 +31,9 @@ const CONNECTION_LOST: HarnessErrorBody = {
   action: ERROR_ACTIONS.retry,
   message: 'The connection closed. Reconnect to continue.',
 }
-// A stream that broke, or a request that did not reach the harness, as while
-// a new instance of it starts: the run may go on.
+// A stream that broke, or a request the harness gave no answer to, as while a
+// new instance of it starts: the run may go on, and following it again
+// changes nothing.
 const interrupted = (cause: unknown) =>
   !(cause instanceof HarnessError) ||
   cause.code === CONNECTION_LOST.code ||
