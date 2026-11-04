@@ -73,8 +73,6 @@ function ShareModalContent({
   const previousShareUrlRef = useRef<string | null>(null)
   const isMountedRef = useRef(false)
   const [documentTexts, setDocumentTexts] = useState<Record<string, string>>({})
-  // Document texts still being read, which a copy would leave out.
-  const [pendingTexts, setPendingTexts] = useState(0)
   const requestedTexts = useRef(new Set<string>())
   const failedTexts = useRef(new Set<string>())
   const isOpenRef = useRef(isOpen)
@@ -152,7 +150,8 @@ function ShareModalContent({
       )
         continue
       requestedTexts.current.add(attachment.id)
-      setPendingTexts((count) => count + 1)
+      // A copy does not wait for the read: until it arrives, the markdown
+      // lists the document by name, as it does when the read fails.
       loadDocumentText(attachment)
         .then((text) => {
           if (isMountedRef.current)
@@ -170,9 +169,6 @@ function ShareModalContent({
             component: 'ShareModal',
             action: 'loadDocumentText',
           })
-        })
-        .finally(() => {
-          if (isMountedRef.current) setPendingTexts((count) => count - 1)
         })
     }
   }, [isOpen, messages, loadDocumentText])
@@ -617,18 +613,9 @@ function ShareModalContent({
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleCopy}
-                      disabled={pendingTexts > 0}
-                      className="flex items-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-1.5 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex items-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-1.5 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
                     >
-                      {pendingTexts > 0 ? (
-                        <>
-                          <PiSpinner
-                            className="h-3 w-3 animate-spin"
-                            aria-hidden="true"
-                          />
-                          Loading documents...
-                        </>
-                      ) : isCopied ? (
+                      {isCopied ? (
                         <>
                           <TfBoxCheckmark
                             className="h-3 w-3"
