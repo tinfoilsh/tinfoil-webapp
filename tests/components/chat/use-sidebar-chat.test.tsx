@@ -1,8 +1,10 @@
 import { useSidebarChat } from '@/components/chat/hooks/use-sidebar-chat'
+import { REJOIN_DELAYS_MS } from '@/services/harness/run-controller'
 import { getView, harnessAPI } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
+import { fakeTimeouts, passRejoinWaits } from '../../harness-fixture'
 
 it('shows waiting feedback before context arrives and clears it when the ask is cancelled', async () => {
   let resolve!: (context: { threadId: string; local: true }) => void
@@ -344,7 +346,7 @@ it.each(['closed', 'unmounted'] as const)(
   },
 )
 
-it('stops the harness running an ask whose stream failed twice', async () => {
+it('stops the harness running an ask whose stream could not be rejoined', async () => {
   const events = vi.mocked(harnessAPI().client.events)
   events.mockImplementationOnce(async function* () {
     yield {
@@ -358,7 +360,7 @@ it('stops the harness running an ask whose stream failed twice', async () => {
     }
     throw new TypeError('connection closed')
   })
-  events.mockImplementationOnce(async function* () {
+  events.mockImplementation(async function* () {
     yield* []
     throw new TypeError('connection closed')
   })
@@ -373,9 +375,11 @@ it('stops the harness running an ask whose stream failed twice', async () => {
       options: {},
     }),
   )
+  fakeTimeouts()
   act(() => result.current.askQuote('What does this mean?'))
-  await waitFor(() => expect(events).toHaveBeenCalledTimes(2))
-  await waitFor(() => expect(result.current.isStreaming).toBe(false))
+  await passRejoinWaits()
+  expect(events).toHaveBeenCalledTimes(1 + REJOIN_DELAYS_MS.length)
+  expect(result.current.isStreaming).toBe(false)
 
   act(() => result.current.reset())
 

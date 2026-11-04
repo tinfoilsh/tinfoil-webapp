@@ -3,6 +3,7 @@ import { PROMPT_CACHE_SECRET_PREFIX } from '@/constants/storage-keys'
 import type { FollowRequest } from '@/services/harness/client'
 import { localThreadStore } from '@/services/harness/local-threads'
 import type { OpenChatResult } from '@/services/harness/open-chat'
+import { REJOIN_DELAYS_MS } from '@/services/harness/run-controller'
 import { HarnessError } from '@/services/harness/sse'
 import type {
   AttachmentDescriptor,
@@ -21,7 +22,9 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   CACHE_SECRET,
   client,
+  fakeTimeouts,
   KEY,
+  passRejoinWaits,
   signIn as signInTo,
   testSession,
 } from '../../harness-fixture'
@@ -2171,15 +2174,121 @@ describe('cloud chats', () => {
       expect(result.current.error).toBe('')
     })
 
+    it('wait longer before each attempt to rejoin, until the harness answers again', async () => {
+      const { result } = await openStored()
+      const run: Frame['event'][] = [
+        ...started,
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'a1',
+          role: 'assistant',
+          delta: 'lo',
+        },
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'a1',
+          role: 'assistant',
+          delta: '!',
+        },
+        {
+          type: 'RUN_FINISHED',
+          threadId: stored.id,
+          runId: 'run-1',
+          metadata: {},
+        },
+      ]
+      // The harness resumes the run after the frame named, up to a frame,
+      // then the connection drops unless the run ended.
+      const resumesUpTo = (last: number) =>
+        async function* (_path: string, input: FollowRequest) {
+          for (const [id, event] of run.entries())
+            if (id > (input.lastEventId ?? -1) && id <= last)
+              yield { id, event }
+          if (last < run.length - 1) throw new TypeError('network error')
+        }
+      client.events
+        .mockImplementationOnce(dropsAfter(started))
+        .mockImplementationOnce(dropsAfter([]))
+        .mockImplementationOnce(dropsAfter([]))
+        .mockImplementationOnce(dropsAfter([]))
+        .mockImplementationOnce(resumesUpTo(3))
+        .mockImplementationOnce(resumesUpTo(run.length - 1))
+      fakeTimeouts()
+
+      let sent: Promise<unknown> | undefined
+      act(() => {
+        sent = result.current.send({ content: 'Question' })
+      })
+      // The first attempt goes at once, and each one after waits longer.
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(client.events).toHaveBeenCalledTimes(2)
+      await act(() => vi.advanceTimersByTimeAsync(999))
+      expect(client.events).toHaveBeenCalledTimes(2)
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(client.events).toHaveBeenCalledTimes(3)
+      await act(() => vi.advanceTimersByTimeAsync(1_999))
+      expect(client.events).toHaveBeenCalledTimes(3)
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(client.events).toHaveBeenCalledTimes(4)
+      // The attempt that streams a frame before it drops starts the waits
+      // over, so the next one goes at once.
+      await act(() => vi.advanceTimersByTimeAsync(4_000))
+      await act(() => sent)
+
+      expect(
+        client.events.mock.calls
+          .slice(1)
+          .map(([path, input]) => [path, (input as FollowRequest).lastEventId]),
+      ).toEqual([
+        ['/v1/threads/follow', 2],
+        ['/v1/threads/follow', 2],
+        ['/v1/threads/follow', 2],
+        ['/v1/threads/follow', 2],
+        ['/v1/threads/follow', 3],
+      ])
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+        'Question',
+        'Hello!',
+      ])
+      expect(result.current.status).toBe('idle')
+      expect(result.current.error).toBe('')
+    })
+
+    it('stop rejoining their run once the chat is left', async () => {
+      const { result } = await openStored()
+      client.events
+        .mockImplementationOnce(dropsAfter(started))
+        .mockImplementation(dropsAfter([]))
+      fakeTimeouts()
+
+      let sent: Promise<unknown> | undefined
+      act(() => {
+        sent = result.current.send({ content: 'Question' })
+      })
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(client.events).toHaveBeenCalledTimes(2)
+      act(() => result.current.newChat())
+      await passRejoinWaits()
+      await act(() => sent)
+
+      expect(client.events).toHaveBeenCalledTimes(2)
+    })
+
     it('stop streaming when they cannot rejoin, and show the chat once the run is gone', async () => {
       const { result } = await openStored('Hello, from storage')
       client.events
         .mockImplementationOnce(dropsAfter(started))
-        .mockImplementationOnce(dropsAfter([]))
+        .mockImplementation(dropsAfter([]))
+      fakeTimeouts()
 
-      await act(() => result.current.send({ content: 'Question' }))
+      let sent: Promise<unknown> | undefined
+      act(() => {
+        sent = result.current.send({ content: 'Question' })
+      })
+      await passRejoinWaits()
+      await act(() => sent)
 
-      expect(client.events).toHaveBeenCalledTimes(2)
+      expect(client.events).toHaveBeenCalledTimes(1 + REJOIN_DELAYS_MS.length)
       expect(result.current.running).toBe(false)
       expect(result.current.status).toBe('error')
       expect(result.current.errorDetail).toEqual({

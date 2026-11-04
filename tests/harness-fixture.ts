@@ -4,9 +4,11 @@ import {
   SETTINGS_CLOUD_SYNC_ENABLED,
 } from '@/constants/storage-keys'
 import type { HarnessClient } from '@/services/harness/client'
+import { REJOIN_DELAYS_MS } from '@/services/harness/run-controller'
 import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import type { RateLimit, Session } from '@/services/harness/types'
-import { vi, type Mock } from 'vitest'
+import { act } from '@testing-library/react'
+import { onTestFinished, vi, type Mock } from 'vitest'
 
 // The enclave seals every answer the harness gives, refusals included.
 export const SEALED = { 'Ehbp-Response-Nonce': '00'.repeat(32) }
@@ -116,6 +118,22 @@ export function stubChatAccess(key = 'chat-token') {
   )
   vi.stubGlobal('fetch', controlplane)
   return controlplane
+}
+
+// Fakes timeouts until the test ends, so a run's waits between attempts to
+// rejoin it pass when the test says. waitFor settles on a timeout, so the
+// test reads the state once the timeouts it awaits have passed.
+export function fakeTimeouts() {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  onTestFinished(() => {
+    vi.useRealTimers()
+  })
+}
+
+// Passes every wait a dropped run takes before its attempts to rejoin.
+export function passRejoinWaits() {
+  const total = REJOIN_DELAYS_MS.reduce((sum, ms) => sum + ms, 0)
+  return act(() => vi.advanceTimersByTimeAsync(total))
 }
 
 function unexpected(path: string): never {
