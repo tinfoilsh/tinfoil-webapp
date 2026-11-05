@@ -124,6 +124,8 @@ export interface DeviceRun {
   run?: Receipt
   // When the run's turn read the chat, on the controller's clock.
   since: number
+  // When this page saw the run start, on the same clock.
+  startedAt?: number
 }
 
 interface Submission {
@@ -221,6 +223,8 @@ export class RunController {
   // on a clock that also dates the turns read from the chat.
   private clock = 0
   private readonly settingChanges = new Map<string, Map<string, number>>()
+  // When the device run whose thread each chat stored last started.
+  private readonly storedRuns = new Map<string, number>()
 
   constructor(
     private readonly api: HarnessAPI,
@@ -276,6 +280,19 @@ export class RunController {
     return [...(this.settingChanges.get(threadId) ?? [])]
       .filter(([, at]) => at > since)
       .map(([setting]) => setting)
+  }
+
+  // Whether a device chat stores the thread its run's final event returned,
+  // and if so counts the run as the latest it stored. The harness runs a
+  // chat's turns one at a time, each from the thread the one before left,
+  // so the thread of a run that started later holds this run's and is kept.
+  // A run this page did not see start counts from when the page took it up.
+  storesThread(run: DeviceRun): boolean {
+    const started = run.startedAt ?? run.since
+    const latest = this.storedRuns.get(run.threadId)
+    if (latest !== undefined && latest > started) return false
+    this.storedRuns.set(run.threadId, started)
+    return true
   }
 
   settle(run: DeviceRun) {
@@ -497,6 +514,7 @@ export class RunController {
     if (device) {
       this.settle(device)
       device.run = run
+      device.startedAt ??= this.tick()
       this.deviceRuns.update((runs) =>
         new Map(runs).set(device.threadId, device),
       )

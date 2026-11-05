@@ -322,7 +322,7 @@ it('stores a replayed terminal frame after the first device save fails', async (
   }
   const controller = new RunController(api, {
     saved: async (run, event) => {
-      await storeRun(run, event, [])
+      await storeRun(run, event, controller)
     },
   })
   await controller.run(
@@ -435,7 +435,7 @@ it('accepts more than one queued message in a device chat', async () => {
 })
 
 it('keeps images from an earlier queued turn when a later run stores its result', async () => {
-  signIn()
+  const api = signIn()
   const store = localThreadStore('device')
   const thread = storedThread('device', {
     messages: [
@@ -484,7 +484,7 @@ it('keeps images from an earlier queued turn when a later run stores its result'
       runId: 'run-1',
       metadata: { thread: completed },
     },
-    [],
+    new RunController(api),
   )
   const saved = await store.get('device')
   expect(saved?.messages[1].content).toBe('Later reply')
