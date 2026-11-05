@@ -66,14 +66,14 @@ type ChangeRoute =
 // stores with the images it holds where the harness left them out, and the
 // originals of the images the turn sent. The settings the user changed
 // after the run's turn read the chat keep the user's values.
-export function storeRun(
+export async function storeRun(
   run: DeviceRun,
   event: TerminalEvent,
   changedSince: readonly string[],
 ): Promise<StoredThread | null> {
   const thread = event.metadata?.thread
-  if (!isThread(thread)) return Promise.resolve(null)
-  return run.store.update(
+  if (!isThread(thread)) return null
+  const saved = await run.store.update(
     run.threadId,
     (stored) => ({
       ...thread,
@@ -86,6 +86,8 @@ export function storeRun(
     }),
     run.originals,
   )
+  if (saved) run.threadStored = true
+  return saved
 }
 
 // A device run the harness no longer has, whose final event never returned
@@ -97,7 +99,7 @@ export function storeCutOff(
 ): Promise<StoredThread | null> {
   return run.store.update(run.threadId, (stored) => {
     if (!stored) return null
-    const replies = cutOffReplies(state, stored.messages, !run.saved)
+    const replies = cutOffReplies(state, stored.messages, !run.threadStored)
     if (!replies.length) return null
     const records = replies.map((reply): ThreadMessage => ({
       ...stored.messages.find(({ id }) => id === reply.id),

@@ -285,7 +285,7 @@ export function useThread(
     const replies = cutOffReplies(
       streamed,
       thread?.messages ?? [],
-      !!run && !run.saved,
+      !!run && !run.threadStored,
     )
     controller.view.set(
       thread

@@ -2052,6 +2052,90 @@ describe('chats on this device whose dropped run the harness no longer has', () 
   )
 })
 
+describe('a chat on this device whose run fails asking for the stored chat', () => {
+  it.each([
+    { name: 'without returning the chat', returned: undefined },
+    // The harness returns the chat, which this device fails to store.
+    {
+      name: 'returning a chat this device could not store',
+      returned: recorded(seeded()),
+    },
+  ])(
+    'keeps and stores what a continued reply streamed, $name',
+    async ({ returned }) => {
+      signIn('alice')
+      const device = localThreadStore('device')
+      await device.update(SEEDED_ID, () => seeded())
+      if (returned) vi.spyOn(device, 'update').mockResolvedValueOnce(null)
+      client.events.mockImplementationOnce(
+        frames(
+          {
+            type: 'RUN_STARTED',
+            threadId: SEEDED_ID,
+            runId: 'run-a2',
+            instance: 'instance-1',
+            messageId: 'a2',
+          },
+          { type: 'MESSAGES_SNAPSHOT', messages: seededView, hasOlder: false },
+          {
+            type: 'TEXT_MESSAGE_CHUNK',
+            messageId: 'a2',
+            role: 'assistant',
+            delta: ', and more',
+          },
+          // The run fails asking for the chat as stored.
+          {
+            type: 'RUN_ERROR',
+            threadId: SEEDED_ID,
+            runId: 'run-a2',
+            code: 'REVISION_CONFLICT',
+            message: 'The chat changed. Reload it to continue.',
+            action: 'reload',
+            ...(returned ? { metadata: { thread: returned } } : {}),
+          },
+        ),
+      )
+      const { result } = renderHook(() =>
+        useThread(SEEDED_ID, null, { local: true }),
+      )
+      await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+      await act(() => result.current.continueReply(3))
+
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+        'first',
+        'first answer',
+        'second',
+        'second answer, and more',
+      ])
+      expect(result.current.chat.messages.at(-1)).toMatchObject({
+        isInterrupted: true,
+      })
+      expect(result.current.status).toBe('idle')
+      expect(result.current.error).toBe('')
+      expect(await stored(SEEDED_ID)).toEqual(
+        seeded({
+          messages: [
+            ...SEEDED_MESSAGES.slice(0, 3),
+            {
+              ...SEEDED_MESSAGES[3],
+              content: 'second answer, and more',
+              timeline: [
+                {
+                  id: 'b2',
+                  type: 'content',
+                  content: 'second answer, and more',
+                },
+              ],
+              isInterrupted: true,
+            },
+          ],
+        }),
+      )
+    },
+  )
+})
+
 describe('a chat on this device whose stream drops once another chat is open', () => {
   const OTHER_ID = '8233746419001_2d5f8b63-0a3c-4e8f-9e7d-6c7d8e9f0a11'
   const OTHER_MESSAGES: ThreadMessage[] = [

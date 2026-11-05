@@ -112,6 +112,9 @@ const resumed = (input: FollowRequest, after?: number): FollowRequest =>
 // thread, without the image bytes the browser holds for it.
 export interface DeviceRun {
   saved?: boolean
+  // The chat stored the thread the run's final event returned. A final event
+  // without the thread leaves the chat without anything the run streamed.
+  threadStored?: boolean
   threadId: string
   store: LocalThreadStore
   images: ImagesById
