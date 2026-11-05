@@ -288,6 +288,7 @@ it('cancels a deleted background chat without stopping the open submission', asy
       background.resolve()
       return { cancelled: true }
     }
+    if (path === '/v1/threads/delete') return {}
     throw new Error(`Unexpected ${path}`)
   })
   const { result } = renderHook(() => useThread())
@@ -304,14 +305,21 @@ it('cancels a deleted background chat without stopping the open submission', asy
     })
     await waitFor(() => expect(client.events).toHaveBeenCalledTimes(2))
     await act(() => result.current.remove(firstId))
-    expect(client.post).toHaveBeenCalledExactlyOnceWith(
-      '/v1/threads/cancel',
-      { threadId: firstId, runId: 'background-run' },
-      expect.any(AbortSignal),
-    )
+    expect(client.post.mock.calls).toEqual([
+      [
+        '/v1/threads/cancel',
+        { threadId: firstId, runId: 'background-run' },
+        expect.any(AbortSignal),
+      ],
+      [
+        '/v1/threads/delete',
+        { id: firstId, local: true },
+        expect.any(AbortSignal),
+      ],
+    ])
     await act(async () => accepted.resolve())
     expect(result.current.status).toBe('streaming')
-    expect(client.post).toHaveBeenCalledTimes(1)
+    expect(client.post).toHaveBeenCalledTimes(2)
   } finally {
     await act(async () => {
       background.resolve()

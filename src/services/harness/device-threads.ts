@@ -183,6 +183,21 @@ export function deviceThreads({
     async remove(threadId) {
       await store.delete(threadId)
       list.remove(threadId)
+      // The harness keeps a chat's last reply for a while for this device to
+      // collect. The chat is deleted here whether or not it hears.
+      void api
+        .post(ROUTES.delete, { id: threadId, local: true }, { keyless: true })
+        .catch((error) =>
+          logError(
+            'Failed to tell the chat service a chat was deleted',
+            error,
+            {
+              component: 'deviceThreads',
+              action: 'remove',
+              metadata: { chatId: threadId },
+            },
+          ),
+        )
     },
     // The harness makes the fork, a new chat under an id it chooses, which
     // this device stores beside the chat it came from.

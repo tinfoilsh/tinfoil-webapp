@@ -850,7 +850,17 @@ describe('moving a chat from this device to the cloud', () => {
         await removing
       })
 
-      expect(served).toEqual(['/v1/threads/import', '/v1/threads/delete-all'])
+      // The stored chats are deleted, then the harness hears this device's
+      // chats were.
+      expect(served).toEqual([
+        '/v1/threads/import',
+        '/v1/threads/delete-all',
+        '/v1/threads/delete-all',
+      ])
+      expect(transfers().at(-1)).toEqual([
+        '/v1/threads/delete-all',
+        { local: true },
+      ])
       expect(await stored(CHAT_ID)).toBeNull()
       expect(result.current.chats).toEqual([])
       expect(result.current.loadingChats).toBe(false)
