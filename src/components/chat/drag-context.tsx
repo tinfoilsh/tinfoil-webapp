@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useState,
   type ReactNode,
 } from 'react'
@@ -72,25 +73,35 @@ export function DragProvider({ children }: { children: ReactNode }) {
     setIsDropTargetChatHistory(false)
   }, [])
 
-  return (
-    <DragContext.Provider
-      value={{
-        draggingChatId,
-        draggingChatFromProjectId,
-        draggingChatSource,
-        dropTargetProjectId,
-        dropTargetTab,
-        isDropTargetChatHistory,
-        setDraggingChat,
-        setDropTargetProject: setDropTargetProjectId,
-        setDropTargetTab,
-        setDropTargetChatHistory: setIsDropTargetChatHistory,
-        clearDragState,
-      }}
-    >
-      {children}
-    </DragContext.Provider>
+  // The same value while no drag changes, so the sidebars reading it do not
+  // render again whenever the page does.
+  const value = useMemo(
+    () => ({
+      draggingChatId,
+      draggingChatFromProjectId,
+      draggingChatSource,
+      dropTargetProjectId,
+      dropTargetTab,
+      isDropTargetChatHistory,
+      setDraggingChat,
+      setDropTargetProject: setDropTargetProjectId,
+      setDropTargetTab,
+      setDropTargetChatHistory: setIsDropTargetChatHistory,
+      clearDragState,
+    }),
+    [
+      draggingChatId,
+      draggingChatFromProjectId,
+      draggingChatSource,
+      dropTargetProjectId,
+      dropTargetTab,
+      isDropTargetChatHistory,
+      setDraggingChat,
+      clearDragState,
+    ],
   )
+
+  return <DragContext.Provider value={value}>{children}</DragContext.Provider>
 }
 
 export function useDrag(): DragContextValue {

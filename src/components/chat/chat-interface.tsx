@@ -817,11 +817,16 @@ export function ChatInterface({
   const removeQueuedMessage = (id: string) => {
     void thread.removeQueued(id).catch(thread.report)
   }
-  const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
-  const favoriteChats = thread.favoriteIds
-    .flatMap((id) => chatsById.get(id) ?? [])
-    .slice(0, CONSTANTS.MAX_FAVORITE_CHATS)
-  const pinnedChatIds = favoriteChats.map((c) => c.id)
+  const favoriteChats = useMemo(() => {
+    const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
+    return thread.favoriteIds
+      .flatMap((id) => chatsById.get(id) ?? [])
+      .slice(0, CONSTANTS.MAX_FAVORITE_CHATS)
+  }, [chats, thread.favoriteIds])
+  const pinnedChatIds = useMemo(
+    () => favoriteChats.map((c) => c.id),
+    [favoriteChats],
+  )
   const unpinChat = (id: string) => {
     void thread
       .update(id, { pinned: false })
@@ -1384,6 +1389,40 @@ export function ChatInterface({
       },
       [api, thread.report],
     ),
+  })
+  // The sidebar does not render again with each update of a streaming
+  // reply, as what it is given keeps its identity.
+  const sidebarActions = useStableHandlers({
+    retryChats: thread.retryChatList,
+    retryLocalChats: thread.retryLocalChatList,
+    loadMoreChats: thread.loadMoreChats,
+    createNewChat,
+    selectChat: handleChatSelect,
+    updateChatTitle,
+    deleteChat,
+    openCloudSyncSetup: handleOpenCloudSyncSetup,
+    setupPasskey,
+    dismissBackupWarning,
+    enterProject: async (projectId: string, projectName?: string) => {
+      // Create a new blank chat before entering project mode
+      // This prevents the current chat from being associated with the project
+      await openProjectChat({
+        projectId,
+        projectName,
+        createNewChat,
+        enterProjectMode: handleEnterProjectMode,
+      })
+    },
+    createProject: handleCreateProject,
+    moveChatToProject: handleMoveChatToProject,
+    removeChatFromProject: handleRemoveChatFromProject,
+    convertChatToCloud: handleConvertChatToCloud,
+    convertChatToLocal: handleConvertChatToLocal,
+    openSettings: handleOpenSettingsModal,
+    openReportBug: handleOpenReportBugModal,
+    toggleFavorite: handleToggleFavorite,
+    unpinChat,
+    openFavorite: handleOpenFavorite,
   })
   useEffect(() => {
     if (suppressIntroModals) return
@@ -2181,65 +2220,61 @@ export function ChatInterface({
               <ChatSidebar
                 isLoadingChats={thread.loadingChats}
                 chatListError={thread.chatListError}
-                onRetryChats={thread.retryChatList}
+                onRetryChats={sidebarActions.retryChats}
                 localChatListError={thread.localChatListError}
-                onRetryLocalChats={thread.retryLocalChatList}
-                onUnlockChats={keyLocked ? handleOpenCloudSyncSetup : undefined}
+                onRetryLocalChats={sidebarActions.retryLocalChats}
+                onUnlockChats={
+                  keyLocked ? sidebarActions.openCloudSyncSetup : undefined
+                }
                 isOpen={isSidebarOpen}
                 setIsOpen={setIsSidebarOpen}
                 chats={chats}
                 hasMore={thread.hasMoreChats}
-                onLoadMore={thread.loadMoreChats}
-                currentChat={currentChat}
+                onLoadMore={sidebarActions.loadMoreChats}
+                currentChatId={currentChat.id}
+                currentChatIsBlank={currentChat.isBlankChat}
+                currentChatIsLocalOnly={currentChat.isLocalOnly}
+                currentChatIsTemporary={currentChat.isTemporary}
                 isDarkMode={isDarkMode}
                 pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                createNewChat={createNewChat}
-                handleChatSelect={handleChatSelect}
-                updateChatTitle={updateChatTitle}
-                deleteChat={deleteChat}
+                createNewChat={sidebarActions.createNewChat}
+                handleChatSelect={sidebarActions.selectChat}
+                updateChatTitle={sidebarActions.updateChatTitle}
+                deleteChat={sidebarActions.deleteChat}
                 isClient={isClient}
                 isPremium={isPremium}
                 isSubscriptionLoading={isSubscriptionLoading}
                 onCloudSyncSetupClick={
-                  isSignedIn ? handleOpenCloudSyncSetup : undefined
+                  isSignedIn ? sidebarActions.openCloudSyncSetup : undefined
                 }
                 passkeySetupAvailable={passkeySetupAvailable}
-                onSetupPasskey={setupPasskey}
+                onSetupPasskey={sidebarActions.setupPasskey}
                 backupWarningVisible={
                   isSignedIn &&
                   (passkeySetupFailed || manualRecoveryNeeded) &&
                   !passkeyRecoveryNeeded
                 }
                 backupWarningNeedsRecovery={manualRecoveryNeeded}
-                onDismissBackupWarning={dismissBackupWarning}
+                onDismissBackupWarning={sidebarActions.dismissBackupWarning}
                 isProjectMode={isProjectMode}
                 activeProjectName={activeProject?.name}
-                onEnterProject={async (projectId, projectName) => {
-                  // Create a new blank chat before entering project mode
-                  // This prevents the current chat from being associated with the project
-                  await openProjectChat({
-                    projectId,
-                    projectName,
-                    createNewChat,
-                    enterProjectMode: handleEnterProjectMode,
-                  })
-                }}
-                onCreateProject={handleCreateProject}
-                onMoveChatToProject={handleMoveChatToProject}
-                onRemoveChatFromProject={handleRemoveChatFromProject}
+                onEnterProject={sidebarActions.enterProject}
+                onCreateProject={sidebarActions.createProject}
+                onMoveChatToProject={sidebarActions.moveChatToProject}
+                onRemoveChatFromProject={sidebarActions.removeChatFromProject}
                 onConvertChatToCloud={
-                  canMoveChats ? handleConvertChatToCloud : undefined
+                  canMoveChats ? sidebarActions.convertChatToCloud : undefined
                 }
                 onConvertChatToLocal={
-                  canMoveChats ? handleConvertChatToLocal : undefined
+                  canMoveChats ? sidebarActions.convertChatToLocal : undefined
                 }
-                onSettingsClick={handleOpenSettingsModal}
-                onReportBugClick={handleOpenReportBugModal}
+                onSettingsClick={sidebarActions.openSettings}
+                onReportBugClick={sidebarActions.openReportBug}
                 onSearchClick={handleOpenSearchModal}
                 pinnedChatIds={pinnedChatIds}
-                onToggleFavorite={handleToggleFavorite}
-                onRemoveFavorite={unpinChat}
-                onOpenFavorite={handleOpenFavorite}
+                onToggleFavorite={sidebarActions.toggleFavorite}
+                onRemoveFavorite={sidebarActions.unpinChat}
+                onOpenFavorite={sidebarActions.openFavorite}
                 windowWidth={windowWidth}
               />
             </motion.div>

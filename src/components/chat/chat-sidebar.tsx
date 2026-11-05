@@ -72,7 +72,15 @@ import {
   getNewChatPath,
   isPlainPrimaryClick,
 } from '@/utils/navigation'
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Link } from '../link'
 import { Logo } from '../logo'
 import { SIDEBAR_PANEL_ID, SidebarPanel, SidebarRail } from './sidebar-layout'
@@ -111,7 +119,12 @@ type ChatSidebarProps = {
   isOpen: boolean
   setIsOpen: (isOpen: boolean) => void
   chats: Chat[]
-  currentChat: Chat
+  // The open chat, by the fields the sidebar reads, so its messages
+  // streaming in do not render the sidebar again.
+  currentChatId?: string
+  currentChatIsBlank?: boolean
+  currentChatIsLocalOnly?: boolean
+  currentChatIsTemporary?: boolean
   isDarkMode: boolean
   pixelateSidebarChatTitles: boolean
   createNewChat: (isLocalOnly?: boolean, fromUserAction?: boolean) => void
@@ -169,7 +182,7 @@ function usePreventZoom() {
   }, [])
 }
 
-export function ChatSidebar({
+export const ChatSidebar = memo(function ChatSidebar({
   hasMore: hasMoreRemote = false,
   isLoadingChats = false,
   chatListError,
@@ -181,7 +194,10 @@ export function ChatSidebar({
   isOpen,
   setIsOpen,
   chats,
-  currentChat,
+  currentChatId,
+  currentChatIsBlank,
+  currentChatIsLocalOnly,
+  currentChatIsTemporary,
   isDarkMode,
   pixelateSidebarChatTitles,
   createNewChat,
@@ -287,7 +303,7 @@ export function ChatSidebar({
   const localOnlyModeEnabled = useLocalChatsSetting()
   const showStorageTabs = cloudSyncEnabled && localOnlyModeEnabled
   const [activeTab, setActiveTab] = useState<'cloud' | 'local'>(() => {
-    if (currentChat?.isBlankChat && currentChat.isLocalOnly) {
+    if (currentChatIsBlank && currentChatIsLocalOnly) {
       return 'local'
     }
     if (typeof window !== 'undefined') {
@@ -338,9 +354,9 @@ export function ChatSidebar({
   // With cloud sync, a blank chat kept on the device is not the New chat the
   // sidebar offers once local chats are turned off.
   const isCurrentNewChat =
-    currentChat?.isBlankChat &&
-    !currentChat.isTemporary &&
-    (!cloudSyncEnabled || Boolean(currentChat.isLocalOnly) === showLocalTab)
+    currentChatIsBlank &&
+    !currentChatIsTemporary &&
+    (!cloudSyncEnabled || Boolean(currentChatIsLocalOnly) === showLocalTab)
 
   const {
     projects,
@@ -400,9 +416,9 @@ export function ChatSidebar({
   useEffect(() => {
     if (!showStorageTabs) return
     if (
-      currentChat?.isBlankChat &&
-      !currentChat.isTemporary &&
-      Boolean(currentChat.isLocalOnly) !== showLocalTab
+      currentChatIsBlank &&
+      !currentChatIsTemporary &&
+      Boolean(currentChatIsLocalOnly) !== showLocalTab
     ) {
       createNewChat(showLocalTab, false)
     }
@@ -410,9 +426,9 @@ export function ChatSidebar({
     showStorageTabs,
     showLocalTab,
     createNewChat,
-    currentChat?.isBlankChat,
-    currentChat?.isLocalOnly,
-    currentChat?.isTemporary,
+    currentChatIsBlank,
+    currentChatIsLocalOnly,
+    currentChatIsTemporary,
   ])
 
   // Persist projects expanded state to sessionStorage
@@ -1167,7 +1183,7 @@ export function ChatSidebar({
                     {favoriteChats.length > 0 ? (
                       <ChatList
                         chats={favoriteChats}
-                        currentChatId={currentChat?.id}
+                        currentChatId={currentChatId}
                         isDarkMode={isDarkMode}
                         pixelateSidebarChatTitles={pixelateSidebarChatTitles}
                         getChatHref={(chat) =>
@@ -2104,9 +2120,9 @@ export function ChatSidebar({
                         onRetry={
                           paginatesCloudChats ? onRetryChats : onRetryLocalChats
                         }
-                        currentChatId={currentChat?.id}
-                        currentChatIsBlank={currentChat?.isBlankChat}
-                        currentChatIsLocalOnly={currentChat?.isLocalOnly}
+                        currentChatId={currentChatId}
+                        currentChatIsBlank={currentChatIsBlank}
+                        currentChatIsLocalOnly={currentChatIsLocalOnly}
                         isDarkMode={isDarkMode}
                         pixelateSidebarChatTitles={pixelateSidebarChatTitles}
                         enableTitleAnimation={true}
@@ -2318,4 +2334,4 @@ export function ChatSidebar({
       )}
     </>
   )
-}
+})

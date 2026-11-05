@@ -1,6 +1,8 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
+import { useDrag } from '@/components/chat/drag-context'
 import { getRendererRegistry } from '@/components/chat/renderers/client'
 import { useSpeak } from '@/components/chat/speech-context'
+import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
 import type {
   Frame,
   HarnessEvent,
@@ -37,10 +39,15 @@ vi.mock(
   '@/components/project',
   async () => (await import('./chat-page-mocks')).project,
 )
-vi.mock(
-  '@/components/chat/chat-sidebar',
-  async () => (await import('./chat-page-mocks')).chatSidebar,
-)
+vi.mock('@/components/project/project-context', () => ({
+  useProject: () => ({ activeProject: null, deleteProject: vi.fn() }),
+}))
+vi.mock('@/components/chat/sidebar-account-menu', () => ({
+  SidebarAccountMenu: () => null,
+}))
+vi.mock('@/hooks/use-upgrade-to-pro', () => ({
+  useUpgradeToPro: () => ({ startUpgrade: vi.fn() }),
+}))
 vi.mock(
   '@/utils/error-handling',
   async () => (await import('./chat-page-mocks')).errorHandling,
@@ -51,6 +58,13 @@ vi.mock('@/components/chat/speech-context', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('@/components/chat/speech-context')>()
   return { ...actual, useSpeak: vi.fn(actual.useSpeak) }
+})
+// The sidebar is the only part of the page that reads the drag state, so
+// these calls count its renders.
+vi.mock('@/components/chat/drag-context', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/components/chat/drag-context')>()
+  return { ...actual, useDrag: vi.fn(actual.useDrag) }
 })
 
 const THREAD_ID = 'thread-1'
@@ -98,8 +112,11 @@ const thread: Thread = {
   ],
 }
 
+const { messages: _messages, hasOlder: _hasOlder, ...summary } = thread
+
 beforeEach(() => {
   vi.stubGlobal('innerWidth', 1440)
+  sessionStorage.setItem(UI_SIDEBAR_OPEN, 'true')
   chatPage.router.replace.mockReset().mockResolvedValue(true)
   refuseFetch()
 })
@@ -144,17 +161,22 @@ const chunk = (delta: string): HarnessEvent => ({
   delta,
 })
 
-it('renders only the streaming reply as it grows', async () => {
+it('renders only the streaming reply as it grows, not the sidebar', async () => {
   signIn({ cloud: true })
   const run = scriptRun()
   client.post.mockImplementation(async (path: string) => {
     if (path === '/v1/threads/get') return structuredClone(thread)
-    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/list')
+      return { threads: [summary], nextCursor: null }
     throw new Error(`Unexpected ${path}`)
   })
   render(<ChatInterface initialChatId={THREAD_ID} suppressIntroModals />)
   await screen.findByText('Second answer')
   expect(screen.getAllByRole('button', { name: 'Read aloud' })).toHaveLength(2)
+  expect(await screen.findByRole('link', { name: /^A chat/ })).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
   const input = screen.getByRole('textbox', { name: /message/i })
   fireEvent.change(input, { target: { value: 'Third question' } })
   fireEvent.click(screen.getByRole('button', { name: 'Send' }))
@@ -172,6 +194,7 @@ it('renders only the streaming reply as it grows', async () => {
 
   const renders = vi.spyOn(getRendererRegistry(), 'getMessageRenderer')
   const speechReads = vi.mocked(useSpeak).mock.calls.length
+  const sidebarRenders = vi.mocked(useDrag).mock.calls.length
   run.emit(chunk(' reply'))
   await screen.findByText('Streaming reply')
   run.emit(chunk(' grows'))
@@ -181,5 +204,6 @@ it('renders only the streaming reply as it grows', async () => {
     new Set(['reply']),
   )
   expect(vi.mocked(useSpeak).mock.calls.length).toBe(speechReads)
+  expect(vi.mocked(useDrag).mock.calls.length).toBe(sidebarRenders)
   run.end()
 })

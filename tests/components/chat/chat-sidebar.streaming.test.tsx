@@ -77,6 +77,7 @@ function SidebarHarness({
   fromProjectId = null,
   ...overrides
 }: Partial<ComponentProps<typeof ChatSidebar>> & {
+  currentChat?: Chat
   source?: ChatDragSource
   fromProjectId?: string | null
 }) {
@@ -87,7 +88,9 @@ function SidebarHarness({
         isOpen
         setIsOpen={vi.fn()}
         chats={[currentChat, otherChat]}
-        currentChat={currentChat}
+        currentChatId={currentChat.id}
+        currentChatIsBlank={currentChat.isBlankChat}
+        currentChatIsLocalOnly={currentChat.isLocalOnly}
         isDarkMode={false}
         pixelateSidebarChatTitles={false}
         createNewChat={vi.fn()}
