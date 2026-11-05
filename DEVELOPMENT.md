@@ -17,6 +17,8 @@ npm run dev
 
 The app runs against the configured harness with real services and the signed-in account, so use a test account.
 
+http://localhost:3000/dev lists pages that preview the onboarding and cloud sync flows with stubbed callbacks, without the chat service or account changes. They only render under `npm run dev`.
+
 ## Testing
 
 ```bash
