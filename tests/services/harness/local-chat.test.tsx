@@ -2241,6 +2241,65 @@ describe('a chat on this device whose stream drops once another chat is open', (
       'Half an answer.',
     ])
   })
+
+  it('stores what it streamed in its own chat once the harness no longer has it', async () => {
+    const { result, drop, sending } = await sendThenLeave(runNotFound)
+    sessionStorage.setItem(
+      'harness-run:alice',
+      JSON.stringify({
+        threadId: SEEDED_ID,
+        runId: 'run-a3',
+        instance: 'instance-1',
+      }),
+    )
+
+    drop()
+    await act(() => sending())
+
+    expect(client.events.mock.calls[1].slice(0, 2)).toEqual([
+      '/v1/threads/follow',
+      { threadId: SEEDED_ID, runId: 'run-a3', lastEventId: DROPS_AFTER },
+    ])
+    expect(result.current.chat.id).toBe(OTHER_ID)
+    expect(shownInOther(result.current)).toEqual([
+      ['o1', 'Elsewhere?'],
+      ['o2', 'Elsewhere.'],
+    ])
+    expect(result.current.status).toBe('idle')
+    expect(result.current.error).toBe('')
+    const kept = await stored(SEEDED_ID)
+    const sent = kept!.messages.find(({ id }) => id === turn().clientRequestId)
+    expect(kept).toEqual(
+      seeded({
+        updatedAt: sent!.createdAt,
+        messages: [
+          ...SEEDED_MESSAGES,
+          {
+            id: turn().clientRequestId,
+            role: 'user',
+            createdAt: sent!.createdAt,
+            content: 'third',
+          },
+          {
+            id: 'a3',
+            role: 'assistant',
+            createdAt: 't6',
+            content: 'Half an answer',
+            timeline: [
+              {
+                id: 'a3_content_0',
+                type: 'content',
+                content: 'Half an answer',
+              },
+            ],
+            isInterrupted: true,
+          },
+        ],
+      }),
+    )
+    // Reopening the chat no longer rejoins the run.
+    expect(sessionStorage.getItem('harness-run:alice')).toBeNull()
+  })
 })
 
 describe('temporary chats', () => {

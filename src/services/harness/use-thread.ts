@@ -364,6 +364,16 @@ export function useThread(
     },
     ended: list.reload,
     gone: (threadId, run) => showStored(threadId, run).catch(report),
+    async cutOff(run, state) {
+      try {
+        await storeCutOff(run, state)
+      } catch (cause) {
+        logError('Failed to save a cut-off reply on this device', cause, {
+          component: 'useThread',
+          action: 'saveCutOff',
+        })
+      }
+    },
   }
   async function openChat(
     threadId: string,

@@ -168,6 +168,9 @@ export interface RunHooks {
   // The open chat's run is over though its stream did not say so. A device
   // run's chat holds nothing it streamed unless its final event was saved.
   gone?(threadId: string, device?: DeviceRun): Promise<void>
+  // A device run the view moved away from is gone before its final event
+  // returned the thread: its chat stores what the run streamed.
+  cutOff?(run: DeviceRun, state: ChatState): Promise<void>
 }
 
 // A hint that rejoins a device chat's run after a reload, kept for the tab.
@@ -465,6 +468,9 @@ export class RunController {
         else if (!quiet) this.fail(cause, started)
         else if (cause instanceof HarnessError && cause.status !== undefined)
           this.forgetReceipt(runId)
+      } else if (device && gone(cause)) {
+        this.forgetReceipt(runId)
+        await this.hooks.cutOff?.(device, view)
       }
     } finally {
       this.followers.delete(controller)
