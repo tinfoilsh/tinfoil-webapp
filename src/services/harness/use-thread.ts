@@ -126,6 +126,18 @@ export function useThread(
         }
       >(),
   )
+  // A device chat's message with the image bytes the chat holds, kept until
+  // its view or those bytes change, so it too keeps its identity.
+  const [withHeldImages] = useState(
+    () =>
+      new WeakMap<
+        Message,
+        {
+          held: ({ base64: string } | undefined)[]
+          shown: Message
+        }
+      >(),
+  )
   const patch = useCallback(
     (fields: Partial<OpenChat>) => open.update((o) => ({ ...o, ...fields })),
     [open],
@@ -656,15 +668,23 @@ export function useThread(
     if (!onDevice(openState) || !view.attachments?.length) return view
     // An image stored without a thumbnail shows the bytes the chat holds, or
     // loads them as it shows; others load them when opened in the gallery.
-    return {
+    const held = view.attachments.map((attachment) =>
+      attachment.thumbnailBase64
+        ? undefined
+        : attachments.images.get(attachment.id),
+    )
+    const kept = withHeldImages.get(view)
+    if (kept && kept.held.every((image, index) => image === held[index]))
+      return kept.shown
+    const shown = {
       ...view,
-      attachments: view.attachments.map((attachment) => {
-        const held = attachments.images.get(attachment.id)
-        return attachment.thumbnailBase64 || !held
-          ? attachment
-          : { ...attachment, base64: held.base64 }
+      attachments: view.attachments.map((attachment, index) => {
+        const image = held[index]
+        return image ? { ...attachment, base64: image.base64 } : attachment
       }),
     }
+    withHeldImages.set(view, { held, shown })
+    return shown
   })
   // The open chat is as recent as the latest message it shows, as one just
   // sent, before the list reports it.
