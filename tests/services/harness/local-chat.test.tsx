@@ -2887,7 +2887,7 @@ describe('cloud chats', () => {
 
     it.each([
       {
-        name: 'as stored when the stored chat holds the reply',
+        name: 'holds the reply they streamed',
         copy: [
           question,
           {
@@ -2898,26 +2898,15 @@ describe('cloud chats', () => {
           },
         ],
         shown: ['Question', 'Hello'],
-        interrupted: undefined,
       },
       {
-        name: 'the reply they streamed when the stored chat lacks it',
+        name: 'lacks the reply they streamed',
         copy: [question],
-        shown: ['Question', 'Hel'],
-        interrupted: true,
-      },
-      {
-        name: 'the reply they streamed where it was, before what the stored chat holds since',
-        copy: [
-          question,
-          { id: 'u2', role: 'user', createdAt: 't3', content: 'Later' },
-        ],
-        shown: ['Question', 'Hel', 'Later'],
-        interrupted: true,
+        shown: ['Question'],
       },
     ])(
-      'show $name, once the harness no longer has their run',
-      async ({ copy, shown, interrupted }) => {
+      'show the stored chat, which $name, once the harness no longer has their run',
+      async ({ copy, shown }) => {
         const { result } = await openStored()
         client.post.mockImplementation(async (path: string) => {
           if (path === '/v1/threads/list')
@@ -2928,17 +2917,7 @@ describe('cloud chats', () => {
         })
         client.events
           .mockImplementationOnce(dropsAfter(started))
-          .mockImplementationOnce(async function* () {
-            yield* []
-            throw new HarnessError(
-              {
-                code: 'RUN_NOT_FOUND',
-                message: 'The run is not running here',
-                action: 'reload',
-              },
-              404,
-            )
-          })
+          .mockImplementationOnce(runNotFound)
 
         await act(() => result.current.send({ content: 'Question' }))
 
@@ -2946,13 +2925,14 @@ describe('cloud chats', () => {
           '/v1/threads/follow',
           { key: KEY, threadId: stored.id, runId: 'run-1', lastEventId: 2 },
         ])
-        expect(result.current.chat.messages.map((m) => m.content)).toEqual(
-          shown,
-        )
         expect(
-          result.current.chat.messages.find(({ id }) => id === 'a1')
-            ?.isInterrupted,
-        ).toBe(interrupted)
+          result.current.chat.messages.map(({ content, isInterrupted }) => ({
+            content,
+            isInterrupted,
+          })),
+        ).toEqual(
+          shown.map((content) => ({ content, isInterrupted: undefined })),
+        )
         expect(result.current.status).toBe('idle')
         expect(result.current.error).toBe('')
         // Only the harness stores a chat in the cloud.

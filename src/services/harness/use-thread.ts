@@ -272,9 +272,10 @@ export function useThread(
   )
   // Shows the open chat as it is stored once its run is over, as when the
   // harness no longer has the run or had applied a turn sent again. A chat
-  // never saved keeps what it shows. The replies the run streamed that the
-  // stored chat lacks stay, as interrupted, and a chat on this device
-  // stores them.
+  // never saved keeps what it shows. A chat on this device keeps the
+  // replies its run streamed that its stored copy lacks, as interrupted, and
+  // stores them, since only the run's final event returns them; the harness
+  // stores a cloud chat's replies itself, and its copy is shown as it is.
   async function showStored(threadId: string, run?: DeviceRun) {
     if (open.get().id !== threadId) return
     const shown = controller.track()
@@ -282,24 +283,18 @@ export function useThread(
     if (!shown()) return
     if (thread) markSaved(threadId)
     const streamed = controller.view.get()
-    const replies = cutOffReplies(
-      streamed,
-      thread?.messages ?? [],
-      !!run && !run.threadStored,
-    )
+    const replies = run
+      ? cutOffReplies(streamed, thread?.messages ?? [], !run.threadStored)
+      : []
     controller.view.set(
       thread
         ? storedChat({
             ...thread,
-            messages: withReplies(thread.messages, replies, streamed.messages),
+            messages: withReplies(thread.messages, replies),
           })
         : {
             ...streamed,
-            messages: withReplies(
-              streamed.messages,
-              replies,
-              streamed.messages,
-            ),
+            messages: withReplies(streamed.messages, replies),
             status: 'idle',
             error: undefined,
             stopping: undefined,

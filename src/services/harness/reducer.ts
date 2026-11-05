@@ -308,23 +308,16 @@ export function cutOffReplies(
     .map((reply) => ({ ...reply, isInterrupted: true }))
 }
 
-// Messages with each reply in place of its copy, or else after the message
-// it followed in the chat shown.
+// Messages with each reply in place of its copy, or else after them.
 export function withReplies<M extends Pick<Message, 'id'>>(
   messages: readonly M[],
   replies: readonly M[],
-  shown: readonly Pick<Message, 'id'>[],
 ): M[] {
   const merged = [...messages]
   for (const reply of replies) {
     const at = merged.findIndex(({ id }) => id === reply.id)
-    if (at >= 0) {
-      merged[at] = reply
-      continue
-    }
-    const before = shown[shown.findIndex(({ id }) => id === reply.id) - 1]
-    const after = before ? merged.findIndex(({ id }) => id === before.id) : -1
-    merged.splice(after < 0 ? merged.length : after + 1, 0, reply)
+    if (at >= 0) merged[at] = reply
+    else merged.push(reply)
   }
   return merged
 }

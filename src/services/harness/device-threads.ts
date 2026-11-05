@@ -111,7 +111,7 @@ export function storeCutOff(
     }))
     return {
       ...stored,
-      messages: withReplies(stored.messages, records, state.messages),
+      messages: withReplies(stored.messages, records),
     }
   })
 }
