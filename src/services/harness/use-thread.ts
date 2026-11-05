@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { chatActions } from './chat-actions'
 import { useChatList } from './chat-list'
 import { chatTurns } from './chat-turns'
-import { deviceThreads, storeRun } from './device-threads'
+import { deviceThreads, storeCutOff, storeRun } from './device-threads'
 import { localThreadStore, memoryThreadStore } from './local-threads'
 import { OpenAttachments } from './open-attachments'
 import {
@@ -33,8 +33,14 @@ import {
   sentAnswers,
   type AnswerSaveStatus,
 } from './question-answers'
-import { initialChat, isStopping, type ChatState } from './reducer'
-import { RunController } from './run-controller'
+import {
+  cutOffReplies,
+  initialChat,
+  isStopping,
+  withReplies,
+  type ChatState,
+} from './reducer'
+import { RunController, type DeviceRun } from './run-controller'
 import { getView, reportHarnessError } from './runtime'
 import { HarnessError } from './sse'
 import { createStore, useStore } from './store'
@@ -266,23 +272,40 @@ export function useThread(
   )
   // Shows the open chat as it is stored once its run is over, as when the
   // harness no longer has the run or had applied a turn sent again. A chat
-  // never saved keeps what it shows.
-  async function showStored(threadId: string) {
+  // never saved keeps what it shows. The replies the run streamed that the
+  // stored chat lacks stay, as interrupted, and a chat on this device
+  // stores them.
+  async function showStored(threadId: string, run?: DeviceRun) {
     if (open.get().id !== threadId) return
     const shown = controller.track()
     const thread = await openStore().get(threadId)
     if (!shown()) return
     if (thread) markSaved(threadId)
+    const streamed = controller.view.get()
+    const replies = cutOffReplies(
+      streamed,
+      thread?.messages ?? [],
+      !!run && !run.saved,
+    )
     controller.view.set(
       thread
-        ? storedChat(thread)
+        ? storedChat({
+            ...thread,
+            messages: withReplies(thread.messages, replies, streamed.messages),
+          })
         : {
-            ...controller.view.get(),
+            ...streamed,
+            messages: withReplies(
+              streamed.messages,
+              replies,
+              streamed.messages,
+            ),
             status: 'idle',
             error: undefined,
             stopping: undefined,
           },
     )
+    if (run && replies.length) await storeCutOff(run, streamed)
   }
   controller.hooks = {
     accepted: markSaved,
@@ -340,7 +363,7 @@ export function useThread(
       }
     },
     ended: list.reload,
-    gone: (threadId) => showStored(threadId).catch(report),
+    gone: (threadId, run) => showStored(threadId, run).catch(report),
   }
   async function openChat(
     threadId: string,

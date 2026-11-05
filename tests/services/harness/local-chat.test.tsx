@@ -1857,6 +1857,200 @@ describe('signed-out chats', () => {
   })
 })
 
+describe('chats on this device whose dropped run the harness no longer has', () => {
+  // The harness no longer has a run whose stream dropped, as once it ended
+  // longer ago than the harness keeps a device chat's reply to collect.
+  const runNotFound = async function* (): AsyncGenerator<Frame> {
+    yield* []
+    throw new HarnessError(
+      {
+        code: 'RUN_NOT_FOUND',
+        message: 'The run is not running here',
+        action: 'reload',
+      },
+      404,
+    )
+  }
+  // The seeded chat as the harness shows it: a reply without its text.
+  const seededView = SEEDED_MESSAGES.map(({ content, ...message }): Message =>
+    message.role === 'assistant' ? message : { ...message, content },
+  )
+  const [, , , secondAnswer] = SEEDED_MESSAGES
+
+  const reply = {
+    name: 'a reply',
+    start: (thread: ReturnType<typeof useThread>) =>
+      thread.send({ content: 'third' }),
+    runId: 'run-a3',
+    streamed: (input: Turn): Frame['event'][] => [
+      {
+        type: 'RUN_STARTED',
+        threadId: SEEDED_ID,
+        runId: 'run-a3',
+        instance: 'instance-1',
+      },
+      {
+        type: 'MESSAGES_SNAPSHOT',
+        messages: [
+          ...seededView,
+          {
+            id: input.clientRequestId,
+            role: 'user',
+            createdAt: 't5',
+            content: 'third',
+          },
+        ],
+        hasOlder: false,
+      },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'a3',
+        role: 'assistant',
+        delta: 'Half an ',
+        timestamp: 't6',
+      },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'a3',
+        role: 'assistant',
+        delta: 'answer',
+      },
+    ],
+    shown: [
+      'first',
+      'first answer',
+      'second',
+      'second answer',
+      'third',
+      'Half an answer',
+    ],
+    // The message the turn sent, which the chat kept as it was sent.
+    expected: (sent?: ThreadMessage): ThreadMessage[] => [
+      ...SEEDED_MESSAGES,
+      sent!,
+      {
+        id: 'a3',
+        role: 'assistant',
+        createdAt: 't6',
+        content: 'Half an answer',
+        timeline: [
+          { id: 'a3_content_0', type: 'content', content: 'Half an answer' },
+        ],
+        isInterrupted: true,
+      },
+    ],
+  }
+  const continued = {
+    name: 'what a continued reply streamed',
+    start: (thread: ReturnType<typeof useThread>) => thread.continueReply(3),
+    runId: 'run-a2',
+    streamed: (): Frame['event'][] => [
+      {
+        type: 'RUN_STARTED',
+        threadId: SEEDED_ID,
+        runId: 'run-a2',
+        instance: 'instance-1',
+        messageId: 'a2',
+      },
+      { type: 'MESSAGES_SNAPSHOT', messages: seededView, hasOlder: false },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'a2',
+        role: 'assistant',
+        delta: ', and more',
+      },
+    ],
+    shown: ['first', 'first answer', 'second', 'second answer, and more'],
+    expected: (): ThreadMessage[] => [
+      ...SEEDED_MESSAGES.slice(0, 3),
+      {
+        ...secondAnswer,
+        content: 'second answer, and more',
+        timeline: [
+          { id: 'b2', type: 'content', content: 'second answer, and more' },
+        ],
+        isInterrupted: true,
+      },
+    ],
+  }
+
+  it.each([
+    { ...reply, account: 'alice', scope: 'device' as const },
+    {
+      ...reply,
+      name: "a signed-out visitor's reply",
+      account: null,
+      scope: 'tab' as const,
+    },
+    { ...continued, account: 'alice', scope: 'device' as const },
+  ])(
+    'keeps and stores $name once the harness no longer has its dropped run',
+    async ({ start, runId, streamed, shown, expected, account, scope }) => {
+      signIn(account)
+      await localThreadStore(scope).update(SEEDED_ID, () => seeded())
+      client.events
+        .mockImplementationOnce(async function* (_path: string, input: Turn) {
+          for (const [id, event] of streamed(input).entries())
+            yield { id, event }
+          throw new TypeError('network error')
+        })
+        .mockImplementationOnce(runNotFound)
+      const { result, unmount } = renderHook(() =>
+        useThread(SEEDED_ID, null, { local: true }),
+      )
+      await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+      await act(() => start(result.current))
+
+      expect(client.events.mock.calls[1].slice(0, 2)).toEqual([
+        '/v1/threads/follow',
+        {
+          threadId: SEEDED_ID,
+          runId,
+          lastEventId: streamed(turn()).length - 1,
+        },
+      ])
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual(shown)
+      expect(result.current.chat.messages.at(-1)).toMatchObject({
+        isInterrupted: true,
+      })
+      expect(result.current.status).toBe('idle')
+      expect(result.current.error).toBe('')
+      const kept = await localThreadStore(scope).get(SEEDED_ID)
+      const [sent] = kept!.messages.filter(
+        (message) => message.id === turn().clientRequestId,
+      )
+      expect(kept).toEqual(
+        seeded({
+          ...(sent ? { updatedAt: sent.createdAt } : {}),
+          messages: expected(sent),
+        }),
+      )
+      if (sent)
+        expect(sent).toEqual({
+          id: turn().clientRequestId,
+          role: 'user',
+          createdAt: sent.createdAt,
+          content: 'third',
+        })
+
+      // The chat opened again, as after a reload, shows the reply kept.
+      unmount()
+      const reopened = renderHook(() =>
+        useThread(SEEDED_ID, null, { local: true }),
+      )
+      await waitFor(() =>
+        expect(
+          reopened.result.current.chat.messages.map((m) => m.content),
+        ).toEqual(shown),
+      )
+      expect(reopened.result.current.chat.messages.at(-1)).toMatchObject({
+        isInterrupted: true,
+      })
+    },
+  )
+})
+
 describe('temporary chats', () => {
   it.each([
     ['with cloud sync', 'alice', true],
@@ -2355,6 +2549,85 @@ describe('cloud chats', () => {
       expect(result.current.status).toBe('idle')
       expect(result.current.error).toBe('')
     })
+
+    it.each([
+      {
+        name: 'as stored when the stored chat holds the reply',
+        copy: [
+          question,
+          {
+            id: 'a1',
+            role: 'assistant',
+            createdAt: 't2',
+            timeline: [{ id: 'b1', type: 'content', content: 'Hello' }],
+          },
+        ],
+        shown: ['Question', 'Hello'],
+        interrupted: undefined,
+      },
+      {
+        name: 'the reply they streamed when the stored chat lacks it',
+        copy: [question],
+        shown: ['Question', 'Hel'],
+        interrupted: true,
+      },
+      {
+        name: 'the reply they streamed where it was, before what the stored chat holds since',
+        copy: [
+          question,
+          { id: 'u2', role: 'user', createdAt: 't3', content: 'Later' },
+        ],
+        shown: ['Question', 'Hel', 'Later'],
+        interrupted: true,
+      },
+    ])(
+      'show $name, once the harness no longer has their run',
+      async ({ copy, shown, interrupted }) => {
+        const { result } = await openStored()
+        client.post.mockImplementation(async (path: string) => {
+          if (path === '/v1/threads/list')
+            return { threads: [], nextCursor: null }
+          if (path === '/v1/threads/get')
+            return { ...stored, messages: copy, hasOlder: false }
+          throw new Error(`Unexpected ${path}`)
+        })
+        client.events
+          .mockImplementationOnce(dropsAfter(started))
+          .mockImplementationOnce(async function* () {
+            yield* []
+            throw new HarnessError(
+              {
+                code: 'RUN_NOT_FOUND',
+                message: 'The run is not running here',
+                action: 'reload',
+              },
+              404,
+            )
+          })
+
+        await act(() => result.current.send({ content: 'Question' }))
+
+        expect(client.events.mock.calls[1].slice(0, 2)).toEqual([
+          '/v1/threads/follow',
+          { key: KEY, threadId: stored.id, runId: 'run-1', lastEventId: 2 },
+        ])
+        expect(result.current.chat.messages.map((m) => m.content)).toEqual(
+          shown,
+        )
+        expect(
+          result.current.chat.messages.find(({ id }) => id === 'a1')
+            ?.isInterrupted,
+        ).toBe(interrupted)
+        expect(result.current.status).toBe('idle')
+        expect(result.current.error).toBe('')
+        // Only the harness stores a chat in the cloud.
+        expect(
+          client.post.mock.calls
+            .map(([path]) => path)
+            .filter((path) => path !== '/v1/threads/list'),
+        ).toEqual(['/v1/threads/get', '/v1/threads/get'])
+      },
+    )
   })
 
   it('show as stored, without an error, once the harness no longer has their run', async () => {

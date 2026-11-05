@@ -160,8 +160,9 @@ export interface RunHooks {
   saved?(run: DeviceRun, event: TerminalEvent, attached: boolean): Promise<void>
   // A run ended, which may have changed the chat list.
   ended?(): void
-  // The open chat's run is over though its stream did not say so.
-  gone?(threadId: string): Promise<void>
+  // The open chat's run is over though its stream did not say so. A device
+  // run's chat holds nothing it streamed unless its final event was saved.
+  gone?(threadId: string, device?: DeviceRun): Promise<void>
 }
 
 // A hint that rejoins a device chat's run after a reload, kept for the tab.
@@ -404,7 +405,7 @@ export class RunController {
           attached()
         ) {
           this.pending = null
-          await this.hooks.gone?.(threadId!)
+          await this.hooks.gone?.(threadId!, device)
         }
       }
     } catch (cause) {
@@ -446,7 +447,7 @@ export class RunController {
         if (gone(cause)) {
           this.pending = null
           this.forgetReceipt(runId)
-          await this.hooks.gone?.(input.threadId!)
+          await this.hooks.gone?.(input.threadId!, device)
         } else if (widgetRetry) {
           widgetRetry.failure =
             cause instanceof HarnessError ? cause.detail : CONNECTION_LOST

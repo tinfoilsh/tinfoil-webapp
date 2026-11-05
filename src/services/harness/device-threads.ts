@@ -14,11 +14,18 @@ import {
 } from './local-threads'
 import { imageBlob, uploaded, type OpenAttachments } from './open-attachments'
 import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
+import { cutOffReplies, withReplies, type ChatState } from './reducer'
 import type { DeviceRun, RunController } from './run-controller'
 import { getView, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import type { ListEdits, ThreadStore } from './thread-store'
-import type { StoredThread, TerminalEvent, Thread, Turn } from './types'
+import type {
+  StoredThread,
+  TerminalEvent,
+  Thread,
+  ThreadMessage,
+  Turn,
+} from './types'
 
 const notOnDevice = (what: string) =>
   new HarnessError({
@@ -79,6 +86,32 @@ export function storeRun(
     }),
     run.originals,
   )
+}
+
+// A device run the harness no longer has, whose final event never returned
+// the thread, leaves the chat with the replies it streamed as interrupted.
+// A reply is stored with its text, as the harness stores one.
+export function storeCutOff(
+  run: DeviceRun,
+  state: ChatState,
+): Promise<StoredThread | null> {
+  return run.store.update(run.threadId, (stored) => {
+    if (!stored) return null
+    const replies = cutOffReplies(state, stored.messages, !run.saved)
+    if (!replies.length) return null
+    const records = replies.map((reply): ThreadMessage => ({
+      ...stored.messages.find(({ id }) => id === reply.id),
+      ...reply,
+      content: (reply.timeline ?? [])
+        .filter(({ type }) => type === 'content')
+        .map(({ content }) => content ?? '')
+        .join(''),
+    }))
+    return {
+      ...stored,
+      messages: withReplies(stored.messages, records, state.messages),
+    }
+  })
 }
 
 // The chats a browser keeps: in IndexedDB for an account, in the tab for a
