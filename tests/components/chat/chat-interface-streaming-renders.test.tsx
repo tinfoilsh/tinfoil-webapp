@@ -3,6 +3,7 @@ import { useDrag } from '@/components/chat/drag-context'
 import { getRendererRegistry } from '@/components/chat/renderers/client'
 import { useSpeak } from '@/components/chat/speech-context'
 import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
+import { useToast } from '@/hooks/use-toast'
 import type {
   Frame,
   HarnessEvent,
@@ -11,7 +12,7 @@ import type {
 } from '@/services/harness/types'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { client, signIn } from '../../harness-fixture'
+import { client, signIn, testSession } from '../../harness-fixture'
 import { refuseFetch } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
@@ -59,6 +60,12 @@ vi.mock('@/components/chat/speech-context', async (importOriginal) => {
     await importOriginal<typeof import('@/components/chat/speech-context')>()
   return { ...actual, useSpeak: vi.fn(actual.useSpeak) }
 })
+// The composer is the only part of the page that shows toasts itself, so
+// these calls count its renders.
+vi.mock('@/hooks/use-toast', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/hooks/use-toast')>()
+  return { ...actual, useToast: vi.fn(actual.useToast) }
+})
 // The sidebar is the only part of the page that reads the drag state, so
 // these calls count its renders.
 vi.mock('@/components/chat/drag-context', async (importOriginal) => {
@@ -77,7 +84,7 @@ const thread: Thread = {
   activityAt: '2026-04-01T09:00:03Z',
   model: 'test-model',
   projectId: null,
-  presetId: null,
+  presetId: 'research',
   pinned: false,
   webSearchEnabled: true,
   contextUsage: null,
@@ -161,8 +168,23 @@ const chunk = (delta: string): HarnessEvent => ({
   delta,
 })
 
-it('renders only the streaming reply as it grows, not the sidebar', async () => {
-  signIn({ cloud: true })
+it('renders only the streaming reply as it grows, not the sidebar or composer', async () => {
+  signIn({
+    cloud: true,
+    session: {
+      ...testSession,
+      presets: [
+        {
+          id: 'research',
+          name: 'Research',
+          description: 'Careful researcher who cites its sources',
+          systemPrompt: 'You research questions carefully.',
+          icon: 'search',
+          builtIn: true,
+        },
+      ],
+    },
+  })
   const run = scriptRun()
   client.post.mockImplementation(async (path: string) => {
     if (path === '/v1/threads/get') return structuredClone(thread)
@@ -173,6 +195,9 @@ it('renders only the streaming reply as it grows, not the sidebar', async () => 
   render(<ChatInterface initialChatId={THREAD_ID} suppressIntroModals />)
   await screen.findByText('Second answer')
   expect(screen.getAllByRole('button', { name: 'Read aloud' })).toHaveLength(2)
+  expect(
+    screen.getByRole('button', { name: 'Change prompt (currently Research)' }),
+  ).toBeInTheDocument()
   expect(await screen.findByRole('link', { name: /^A chat/ })).toHaveAttribute(
     'aria-current',
     'page',
@@ -195,6 +220,7 @@ it('renders only the streaming reply as it grows, not the sidebar', async () => 
   const renders = vi.spyOn(getRendererRegistry(), 'getMessageRenderer')
   const speechReads = vi.mocked(useSpeak).mock.calls.length
   const sidebarRenders = vi.mocked(useDrag).mock.calls.length
+  const composerRenders = vi.mocked(useToast).mock.calls.length
   run.emit(chunk(' reply'))
   await screen.findByText('Streaming reply')
   run.emit(chunk(' grows'))
@@ -205,5 +231,6 @@ it('renders only the streaming reply as it grows, not the sidebar', async () => 
   )
   expect(vi.mocked(useSpeak).mock.calls.length).toBe(speechReads)
   expect(vi.mocked(useDrag).mock.calls.length).toBe(sidebarRenders)
+  expect(vi.mocked(useToast).mock.calls.length).toBe(composerRenders)
   run.end()
 })

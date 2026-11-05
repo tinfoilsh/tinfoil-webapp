@@ -13,6 +13,7 @@ import {
   TfScholarAnimated,
   TfWritingAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
+import { useMemo } from 'react'
 import type {
   PromptPreset,
   PromptPresetSettings,
@@ -53,20 +54,30 @@ function withSettings<T extends object>(
 
 export function usePromptLibrary() {
   const { session, profile, api } = useHarness()
-  const raw: UserPromptPreset[] = profile.customPromptPresets ?? []
-  const userPresets: PromptPreset[] = raw.map((p) => ({
-    ...p,
-    Icon: TfWritingAnimated,
-    isBuiltIn: false,
-  }))
-  const builtInPresets: PromptPreset[] = (session?.presets ?? []).map((p) => ({
-    ...p,
-    description: p.description ?? '',
-    Icon: presetIcons[p.icon ?? ''] ?? TfWritingAnimated,
-    isBuiltIn: true,
-    systemPrompt: p.systemPrompt ?? '',
-  }))
-  const allPresets = [...builtInPresets, ...userPresets]
+  const saved: UserPromptPreset[] | undefined = profile.customPromptPresets
+  const offered = session?.presets
+  const raw: UserPromptPreset[] = saved ?? []
+  // The same presets while the saved and offered ones do not change, so
+  // what shows the chosen one does not render again.
+  const { userPresets, builtInPresets, allPresets } = useMemo(() => {
+    const userPresets: PromptPreset[] = (saved ?? []).map((p) => ({
+      ...p,
+      Icon: TfWritingAnimated,
+      isBuiltIn: false,
+    }))
+    const builtInPresets: PromptPreset[] = (offered ?? []).map((p) => ({
+      ...p,
+      description: p.description ?? '',
+      Icon: presetIcons[p.icon ?? ''] ?? TfWritingAnimated,
+      isBuiltIn: true,
+      systemPrompt: p.systemPrompt ?? '',
+    }))
+    return {
+      userPresets,
+      builtInPresets,
+      allPresets: [...builtInPresets, ...userPresets],
+    }
+  }, [saved, offered])
   const getPresetById = (id: string | null | undefined) =>
     allPresets.find((p) => p.id === id) ?? null
   const favoritePresetIds: string[] = profile.favoritePromptPresetIds ?? []

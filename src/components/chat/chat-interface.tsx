@@ -1734,6 +1734,95 @@ export function ChatInterface({
     !isWaitingForResponse &&
     !isChatHydrating &&
     !historyProblem
+  const showChatHeader =
+    currentChat.messages.length > 0 || isChatHydrating || !!historyProblem
+  // The composer does not render again with each update of a streaming
+  // reply, as what it is given keeps its identity.
+  const composerActions = useStableHandlers({
+    submit: handleSubmit,
+    cancelGeneration: cancelGenerationAndResumeQueue,
+    focusInput: handleInputFocusWithRateLimitCheck,
+    uploadFile: handleFileUpload,
+    removeDocument,
+    clearQuote: () => setQuote(null),
+    openPromptLibrary: handleOpenPromptLibrary,
+    setActivePreset: handleSetActivePreset,
+    clearPromptPreset: () => handleSetActivePreset(null),
+    toggleWebSearch: handleWebSearchToggle,
+    selectModel: handleModelSelect,
+    clickLabel: handleLabelClick,
+    setReasoningEffort,
+    setThinkingEnabled,
+    setAutoIntelligence,
+  })
+  const composerHeader = useMemo(
+    () =>
+      // With a preset active, the preset tab attached to the input card
+      // already opens the library; the mobile Prompts button would collide
+      // with it.
+      !showChatHeader && !activePreset ? (
+        <div className="mb-3 md:hidden">
+          <PromptPresetSuggestions
+            activePreset={activePreset}
+            onSetActive={composerActions.setActivePreset}
+            onOpenLibrary={composerActions.openPromptLibrary}
+          />
+        </div>
+      ) : undefined,
+    [showChatHeader, activePreset, composerActions],
+  )
+  const modelSelectorButton = useMemo(
+    () =>
+      models.length > 0 && selectedModel ? (
+        <div className="relative">
+          <button
+            type="button"
+            data-model-selector
+            aria-haspopup="menu"
+            aria-expanded={expandedLabel === 'model'}
+            aria-label={`Current model ${getSelectedModelLabel(selectedModel, models, autoIntelligence) ?? ''}`}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              composerActions.clickLabel('model', () => {})
+            }}
+            className="flex items-center gap-1 py-1.5 text-content-secondary transition-colors hover:text-content-primary"
+          >
+            <ModelSelectorTriggerLabel
+              selectedModel={selectedModel}
+              models={models}
+              autoIntelligence={autoIntelligence}
+              isOpen={expandedLabel === 'model'}
+            />
+          </button>
+
+          {expandedLabel === 'model' && (
+            <ModelSelector
+              selectedModel={selectedModel}
+              onSelect={composerActions.selectModel}
+              isDarkMode={isDarkMode}
+              models={models}
+              reasoningEffort={reasoningEffort}
+              onEffortChange={composerActions.setReasoningEffort}
+              thinkingEnabled={thinkingEnabled}
+              onThinkingEnabledChange={composerActions.setThinkingEnabled}
+              autoIntelligence={autoIntelligence}
+              onAutoIntelligenceChange={composerActions.setAutoIntelligence}
+            />
+          )}
+        </div>
+      ) : undefined,
+    [
+      models,
+      selectedModel,
+      expandedLabel,
+      autoIntelligence,
+      isDarkMode,
+      reasoningEffort,
+      thinkingEnabled,
+      composerActions,
+    ],
+  )
 
   if (!session && sessionError) {
     return (
@@ -1769,8 +1858,6 @@ export function ChatInterface({
     )
   }
 
-  const showChatHeader =
-    currentChat.messages.length > 0 || isChatHydrating || !!historyProblem
   const showChatLoading = isChatHydrating && !historyProblem
   // A chat whose history could not open explains why in its place.
   const streamErrorBanner = streamError && !historyProblem && (
@@ -2782,85 +2869,32 @@ export function ChatInterface({
                         key={isChatHydrating ? 'loading' : 'ready'}
                         input={input}
                         setInput={setInput}
-                        handleSubmit={handleSubmit}
+                        handleSubmit={composerActions.submit}
                         loadingState={loadingState}
-                        cancelGeneration={cancelGenerationAndResumeQueue}
+                        cancelGeneration={composerActions.cancelGeneration}
                         inputRef={inputRef}
-                        handleInputFocus={handleInputFocusWithRateLimitCheck}
+                        handleInputFocus={composerActions.focusInput}
                         inputMinHeight={inputMinHeight}
                         isDarkMode={isDarkMode}
-                        handleDocumentUpload={handleFileUpload}
+                        handleDocumentUpload={composerActions.uploadFile}
                         processedDocuments={processedDocuments}
-                        removeDocument={removeDocument}
+                        removeDocument={composerActions.removeDocument}
                         isPremium={showPremiumComposerControls}
                         contextUsage={contextUsage}
                         quote={quote}
-                        onClearQuote={() => setQuote(null)}
+                        onClearQuote={composerActions.clearQuote}
                         isTemporaryMode={isTemporaryMode}
                         activePromptPreset={activePreset}
-                        onOpenPromptLibrary={handleOpenPromptLibrary}
-                        onClearPromptPreset={() => handleSetActivePreset(null)}
-                        mobileHeader={
-                          // With a preset active, the preset tab attached to
-                          // the input card already opens the library; the
-                          // mobile Prompts button would collide with it.
-                          !showChatHeader && !activePreset ? (
-                            <div className="mb-3 md:hidden">
-                              <PromptPresetSuggestions
-                                activePreset={activePreset}
-                                onSetActive={handleSetActivePreset}
-                                onOpenLibrary={handleOpenPromptLibrary}
-                              />
-                            </div>
-                          ) : undefined
-                        }
+                        onOpenPromptLibrary={composerActions.openPromptLibrary}
+                        onClearPromptPreset={composerActions.clearPromptPreset}
+                        mobileHeader={composerHeader}
                         hasMessages={showChatHeader}
-                        modelSelectorButton={
-                          models.length > 0 &&
-                          selectedModel &&
-                          handleModelSelect ? (
-                            <div className="relative">
-                              <button
-                                type="button"
-                                data-model-selector
-                                aria-haspopup="menu"
-                                aria-expanded={expandedLabel === 'model'}
-                                aria-label={`Current model ${getSelectedModelLabel(selectedModel, models, autoIntelligence) ?? ''}`}
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  handleLabelClick('model', () => {})
-                                }}
-                                className="flex items-center gap-1 py-1.5 text-content-secondary transition-colors hover:text-content-primary"
-                              >
-                                <ModelSelectorTriggerLabel
-                                  selectedModel={selectedModel}
-                                  models={models}
-                                  autoIntelligence={autoIntelligence}
-                                  isOpen={expandedLabel === 'model'}
-                                />
-                              </button>
-
-                              {expandedLabel === 'model' && (
-                                <ModelSelector
-                                  selectedModel={selectedModel}
-                                  onSelect={handleModelSelect}
-                                  isDarkMode={isDarkMode}
-                                  models={models}
-                                  reasoningEffort={reasoningEffort}
-                                  onEffortChange={setReasoningEffort}
-                                  thinkingEnabled={thinkingEnabled}
-                                  onThinkingEnabledChange={setThinkingEnabled}
-                                  autoIntelligence={autoIntelligence}
-                                  onAutoIntelligenceChange={setAutoIntelligence}
-                                />
-                              )}
-                            </div>
-                          ) : undefined
-                        }
+                        modelSelectorButton={modelSelectorButton}
                         webSearchEnabled={effectiveWebSearchEnabled}
                         onWebSearchToggle={
-                          webSearchAvailable ? handleWebSearchToggle : undefined
+                          webSearchAvailable
+                            ? composerActions.toggleWebSearch
+                            : undefined
                         }
                       />
                     </form>

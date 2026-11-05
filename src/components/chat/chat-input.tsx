@@ -22,6 +22,7 @@ import {
 } from '@tinfoilsh/tinfoil-icons/animated'
 import type { FormEvent, RefObject } from 'react'
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -95,7 +96,7 @@ const INPUT_AREA_SELECTOR = '[data-chat-input-area]'
 const isDocumentSubmittable = (doc: ProcessedDocument) =>
   !doc.isUploading && !doc.isGeneratingDescription && !doc.isUnsupported
 
-export function ChatInput({
+export const ChatInput = memo(function ChatInput({
   input,
   setInput,
   handleSubmit,
@@ -1471,4 +1472,4 @@ export function ChatInput({
       )}
     </div>
   )
-}
+})
