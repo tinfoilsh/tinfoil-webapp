@@ -92,6 +92,7 @@ import {
   useThinkingEnabled,
 } from './hooks/use-reasoning-effort'
 import { useSidebarChat } from './hooks/use-sidebar-chat'
+import { useStableHandlers } from './hooks/use-stable-handlers'
 import { MessageQueue } from './message-queue'
 import { ModelSelector } from './model-selector'
 import { ModelSelectorTriggerLabel } from './model-selector-trigger-label'
@@ -165,6 +166,9 @@ import {
 import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
 import { hasPasskeyBackup } from '@/utils/signout-cleanup'
 import { useUIState } from './hooks/use-ui-state'
+
+// What a loading project's New chat does: nothing until the project opens.
+const NO_ACTION = () => {}
 
 // Where Escape belongs to what holds the focus rather than to the reply.
 const ESCAPE_KEEPERS =
@@ -769,6 +773,20 @@ export function ChatInterface({
       setIsForking(false)
     }
   }
+  // The messages before a streaming reply do not render again with each of
+  // its updates, as what they are given keeps its identity.
+  const messageActions = useStableHandlers({
+    editMessage,
+    regenerateMessage,
+    deleteMessage,
+    editAssistantMessage,
+    continueAssistantMessage,
+    forkMessage: handleForkMessage,
+    retryToolCall,
+    loadImage: thread.loadImage,
+    loadDocumentText: thread.documentText,
+    speak: thread.speak,
+  })
   const cancelGenerationAndResumeQueue = () => {
     void thread.cancel().catch(thread.report)
   }
@@ -797,11 +815,16 @@ export function ChatInterface({
   const removeQueuedMessage = (id: string) => {
     void thread.removeQueued(id).catch(thread.report)
   }
-  const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
-  const favoriteChats = thread.favoriteIds
-    .flatMap((id) => chatsById.get(id) ?? [])
-    .slice(0, CONSTANTS.MAX_FAVORITE_CHATS)
-  const pinnedChatIds = favoriteChats.map((c) => c.id)
+  const favoriteChats = useMemo(() => {
+    const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
+    return thread.favoriteIds
+      .flatMap((id) => chatsById.get(id) ?? [])
+      .slice(0, CONSTANTS.MAX_FAVORITE_CHATS)
+  }, [chats, thread.favoriteIds])
+  const pinnedChatIds = useMemo(
+    () => favoriteChats.map((c) => c.id),
+    [favoriteChats],
+  )
   const unpinChat = (id: string) => {
     void thread
       .update(id, { pinned: false })
@@ -1365,6 +1388,47 @@ export function ChatInterface({
       [api, thread.report],
     ),
   })
+  // The sidebar does not render again with each update of a streaming
+  // reply, as what it is given keeps its identity.
+  const sidebarActions = useStableHandlers({
+    retryChats: thread.retryChatList,
+    retryLocalChats: thread.retryLocalChatList,
+    loadMoreChats: thread.loadMoreChats,
+    createNewChat,
+    selectChat: handleChatSelect,
+    updateChatTitle,
+    deleteChat,
+    openCloudSyncSetup: handleOpenCloudSyncSetup,
+    setupPasskey,
+    dismissBackupWarning,
+    enterProject: async (projectId: string, projectName?: string) => {
+      // Create a new blank chat before entering project mode
+      // This prevents the current chat from being associated with the project
+      await openProjectChat({
+        projectId,
+        projectName,
+        createNewChat,
+        enterProjectMode: handleEnterProjectMode,
+      })
+    },
+    createProject: handleCreateProject,
+    moveChatToProject: handleMoveChatToProject,
+    removeChatFromProject: handleRemoveChatFromProject,
+    convertChatToCloud: handleConvertChatToCloud,
+    convertChatToLocal: handleConvertChatToLocal,
+    openSettings: handleOpenSettingsModal,
+    openReportBug: handleOpenReportBugModal,
+    toggleFavorite: handleToggleFavorite,
+    unpinChat,
+    openFavorite: handleOpenFavorite,
+    exitProject: handleExitProject,
+    exitProjectWhileDragging: handleExitProjectWhileDragging,
+    startProjectChat: () => createNewChat(false, true),
+    deleteProjectChats: handleDeleteProjectChats,
+    addChatToProject: async (chatId: string) => {
+      if (activeProject) await handleMoveChatToProject(chatId, activeProject.id)
+    },
+  })
   useEffect(() => {
     if (suppressIntroModals) return
     // Passkey recovery opens because remote chats need unlocking, and a
@@ -1675,6 +1739,124 @@ export function ChatInterface({
     !isWaitingForResponse &&
     !isChatHydrating &&
     !historyProblem
+  const showChatHeader =
+    currentChat.messages.length > 0 || isChatHydrating || !!historyProblem
+  // The composer does not render again with each update of a streaming
+  // reply, as what it is given keeps its identity.
+  const composerActions = useStableHandlers({
+    submit: handleSubmit,
+    cancelGeneration: cancelGenerationAndResumeQueue,
+    focusInput: handleInputFocusWithRateLimitCheck,
+    uploadFile: handleFileUpload,
+    removeDocument,
+    clearQuote: () => setQuote(null),
+    openPromptLibrary: handleOpenPromptLibrary,
+    setActivePreset: handleSetActivePreset,
+    clearPromptPreset: () => handleSetActivePreset(null),
+    toggleWebSearch: handleWebSearchToggle,
+    selectModel: handleModelSelect,
+    clickLabel: handleLabelClick,
+    setReasoningEffort,
+    setThinkingEnabled,
+    setAutoIntelligence,
+  })
+  const composerHeader = useMemo(
+    () =>
+      // With a preset active, the preset tab attached to the input card
+      // already opens the library; the mobile Prompts button would collide
+      // with it.
+      !showChatHeader && !activePreset ? (
+        <div className="mb-3 md:hidden">
+          <PromptPresetSuggestions
+            activePreset={activePreset}
+            onSetActive={composerActions.setActivePreset}
+            onOpenLibrary={composerActions.openPromptLibrary}
+          />
+        </div>
+      ) : undefined,
+    [showChatHeader, activePreset, composerActions],
+  )
+  const modelSelectorButton = useMemo(
+    () =>
+      models.length > 0 && selectedModel ? (
+        <div className="relative">
+          <button
+            type="button"
+            data-model-selector
+            aria-haspopup="menu"
+            aria-expanded={expandedLabel === 'model'}
+            aria-label={`Current model ${getSelectedModelLabel(selectedModel, models, autoIntelligence) ?? ''}`}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              composerActions.clickLabel('model', () => {})
+            }}
+            className="flex items-center gap-1 py-1.5 text-content-secondary transition-colors hover:text-content-primary"
+          >
+            <ModelSelectorTriggerLabel
+              selectedModel={selectedModel}
+              models={models}
+              autoIntelligence={autoIntelligence}
+              isOpen={expandedLabel === 'model'}
+            />
+          </button>
+
+          {expandedLabel === 'model' && (
+            <ModelSelector
+              selectedModel={selectedModel}
+              onSelect={composerActions.selectModel}
+              isDarkMode={isDarkMode}
+              models={models}
+              reasoningEffort={reasoningEffort}
+              onEffortChange={composerActions.setReasoningEffort}
+              thinkingEnabled={thinkingEnabled}
+              onThinkingEnabledChange={composerActions.setThinkingEnabled}
+              autoIntelligence={autoIntelligence}
+              onAutoIntelligenceChange={composerActions.setAutoIntelligence}
+            />
+          )}
+        </div>
+      ) : undefined,
+    [
+      models,
+      selectedModel,
+      expandedLabel,
+      autoIntelligence,
+      isDarkMode,
+      reasoningEffort,
+      thinkingEnabled,
+      composerActions,
+    ],
+  )
+
+  // The chats of the project the sidebar shows, open or still loading.
+  const sidebarProjectId =
+    isProjectMode && activeProject ? activeProject.id : loadingProject?.id
+  const projectChats = useMemo(
+    () =>
+      chats
+        .filter((c) => c.projectId === sidebarProjectId)
+        .map((c) => ({
+          id: c.id,
+          title: c.title,
+          messageCount: c.isMetadataOnly
+            ? (c.messageCount ?? 0)
+            : c.messages.length,
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+          activityAt: c.activityAt,
+          projectId: c.projectId,
+          isBlankChat: c.isBlankChat,
+          isTemporary: c.isTemporary,
+          activeRun: c.activeRun,
+          flagged: c.flagged,
+        })),
+    [chats, sidebarProjectId],
+  )
+  const projectOptions = useMemo(
+    () => projects.map((p) => ({ id: p.id, name: p.name })),
+    [projects],
+  )
 
   if (!session && sessionError) {
     return (
@@ -1710,8 +1892,6 @@ export function ChatInterface({
     )
   }
 
-  const showChatHeader =
-    currentChat.messages.length > 0 || isChatHydrating || !!historyProblem
   const showChatLoading = isChatHydrating && !historyProblem
   // A chat whose history could not open explains why in its place.
   const streamErrorBanner = streamError && !historyProblem && (
@@ -1939,25 +2119,6 @@ export function ChatInterface({
     </>
   )
 
-  const projectSidebarChats = (projectId: string | undefined) =>
-    chats
-      .filter((c) => c.projectId === projectId)
-      .map((c) => ({
-        id: c.id,
-        title: c.title,
-        messageCount: c.isMetadataOnly
-          ? (c.messageCount ?? 0)
-          : c.messages.length,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
-        activityAt: c.activityAt,
-        projectId: c.projectId,
-        isBlankChat: c.isBlankChat,
-        isTemporary: c.isTemporary,
-        activeRun: c.activeRun,
-        flagged: c.flagged,
-      }))
-
   return (
     <div
       className="app-shell flex overflow-hidden bg-surface-chat-background"
@@ -2083,41 +2244,38 @@ export function ChatInterface({
               {isProjectMode && activeProject ? (
                 <ProjectSidebar
                   hasMore={thread.hasMoreChats}
-                  onLoadMore={thread.loadMoreChats}
+                  onLoadMore={sidebarActions.loadMoreChats}
                   isLoadingChats={thread.loadingChats}
                   chatListError={thread.chatListError}
-                  onRetryChats={thread.retryChatList}
+                  onRetryChats={sidebarActions.retryChats}
                   isOpen={isSidebarOpen}
                   setIsOpen={setIsSidebarOpen}
                   project={activeProject}
                   isDarkMode={isDarkMode}
                   pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                  onExitProject={handleExitProject}
-                  onExitProjectWhileDragging={handleExitProjectWhileDragging}
-                  onNewChat={() => createNewChat(false, true)}
-                  onSelectChat={handleChatSelect}
+                  onExitProject={sidebarActions.exitProject}
+                  onExitProjectWhileDragging={
+                    sidebarActions.exitProjectWhileDragging
+                  }
+                  onNewChat={sidebarActions.startProjectChat}
+                  onSelectChat={sidebarActions.selectChat}
                   currentChatId={currentChat.id}
                   isClient={isClient}
-                  chats={projectSidebarChats(activeProject.id)}
-                  deleteChat={deleteChat}
-                  updateChatTitle={updateChatTitle}
-                  onRemoveChatFromProject={handleRemoveChatFromProject}
-                  onDeleteProjectChats={handleDeleteProjectChats}
-                  onAddChatToProject={(chatId) =>
-                    handleMoveChatToProject(chatId, activeProject.id)
-                  }
-                  onMoveChatToProject={handleMoveChatToProject}
-                  projects={projects.map((p) => ({
-                    id: p.id,
-                    name: p.name,
-                  }))}
-                  onSettingsClick={handleOpenSettingsModal}
-                  onReportBugClick={handleOpenReportBugModal}
+                  chats={projectChats}
+                  deleteChat={sidebarActions.deleteChat}
+                  updateChatTitle={sidebarActions.updateChatTitle}
+                  onRemoveChatFromProject={sidebarActions.removeChatFromProject}
+                  onDeleteProjectChats={sidebarActions.deleteProjectChats}
+                  onAddChatToProject={sidebarActions.addChatToProject}
+                  onMoveChatToProject={sidebarActions.moveChatToProject}
+                  projects={projectOptions}
+                  onSettingsClick={sidebarActions.openSettings}
+                  onReportBugClick={sidebarActions.openReportBug}
                   favoriteChats={favoriteChats}
                   pinnedChatIds={pinnedChatIds}
-                  onToggleFavorite={handleToggleFavorite}
-                  onRemoveFavorite={unpinChat}
-                  onOpenFavorite={handleOpenFavorite}
+                  onToggleFavorite={sidebarActions.toggleFavorite}
+                  onRemoveFavorite={sidebarActions.unpinChat}
+                  onOpenFavorite={sidebarActions.openFavorite}
                   windowWidth={windowWidth}
                   isPremium={isPremium}
                 />
@@ -2131,22 +2289,24 @@ export function ChatInterface({
                   isLoading={true}
                   isDarkMode={isDarkMode}
                   pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                  onExitProject={handleExitProject}
-                  onExitProjectWhileDragging={handleExitProjectWhileDragging}
-                  onNewChat={() => {}}
-                  onSelectChat={handleChatSelect}
+                  onExitProject={sidebarActions.exitProject}
+                  onExitProjectWhileDragging={
+                    sidebarActions.exitProjectWhileDragging
+                  }
+                  onNewChat={NO_ACTION}
+                  onSelectChat={sidebarActions.selectChat}
                   currentChatId={currentChat.id}
                   isClient={isClient}
-                  chats={projectSidebarChats(loadingProject?.id)}
-                  deleteChat={deleteChat}
-                  updateChatTitle={updateChatTitle}
-                  onSettingsClick={handleOpenSettingsModal}
-                  onReportBugClick={handleOpenReportBugModal}
+                  chats={projectChats}
+                  deleteChat={sidebarActions.deleteChat}
+                  updateChatTitle={sidebarActions.updateChatTitle}
+                  onSettingsClick={sidebarActions.openSettings}
+                  onReportBugClick={sidebarActions.openReportBug}
                   favoriteChats={favoriteChats}
                   pinnedChatIds={pinnedChatIds}
-                  onToggleFavorite={handleToggleFavorite}
-                  onRemoveFavorite={unpinChat}
-                  onOpenFavorite={handleOpenFavorite}
+                  onToggleFavorite={sidebarActions.toggleFavorite}
+                  onRemoveFavorite={sidebarActions.unpinChat}
+                  onOpenFavorite={sidebarActions.openFavorite}
                   windowWidth={windowWidth}
                   isPremium={isPremium}
                 />
@@ -2164,65 +2324,61 @@ export function ChatInterface({
               <ChatSidebar
                 isLoadingChats={thread.loadingChats}
                 chatListError={thread.chatListError}
-                onRetryChats={thread.retryChatList}
+                onRetryChats={sidebarActions.retryChats}
                 localChatListError={thread.localChatListError}
-                onRetryLocalChats={thread.retryLocalChatList}
-                onUnlockChats={keyLocked ? handleOpenCloudSyncSetup : undefined}
+                onRetryLocalChats={sidebarActions.retryLocalChats}
+                onUnlockChats={
+                  keyLocked ? sidebarActions.openCloudSyncSetup : undefined
+                }
                 isOpen={isSidebarOpen}
                 setIsOpen={setIsSidebarOpen}
                 chats={chats}
                 hasMore={thread.hasMoreChats}
-                onLoadMore={thread.loadMoreChats}
-                currentChat={currentChat}
+                onLoadMore={sidebarActions.loadMoreChats}
+                currentChatId={currentChat.id}
+                currentChatIsBlank={currentChat.isBlankChat}
+                currentChatIsLocalOnly={currentChat.isLocalOnly}
+                currentChatIsTemporary={currentChat.isTemporary}
                 isDarkMode={isDarkMode}
                 pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                createNewChat={createNewChat}
-                handleChatSelect={handleChatSelect}
-                updateChatTitle={updateChatTitle}
-                deleteChat={deleteChat}
+                createNewChat={sidebarActions.createNewChat}
+                handleChatSelect={sidebarActions.selectChat}
+                updateChatTitle={sidebarActions.updateChatTitle}
+                deleteChat={sidebarActions.deleteChat}
                 isClient={isClient}
                 isPremium={isPremium}
                 isSubscriptionLoading={isSubscriptionLoading}
                 onCloudSyncSetupClick={
-                  isSignedIn ? handleOpenCloudSyncSetup : undefined
+                  isSignedIn ? sidebarActions.openCloudSyncSetup : undefined
                 }
                 passkeySetupAvailable={passkeySetupAvailable}
-                onSetupPasskey={setupPasskey}
+                onSetupPasskey={sidebarActions.setupPasskey}
                 backupWarningVisible={
                   isSignedIn &&
                   (passkeySetupFailed || manualRecoveryNeeded) &&
                   !passkeyRecoveryNeeded
                 }
                 backupWarningNeedsRecovery={manualRecoveryNeeded}
-                onDismissBackupWarning={dismissBackupWarning}
+                onDismissBackupWarning={sidebarActions.dismissBackupWarning}
                 isProjectMode={isProjectMode}
                 activeProjectName={activeProject?.name}
-                onEnterProject={async (projectId, projectName) => {
-                  // Create a new blank chat before entering project mode
-                  // This prevents the current chat from being associated with the project
-                  await openProjectChat({
-                    projectId,
-                    projectName,
-                    createNewChat,
-                    enterProjectMode: handleEnterProjectMode,
-                  })
-                }}
-                onCreateProject={handleCreateProject}
-                onMoveChatToProject={handleMoveChatToProject}
-                onRemoveChatFromProject={handleRemoveChatFromProject}
+                onEnterProject={sidebarActions.enterProject}
+                onCreateProject={sidebarActions.createProject}
+                onMoveChatToProject={sidebarActions.moveChatToProject}
+                onRemoveChatFromProject={sidebarActions.removeChatFromProject}
                 onConvertChatToCloud={
-                  canMoveChats ? handleConvertChatToCloud : undefined
+                  canMoveChats ? sidebarActions.convertChatToCloud : undefined
                 }
                 onConvertChatToLocal={
-                  canMoveChats ? handleConvertChatToLocal : undefined
+                  canMoveChats ? sidebarActions.convertChatToLocal : undefined
                 }
-                onSettingsClick={handleOpenSettingsModal}
-                onReportBugClick={handleOpenReportBugModal}
+                onSettingsClick={sidebarActions.openSettings}
+                onReportBugClick={sidebarActions.openReportBug}
                 onSearchClick={handleOpenSearchModal}
                 pinnedChatIds={pinnedChatIds}
-                onToggleFavorite={handleToggleFavorite}
-                onRemoveFavorite={unpinChat}
-                onOpenFavorite={handleOpenFavorite}
+                onToggleFavorite={sidebarActions.toggleFavorite}
+                onRemoveFavorite={sidebarActions.unpinChat}
+                onOpenFavorite={sidebarActions.openFavorite}
                 windowWidth={windowWidth}
               />
             </motion.div>
@@ -2589,26 +2745,30 @@ export function ChatInterface({
                       handleModelSelect={handleModelSelect}
                       expandedLabel={expandedLabel}
                       handleLabelClick={handleLabelClick}
-                      onEditMessage={editMessage}
-                      onRegenerateMessage={regenerateMessage}
+                      onEditMessage={messageActions.editMessage}
+                      onRegenerateMessage={messageActions.regenerateMessage}
                       onDeleteMessage={
                         canChangeMessages && currentChat.messages.length > 1
-                          ? deleteMessage
+                          ? messageActions.deleteMessage
                           : undefined
                       }
                       onEditAssistantMessage={
-                        canChangeMessages ? editAssistantMessage : undefined
-                      }
-                      onContinueAssistantMessage={continueAssistantMessage}
-                      onForkMessage={
-                        canFork && !isStreaming && !isForking
-                          ? handleForkMessage
+                        canChangeMessages
+                          ? messageActions.editAssistantMessage
                           : undefined
                       }
-                      onRetryToolCall={retryToolCall}
-                      loadImage={thread.loadImage}
-                      loadDocumentText={thread.documentText}
-                      speak={thread.speak}
+                      onContinueAssistantMessage={
+                        messageActions.continueAssistantMessage
+                      }
+                      onForkMessage={
+                        canFork && !isStreaming && !isForking
+                          ? messageActions.forkMessage
+                          : undefined
+                      }
+                      onRetryToolCall={messageActions.retryToolCall}
+                      loadImage={messageActions.loadImage}
+                      loadDocumentText={messageActions.loadDocumentText}
+                      speak={messageActions.speak}
                       questions={questionAnswering}
                       imagesUnsaved={!isSignedIn && !isTemporaryMode}
                       earlierMessageCount={Math.max(
@@ -2726,85 +2886,32 @@ export function ChatInterface({
                         key={isChatHydrating ? 'loading' : 'ready'}
                         input={input}
                         setInput={setInput}
-                        handleSubmit={handleSubmit}
+                        handleSubmit={composerActions.submit}
                         loadingState={loadingState}
-                        cancelGeneration={cancelGenerationAndResumeQueue}
+                        cancelGeneration={composerActions.cancelGeneration}
                         inputRef={inputRef}
-                        handleInputFocus={handleInputFocusWithRateLimitCheck}
+                        handleInputFocus={composerActions.focusInput}
                         inputMinHeight={inputMinHeight}
                         isDarkMode={isDarkMode}
-                        handleDocumentUpload={handleFileUpload}
+                        handleDocumentUpload={composerActions.uploadFile}
                         processedDocuments={processedDocuments}
-                        removeDocument={removeDocument}
+                        removeDocument={composerActions.removeDocument}
                         isPremium={showPremiumComposerControls}
                         contextUsage={contextUsage}
                         quote={quote}
-                        onClearQuote={() => setQuote(null)}
+                        onClearQuote={composerActions.clearQuote}
                         isTemporaryMode={isTemporaryMode}
                         activePromptPreset={activePreset}
-                        onOpenPromptLibrary={handleOpenPromptLibrary}
-                        onClearPromptPreset={() => handleSetActivePreset(null)}
-                        mobileHeader={
-                          // With a preset active, the preset tab attached to
-                          // the input card already opens the library; the
-                          // mobile Prompts button would collide with it.
-                          !showChatHeader && !activePreset ? (
-                            <div className="mb-3 md:hidden">
-                              <PromptPresetSuggestions
-                                activePreset={activePreset}
-                                onSetActive={handleSetActivePreset}
-                                onOpenLibrary={handleOpenPromptLibrary}
-                              />
-                            </div>
-                          ) : undefined
-                        }
+                        onOpenPromptLibrary={composerActions.openPromptLibrary}
+                        onClearPromptPreset={composerActions.clearPromptPreset}
+                        mobileHeader={composerHeader}
                         hasMessages={showChatHeader}
-                        modelSelectorButton={
-                          models.length > 0 &&
-                          selectedModel &&
-                          handleModelSelect ? (
-                            <div className="relative">
-                              <button
-                                type="button"
-                                data-model-selector
-                                aria-haspopup="menu"
-                                aria-expanded={expandedLabel === 'model'}
-                                aria-label={`Current model ${getSelectedModelLabel(selectedModel, models, autoIntelligence) ?? ''}`}
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  handleLabelClick('model', () => {})
-                                }}
-                                className="flex items-center gap-1 py-1.5 text-content-secondary transition-colors hover:text-content-primary"
-                              >
-                                <ModelSelectorTriggerLabel
-                                  selectedModel={selectedModel}
-                                  models={models}
-                                  autoIntelligence={autoIntelligence}
-                                  isOpen={expandedLabel === 'model'}
-                                />
-                              </button>
-
-                              {expandedLabel === 'model' && (
-                                <ModelSelector
-                                  selectedModel={selectedModel}
-                                  onSelect={handleModelSelect}
-                                  isDarkMode={isDarkMode}
-                                  models={models}
-                                  reasoningEffort={reasoningEffort}
-                                  onEffortChange={setReasoningEffort}
-                                  thinkingEnabled={thinkingEnabled}
-                                  onThinkingEnabledChange={setThinkingEnabled}
-                                  autoIntelligence={autoIntelligence}
-                                  onAutoIntelligenceChange={setAutoIntelligence}
-                                />
-                              )}
-                            </div>
-                          ) : undefined
-                        }
+                        modelSelectorButton={modelSelectorButton}
                         webSearchEnabled={effectiveWebSearchEnabled}
                         onWebSearchToggle={
-                          webSearchAvailable ? handleWebSearchToggle : undefined
+                          webSearchAvailable
+                            ? composerActions.toggleWebSearch
+                            : undefined
                         }
                       />
                     </form>

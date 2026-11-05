@@ -66,7 +66,7 @@ import {
   TfWritingAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useProject } from './project-context'
 
 const MOBILE_BREAKPOINT = 1024
@@ -207,7 +207,7 @@ function DangerZoneAction({
   )
 }
 
-export function ProjectSidebar({
+export const ProjectSidebar = memo(function ProjectSidebar({
   isOpen,
   setIsOpen,
   project,
@@ -1556,4 +1556,4 @@ export function ProjectSidebar({
       )}
     </>
   )
-}
+})

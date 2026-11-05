@@ -176,14 +176,15 @@ export const ThoughtProcess = memo(function ThoughtProcess({
 
   // Measure content height for smooth animation
   // (offsetHeight, unlike scrollHeight, counts the border of the thoughts' box)
+  // The observer follows the thoughts as they stream, so the content is
+  // measured here only as it shows.
   useLayoutEffect(() => {
     const content = contentRef.current
     if (content) {
       const measuredHeight = content.offsetHeight
       setContentHeight((prevHeight) =>
-        // Same never-shrink guard as the ResizeObserver below: this effect
-        // re-runs on every streaming chunk, and shrinking mid-stream causes
-        // scroll resets when content temporarily contracts.
+        // Same never-shrink guard as the ResizeObserver below: shrinking
+        // mid-stream causes scroll resets when content temporarily contracts.
         isThinking ? Math.max(prevHeight, measuredHeight) : measuredHeight,
       )
       const resizeObserver = new ResizeObserver(() => {
@@ -203,7 +204,7 @@ export const ThoughtProcess = memo(function ThoughtProcess({
       resizeObserver.observe(content)
       return () => resizeObserver.disconnect()
     }
-  }, [thoughts, isThinking, isExpanded, renderContent])
+  }, [isThinking, isExpanded, renderContent])
 
   if (shouldDiscard || (!thoughts.trim() && !isThinking)) {
     return null
@@ -257,7 +258,7 @@ export const ThoughtProcess = memo(function ThoughtProcess({
             )}
             translate="no"
           >
-            <StepMarkdown content={thoughts} />
+            <StepMarkdown content={thoughts} isStreaming={isThinking} />
           </div>
         )}
       </div>

@@ -65,13 +65,11 @@ const localChat: Chat = {
   updatedAt: '2026-05-01T09:00:00Z',
   isLocalOnly: true,
 }
-const blankChat = (isLocalOnly: boolean): Chat => ({
-  id: '',
-  title: 'New Chat',
-  messages: [],
-  createdAt: new Date(),
-  isBlankChat: true,
-  isLocalOnly,
+// The sidebar's props for a blank chat open in the page.
+const blankChat = (isLocalOnly: boolean) => ({
+  currentChatId: '',
+  currentChatIsBlank: true,
+  currentChatIsLocalOnly: isLocalOnly,
 })
 
 function Sidebar(props: Partial<ComponentProps<typeof ChatSidebar>>) {
@@ -81,7 +79,7 @@ function Sidebar(props: Partial<ComponentProps<typeof ChatSidebar>>) {
         isOpen
         setIsOpen={vi.fn()}
         chats={[cloudChat, localChat]}
-        currentChat={blankChat(false)}
+        {...blankChat(false)}
         isDarkMode={false}
         pixelateSidebarChatTitles={false}
         createNewChat={vi.fn()}
@@ -132,7 +130,7 @@ describe('chat sidebar storage modes', () => {
     const onCloudSyncSetupClick = vi.fn()
     render(
       <Sidebar
-        currentChat={blankChat(true)}
+        {...blankChat(true)}
         onCloudSyncSetupClick={onCloudSyncSetupClick}
       />,
     )
@@ -199,9 +197,7 @@ describe('chat sidebar storage modes', () => {
     // The blank chat follows the tab so its first message stays local.
     expect(createNewChat).toHaveBeenCalledExactlyOnceWith(true, false)
 
-    rerender(
-      <Sidebar createNewChat={createNewChat} currentChat={blankChat(true)} />,
-    )
+    rerender(<Sidebar createNewChat={createNewChat} {...blankChat(true)} />)
     const [newChat] = screen.getAllByRole('link', { name: /New chat/ })
     expect(newChat).toHaveAttribute('href', '/newchat?storage=local')
     expect(newChat).toHaveAttribute('aria-current', 'page')
@@ -211,9 +207,7 @@ describe('chat sidebar storage modes', () => {
     signIn({ cloud: true })
     localStorage.setItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED, 'false')
     const createNewChat = vi.fn()
-    render(
-      <Sidebar createNewChat={createNewChat} currentChat={blankChat(true)} />,
-    )
+    render(<Sidebar createNewChat={createNewChat} {...blankChat(true)} />)
 
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
     const [newChat] = screen.getAllByRole('link', { name: /New chat/ })
@@ -390,7 +384,7 @@ describe('chat sidebar storage modes', () => {
 
   it('keeps a signed-out visitor’s chats in the browser tab', () => {
     auth.isSignedIn = false
-    render(<Sidebar currentChat={blankChat(true)} chats={[localChat]} />)
+    render(<Sidebar {...blankChat(true)} chats={[localChat]} />)
 
     expect(chatTitles()).toEqual([localChat.title])
     expect(
