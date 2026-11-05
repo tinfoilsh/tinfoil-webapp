@@ -96,6 +96,11 @@ resetChatStoresAroundEachTest()
 beforeAll(() => {
   MotionGlobalConfig.skipAnimations = true
 })
+// The lazy settings modal loads before the tests, so opening it is not timed
+// with loading its module.
+beforeAll(async () => {
+  await import('@/components/chat/settings-modal')
+})
 afterAll(() => {
   MotionGlobalConfig.skipAnimations = false
 })
