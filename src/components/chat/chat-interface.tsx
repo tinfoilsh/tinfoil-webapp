@@ -97,6 +97,7 @@ import {
   useThinkingEnabled,
 } from './hooks/use-reasoning-effort'
 import { useSidebarChat } from './hooks/use-sidebar-chat'
+import { useStableHandlers } from './hooks/use-stable-handlers'
 import { MessageQueue } from './message-queue'
 import { ModelSelector } from './model-selector'
 import { ModelSelectorTriggerLabel } from './model-selector-trigger-label'
@@ -774,6 +775,20 @@ export function ChatInterface({
       setIsForking(false)
     }
   }
+  // The messages before a streaming reply do not render again with each of
+  // its updates, as what they are given keeps its identity.
+  const messageActions = useStableHandlers({
+    editMessage,
+    regenerateMessage,
+    deleteMessage,
+    editAssistantMessage,
+    continueAssistantMessage,
+    forkMessage: handleForkMessage,
+    retryToolCall,
+    loadImage: thread.loadImage,
+    loadDocumentText: thread.documentText,
+    speak: thread.speak,
+  })
   const cancelGenerationAndResumeQueue = () => {
     void thread.cancel().catch(thread.report)
   }
@@ -2591,26 +2606,30 @@ export function ChatInterface({
                       handleModelSelect={handleModelSelect}
                       expandedLabel={expandedLabel}
                       handleLabelClick={handleLabelClick}
-                      onEditMessage={editMessage}
-                      onRegenerateMessage={regenerateMessage}
+                      onEditMessage={messageActions.editMessage}
+                      onRegenerateMessage={messageActions.regenerateMessage}
                       onDeleteMessage={
                         canChangeMessages && currentChat.messages.length > 1
-                          ? deleteMessage
+                          ? messageActions.deleteMessage
                           : undefined
                       }
                       onEditAssistantMessage={
-                        canChangeMessages ? editAssistantMessage : undefined
-                      }
-                      onContinueAssistantMessage={continueAssistantMessage}
-                      onForkMessage={
-                        canFork && !isStreaming && !isForking
-                          ? handleForkMessage
+                        canChangeMessages
+                          ? messageActions.editAssistantMessage
                           : undefined
                       }
-                      onRetryToolCall={retryToolCall}
-                      loadImage={thread.loadImage}
-                      loadDocumentText={thread.documentText}
-                      speak={thread.speak}
+                      onContinueAssistantMessage={
+                        messageActions.continueAssistantMessage
+                      }
+                      onForkMessage={
+                        canFork && !isStreaming && !isForking
+                          ? messageActions.forkMessage
+                          : undefined
+                      }
+                      onRetryToolCall={messageActions.retryToolCall}
+                      loadImage={messageActions.loadImage}
+                      loadDocumentText={messageActions.loadDocumentText}
+                      speak={messageActions.speak}
                       questions={questionAnswering}
                       imagesUnsaved={!isSignedIn && !isTemporaryMode}
                       earlierMessageCount={Math.max(
