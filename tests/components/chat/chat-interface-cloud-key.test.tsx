@@ -18,7 +18,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { client, signIn, testSession } from '../../harness-fixture'
 import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
 import { refuseFetch } from './chat-interface-fixture'
@@ -112,6 +112,11 @@ function held<T>() {
 }
 
 resetChatStoresAroundEachTest()
+// The lazy settings modal loads before the tests, so opening it is not timed
+// with loading its module.
+beforeAll(async () => {
+  await import('@/components/chat/settings-modal')
+})
 beforeEach(() => {
   const setAttribute = HTMLIFrameElement.prototype.setAttribute
   vi.spyOn(HTMLIFrameElement.prototype, 'setAttribute').mockImplementation(
