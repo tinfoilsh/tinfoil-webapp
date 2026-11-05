@@ -5,7 +5,7 @@ import { SAFEGUARDS_INFO_URL } from '@/constants/external-links'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useUser } from '@clerk/react'
-import { TfBoxCheckmark, TfShieldCheck } from '@tinfoilsh/tinfoil-icons'
+import { TfShieldCheck } from '@tinfoilsh/tinfoil-icons'
 import {
   TfLockLockedAnimated,
   TfLockOpenedAnimated,
@@ -26,12 +26,6 @@ interface OnboardingViewProps {
 const TOTAL_PAGES = 3
 const PRIVACY_PAGE_INDEX = 1
 const SAFEGUARDS_PAGE_INDEX = 2
-const PRIVACY_CONFIRMATION_HOLD_S = 0.4
-const PRIVACY_CHECK_APPEAR_S = 0.18
-const PRIVACY_CONFIRMATION_SEQUENCE_S =
-  PRIVACY_CHECK_APPEAR_S + PRIVACY_CONFIRMATION_HOLD_S
-const PRIVACY_CHECK_REVEAL_PROGRESS =
-  PRIVACY_CHECK_APPEAR_S / PRIVACY_CONFIRMATION_SEQUENCE_S
 
 export function OnboardingView({
   onComplete,
@@ -330,38 +324,7 @@ function OnboardingPrivacyPage({
                   : 'justify-start bg-destructive/90'
               }`}
             >
-              <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-md group-active:w-16">
-                <AnimatePresence>
-                  {privacyEnabled && (
-                    <motion.svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={3}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-5 w-5 text-brand-accent-dark"
-                      initial={{ scale: 0, opacity: 0 }}
-                      animate={{
-                        scale: [0, 1, 1],
-                        opacity: [0, 1, 1],
-                      }}
-                      transition={{
-                        duration: PRIVACY_CONFIRMATION_SEQUENCE_S,
-                        times: [0, PRIVACY_CHECK_REVEAL_PROGRESS, 1],
-                        ease: 'easeOut',
-                      }}
-                    >
-                      <TfBoxCheckmark
-                        width="100%"
-                        size="100%"
-                        aria-hidden="true"
-                      />
-                    </motion.svg>
-                  )}
-                </AnimatePresence>
-              </span>
+              <span className="h-12 w-12 rounded-full bg-white shadow-md group-active:w-16" />
             </button>
 
             <span
