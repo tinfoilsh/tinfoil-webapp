@@ -66,7 +66,7 @@ type ChangeRoute =
 // stores with the images it holds where the harness left them out, and the
 // originals of the images the turn sent. The settings the user changed
 // after the run's turn read the chat keep the user's values. A thread a run
-// of the chat that started later stored is kept.
+// of the chat that started later stored is kept, and holds this run's.
 export async function storeRun(
   run: DeviceRun,
   event: TerminalEvent,
@@ -75,23 +75,27 @@ export async function storeRun(
   const thread = event.metadata?.thread
   if (!isThread(thread)) return null
   const changedSince = controller.settingsChangedSince(run)
+  let superseded = false
   const saved = await run.store.update(
     run.threadId,
-    (stored) =>
-      controller.storesThread(run)
-        ? {
-            ...thread,
-            id: run.threadId,
-            messages: withHeldImages(
-              thread.messages,
-              new Map([...heldImages(stored?.messages ?? []), ...run.images]),
-            ),
-            ...(stored ? pick(stored, changedSince) : {}),
-          }
-        : null,
+    (stored) => {
+      if (!controller.storesThread(run)) {
+        superseded = true
+        return null
+      }
+      return {
+        ...thread,
+        id: run.threadId,
+        messages: withHeldImages(
+          thread.messages,
+          new Map([...heldImages(stored?.messages ?? []), ...run.images]),
+        ),
+        ...(stored ? pick(stored, changedSince) : {}),
+      }
+    },
     run.originals,
   )
-  if (saved) run.threadStored = true
+  if (saved || superseded) run.threadStored = true
   return saved
 }
 
