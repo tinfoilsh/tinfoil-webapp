@@ -20,27 +20,25 @@ import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useAuth, useUser } from '@clerk/react'
 import {
   TfBoxX,
-  TfChevronDown,
-  TfChevronRight,
   TfFloppyDisk,
-  TfFolder,
   TfFolderPlus,
   TfMagnifyingGlass,
-  TfMicrophone,
   TfSetting,
   TfSparkle,
   TfWarning,
-  TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
 import {
   TfChat2Animated,
   TfChevronDownAnimated,
   TfChevronRightAnimated,
   TfCloudFaceAnimated,
+  TfFolderAnimated,
   TfLockLockedAnimated,
+  TfMicrophoneAnimated,
   TfSidebarCloseAnimated,
   TfSidebarOpenAnimated,
   TfThumbtackAnimated,
+  TfWriting2Animated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useRouter } from 'next/router'
@@ -738,7 +736,7 @@ export function ChatSidebar({
                 )}
                 aria-label="New chat"
               >
-                <TfWriting2 className="h-5 w-5" aria-hidden="true" />
+                <TfWriting2Animated className="h-5 w-5" aria-hidden="true" />
               </Link>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 New chat{' '}
@@ -797,7 +795,7 @@ export function ChatSidebar({
                   )}
                   aria-label="Projects"
                 >
-                  <TfFolder className="h-5 w-5" aria-hidden="true" />
+                  <TfFolderAnimated className="h-5 w-5" aria-hidden="true" />
                 </button>
                 <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                   Projects
@@ -925,7 +923,7 @@ export function ChatSidebar({
               )}
             >
               <span className="flex items-center gap-2">
-                <TfWriting2 className="h-4 w-4" aria-hidden="true" />
+                <TfWriting2Animated className="h-4 w-4" aria-hidden="true" />
                 <span className="font-aeonik font-medium">New chat</span>
               </span>
               <span className="text-xs text-content-muted">
@@ -949,7 +947,7 @@ export function ChatSidebar({
                 {upsellVariant === 'premium' ? (
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-3 text-xs text-content-secondary">
-                      <TfMicrophone
+                      <TfMicrophoneAnimated
                         className="h-4 w-4 flex-shrink-0 !text-content-muted"
                         aria-hidden="true"
                       />
@@ -965,7 +963,7 @@ export function ChatSidebar({
                     </div>
 
                     <div className="flex items-center gap-3 text-xs text-content-secondary">
-                      <TfFolder
+                      <TfFolderAnimated
                         className="h-4 w-4 flex-shrink-0 !text-content-muted"
                         aria-hidden="true"
                       />
@@ -1143,9 +1141,9 @@ export function ChatSidebar({
                   </span>
                 </span>
                 {isFavoritesExpanded ? (
-                  <TfChevronDown className="h-4 w-4" />
+                  <TfChevronDownAnimated className="h-4 w-4" />
                 ) : (
-                  <TfChevronRight className="h-4 w-4" />
+                  <TfChevronRightAnimated className="h-4 w-4" />
                 )}
               </button>
               <AnimatePresence initial={false}>
@@ -1290,7 +1288,7 @@ export function ChatSidebar({
                   )}
                 >
                   <span className="flex items-center gap-2">
-                    <TfFolder className="h-4 w-4" aria-hidden="true" />
+                    <TfFolderAnimated className="h-4 w-4" aria-hidden="true" />
                     <span className="font-aeonik font-medium">
                       {isProjectMode && activeProjectName
                         ? activeProjectName
@@ -1407,7 +1405,7 @@ export function ChatSidebar({
                               {projects.map((project) => {
                                 const projectContent = (
                                   <>
-                                    <TfFolder
+                                    <TfFolderAnimated
                                       className={cn(
                                         'mt-0.5 h-4 w-4 shrink-0 self-start',
                                         !getProjectColor(project.color) &&
@@ -1679,9 +1677,15 @@ export function ChatSidebar({
                     </span>
                   </span>
                   {isChatHistoryExpanded ? (
-                    <TfChevronDown className="h-4 w-4" aria-hidden="true" />
+                    <TfChevronDownAnimated
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                    />
                   ) : (
-                    <TfChevronRight className="h-4 w-4" aria-hidden="true" />
+                    <TfChevronRightAnimated
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                    />
                   )}
                 </button>
                 {onSearchClick && (
@@ -1924,7 +1928,7 @@ export function ChatSidebar({
                               <span className="flex-1">
                                 Your chats are end-to-end encrypted.
                               </span>
-                              <TfChevronDown
+                              <TfChevronDownAnimated
                                 className={cn(
                                   'h-3.5 w-3.5 shrink-0 transition-transform',
                                   isEncryptionNoteExpanded && 'rotate-180',

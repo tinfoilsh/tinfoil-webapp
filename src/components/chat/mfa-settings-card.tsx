@@ -4,12 +4,11 @@ import { logError, logWarning } from '@/utils/error-handling'
 import { useReverification, useUser } from '@clerk/react'
 import { isReverificationCancelledError } from '@clerk/react/errors'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { TfBoxCheckmark, TfDownload } from '@tinfoilsh/tinfoil-icons'
 import {
-  TfBoxCheckmark,
-  TfCopy,
-  TfDownload,
-  TfShieldCheck,
-} from '@tinfoilsh/tinfoil-icons'
+  TfCopyAnimated,
+  TfShieldCheckAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { memo, useCallback, useRef, useState, type FormEvent } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import QRCode from 'react-qr-code'
@@ -215,7 +214,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
         )}
       >
         <div className="flex items-start gap-3">
-          <TfShieldCheck
+          <TfShieldCheckAnimated
             className="mt-0.5 h-5 w-5 shrink-0 text-content-muted"
             aria-hidden="true"
           />
@@ -318,7 +317,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
                         aria-hidden="true"
                       />
                     ) : (
-                      <TfCopy className="h-4 w-4" aria-hidden="true" />
+                      <TfCopyAnimated className="h-4 w-4" aria-hidden="true" />
                     )}
                   </button>
                 </div>
@@ -449,7 +448,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
                     }
                     className="flex items-center gap-2 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
                   >
-                    <TfCopy className="h-4 w-4" aria-hidden="true" />
+                    <TfCopyAnimated className="h-4 w-4" aria-hidden="true" />
                     {copiedTarget === 'backup-codes' ? 'Copied' : 'Copy'} all
                     codes
                   </button>

@@ -8,12 +8,12 @@ import {
   TfBoxX,
   TfFlagFilled,
   TfFloppyDisk,
-  TfFolder,
   TfTrash,
   TfVerticalEllipsis,
 } from '@tinfoilsh/tinfoil-icons'
 import {
   TfCloudFaceAnimated,
+  TfFolderAnimated,
   TfThumbtackAnimated,
   TfWritingAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
@@ -645,7 +645,7 @@ export function ChatListItem({
                               }}
                             >
                               <span className="flex items-center gap-3">
-                                <TfFolder
+                                <TfFolderAnimated
                                   className="h-4 w-4"
                                   aria-hidden="true"
                                 />
@@ -686,7 +686,10 @@ export function ChatListItem({
                               onRemoveFromProject()
                             }}
                           >
-                            <TfFolder className="h-4 w-4" aria-hidden="true" />
+                            <TfFolderAnimated
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
                             Move out of project
                           </button>
                         )}
@@ -817,7 +820,7 @@ export function ChatListItem({
                                 onMoveToProject?.(project.id)
                               }}
                             >
-                              <TfFolder
+                              <TfFolderAnimated
                                 className="h-4 w-4 !text-content-muted"
                                 aria-hidden="true"
                               />

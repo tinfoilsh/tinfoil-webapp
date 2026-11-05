@@ -12,8 +12,11 @@ import {
 import { cn } from '@/components/ui/utils'
 import { toast } from '@/hooks/use-toast'
 import { downloadMarkdownAsPdf } from '@/utils/markdown-pdf-export'
-import { TfBoxCheckmark, TfCopy, TfEye, TfPlay } from '@tinfoilsh/tinfoil-icons'
-import { TfCodeAnimated } from '@tinfoilsh/tinfoil-icons/animated'
+import { TfBoxCheckmark, TfEye, TfPlay } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfCodeAnimated,
+  TfCopyAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { BsFiletypeMd, BsFiletypePdf } from 'react-icons/bs'
 import ReactMarkdown from 'react-markdown'
@@ -811,7 +814,7 @@ export const CodeBlock = memo(function CodeBlock({
                 aria-hidden="true"
               />
             ) : (
-              <TfCopy className="h-5 w-5" aria-hidden="true" />
+              <TfCopyAnimated className="h-5 w-5" aria-hidden="true" />
             )}
           </button>
           <span className="pointer-events-none absolute -top-8 right-0 hidden whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary shadow-sm group-hover/copy:block">

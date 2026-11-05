@@ -6,7 +6,7 @@ import {
   type LinkMetadata as ResolvedMetadata,
 } from '@/services/harness/link-metadata'
 import { sanitizeUrl } from '@braintree/sanitize-url'
-import { TfExternalLink } from '@tinfoilsh/tinfoil-icons'
+import { TfExternalLinkAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useState } from 'react'
 import { defineGenUIWidget } from '../types'
 import type { RenderLinkPreviewArgs as Props } from '../widget-args'
@@ -108,7 +108,7 @@ function LinkPreview({
         </div>
         <div className="flex items-center gap-1 text-xs text-content-muted">
           <span className="truncate">{getDomain(url)}</span>
-          <TfExternalLink className="h-3 w-3 shrink-0" />
+          <TfExternalLinkAnimated className="h-3 w-3 shrink-0" />
         </div>
       </div>
     </a>

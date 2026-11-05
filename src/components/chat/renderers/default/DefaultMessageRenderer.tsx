@@ -5,16 +5,12 @@ import {
   ForwardIcon,
   InformationCircleIcon,
 } from '@heroicons/react/24/outline'
-import {
-  TfBoxCheckmark,
-  TfCopy,
-  TfFork,
-  TfRefreshTwoArrows,
-  TfTrash,
-} from '@tinfoilsh/tinfoil-icons'
+import { TfBoxCheckmark, TfFork, TfTrash } from '@tinfoilsh/tinfoil-icons'
 import {
   TfChevronDownAnimated,
+  TfCopyAnimated,
   TfLockLockedAnimated,
+  TfRefreshTwoArrowsAnimated,
   TfWritingAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import React, { memo, useState, type JSX } from 'react'
@@ -819,7 +815,7 @@ const DefaultMessageComponent = ({
                           aria-label="Regenerate response"
                           className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                         >
-                          <TfRefreshTwoArrows
+                          <TfRefreshTwoArrowsAnimated
                             className="h-4 w-4"
                             aria-hidden="true"
                           />
@@ -907,7 +903,10 @@ const DefaultMessageComponent = ({
                               <span>Copied!</span>
                             </>
                           ) : (
-                            <TfCopy className="h-4 w-4" aria-hidden="true" />
+                            <TfCopyAnimated
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
                           )}
                         </button>
                         {!copiedUser && (
@@ -1000,7 +999,7 @@ const DefaultMessageComponent = ({
                       aria-label="Regenerate response"
                       className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
                     >
-                      <TfRefreshTwoArrows
+                      <TfRefreshTwoArrowsAnimated
                         className="h-3.5 w-3.5"
                         aria-hidden="true"
                       />

@@ -6,17 +6,16 @@ import { useRateLimit } from '@/hooks/use-rate-limit'
 import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useUser } from '@clerk/react'
 import {
-  TfBug,
-  TfChevronRight,
   TfDocument,
-  TfExternalLink,
   TfQuestionMarkCircle,
   TfSetting,
-  TfShieldCheck,
 } from '@tinfoilsh/tinfoil-icons'
 import {
+  TfBugAnimated,
   TfChevronRightAnimated,
+  TfExternalLinkAnimated,
   TfPersonAnimated,
+  TfShieldCheckAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import { useRouter } from 'next/router'
 import {
@@ -425,7 +424,7 @@ export function SidebarAccountMenu({
         <span className="min-w-0 flex-1 truncate font-aeonik font-medium">
           {displayName}
         </span>
-        <TfChevronRight
+        <TfChevronRightAnimated
           className={cn(
             'h-4 w-4 flex-none text-content-muted transition-transform',
             isOpen && '-rotate-90',
@@ -569,7 +568,7 @@ export function SidebarAccountMenu({
                   >
                     <TfDocument className="h-4 w-4" aria-hidden="true" />
                     <span className="flex-1">Terms of Service</span>
-                    <TfExternalLink
+                    <TfExternalLinkAnimated
                       className="h-3.5 w-3.5 text-content-muted"
                       aria-hidden="true"
                     />
@@ -584,9 +583,12 @@ export function SidebarAccountMenu({
                     onClick={closeAndRestoreFocus}
                     onKeyDown={handleMenuLinkKeyDown}
                   >
-                    <TfShieldCheck className="h-4 w-4" aria-hidden="true" />
+                    <TfShieldCheckAnimated
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                    />
                     <span className="flex-1">Privacy Policy</span>
-                    <TfExternalLink
+                    <TfExternalLinkAnimated
                       className="h-3.5 w-3.5 text-content-muted"
                       aria-hidden="true"
                     />
@@ -598,7 +600,7 @@ export function SidebarAccountMenu({
                     className={MENU_ITEM_CLASS_NAME}
                     onClick={() => runAndClose(onReportBug)}
                   >
-                    <TfBug className="h-4 w-4" aria-hidden="true" />
+                    <TfBugAnimated className="h-4 w-4" aria-hidden="true" />
                     Report a bug
                   </button>
                 </div>

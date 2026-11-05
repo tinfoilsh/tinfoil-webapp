@@ -18,7 +18,6 @@ import { logError, logInfo } from '@/utils/error-handling'
 import { ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
-  TfCopy,
   TfDownload,
   TfFingerprint,
   TfKey,
@@ -27,6 +26,7 @@ import {
 } from '@tinfoilsh/tinfoil-icons'
 import {
   TfCloudFaceAnimated,
+  TfCopyAnimated,
   TfLockLockedAnimated,
   TfShieldCheckAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
@@ -692,7 +692,7 @@ ${generatedKey.replace('key_', '')}
                 </>
               ) : (
                 <>
-                  <TfCopy className="h-4 w-4" aria-hidden="true" />
+                  <TfCopyAnimated className="h-4 w-4" aria-hidden="true" />
                   Copy
                 </>
               )}

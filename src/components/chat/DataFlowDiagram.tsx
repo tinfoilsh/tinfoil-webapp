@@ -1,5 +1,8 @@
-import { TfKey, TfServer1, TfShieldCheck } from '@tinfoilsh/tinfoil-icons'
-import { TfLockLockedAnimated } from '@tinfoilsh/tinfoil-icons/animated'
+import { TfKey, TfServer1 } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfLockLockedAnimated,
+  TfShieldCheckAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { memo, useLayoutEffect, useRef, useState } from 'react'
 
 const ARROW_COLOR = 'hsl(var(--content-muted) / 0.7)'
@@ -132,7 +135,7 @@ export const DataFlowDiagram = memo(function DataFlowDiagram() {
           style={{ left: 'calc(50% - 30px)', transform: 'translateX(-50%)' }}
         >
           <div className="flex items-center gap-1.5 whitespace-nowrap rounded border border-brand-accent-light/40 bg-brand-accent-light/10 px-3 py-1.5 text-base font-medium text-brand-accent-dark dark:border-brand-accent-light/30 dark:bg-brand-accent-light/10 dark:text-brand-accent-light">
-            <TfShieldCheck className="h-4 w-4" aria-hidden="true" />
+            <TfShieldCheckAnimated className="h-4 w-4" aria-hidden="true" />
             <span>Attestation Proof</span>
           </div>
         </div>
