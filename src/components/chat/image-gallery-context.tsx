@@ -103,6 +103,16 @@ type CollectedImage = GalleryImage & {
   cacheKey: string
 }
 
+// A message's images as collected, with what they were collected from:
+// the message's place, and each image's loaded copy and failure.
+type MessageImages = {
+  messageIndex: number
+  canLoad: boolean
+  images: CollectedImage[]
+  loaded: (string | undefined)[]
+  failed: boolean[]
+}
+
 // The full images a gallery loads, by cache key: those waiting, the next
 // first; those asked for, which stay asked for once loaded; those that
 // failed to load; and how many load now. Unmounting the gallery aborts them.
@@ -159,27 +169,62 @@ export function ImageGalleryProvider({
     }
   }, [])
   const canLoad = !!loadImage
+  // Each message's images, kept while the message, its place and what
+  // loaded for it stay the same, and the list kept while they all do, so a
+  // streaming reply leaves the gallery and the chat's images as they were.
+  const collectedByMessage = useRef(new WeakMap<Message, MessageImages>())
+  const collectedImages = useRef<CollectedImage[]>([])
   const images = useMemo<CollectedImage[]>(() => {
     const collected: CollectedImage[] = []
-    messages.forEach((message, messageIndex) => {
-      message.attachments
-        ?.filter((attachment) => attachment.type === 'image')
-        .forEach((attachment, imageIndex) => {
+    let changed = false
+    const collect = (message: Message, messageIndex: number) => {
+      const kept = collectedByMessage.current.get(message)
+      if (
+        kept &&
+        kept.messageIndex === messageIndex &&
+        kept.canLoad === canLoad &&
+        kept.images.every(
+          ({ cacheKey }, i) =>
+            kept.loaded[i] === fullImages[cacheKey] &&
+            kept.failed[i] === !!failedImages[cacheKey],
+        )
+      )
+        return kept.images
+      const shown = (message.attachments ?? [])
+        .filter((attachment) => attachment.type === 'image')
+        .map((attachment, imageIndex): CollectedImage => {
           const cacheKey = `${message.id ?? messageIndex}:${attachment.id}`
           const src =
             fullImages[cacheKey] ??
             attachmentToImageSrc(attachment) ??
             undefined
-          collected.push({
+          return {
             key: `${messageIndex}:${imageIndex}`,
             cacheKey,
             attachment,
             src,
             alt: attachment.fileName || 'Image',
             failed: !src && (!canLoad || !!failedImages[cacheKey]),
-          })
+          }
         })
+      collectedByMessage.current.set(message, {
+        messageIndex,
+        canLoad,
+        images: shown,
+        loaded: shown.map(({ cacheKey }) => fullImages[cacheKey]),
+        failed: shown.map(({ cacheKey }) => !!failedImages[cacheKey]),
+      })
+      return shown
+    }
+    messages.forEach((message, messageIndex) => {
+      for (const image of collect(message, messageIndex)) {
+        if (collectedImages.current[collected.length] !== image) changed = true
+        collected.push(image)
+      }
     })
+    if (!changed && collected.length === collectedImages.current.length)
+      return collectedImages.current
+    collectedImages.current = collected
     return collected
   }, [messages, fullImages, failedImages, canLoad])
 
