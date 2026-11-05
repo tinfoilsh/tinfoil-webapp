@@ -284,6 +284,51 @@ export function afterLoaded(
   }
 }
 
+// The replies the chat shows after its last question that a stored copy of
+// it lacks, marked as interrupted: what a run streamed before its stream was
+// cut off and the harness no longer had it. Replies are told apart by the
+// ids the harness gives them, which a stored copy keeps. A copy that holds
+// nothing of the run, as a device chat's before the run's final event
+// returns the thread, also lacks what the run streamed into the reply it
+// continued.
+export function cutOffReplies(
+  state: ChatState,
+  stored: readonly Pick<Message, 'id'>[],
+  unstored: boolean,
+): Message[] {
+  const kept = new Set(stored.map(({ id }) => id))
+  const question = state.messages.findLastIndex(({ role }) => role === 'user')
+  return state.messages
+    .slice(question + 1)
+    .filter(
+      ({ id, role }) =>
+        role === 'assistant' &&
+        (!kept.has(id) || (unstored && id === state.continued)),
+    )
+    .map((reply) => ({ ...reply, isInterrupted: true }))
+}
+
+// Messages with each reply in place of its copy, or else after the message
+// it followed in the chat shown.
+export function withReplies<M extends Pick<Message, 'id'>>(
+  messages: readonly M[],
+  replies: readonly M[],
+  shown: readonly Pick<Message, 'id'>[],
+): M[] {
+  const merged = [...messages]
+  for (const reply of replies) {
+    const at = merged.findIndex(({ id }) => id === reply.id)
+    if (at >= 0) {
+      merged[at] = reply
+      continue
+    }
+    const before = shown[shown.findIndex(({ id }) => id === reply.id) - 1]
+    const after = before ? merged.findIndex(({ id }) => id === before.id) : -1
+    merged.splice(after < 0 ? merged.length : after + 1, 0, reply)
+  }
+  return merged
+}
+
 const withoutQueued = (snapshot: Snapshot, runId?: string): Snapshot => ({
   ...snapshot,
   queue: snapshot.queue.filter((item) => item.queueId !== runId),

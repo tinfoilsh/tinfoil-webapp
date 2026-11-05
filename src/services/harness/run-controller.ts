@@ -15,7 +15,7 @@ import {
 } from './reducer'
 import { showsRateLimit, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
-import { createStore } from './store'
+import { createFrameStore, createStore } from './store'
 import type {
   HarnessErrorBody,
   HarnessEvent,
@@ -63,6 +63,44 @@ function pause(ms: number, signal: AbortSignal): Promise<void> {
 const gone = (cause: unknown) =>
   cause instanceof HarnessError && cause.detail.action === ERROR_ACTIONS.reload
 
+// How long applying a run's frames back to back may hold the page before
+// the browser gets a turn to draw and answer input.
+export const YIELD_AFTER_MS = 8
+
+// Resolves in a task of its own, once the tasks queued before it ran.
+function nextTask(): Promise<void> {
+  return new Promise((resolve) => {
+    const { port1, port2 } = new MessageChannel()
+    port1.onmessage = () => {
+      port1.close()
+      resolve()
+    }
+    port2.postMessage(null)
+  })
+}
+
+// Paces work done back to back: once it held the page for YIELD_AFTER_MS
+// without the browser getting a turn, it waits for one.
+function pacer() {
+  let since: number | undefined
+  return (): Promise<void> | undefined => {
+    const now = performance.now()
+    if (since === undefined) {
+      since = now
+      void nextTask().then(() => {
+        since = undefined
+      })
+      return
+    }
+    if (now - since < YIELD_AFTER_MS) return
+    since = undefined
+    const { scheduler } = globalThis as {
+      scheduler?: { yield?(): Promise<void> }
+    }
+    return scheduler?.yield?.() ?? nextTask()
+  }
+}
+
 // Following a run resumes after the last frame of it this client applied,
 // when it applied one.
 const resumed = (input: FollowRequest, after?: number): FollowRequest =>
@@ -74,6 +112,9 @@ const resumed = (input: FollowRequest, after?: number): FollowRequest =>
 // thread, without the image bytes the browser holds for it.
 export interface DeviceRun {
   saved?: boolean
+  // The chat stored the thread the run's final event returned. A final event
+  // without the thread leaves the chat without anything the run streamed.
+  threadStored?: boolean
   threadId: string
   store: LocalThreadStore
   images: ImagesById
@@ -107,6 +148,11 @@ export interface RunOptions {
   // A widget's retry leaves the chat's status and error as they were, and
   // keeps why it failed here instead.
   widgetRetry?: { failure?: HarnessErrorBody }
+  // A rejoined run stays the run of the chat it started from: it shows only
+  // while the view shows that chat, and otherwise goes on from the chat as
+  // the run left it.
+  generation?: number
+  state?: ChatState
 }
 
 // What the chat around a run does as the run goes.
@@ -122,8 +168,12 @@ export interface RunHooks {
   saved?(run: DeviceRun, event: TerminalEvent, attached: boolean): Promise<void>
   // A run ended, which may have changed the chat list.
   ended?(): void
-  // The open chat's run is over though its stream did not say so.
-  gone?(threadId: string): Promise<void>
+  // The open chat's run is over though its stream did not say so. A device
+  // run's chat holds nothing it streamed unless its final event was saved.
+  gone?(threadId: string, device?: DeviceRun): Promise<void>
+  // A device run the view moved away from is gone before its final event
+  // returned the thread: its chat stores what the run streamed.
+  cutOff?(run: DeviceRun, state: ChatState): Promise<void>
 }
 
 // A hint that rejoins a device chat's run after a reload, kept for the tab.
@@ -138,7 +188,7 @@ export interface Receipt {
 // the frames it applied. A run whose stream drops is rejoined, backing off
 // while the harness cannot be reached.
 export class RunController {
-  readonly view = createStore<ChatState>(initialChat())
+  readonly view = createFrameStore<ChatState>(initialChat())
   // The device chats whose runs this page reads, by chat.
   readonly deviceRuns = createStore<ReadonlyMap<string, DeviceRun>>(new Map())
   // The messages whose reply the user stopped on this page, which keep
@@ -241,12 +291,12 @@ export class RunController {
     let started = options.started ?? 'runId' in input
     const controller = new AbortController()
     if (!device) this.followers.set(controller, options.submission)
-    const version = this.generation
+    const version = options.generation ?? this.generation
     const attached = () => version === this.generation
     let runId = 'runId' in input ? input.runId : undefined
     let threadId = input.threadId
     let succeeded = false
-    let view = this.view.get()
+    let view = attached() || !options.state ? this.view.get() : options.state
     const sent =
       'clientRequestId' in input
         ? scopedTurn(input, this.api.userId)
@@ -268,8 +318,13 @@ export class RunController {
     })
     // The stream applied a frame the view did not hold yet.
     let progressed = false
+    // A long backlog of frames, as a slow device falls behind its stream,
+    // lets the browser draw and answer input as it applies them.
+    const pace = pacer()
     try {
       for await (const frame of this.api.client.events(route, sent, signal)) {
+        const browserTurn = pace()
+        if (browserTurn) await browserTurn
         const shown = attached()
         const { event } = frame
         if ('threadId' in event && event.threadId) threadId = event.threadId
@@ -297,7 +352,17 @@ export class RunController {
           if (isTerminal(event)) this.markCanceled(canceledBy(base, event))
           progressed = true
           view = next
-          if (shown) this.view.set(next)
+          // A change of the run's status shows at once, and what it streams
+          // with the next animation frame.
+          if (shown) {
+            if (
+              event.type === 'RUN_STARTED' ||
+              isTerminal(event) ||
+              next.status !== base.status
+            )
+              this.view.set(next)
+            else this.view.stage(next)
+          }
           if (event.type === 'RUN_STARTED') {
             this.started(
               {
@@ -351,7 +416,7 @@ export class RunController {
           attached()
         ) {
           this.pending = null
-          await this.hooks.gone?.(threadId!)
+          await this.hooks.gone?.(threadId!, device)
         }
       }
     } catch (cause) {
@@ -387,13 +452,15 @@ export class RunController {
           ...options,
           rejoins: rejoins + 1,
           started,
+          generation: version,
+          state: view,
         })
       }
       if (attached()) {
         if (gone(cause)) {
           this.pending = null
           this.forgetReceipt(runId)
-          await this.hooks.gone?.(input.threadId!)
+          await this.hooks.gone?.(input.threadId!, device)
         } else if (widgetRetry) {
           widgetRetry.failure =
             cause instanceof HarnessError ? cause.detail : CONNECTION_LOST
@@ -404,6 +471,9 @@ export class RunController {
         else if (!quiet) this.fail(cause, started)
         else if (cause instanceof HarnessError && cause.status !== undefined)
           this.forgetReceipt(runId)
+      } else if (device && gone(cause)) {
+        this.forgetReceipt(runId)
+        await this.hooks.cutOff?.(device, view)
       }
     } finally {
       this.followers.delete(controller)

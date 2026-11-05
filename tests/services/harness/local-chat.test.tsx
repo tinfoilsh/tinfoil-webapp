@@ -1857,6 +1857,658 @@ describe('signed-out chats', () => {
   })
 })
 
+// The harness no longer has a run whose stream dropped, as once it ended
+// longer ago than the harness keeps a device chat's reply to collect.
+const runNotFound = async function* (): AsyncGenerator<Frame> {
+  yield* []
+  throw new HarnessError(
+    {
+      code: 'RUN_NOT_FOUND',
+      message: 'The run is not running here',
+      action: 'reload',
+    },
+    404,
+  )
+}
+// The seeded chat as the harness shows it: a reply without its text.
+const seededView = SEEDED_MESSAGES.map(({ content, ...message }): Message =>
+  message.role === 'assistant' ? message : { ...message, content },
+)
+
+describe('chats on this device whose dropped run the harness no longer has', () => {
+  const [, , , secondAnswer] = SEEDED_MESSAGES
+
+  const reply = {
+    name: 'a reply',
+    start: (thread: ReturnType<typeof useThread>) =>
+      thread.send({ content: 'third' }),
+    runId: 'run-a3',
+    streamed: (input: Turn): Frame['event'][] => [
+      {
+        type: 'RUN_STARTED',
+        threadId: SEEDED_ID,
+        runId: 'run-a3',
+        instance: 'instance-1',
+      },
+      {
+        type: 'MESSAGES_SNAPSHOT',
+        messages: [
+          ...seededView,
+          {
+            id: input.clientRequestId,
+            role: 'user',
+            createdAt: 't5',
+            content: 'third',
+          },
+        ],
+        hasOlder: false,
+      },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'a3',
+        role: 'assistant',
+        delta: 'Half an ',
+        timestamp: 't6',
+      },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'a3',
+        role: 'assistant',
+        delta: 'answer',
+      },
+    ],
+    shown: [
+      'first',
+      'first answer',
+      'second',
+      'second answer',
+      'third',
+      'Half an answer',
+    ],
+    // The message the turn sent, which the chat kept as it was sent.
+    expected: (sent?: ThreadMessage): ThreadMessage[] => [
+      ...SEEDED_MESSAGES,
+      sent!,
+      {
+        id: 'a3',
+        role: 'assistant',
+        createdAt: 't6',
+        content: 'Half an answer',
+        timeline: [
+          { id: 'a3_content_0', type: 'content', content: 'Half an answer' },
+        ],
+        isInterrupted: true,
+      },
+    ],
+  }
+  const continued = {
+    name: 'what a continued reply streamed',
+    start: (thread: ReturnType<typeof useThread>) => thread.continueReply(3),
+    runId: 'run-a2',
+    streamed: (): Frame['event'][] => [
+      {
+        type: 'RUN_STARTED',
+        threadId: SEEDED_ID,
+        runId: 'run-a2',
+        instance: 'instance-1',
+        messageId: 'a2',
+      },
+      { type: 'MESSAGES_SNAPSHOT', messages: seededView, hasOlder: false },
+      {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'a2',
+        role: 'assistant',
+        delta: ', and more',
+      },
+    ],
+    shown: ['first', 'first answer', 'second', 'second answer, and more'],
+    expected: (): ThreadMessage[] => [
+      ...SEEDED_MESSAGES.slice(0, 3),
+      {
+        ...secondAnswer,
+        content: 'second answer, and more',
+        timeline: [
+          { id: 'b2', type: 'content', content: 'second answer, and more' },
+        ],
+        isInterrupted: true,
+      },
+    ],
+  }
+
+  it.each([
+    { ...reply, account: 'alice', scope: 'device' as const },
+    {
+      ...reply,
+      name: "a signed-out visitor's reply",
+      account: null,
+      scope: 'tab' as const,
+    },
+    { ...continued, account: 'alice', scope: 'device' as const },
+  ])(
+    'keeps and stores $name once the harness no longer has its dropped run',
+    async ({ start, runId, streamed, shown, expected, account, scope }) => {
+      signIn(account)
+      await localThreadStore(scope).update(SEEDED_ID, () => seeded())
+      client.events
+        .mockImplementationOnce(async function* (_path: string, input: Turn) {
+          for (const [id, event] of streamed(input).entries())
+            yield { id, event }
+          throw new TypeError('network error')
+        })
+        .mockImplementationOnce(runNotFound)
+      const { result, unmount } = renderHook(() =>
+        useThread(SEEDED_ID, null, { local: true }),
+      )
+      await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+      await act(() => start(result.current))
+
+      expect(client.events.mock.calls[1].slice(0, 2)).toEqual([
+        '/v1/threads/follow',
+        {
+          threadId: SEEDED_ID,
+          runId,
+          lastEventId: streamed(turn()).length - 1,
+        },
+      ])
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual(shown)
+      expect(result.current.chat.messages.at(-1)).toMatchObject({
+        isInterrupted: true,
+      })
+      expect(result.current.status).toBe('idle')
+      expect(result.current.error).toBe('')
+      const kept = await localThreadStore(scope).get(SEEDED_ID)
+      const [sent] = kept!.messages.filter(
+        (message) => message.id === turn().clientRequestId,
+      )
+      expect(kept).toEqual(
+        seeded({
+          ...(sent ? { updatedAt: sent.createdAt } : {}),
+          messages: expected(sent),
+        }),
+      )
+      if (sent)
+        expect(sent).toEqual({
+          id: turn().clientRequestId,
+          role: 'user',
+          createdAt: sent.createdAt,
+          content: 'third',
+        })
+
+      // The chat opened again, as after a reload, shows the reply kept.
+      unmount()
+      const reopened = renderHook(() =>
+        useThread(SEEDED_ID, null, { local: true }),
+      )
+      await waitFor(() =>
+        expect(
+          reopened.result.current.chat.messages.map((m) => m.content),
+        ).toEqual(shown),
+      )
+      expect(reopened.result.current.chat.messages.at(-1)).toMatchObject({
+        isInterrupted: true,
+      })
+    },
+  )
+
+  it('keeps a reply before the message another tab sent in its chat meanwhile', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    // Two tabs show the chat, each with runs of its own; this device keeps
+    // the chat for both.
+    const first = renderHook(() => useThread(SEEDED_ID, null, { local: true }))
+    const second = renderHook(() => useThread(SEEDED_ID, null, { local: true }))
+    await waitFor(() =>
+      expect(first.result.current.chat.messages).toHaveLength(4),
+    )
+    await waitFor(() =>
+      expect(second.result.current.chat.messages).toHaveLength(4),
+    )
+    let drop!: () => void
+    const dropped = new Promise<void>((resolve) => {
+      drop = resolve
+    })
+    let end!: () => void
+    const ended = new Promise<void>((resolve) => {
+      end = resolve
+    })
+    client.events
+      .mockImplementationOnce(async function* (_path: string, input: Turn) {
+        for (const [id, event] of reply.streamed(input).entries())
+          yield { id, event }
+        await dropped
+        throw new TypeError('network error')
+      })
+      // The harness queues the other tab's turn behind the reply, and ends
+      // it once the reply is lost.
+      .mockImplementationOnce(async function* () {
+        yield {
+          id: 0,
+          event: {
+            type: 'STATE_DELTA',
+            threadId: SEEDED_ID,
+            runId: 'run-b',
+            delta: [
+              {
+                op: 'add',
+                path: '/queue/-',
+                value: {
+                  queueId: 'run-b',
+                  kind: 'send',
+                  content: 'fourth',
+                  quote: null,
+                  attachments: [],
+                  createdAt: 't7',
+                },
+              },
+            ],
+          },
+        }
+        await ended
+        yield {
+          id: 1,
+          event: {
+            type: 'RUN_FINISHED',
+            threadId: SEEDED_ID,
+            runId: 'run-b',
+            metadata: { cancelled: true },
+          },
+        }
+      })
+      .mockImplementationOnce(runNotFound)
+    let sending!: Promise<boolean | undefined> | undefined
+    act(() => {
+      sending = first.result.current.send({ content: 'third' })
+    })
+    await waitFor(() =>
+      expect(first.result.current.chat.messages.at(-1)?.content).toBe(
+        'Half an answer',
+      ),
+    )
+    let queuing!: Promise<boolean | undefined> | undefined
+    act(() => {
+      queuing = second.result.current.send({ content: 'fourth' })
+    })
+    const contents = async () =>
+      (await stored(SEEDED_ID))!.messages.map(({ content }) => content)
+    await waitFor(async () =>
+      expect(await contents()).toEqual([
+        'first',
+        'first answer',
+        'second',
+        'second answer',
+        'third',
+        'fourth',
+      ]),
+    )
+
+    drop()
+    await act(() => sending)
+
+    const kept = await stored(SEEDED_ID)
+    const sentAt = (index: number) =>
+      kept!.messages.find(({ id }) => id === turn(index).clientRequestId)!
+        .createdAt
+    const asked = (index: number, content: string): ThreadMessage => ({
+      id: turn(index).clientRequestId,
+      role: 'user',
+      createdAt: sentAt(index),
+      content,
+    })
+    expect(kept).toEqual(
+      seeded({
+        updatedAt: sentAt(1),
+        messages: [...reply.expected(asked(0, 'third')), asked(1, 'fourth')],
+      }),
+    )
+    expect(first.result.current.chat.messages.map((m) => m.content)).toEqual([
+      'first',
+      'first answer',
+      'second',
+      'second answer',
+      'third',
+      'Half an answer',
+      'fourth',
+    ])
+    end()
+    await act(() => queuing)
+  })
+})
+
+describe('a chat on this device whose run fails asking for the stored chat', () => {
+  it.each([
+    { name: 'without returning the chat', returned: undefined },
+    // The harness returns the chat, which this device fails to store.
+    {
+      name: 'returning a chat this device could not store',
+      returned: recorded(seeded()),
+    },
+  ])(
+    'keeps and stores what a continued reply streamed, $name',
+    async ({ returned }) => {
+      signIn('alice')
+      const device = localThreadStore('device')
+      await device.update(SEEDED_ID, () => seeded())
+      if (returned) vi.spyOn(device, 'update').mockResolvedValueOnce(null)
+      client.events.mockImplementationOnce(
+        frames(
+          {
+            type: 'RUN_STARTED',
+            threadId: SEEDED_ID,
+            runId: 'run-a2',
+            instance: 'instance-1',
+            messageId: 'a2',
+          },
+          { type: 'MESSAGES_SNAPSHOT', messages: seededView, hasOlder: false },
+          {
+            type: 'TEXT_MESSAGE_CHUNK',
+            messageId: 'a2',
+            role: 'assistant',
+            delta: ', and more',
+          },
+          // The run fails asking for the chat as stored.
+          {
+            type: 'RUN_ERROR',
+            threadId: SEEDED_ID,
+            runId: 'run-a2',
+            code: 'REVISION_CONFLICT',
+            message: 'The chat changed. Reload it to continue.',
+            action: 'reload',
+            ...(returned ? { metadata: { thread: returned } } : {}),
+          },
+        ),
+      )
+      const { result } = renderHook(() =>
+        useThread(SEEDED_ID, null, { local: true }),
+      )
+      await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+      await act(() => result.current.continueReply(3))
+
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+        'first',
+        'first answer',
+        'second',
+        'second answer, and more',
+      ])
+      expect(result.current.chat.messages.at(-1)).toMatchObject({
+        isInterrupted: true,
+      })
+      expect(result.current.status).toBe('idle')
+      expect(result.current.error).toBe('')
+      expect(await stored(SEEDED_ID)).toEqual(
+        seeded({
+          messages: [
+            ...SEEDED_MESSAGES.slice(0, 3),
+            {
+              ...SEEDED_MESSAGES[3],
+              content: 'second answer, and more',
+              timeline: [
+                {
+                  id: 'b2',
+                  type: 'content',
+                  content: 'second answer, and more',
+                },
+              ],
+              isInterrupted: true,
+            },
+          ],
+        }),
+      )
+    },
+  )
+})
+
+describe('a chat on this device whose stream drops once another chat is open', () => {
+  const OTHER_ID = '8233746419001_2d5f8b63-0a3c-4e8f-9e7d-6c7d8e9f0a11'
+  const OTHER_MESSAGES: ThreadMessage[] = [
+    { id: 'o1', role: 'user', createdAt: 't1', content: 'Elsewhere?' },
+    {
+      id: 'o2',
+      role: 'assistant',
+      createdAt: 't2',
+      content: 'Elsewhere.',
+      timeline: [{ id: 'ob', type: 'content', content: 'Elsewhere.' }],
+    },
+  ]
+  // The run of the question the seeded chat sends, the last frame of which
+  // streams after the stream dropped.
+  const run = (input: Turn): Frame['event'][] => [
+    {
+      type: 'RUN_STARTED',
+      threadId: SEEDED_ID,
+      runId: 'run-a3',
+      instance: 'instance-1',
+    },
+    {
+      type: 'MESSAGES_SNAPSHOT',
+      messages: [
+        ...seededView,
+        {
+          id: input.clientRequestId,
+          role: 'user',
+          createdAt: 't5',
+          content: 'third',
+        },
+      ],
+      hasOlder: false,
+    },
+    {
+      type: 'TEXT_MESSAGE_CHUNK',
+      messageId: 'a3',
+      role: 'assistant',
+      delta: 'Half an ',
+      timestamp: 't6',
+    },
+    {
+      type: 'TEXT_MESSAGE_CHUNK',
+      messageId: 'a3',
+      role: 'assistant',
+      delta: 'answer',
+    },
+    {
+      type: 'TEXT_MESSAGE_CHUNK',
+      messageId: 'a3',
+      role: 'assistant',
+      delta: '.',
+    },
+  ]
+  // The frames of the run streamed before its stream drops.
+  const DROPS_AFTER = 3
+  const shownInOther = (thread: ReturnType<typeof useThread>) =>
+    thread.chat.messages.map(({ id, content }) => [id, content])
+
+  // Sends a question in the seeded chat, then opens the other chat; the
+  // question's stream drops once `drop` is called, and the rejoins follow.
+  async function sendThenLeave(
+    ...rejoins: ((
+      path: string,
+      input: FollowRequest,
+    ) => AsyncGenerator<Frame>)[]
+  ) {
+    signIn('alice')
+    const device = localThreadStore('device')
+    await device.update(SEEDED_ID, () => seeded())
+    await device.update(OTHER_ID, () =>
+      storedThread(OTHER_ID, { messages: OTHER_MESSAGES }),
+    )
+    let drop!: () => void
+    const dropped = new Promise<void>((resolve) => {
+      drop = resolve
+    })
+    client.events.mockImplementationOnce(async function* (
+      _path: string,
+      input: Turn,
+    ) {
+      for (const [id, event] of run(input).entries())
+        if (id <= DROPS_AFTER) yield { id, event }
+      await dropped
+      throw new TypeError('network error')
+    })
+    for (const rejoin of rejoins) client.events.mockImplementationOnce(rejoin)
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    let sending!: Promise<boolean | undefined> | undefined
+    act(() => {
+      sending = result.current.send({ content: 'third' })
+    })
+    await waitFor(() =>
+      expect(result.current.chat.messages.at(-1)?.content).toBe(
+        'Half an answer',
+      ),
+    )
+    await act(() => result.current.open(OTHER_ID, { local: true }))
+    expect(shownInOther(result.current)).toEqual([
+      ['o1', 'Elsewhere?'],
+      ['o2', 'Elsewhere.'],
+    ])
+    return { result, drop, sending: () => sending }
+  }
+
+  it('finishes in its own chat when it is rejoined, leaving the open chat as it was', async () => {
+    let returned!: ReturnedThread
+    const { result, drop, sending } = await sendThenLeave(
+      // The first attempt reaches nothing, and the next resumes the run
+      // after the last frame applied.
+      async function* () {
+        yield* []
+        throw new TypeError('network error')
+      },
+      async function* (_path, input) {
+        returned = recorded(
+          seeded({
+            lastRequestId: turn().clientRequestId,
+            messages: [
+              ...SEEDED_MESSAGES,
+              {
+                id: turn().clientRequestId,
+                role: 'user',
+                createdAt: 't5',
+                content: 'third',
+              },
+              {
+                id: 'a3',
+                role: 'assistant',
+                createdAt: 't6',
+                content: 'Half an answer.',
+                timeline: [
+                  {
+                    id: 'a3_content_0',
+                    type: 'content',
+                    content: 'Half an answer.',
+                  },
+                ],
+              },
+            ],
+          }),
+        )
+        const events = [...run(turn()), finished(SEEDED_ID, returned, 'run-a3')]
+        for (const [id, event] of events.entries())
+          if (id > (input.lastEventId ?? -1)) yield { id, event }
+      },
+    )
+    fakeTimeouts()
+
+    drop()
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(client.events).toHaveBeenCalledTimes(2)
+    await act(() => vi.advanceTimersByTimeAsync(REJOIN_DELAYS_MS[1]))
+    await act(() => sending())
+
+    expect(result.current.chat.id).toBe(OTHER_ID)
+    expect(shownInOther(result.current)).toEqual([
+      ['o1', 'Elsewhere?'],
+      ['o2', 'Elsewhere.'],
+    ])
+    expect(result.current.status).toBe('idle')
+    expect(
+      client.events.mock.calls.slice(1).map(([path, input]) => [path, input]),
+    ).toEqual([
+      [
+        '/v1/threads/follow',
+        { threadId: SEEDED_ID, runId: 'run-a3', lastEventId: DROPS_AFTER },
+      ],
+      [
+        '/v1/threads/follow',
+        { threadId: SEEDED_ID, runId: 'run-a3', lastEventId: DROPS_AFTER },
+      ],
+    ])
+    expect(await stored(SEEDED_ID)).toEqual(returned)
+
+    vi.useRealTimers()
+    await act(() => result.current.open(SEEDED_ID, { local: true }))
+    expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+      'first',
+      'first answer',
+      'second',
+      'second answer',
+      'third',
+      'Half an answer.',
+    ])
+  })
+
+  it('stores what it streamed in its own chat once the harness no longer has it', async () => {
+    const { result, drop, sending } = await sendThenLeave(runNotFound)
+    sessionStorage.setItem(
+      'harness-run:alice',
+      JSON.stringify({
+        threadId: SEEDED_ID,
+        runId: 'run-a3',
+        instance: 'instance-1',
+      }),
+    )
+
+    drop()
+    await act(() => sending())
+
+    expect(client.events.mock.calls[1].slice(0, 2)).toEqual([
+      '/v1/threads/follow',
+      { threadId: SEEDED_ID, runId: 'run-a3', lastEventId: DROPS_AFTER },
+    ])
+    expect(result.current.chat.id).toBe(OTHER_ID)
+    expect(shownInOther(result.current)).toEqual([
+      ['o1', 'Elsewhere?'],
+      ['o2', 'Elsewhere.'],
+    ])
+    expect(result.current.status).toBe('idle')
+    expect(result.current.error).toBe('')
+    const kept = await stored(SEEDED_ID)
+    const sent = kept!.messages.find(({ id }) => id === turn().clientRequestId)
+    expect(kept).toEqual(
+      seeded({
+        updatedAt: sent!.createdAt,
+        messages: [
+          ...SEEDED_MESSAGES,
+          {
+            id: turn().clientRequestId,
+            role: 'user',
+            createdAt: sent!.createdAt,
+            content: 'third',
+          },
+          {
+            id: 'a3',
+            role: 'assistant',
+            createdAt: 't6',
+            content: 'Half an answer',
+            timeline: [
+              {
+                id: 'a3_content_0',
+                type: 'content',
+                content: 'Half an answer',
+              },
+            ],
+            isInterrupted: true,
+          },
+        ],
+      }),
+    )
+    // Reopening the chat no longer rejoins the run.
+    expect(sessionStorage.getItem('harness-run:alice')).toBeNull()
+  })
+})
+
 describe('temporary chats', () => {
   it.each([
     ['with cloud sync', 'alice', true],
@@ -2355,6 +3007,65 @@ describe('cloud chats', () => {
       expect(result.current.status).toBe('idle')
       expect(result.current.error).toBe('')
     })
+
+    it.each([
+      {
+        name: 'holds the reply they streamed',
+        copy: [
+          question,
+          {
+            id: 'a1',
+            role: 'assistant',
+            createdAt: 't2',
+            timeline: [{ id: 'b1', type: 'content', content: 'Hello' }],
+          },
+        ],
+        shown: ['Question', 'Hello'],
+      },
+      {
+        name: 'lacks the reply they streamed',
+        copy: [question],
+        shown: ['Question'],
+      },
+    ])(
+      'show the stored chat, which $name, once the harness no longer has their run',
+      async ({ copy, shown }) => {
+        const { result } = await openStored()
+        client.post.mockImplementation(async (path: string) => {
+          if (path === '/v1/threads/list')
+            return { threads: [], nextCursor: null }
+          if (path === '/v1/threads/get')
+            return { ...stored, messages: copy, hasOlder: false }
+          throw new Error(`Unexpected ${path}`)
+        })
+        client.events
+          .mockImplementationOnce(dropsAfter(started))
+          .mockImplementationOnce(runNotFound)
+
+        await act(() => result.current.send({ content: 'Question' }))
+
+        expect(client.events.mock.calls[1].slice(0, 2)).toEqual([
+          '/v1/threads/follow',
+          { key: KEY, threadId: stored.id, runId: 'run-1', lastEventId: 2 },
+        ])
+        expect(
+          result.current.chat.messages.map(({ content, isInterrupted }) => ({
+            content,
+            isInterrupted,
+          })),
+        ).toEqual(
+          shown.map((content) => ({ content, isInterrupted: undefined })),
+        )
+        expect(result.current.status).toBe('idle')
+        expect(result.current.error).toBe('')
+        // Only the harness stores a chat in the cloud.
+        expect(
+          client.post.mock.calls
+            .map(([path]) => path)
+            .filter((path) => path !== '/v1/threads/list'),
+        ).toEqual(['/v1/threads/get', '/v1/threads/get'])
+      },
+    )
   })
 
   it('show as stored, without an error, once the harness no longer has their run', async () => {

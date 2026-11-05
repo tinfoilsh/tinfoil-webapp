@@ -14,11 +14,18 @@ import {
 } from './local-threads'
 import { imageBlob, uploaded, type OpenAttachments } from './open-attachments'
 import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
+import { cutOffReplies, withReplies, type ChatState } from './reducer'
 import type { DeviceRun, RunController } from './run-controller'
 import { getView, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import type { ListEdits, ThreadStore } from './thread-store'
-import type { StoredThread, TerminalEvent, Thread, Turn } from './types'
+import type {
+  StoredThread,
+  TerminalEvent,
+  Thread,
+  ThreadMessage,
+  Turn,
+} from './types'
 
 const notOnDevice = (what: string) =>
   new HarnessError({
@@ -59,14 +66,14 @@ type ChangeRoute =
 // stores with the images it holds where the harness left them out, and the
 // originals of the images the turn sent. The settings the user changed
 // after the run's turn read the chat keep the user's values.
-export function storeRun(
+export async function storeRun(
   run: DeviceRun,
   event: TerminalEvent,
   changedSince: readonly string[],
 ): Promise<StoredThread | null> {
   const thread = event.metadata?.thread
-  if (!isThread(thread)) return Promise.resolve(null)
-  return run.store.update(
+  if (!isThread(thread)) return null
+  const saved = await run.store.update(
     run.threadId,
     (stored) => ({
       ...thread,
@@ -79,6 +86,34 @@ export function storeRun(
     }),
     run.originals,
   )
+  if (saved) run.threadStored = true
+  return saved
+}
+
+// A device run the harness no longer has, whose final event never returned
+// the thread, leaves the chat with the replies it streamed as interrupted.
+// A reply is stored with its text, as the harness stores one.
+export function storeCutOff(
+  run: DeviceRun,
+  state: ChatState,
+): Promise<StoredThread | null> {
+  return run.store.update(run.threadId, (stored) => {
+    if (!stored) return null
+    const replies = cutOffReplies(state, stored.messages, !run.threadStored)
+    if (!replies.length) return null
+    const records = replies.map((reply): ThreadMessage => ({
+      ...stored.messages.find(({ id }) => id === reply.id),
+      ...reply,
+      content: (reply.timeline ?? [])
+        .filter(({ type }) => type === 'content')
+        .map(({ content }) => content ?? '')
+        .join(''),
+    }))
+    return {
+      ...stored,
+      messages: withReplies(stored.messages, records, state.messages),
+    }
+  })
 }
 
 // The chats a browser keeps: in IndexedDB for an account, in the tab for a

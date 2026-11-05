@@ -445,7 +445,9 @@ describe('a turn the harness refuses', () => {
         screen.getByRole('button', { name: 'Stop generation' }),
       ).toBeInTheDocument()
       await act(async () => release())
-      expect(screen.getByText('Hello there and more')).toBeInTheDocument()
+      expect(
+        await screen.findByText('Hello there and more'),
+      ).toBeInTheDocument()
       expect(
         screen.getByRole('button', { name: 'Stop generation' }),
       ).toBeInTheDocument()

@@ -160,9 +160,9 @@ it.each(['/', '/newchat'])(
       screen.queryByRole('status', { name: 'Loading chat history' }),
     ).not.toBeInTheDocument()
     await act(async () => reply.resolve())
-    expect(screen.getByRole('article', { name: 'Al said' })).toHaveTextContent(
-      'The answer is here.',
-    )
+    expect(
+      await screen.findByRole('article', { name: 'Al said' }),
+    ).toHaveTextContent('The answer is here.')
     expect(
       screen.queryByRole('status', { name: 'Waiting for response' }),
     ).not.toBeInTheDocument()
