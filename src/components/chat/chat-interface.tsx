@@ -11,18 +11,13 @@ import { toast } from '@/hooks/use-toast'
 import { logError } from '@/utils/error-handling'
 import { useAuth, useUser } from '@clerk/react'
 import { ArrowDownIcon } from '@heroicons/react/24/outline'
-import {
-  TfDocumentPlus,
-  TfGhost2,
-  TfShare,
-  TfTinSad,
-  TfWriting2,
-} from '@tinfoilsh/tinfoil-icons'
+import { TfDocumentPlus, TfShare, TfTinSad } from '@tinfoilsh/tinfoil-icons'
 import {
   TfGhost2Animated,
   TfLockLockedAnimated,
   TfLockOpenedAnimated,
   TfSidebarOpenAnimated,
+  TfWriting2Animated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
@@ -1812,7 +1807,7 @@ export function ChatInterface({
           className="flex items-center justify-center rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:hidden"
           aria-label="New chat"
         >
-          <TfWriting2 className="h-4 w-4" aria-hidden="true" />
+          <TfWriting2Animated className="h-4 w-4" aria-hidden="true" />
         </Link>
       )}
 
@@ -2043,7 +2038,10 @@ export function ChatInterface({
             })(),
           }}
         >
-          <TfGhost2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <TfGhost2Animated
+            className="h-3.5 w-3.5 shrink-0"
+            aria-hidden="true"
+          />
           <span>Temporary chat</span>
         </div>
       )}

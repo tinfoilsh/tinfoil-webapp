@@ -48,23 +48,21 @@ import { useAuth } from '@clerk/react'
 import { ArrowLeftIcon, NoSymbolIcon } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
-  TfChevronDown,
-  TfChevronRight,
   TfDocument,
   TfDocumentPlus,
-  TfFolder,
   TfSetting,
   TfTrash,
-  TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
 import {
   TfChat2Animated,
   TfChevronDownAnimated,
   TfChevronRightAnimated,
   TfChevronUpAnimated,
+  TfFolderAnimated,
   TfSidebarCloseAnimated,
   TfSidebarOpenAnimated,
   TfThumbtackAnimated,
+  TfWriting2Animated,
   TfWritingAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -622,7 +620,7 @@ export function ProjectSidebar({
               aria-controls={SIDEBAR_PANEL_ID}
               data-sidebar-toggle
             >
-              <TfFolder
+              <TfFolderAnimated
                 className="h-6 w-6 !text-content-secondary group-hover/logo:opacity-0"
                 aria-hidden="true"
               />
@@ -649,7 +647,7 @@ export function ProjectSidebar({
                 )}
                 aria-label="New chat"
               >
-                <TfWriting2 className="h-5 w-5" aria-hidden="true" />
+                <TfWriting2Animated className="h-5 w-5" aria-hidden="true" />
               </Link>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 New chat{' '}
@@ -881,7 +879,7 @@ export function ProjectSidebar({
               )}
             >
               <span className="flex items-center gap-2">
-                <TfWriting2 className="h-4 w-4" aria-hidden="true" />
+                <TfWriting2Animated className="h-4 w-4" aria-hidden="true" />
                 <span className="font-aeonik font-medium">New chat</span>
               </span>
               <span className="text-xs text-content-muted">
@@ -928,9 +926,15 @@ export function ProjectSidebar({
                   </span>
                 </span>
                 {isFavoritesExpanded ? (
-                  <TfChevronDown className="h-4 w-4" aria-hidden="true" />
+                  <TfChevronDownAnimated
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                  />
                 ) : (
-                  <TfChevronRight className="h-4 w-4" aria-hidden="true" />
+                  <TfChevronRightAnimated
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                  />
                 )}
               </button>
               <AnimatePresence initial={false}>

@@ -9,13 +9,13 @@ import {
   TfAttachment,
   TfBoxCheckmark,
   TfBoxX,
-  TfFolder,
   TfGlobe,
   TfGlobeX,
-  TfMicrophone,
   TfQuote,
 } from '@tinfoilsh/tinfoil-icons'
 import {
+  TfFolderAnimated,
+  TfMicrophoneAnimated,
   TfPlusAnimated,
   TfStopAnimated,
   TfToolsAnimated,
@@ -752,7 +752,7 @@ export function ChatInput({
                     )}
                     style={colorStyle}
                   >
-                    <TfFolder className="h-3 w-3" aria-hidden="true" />
+                    <TfFolderAnimated className="h-3 w-3" aria-hidden="true" />
                     <span className="text-xs font-medium">
                       {activeProject.name}
                     </span>
@@ -1380,7 +1380,7 @@ export function ChatInput({
                         aria-hidden="true"
                       />
                     ) : (
-                      <TfMicrophone
+                      <TfMicrophoneAnimated
                         className="h-6 w-6 md:h-4 md:w-4"
                         aria-hidden="true"
                       />

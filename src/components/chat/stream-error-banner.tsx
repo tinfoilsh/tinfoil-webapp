@@ -4,8 +4,11 @@ import { cn } from '@/components/ui/utils'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { ERROR_ACTIONS, ERROR_CODES } from '@/services/harness/protocol'
 import type { ErrorAction } from '@/services/harness/types'
-import { TfBoxX, TfRefreshTwoArrows } from '@tinfoilsh/tinfoil-icons'
-import { TfChevronDownAnimated } from '@tinfoilsh/tinfoil-icons/animated'
+import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfChevronDownAnimated,
+  TfRefreshTwoArrowsAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 
 export type StreamErrorInfo = {
@@ -389,7 +392,10 @@ export function StreamErrorBanner({
                   'cursor-default opacity-50 hover:bg-transparent',
               )}
             >
-              <TfRefreshTwoArrows className="h-3.5 w-3.5" aria-hidden="true" />
+              <TfRefreshTwoArrowsAnimated
+                className="h-3.5 w-3.5"
+                aria-hidden="true"
+              />
               {retryLabel}
             </button>
           )}

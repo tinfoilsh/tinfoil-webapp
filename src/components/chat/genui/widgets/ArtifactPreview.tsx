@@ -25,13 +25,11 @@ import {
 } from '@/components/ui/card'
 import { cn } from '@/components/ui/utils'
 import { sanitizeUrl } from '@braintree/sanitize-url'
+import { TfDownload, TfEye, type IconType } from '@tinfoilsh/tinfoil-icons'
 import {
-  TfDownload,
-  TfExternalLink,
-  TfEye,
-  type IconType,
-} from '@tinfoilsh/tinfoil-icons'
-import { TfCode2Animated } from '@tinfoilsh/tinfoil-icons/animated'
+  TfCode2Animated,
+  TfExternalLinkAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { FileText } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -427,7 +425,7 @@ export function ArtifactPreviewPanel({
                 rel="noopener noreferrer"
                 className="flex h-6 items-center gap-1 rounded px-2 text-xs text-content-muted hover:bg-surface-card hover:text-content-primary"
               >
-                <TfExternalLink className="h-3.5 w-3.5" />
+                <TfExternalLinkAnimated className="h-3.5 w-3.5" />
                 <span>Open</span>
               </a>
             )}

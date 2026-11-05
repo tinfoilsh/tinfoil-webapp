@@ -5,13 +5,10 @@ import { SAFEGUARDS_INFO_URL } from '@/constants/external-links'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useUser } from '@clerk/react'
-import { TfBoxCheckmark, TfShieldCheck } from '@tinfoilsh/tinfoil-icons'
-import {
-  TfLockLockedAnimated,
-  TfLockOpenedAnimated,
-} from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useState } from 'react'
+import { PrivacyLock } from './privacy-lock'
+import { SafeguardsShield } from './safeguards-shield'
 
 interface OnboardingViewProps {
   onComplete: () => void
@@ -26,12 +23,6 @@ interface OnboardingViewProps {
 const TOTAL_PAGES = 3
 const PRIVACY_PAGE_INDEX = 1
 const SAFEGUARDS_PAGE_INDEX = 2
-const PRIVACY_CONFIRMATION_HOLD_S = 0.4
-const PRIVACY_CHECK_APPEAR_S = 0.18
-const PRIVACY_CONFIRMATION_SEQUENCE_S =
-  PRIVACY_CHECK_APPEAR_S + PRIVACY_CONFIRMATION_HOLD_S
-const PRIVACY_CHECK_REVEAL_PROGRESS =
-  PRIVACY_CHECK_APPEAR_S / PRIVACY_CONFIRMATION_SEQUENCE_S
 
 export function OnboardingView({
   onComplete,
@@ -40,6 +31,7 @@ export function OnboardingView({
   const { user } = useUser()
   const [currentPage, setCurrentPage] = useState(0)
   const [privacyEnabled, setPrivacyEnabled] = useState(false)
+  const [isFinishing, setIsFinishing] = useState(false)
 
   const markCompleted = useCallback(() => {
     if (!persistCompletion) return
@@ -66,6 +58,13 @@ export function OnboardingView({
       })
   }, [persistCompletion, user])
 
+  // Onboarding closes once the safeguards check has popped. Completion is
+  // saved then too, as saving it closes onboarding.
+  const finish = useCallback(() => {
+    markCompleted()
+    onComplete()
+  }, [markCompleted, onComplete])
+
   const handleContinue = useCallback(() => {
     if (currentPage === PRIVACY_PAGE_INDEX && !privacyEnabled) {
       setPrivacyEnabled(true)
@@ -74,10 +73,9 @@ export function OnboardingView({
     if (currentPage < TOTAL_PAGES - 1) {
       setCurrentPage((p) => p + 1)
     } else {
-      markCompleted()
-      onComplete()
+      setIsFinishing(true)
     }
-  }, [currentPage, privacyEnabled, onComplete, markCompleted])
+  }, [currentPage, privacyEnabled])
 
   return (
     <motion.div
@@ -102,7 +100,11 @@ export function OnboardingView({
                 />
               )}
               {currentPage === SAFEGUARDS_PAGE_INDEX && (
-                <OnboardingSafeguardsPage key="safeguards" />
+                <OnboardingSafeguardsPage
+                  key="safeguards"
+                  finishing={isFinishing}
+                  onFinished={finish}
+                />
               )}
             </AnimatePresence>
           </div>
@@ -205,7 +207,13 @@ function OnboardingLetterPage() {
 
 // MARK: - Page 3: Safeguards
 
-function OnboardingSafeguardsPage() {
+function OnboardingSafeguardsPage({
+  finishing,
+  onFinished,
+}: {
+  finishing: boolean
+  onFinished: () => void
+}) {
   return (
     <motion.div
       className="flex flex-col items-center px-6 py-8"
@@ -216,9 +224,10 @@ function OnboardingSafeguardsPage() {
     >
       <div className="flex w-full flex-col items-center gap-8">
         <div className="flex h-28 items-center justify-center">
-          <TfShieldCheck
+          <SafeguardsShield
+            popping={finishing}
+            onPopped={onFinished}
             className="h-24 w-24 text-tinfoil-accent-blue dark:text-white"
-            aria-hidden="true"
           />
         </div>
 
@@ -268,39 +277,10 @@ function OnboardingPrivacyPage({
     >
       <div className="flex w-full flex-col items-center gap-8">
         <div className="flex h-28 items-center justify-center">
-          <AnimatePresence mode="wait">
-            {privacyEnabled ? (
-              <motion.div
-                key="locked"
-                initial={{ opacity: 0, scale: 0.85, rotate: 0 }}
-                animate={{
-                  opacity: 1,
-                  scale: [0.85, 1.12, 1],
-                  rotate: [0, -6, 6, -3, 3, 0],
-                }}
-                exit={{ opacity: 0, scale: 0.85 }}
-                transition={{ duration: 0.5, ease: 'easeOut' }}
-              >
-                <TfLockLockedAnimated
-                  className="h-24 w-24 text-content-primary"
-                  aria-hidden="true"
-                />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="unlocked"
-                initial={{ opacity: 0, scale: 0.85 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.85 }}
-                transition={{ duration: 0.15, ease: 'easeOut' }}
-              >
-                <TfLockOpenedAnimated
-                  className="h-24 w-24 text-content-primary"
-                  aria-hidden="true"
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <PrivacyLock
+            locked={privacyEnabled}
+            className="h-24 w-24 text-content-primary"
+          />
         </div>
 
         <div className="space-y-2 text-center">
@@ -330,38 +310,7 @@ function OnboardingPrivacyPage({
                   : 'justify-start bg-destructive/90'
               }`}
             >
-              <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-md group-active:w-16">
-                <AnimatePresence>
-                  {privacyEnabled && (
-                    <motion.svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={3}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-5 w-5 text-brand-accent-dark"
-                      initial={{ scale: 0, opacity: 0 }}
-                      animate={{
-                        scale: [0, 1, 1],
-                        opacity: [0, 1, 1],
-                      }}
-                      transition={{
-                        duration: PRIVACY_CONFIRMATION_SEQUENCE_S,
-                        times: [0, PRIVACY_CHECK_REVEAL_PROGRESS, 1],
-                        ease: 'easeOut',
-                      }}
-                    >
-                      <TfBoxCheckmark
-                        width="100%"
-                        size="100%"
-                        aria-hidden="true"
-                      />
-                    </motion.svg>
-                  )}
-                </AnimatePresence>
-              </span>
+              <span className="h-12 w-12 rounded-full bg-white shadow-md group-active:w-16" />
             </button>
 
             <span

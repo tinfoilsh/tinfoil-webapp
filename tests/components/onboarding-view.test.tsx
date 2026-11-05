@@ -2,7 +2,16 @@ import { OnboardingView } from '@/components/onboarding/onboarding-view'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import OnboardingFlowDevPage from '@/pages/dev/onboarding-flow'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MotionGlobalConfig } from 'framer-motion'
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   useUser: vi.fn(),
@@ -28,6 +37,15 @@ async function advanceToSafeguards() {
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
   await screen.findByRole('heading', { name: 'Tending the Garden' })
 }
+
+// Get Started closes onboarding once the safeguards check has popped, which
+// is at once here, so no test waits on time.
+beforeAll(() => {
+  MotionGlobalConfig.skipAnimations = true
+})
+afterAll(() => {
+  MotionGlobalConfig.skipAnimations = false
+})
 
 describe('OnboardingView', () => {
   beforeEach(() => {
@@ -58,7 +76,10 @@ describe('OnboardingView', () => {
     expect(update).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
-    expect(onComplete).toHaveBeenCalledTimes(1)
+    // The safeguards check pops before onboarding closes.
+    expect(onComplete).not.toHaveBeenCalled()
+    expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBeNull()
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
     expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBe('true')
     expect(update).toHaveBeenCalledWith({
       unsafeMetadata: { existing: true, has_completed_onboarding: true },
@@ -83,7 +104,7 @@ describe('OnboardingView', () => {
     await advanceToSafeguards()
     fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
 
-    expect(screen.getByText('onComplete()')).toBeInTheDocument()
+    expect(await screen.findByText('onComplete()')).toBeInTheDocument()
     await waitFor(() => {
       expect(
         screen.queryByRole('heading', { name: 'Tending the Garden' }),
@@ -128,7 +149,7 @@ describe('OnboardingView', () => {
     expect(onComplete).not.toHaveBeenCalled()
     const getStarted = screen.getByRole('button', { name: 'Get Started' })
     fireEvent.click(getStarted)
-    expect(onComplete).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
   })
 
   it('finishes onboarding and updates the account when local storage throws', async () => {
@@ -145,7 +166,7 @@ describe('OnboardingView', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
 
-    expect(onComplete).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
     expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBeNull()
     expect(update).toHaveBeenCalledWith({
       unsafeMetadata: { existing: true, has_completed_onboarding: true },
@@ -164,7 +185,7 @@ describe('OnboardingView', () => {
     await advanceToSafeguards()
     fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
 
-    expect(onComplete).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
     expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBe('true')
     await waitFor(() => {
       expect(mocks.logError).toHaveBeenCalledWith(

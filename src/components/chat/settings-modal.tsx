@@ -76,22 +76,18 @@ import {
   TfBoxCheckmark,
   TfBoxX,
   TfCard,
-  TfChevronRight,
   TfCloudSync,
   TfComputer,
   TfDownload,
-  TfExternalLink,
   TfEye,
   TfEyeSlash,
   TfKey,
-  TfLightbulb,
   TfMoon,
   TfNumber1,
   TfNumber2,
   TfNumber3,
   TfNumber4,
   TfPersonKey,
-  TfShieldCheck,
   TfShieldWithExclamation,
   TfSignIn,
   TfStack,
@@ -101,8 +97,12 @@ import {
 import {
   TfChat2Animated,
   TfChevronDownAnimated,
+  TfChevronRightAnimated,
+  TfExternalLinkAnimated,
+  TfLightbulbAnimated,
   TfPersonAnimated,
   TfPlusAnimated,
+  TfShieldCheckAnimated,
   TfToolsAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -2873,7 +2873,7 @@ ${encryptionKey.replace('key_', '')}
                           Browse built-in prompts and create or manage your own.
                         </span>
                       </span>
-                      <TfChevronRight
+                      <TfChevronRightAnimated
                         className="h-4 w-4 flex-none text-content-muted"
                         aria-hidden="true"
                       />
@@ -2898,7 +2898,7 @@ ${encryptionKey.replace('key_', '')}
                       className="flex w-full items-center justify-between p-4"
                     >
                       <div className="flex items-center gap-2">
-                        <TfLightbulb
+                        <TfLightbulbAnimated
                           className="h-4 w-4 text-content-muted"
                           aria-hidden="true"
                         />
@@ -3259,7 +3259,7 @@ ${encryptionKey.replace('key_', '')}
                               </div>
                             </div>
                             <div className="ml-6 mt-2 flex items-center gap-1.5">
-                              <TfShieldCheck
+                              <TfShieldCheckAnimated
                                 className="h-3.5 w-3.5 text-tinfoil-accent-blue dark:text-blue-400"
                                 aria-hidden="true"
                               />
@@ -4354,7 +4354,7 @@ ${encryptionKey.replace('key_', '')}
                               {billingLoading ? (
                                 '...'
                               ) : (
-                                <TfExternalLink
+                                <TfExternalLinkAnimated
                                   className="h-4 w-4"
                                   aria-hidden="true"
                                 />
@@ -4400,7 +4400,7 @@ ${encryptionKey.replace('key_', '')}
                               Manage your account at dash.tinfoil.sh
                             </div>
                           </div>
-                          <TfExternalLink
+                          <TfExternalLinkAnimated
                             className="h-4 w-4 text-content-muted"
                             aria-hidden="true"
                           />

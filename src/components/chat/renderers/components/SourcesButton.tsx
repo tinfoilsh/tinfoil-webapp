@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dialog'
 import { Favicon } from '@/components/ui/favicon'
 import { sanitizeUrl } from '@braintree/sanitize-url'
-import { TfExternalLink } from '@tinfoilsh/tinfoil-icons'
+import { TfExternalLinkAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { memo, useMemo, useState } from 'react'
 
 const MAX_PREVIEW_FAVICONS = 4
@@ -130,7 +130,7 @@ export const SourcesButton = memo(function SourcesButton({
                       {getDomain(source.url)}
                     </span>
                   </span>
-                  <TfExternalLink
+                  <TfExternalLinkAnimated
                     className="mt-1 h-3.5 w-3.5 shrink-0 text-content-muted opacity-0 transition-opacity group-hover:opacity-100"
                     aria-hidden="true"
                   />

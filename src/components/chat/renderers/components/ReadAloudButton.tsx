@@ -2,8 +2,11 @@ import { useSessionFeature } from '@/services/harness/provider'
 import { speakText } from '@/services/harness/speech'
 import { speechPlayer } from '@/services/speech/player'
 import { speechSource } from '@/services/speech/stream'
-import { TfAudio, TfPlay } from '@tinfoilsh/tinfoil-icons'
-import { TfStopAnimated } from '@tinfoilsh/tinfoil-icons/animated'
+import { TfPlay } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfAudioAnimated,
+  TfStopAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import { useSpeak } from '../../speech-context'
@@ -89,7 +92,7 @@ export function ReadAloudButton({
             aria-hidden="true"
           />
         ) : (
-          <TfAudio className="h-3.5 w-3.5" aria-hidden="true" />
+          <TfAudioAnimated className="h-3.5 w-3.5" aria-hidden="true" />
         )}
         {variant === 'icon' && (
           <span

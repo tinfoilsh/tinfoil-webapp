@@ -1,5 +1,5 @@
 import { cn } from '@/components/ui/utils'
-import { TfFolder } from '@tinfoilsh/tinfoil-icons'
+import { TfFolderAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useState } from 'react'
 
 interface AddToProjectContextModalProps {
@@ -64,7 +64,7 @@ export function AddToProjectContextModal({
       >
         <div className="mb-3 flex items-center justify-center sm:mb-4">
           <div className="rounded-full bg-brand-accent-dark/10 p-2 dark:bg-brand-accent-light/10 sm:p-3">
-            <TfFolder
+            <TfFolderAnimated
               className="h-6 w-6 !text-brand-accent-dark dark:!text-brand-accent-light sm:h-8 sm:w-8"
               aria-hidden="true"
             />

@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
-import { TfBoxCheckmark, TfCopy } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxCheckmark } from '@tinfoilsh/tinfoil-icons'
+import { TfCopyAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { useState } from 'react'
 import { CONSTANTS } from './chat/constants'
 
@@ -22,7 +23,7 @@ function CopyButton({ text }: { text: string }) {
       {copied ? (
         <TfBoxCheckmark className="h-4 w-4" />
       ) : (
-        <TfCopy className="h-4 w-4" />
+        <TfCopyAnimated className="h-4 w-4" />
       )}
     </Button>
   )

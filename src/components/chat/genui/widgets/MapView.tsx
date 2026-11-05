@@ -5,7 +5,10 @@ import {
 } from '@/components/preview/sandbox-frame'
 import { usePreviewMessages } from '@/components/preview/use-preview-messages'
 import { Card } from '@/components/ui/card'
-import { TfCopy, TfExternalLink } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfCopyAnimated,
+  TfExternalLinkAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import type { LucideIcon } from 'lucide-react'
 import { MapPin, Navigation } from 'lucide-react'
 import { memo, useId, useMemo, useRef, useState } from 'react'
@@ -356,7 +359,7 @@ export default function MapWidget(props: Props & { isDarkMode?: boolean }) {
                   className="inline-flex items-center gap-1 rounded-md border border-border-subtle bg-surface-card px-2 py-1 text-[11px] text-content-muted transition-colors hover:border-content-primary/40 hover:text-content-primary"
                 >
                   Open
-                  <TfExternalLink className="h-3 w-3" />
+                  <TfExternalLinkAnimated className="h-3 w-3" />
                 </a>
               </li>
             ))}
@@ -370,7 +373,7 @@ export default function MapWidget(props: Props & { isDarkMode?: boolean }) {
               onClick={copyAddress}
               className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-xs text-content-primary transition-colors hover:border-content-primary/40"
             >
-              <TfCopy className="h-3.5 w-3.5" />
+              <TfCopyAnimated className="h-3.5 w-3.5" />
               {copied ? 'Copied' : 'Copy address'}
             </button>
           )}

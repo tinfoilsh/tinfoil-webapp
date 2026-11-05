@@ -5,7 +5,8 @@ import { cn } from '@/components/ui/utils'
 import { APP_VERSION } from '@/config'
 import { SUPPORT_EMAIL } from '@/constants/external-links'
 import { useToast } from '@/hooks/use-toast'
-import { TfBoxCheckmark, TfCopy } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxCheckmark } from '@tinfoilsh/tinfoil-icons'
+import { TfCopyAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useState } from 'react'
 
 const COPIED_FEEDBACK_MS = 2000
@@ -143,7 +144,7 @@ export function ReportBugModal({
               aria-hidden
             />
           ) : (
-            <TfCopy className="h-3.5 w-3.5" aria-hidden />
+            <TfCopyAnimated className="h-3.5 w-3.5" aria-hidden />
           )}
         </button>
       </div>

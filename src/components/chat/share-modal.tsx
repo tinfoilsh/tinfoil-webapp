@@ -11,11 +11,13 @@ import * as DialogPrimitive from '@radix-ui/react-dialog'
 import {
   TfBoxCheckmark,
   TfBoxX,
-  TfCopy,
   TfGlobe,
   TfLink,
 } from '@tinfoilsh/tinfoil-icons'
-import { TfLockLockedAnimated } from '@tinfoilsh/tinfoil-icons/animated'
+import {
+  TfCopyAnimated,
+  TfLockLockedAnimated,
+} from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useRef, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import { Card, CardContent } from '../ui/card'
@@ -588,7 +590,7 @@ function ShareModalContent({
                                 </>
                               ) : (
                                 <>
-                                  <TfCopy
+                                  <TfCopyAnimated
                                     className="h-4 w-4"
                                     aria-hidden="true"
                                   />
@@ -625,7 +627,10 @@ function ShareModalContent({
                         </>
                       ) : (
                         <>
-                          <TfCopy className="h-3 w-3" aria-hidden="true" />
+                          <TfCopyAnimated
+                            className="h-3 w-3"
+                            aria-hidden="true"
+                          />
                           Copy to Clipboard
                         </>
                       )}
