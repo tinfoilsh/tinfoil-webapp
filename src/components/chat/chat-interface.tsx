@@ -172,6 +172,9 @@ import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
 import { hasPasskeyBackup } from '@/utils/signout-cleanup'
 import { useUIState } from './hooks/use-ui-state'
 
+// What a loading project's New chat does: nothing until the project opens.
+const NO_ACTION = () => {}
+
 // Where Escape belongs to what holds the focus rather than to the reply.
 const ESCAPE_KEEPERS =
   'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"], [role="listbox"]'
@@ -1423,6 +1426,13 @@ export function ChatInterface({
     toggleFavorite: handleToggleFavorite,
     unpinChat,
     openFavorite: handleOpenFavorite,
+    exitProject: handleExitProject,
+    exitProjectWhileDragging: handleExitProjectWhileDragging,
+    startProjectChat: () => createNewChat(false, true),
+    deleteProjectChats: handleDeleteProjectChats,
+    addChatToProject: async (chatId: string) => {
+      if (activeProject) await handleMoveChatToProject(chatId, activeProject.id)
+    },
   })
   useEffect(() => {
     if (suppressIntroModals) return
@@ -1824,6 +1834,35 @@ export function ChatInterface({
     ],
   )
 
+  // The chats of the project the sidebar shows, open or still loading.
+  const sidebarProjectId =
+    isProjectMode && activeProject ? activeProject.id : loadingProject?.id
+  const projectChats = useMemo(
+    () =>
+      chats
+        .filter((c) => c.projectId === sidebarProjectId)
+        .map((c) => ({
+          id: c.id,
+          title: c.title,
+          messageCount: c.isMetadataOnly
+            ? (c.messageCount ?? 0)
+            : c.messages.length,
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+          activityAt: c.activityAt,
+          projectId: c.projectId,
+          isBlankChat: c.isBlankChat,
+          isTemporary: c.isTemporary,
+          activeRun: c.activeRun,
+          flagged: c.flagged,
+        })),
+    [chats, sidebarProjectId],
+  )
+  const projectOptions = useMemo(
+    () => projects.map((p) => ({ id: p.id, name: p.name })),
+    [projects],
+  )
+
   if (!session && sessionError) {
     return (
       <div className="flex h-screen items-center justify-center bg-surface-chat-background px-4 font-aeonik">
@@ -2085,25 +2124,6 @@ export function ChatInterface({
     </>
   )
 
-  const projectSidebarChats = (projectId: string | undefined) =>
-    chats
-      .filter((c) => c.projectId === projectId)
-      .map((c) => ({
-        id: c.id,
-        title: c.title,
-        messageCount: c.isMetadataOnly
-          ? (c.messageCount ?? 0)
-          : c.messages.length,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
-        activityAt: c.activityAt,
-        projectId: c.projectId,
-        isBlankChat: c.isBlankChat,
-        isTemporary: c.isTemporary,
-        activeRun: c.activeRun,
-        flagged: c.flagged,
-      }))
-
   return (
     <div
       className="app-shell flex overflow-hidden bg-surface-chat-background"
@@ -2226,41 +2246,38 @@ export function ChatInterface({
               {isProjectMode && activeProject ? (
                 <ProjectSidebar
                   hasMore={thread.hasMoreChats}
-                  onLoadMore={thread.loadMoreChats}
+                  onLoadMore={sidebarActions.loadMoreChats}
                   isLoadingChats={thread.loadingChats}
                   chatListError={thread.chatListError}
-                  onRetryChats={thread.retryChatList}
+                  onRetryChats={sidebarActions.retryChats}
                   isOpen={isSidebarOpen}
                   setIsOpen={setIsSidebarOpen}
                   project={activeProject}
                   isDarkMode={isDarkMode}
                   pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                  onExitProject={handleExitProject}
-                  onExitProjectWhileDragging={handleExitProjectWhileDragging}
-                  onNewChat={() => createNewChat(false, true)}
-                  onSelectChat={handleChatSelect}
+                  onExitProject={sidebarActions.exitProject}
+                  onExitProjectWhileDragging={
+                    sidebarActions.exitProjectWhileDragging
+                  }
+                  onNewChat={sidebarActions.startProjectChat}
+                  onSelectChat={sidebarActions.selectChat}
                   currentChatId={currentChat.id}
                   isClient={isClient}
-                  chats={projectSidebarChats(activeProject.id)}
-                  deleteChat={deleteChat}
-                  updateChatTitle={updateChatTitle}
-                  onRemoveChatFromProject={handleRemoveChatFromProject}
-                  onDeleteProjectChats={handleDeleteProjectChats}
-                  onAddChatToProject={(chatId) =>
-                    handleMoveChatToProject(chatId, activeProject.id)
-                  }
-                  onMoveChatToProject={handleMoveChatToProject}
-                  projects={projects.map((p) => ({
-                    id: p.id,
-                    name: p.name,
-                  }))}
-                  onSettingsClick={handleOpenSettingsModal}
-                  onReportBugClick={handleOpenReportBugModal}
+                  chats={projectChats}
+                  deleteChat={sidebarActions.deleteChat}
+                  updateChatTitle={sidebarActions.updateChatTitle}
+                  onRemoveChatFromProject={sidebarActions.removeChatFromProject}
+                  onDeleteProjectChats={sidebarActions.deleteProjectChats}
+                  onAddChatToProject={sidebarActions.addChatToProject}
+                  onMoveChatToProject={sidebarActions.moveChatToProject}
+                  projects={projectOptions}
+                  onSettingsClick={sidebarActions.openSettings}
+                  onReportBugClick={sidebarActions.openReportBug}
                   favoriteChats={favoriteChats}
                   pinnedChatIds={pinnedChatIds}
-                  onToggleFavorite={handleToggleFavorite}
-                  onRemoveFavorite={unpinChat}
-                  onOpenFavorite={handleOpenFavorite}
+                  onToggleFavorite={sidebarActions.toggleFavorite}
+                  onRemoveFavorite={sidebarActions.unpinChat}
+                  onOpenFavorite={sidebarActions.openFavorite}
                   windowWidth={windowWidth}
                   isPremium={isPremium}
                 />
@@ -2274,22 +2291,24 @@ export function ChatInterface({
                   isLoading={true}
                   isDarkMode={isDarkMode}
                   pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                  onExitProject={handleExitProject}
-                  onExitProjectWhileDragging={handleExitProjectWhileDragging}
-                  onNewChat={() => {}}
-                  onSelectChat={handleChatSelect}
+                  onExitProject={sidebarActions.exitProject}
+                  onExitProjectWhileDragging={
+                    sidebarActions.exitProjectWhileDragging
+                  }
+                  onNewChat={NO_ACTION}
+                  onSelectChat={sidebarActions.selectChat}
                   currentChatId={currentChat.id}
                   isClient={isClient}
-                  chats={projectSidebarChats(loadingProject?.id)}
-                  deleteChat={deleteChat}
-                  updateChatTitle={updateChatTitle}
-                  onSettingsClick={handleOpenSettingsModal}
-                  onReportBugClick={handleOpenReportBugModal}
+                  chats={projectChats}
+                  deleteChat={sidebarActions.deleteChat}
+                  updateChatTitle={sidebarActions.updateChatTitle}
+                  onSettingsClick={sidebarActions.openSettings}
+                  onReportBugClick={sidebarActions.openReportBug}
                   favoriteChats={favoriteChats}
                   pinnedChatIds={pinnedChatIds}
-                  onToggleFavorite={handleToggleFavorite}
-                  onRemoveFavorite={unpinChat}
-                  onOpenFavorite={handleOpenFavorite}
+                  onToggleFavorite={sidebarActions.toggleFavorite}
+                  onRemoveFavorite={sidebarActions.unpinChat}
+                  onOpenFavorite={sidebarActions.openFavorite}
                   windowWidth={windowWidth}
                   isPremium={isPremium}
                 />
