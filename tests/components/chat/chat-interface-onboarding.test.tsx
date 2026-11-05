@@ -4,7 +4,8 @@ import { USER_PREFS_LOCAL_PROFILE } from '@/constants/storage-keys'
 import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { MotionGlobalConfig } from 'framer-motion'
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { client, signIn, testSession } from '../../harness-fixture'
 import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
 import { refuseFetch } from './chat-interface-fixture'
@@ -83,6 +84,14 @@ vi.mock(
 )
 
 resetChatStoresAroundEachTest()
+// Get Started closes onboarding once the safeguards check has popped, which
+// is at once here, so no test waits on time.
+beforeAll(() => {
+  MotionGlobalConfig.skipAnimations = true
+})
+afterAll(() => {
+  MotionGlobalConfig.skipAnimations = false
+})
 beforeEach(async () => {
   const setAttribute = HTMLIFrameElement.prototype.setAttribute
   vi.spyOn(HTMLIFrameElement.prototype, 'setAttribute').mockImplementation(
@@ -148,8 +157,7 @@ it('starts passkey prompts only once onboarding is dismissed', async () => {
   await screen.findByRole('heading', { name: 'Tending the Garden' })
   expect(passkeyStart.initialized).toBe(false)
   fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
-  await act(async () => {})
-  expect(passkeyStart.initialized).toBe(true)
+  await waitFor(() => expect(passkeyStart.initialized).toBe(true))
   expect(
     JSON.parse(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)!),
   ).toMatchObject({ hasSeenOnboarding: true })

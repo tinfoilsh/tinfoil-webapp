@@ -5,10 +5,10 @@ import { SAFEGUARDS_INFO_URL } from '@/constants/external-links'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useUser } from '@clerk/react'
-import { TfShieldCheck } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useState } from 'react'
 import { PrivacyLock } from './privacy-lock'
+import { SafeguardsShield } from './safeguards-shield'
 
 interface OnboardingViewProps {
   onComplete: () => void
@@ -31,6 +31,7 @@ export function OnboardingView({
   const { user } = useUser()
   const [currentPage, setCurrentPage] = useState(0)
   const [privacyEnabled, setPrivacyEnabled] = useState(false)
+  const [isFinishing, setIsFinishing] = useState(false)
 
   const markCompleted = useCallback(() => {
     if (!persistCompletion) return
@@ -57,6 +58,13 @@ export function OnboardingView({
       })
   }, [persistCompletion, user])
 
+  // Onboarding closes once the safeguards check has popped. Completion is
+  // saved then too, as saving it closes onboarding.
+  const finish = useCallback(() => {
+    markCompleted()
+    onComplete()
+  }, [markCompleted, onComplete])
+
   const handleContinue = useCallback(() => {
     if (currentPage === PRIVACY_PAGE_INDEX && !privacyEnabled) {
       setPrivacyEnabled(true)
@@ -65,10 +73,9 @@ export function OnboardingView({
     if (currentPage < TOTAL_PAGES - 1) {
       setCurrentPage((p) => p + 1)
     } else {
-      markCompleted()
-      onComplete()
+      setIsFinishing(true)
     }
-  }, [currentPage, privacyEnabled, onComplete, markCompleted])
+  }, [currentPage, privacyEnabled])
 
   return (
     <motion.div
@@ -93,7 +100,11 @@ export function OnboardingView({
                 />
               )}
               {currentPage === SAFEGUARDS_PAGE_INDEX && (
-                <OnboardingSafeguardsPage key="safeguards" />
+                <OnboardingSafeguardsPage
+                  key="safeguards"
+                  finishing={isFinishing}
+                  onFinished={finish}
+                />
               )}
             </AnimatePresence>
           </div>
@@ -196,7 +207,13 @@ function OnboardingLetterPage() {
 
 // MARK: - Page 3: Safeguards
 
-function OnboardingSafeguardsPage() {
+function OnboardingSafeguardsPage({
+  finishing,
+  onFinished,
+}: {
+  finishing: boolean
+  onFinished: () => void
+}) {
   return (
     <motion.div
       className="flex flex-col items-center px-6 py-8"
@@ -207,9 +224,10 @@ function OnboardingSafeguardsPage() {
     >
       <div className="flex w-full flex-col items-center gap-8">
         <div className="flex h-28 items-center justify-center">
-          <TfShieldCheck
+          <SafeguardsShield
+            popping={finishing}
+            onPopped={onFinished}
             className="h-24 w-24 text-tinfoil-accent-blue dark:text-white"
-            aria-hidden="true"
           />
         </div>
 
