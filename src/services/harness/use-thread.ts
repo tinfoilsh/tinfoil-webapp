@@ -328,11 +328,7 @@ export function useThread(
     },
     async saved(run, event, attached) {
       try {
-        const saved = await storeRun(
-          run,
-          event,
-          controller.settingsChangedSince(run),
-        )
+        const saved = await storeRun(run, event, controller)
         if (!saved) return
         markSaved(saved.id)
         if (open.get().id !== saved.id) return

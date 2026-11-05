@@ -65,25 +65,30 @@ type ChangeRoute =
 // A device run's final event carries the whole thread, which this device
 // stores with the images it holds where the harness left them out, and the
 // originals of the images the turn sent. The settings the user changed
-// after the run's turn read the chat keep the user's values.
+// after the run's turn read the chat keep the user's values. A thread a run
+// of the chat that started later stored is kept.
 export async function storeRun(
   run: DeviceRun,
   event: TerminalEvent,
-  changedSince: readonly string[],
+  controller: RunController,
 ): Promise<StoredThread | null> {
   const thread = event.metadata?.thread
   if (!isThread(thread)) return null
+  const changedSince = controller.settingsChangedSince(run)
   const saved = await run.store.update(
     run.threadId,
-    (stored) => ({
-      ...thread,
-      id: run.threadId,
-      messages: withHeldImages(
-        thread.messages,
-        new Map([...heldImages(stored?.messages ?? []), ...run.images]),
-      ),
-      ...(stored ? pick(stored, changedSince) : {}),
-    }),
+    (stored) =>
+      controller.storesThread(run)
+        ? {
+            ...thread,
+            id: run.threadId,
+            messages: withHeldImages(
+              thread.messages,
+              new Map([...heldImages(stored?.messages ?? []), ...run.images]),
+            ),
+            ...(stored ? pick(stored, changedSince) : {}),
+          }
+        : null,
     run.originals,
   )
   if (saved) run.threadStored = true

@@ -2292,6 +2292,309 @@ describe('a chat on this device whose run fails asking for the stored chat', () 
   )
 })
 
+// The harness runs a chat's turns one at a time, each from the thread the
+// one before left, but each run streams on its own connection: a slow or
+// dropped stream delivers its final event after a later run's.
+describe('a chat on this device whose runs end out of order', () => {
+  function gate() {
+    let release!: () => void
+    const promise = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    return { promise, release }
+  }
+  const replyId = (input: Turn) => `reply-${input.clientRequestId}`
+  // The thread a turn's run leaves: the thread it went on from, then the
+  // turn's message and the reply to it.
+  const after = (
+    input: Turn,
+    before: readonly ThreadMessage[],
+    answer: string,
+  ) =>
+    returnedThread(input.threadId!, {
+      lastRequestId: input.clientRequestId,
+      messages: [
+        ...before,
+        {
+          id: input.clientRequestId,
+          role: 'user',
+          createdAt: 't1',
+          content: input.content ?? '',
+        },
+        {
+          id: replyId(input),
+          role: 'assistant',
+          createdAt: 't2',
+          content: answer,
+          timeline: [
+            {
+              id: `${replyId(input)}_content_0`,
+              type: 'content',
+              content: answer,
+            },
+          ],
+        },
+      ],
+    })
+  const started = (threadId: string, runId: string) =>
+    ({
+      type: 'RUN_STARTED',
+      threadId,
+      runId,
+      instance: 'instance-1',
+    }) satisfies Frame['event']
+  const queued = (input: Turn, runId: string) =>
+    ({
+      type: 'STATE_DELTA',
+      threadId: input.threadId!,
+      runId,
+      delta: [
+        {
+          op: 'add',
+          path: '/queue/-',
+          value: {
+            queueId: runId,
+            kind: 'send',
+            content: input.content!,
+            quote: null,
+            attachments: [],
+            createdAt: 't1',
+          },
+        },
+      ],
+    }) satisfies Frame['event']
+  // A run that streams its reply, then ends once `ends` resolves.
+  async function* answering(
+    input: Turn,
+    runId: string,
+    thread: ReturnedThread,
+    end: (thread: ReturnedThread, runId: string) => Frame['event'],
+    ends: Promise<void> = Promise.resolve(),
+  ): AsyncGenerator<Frame> {
+    yield { id: 1, event: started(input.threadId!, runId) }
+    yield {
+      id: 2,
+      event: {
+        type: 'MESSAGES_SNAPSHOT',
+        messages: thread.messages.slice(0, -1) as Message[],
+        hasOlder: false,
+      },
+    }
+    yield {
+      id: 3,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: replyId(input),
+        role: 'assistant',
+        delta: thread.messages.at(-1)!.content,
+      },
+    }
+    await ends
+    yield { id: 4, event: end(thread, runId) }
+  }
+  const finishedIn = (input: Turn) => (thread: ReturnedThread, runId: string) =>
+    finished(input.threadId!, thread, runId)
+  // A run that failed still returns the thread it leaves.
+  const failedIn = (input: Turn) => (thread: ReturnedThread, runId: string) =>
+    ({
+      type: 'RUN_ERROR',
+      threadId: input.threadId!,
+      runId,
+      code: 'MODEL_UNAVAILABLE',
+      message: 'The model is unavailable.',
+      action: 'retry',
+      metadata: { thread },
+    }) satisfies Frame['event']
+
+  it.each([
+    { name: 'an account', userId: 'alice', temporary: false, fails: false },
+    {
+      name: 'an account, whose earlier reply failed',
+      userId: 'alice',
+      temporary: false,
+      fails: true,
+    },
+    {
+      name: 'a signed-out visitor',
+      userId: null,
+      temporary: false,
+      fails: false,
+    },
+    {
+      name: 'a temporary chat',
+      userId: 'alice',
+      temporary: true,
+      fails: false,
+    },
+  ])(
+    'keeps the queued turn whose run ended first, and the next turn sends it, for $name',
+    async ({ userId, temporary, fails }) => {
+      signIn(userId)
+      const firstEnds = gate()
+      let first!: ReturnedThread
+      let second!: ReturnedThread
+      let edited!: ReturnedThread
+      client.events
+        .mockImplementationOnce((_path: string, input: Turn) => {
+          first = after(input, [], 'first answer')
+          return answering(
+            input,
+            'run-first',
+            first,
+            (fails ? failedIn : finishedIn)(input),
+            firstEnds.promise,
+          )
+        })
+        .mockImplementationOnce(async function* (_path: string, input: Turn) {
+          second = after(input, first.messages, 'second answer')
+          yield { id: 0, event: queued(input, 'run-second') }
+          yield* answering(input, 'run-second', second, finishedIn(input))
+        })
+        .mockImplementationOnce((_path: string, input: Turn) => {
+          edited = after(input, [], 'edited answer')
+          return answering(input, 'run-edited', edited, finishedIn(input))
+        })
+        .mockImplementationOnce((_path: string, input: Turn) =>
+          answering(
+            input,
+            'run-next',
+            after(input, edited.messages, 'next answer'),
+            finishedIn(input),
+          ),
+        )
+      const { result } = renderHook(() => useThread())
+      await waitFor(() => expect(result.current.model).toBe('test-model'))
+      if (temporary) act(() => result.current.setTemporary(true))
+      let sendingFirst: Promise<boolean> | undefined
+      act(() => {
+        sendingFirst = result.current.send({ content: 'first' })
+      })
+      await waitFor(() => expect(result.current.status).toBe('streaming'))
+      // The queued turn's run went on from the first run's thread, and its
+      // final event arrives first.
+      await act(() => result.current.send({ content: 'second' }))
+
+      await act(async () => {
+        firstEnds.release()
+        await sendingFirst
+      })
+
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+        'first',
+        'first answer',
+        'second',
+        'second answer',
+      ])
+      // The first run's end shows as it would, not as a failed save.
+      expect(result.current.error).toBe(
+        fails ? 'The model is unavailable.' : '',
+      )
+      await act(() =>
+        result.current.send({
+          kind: 'edit',
+          messageId: turn(0).clientRequestId,
+          content: 'first, edited',
+        }),
+      )
+      expect(turn(2).thread).toEqual(second)
+      // A later run's thread replaces the one before it, shorter or not.
+      await act(() => result.current.send({ content: 'next' }))
+      expect(turn(3).thread).toEqual(edited)
+    },
+  )
+
+  it('keeps the turn queued first when the one sent ahead of it ends last', async () => {
+    signIn('alice')
+    const firstEnds = gate()
+    const aheadStarts = gate()
+    const aheadStarted = gate()
+    const aheadEnds = gate()
+    const behindStarts = gate()
+    let first!: ReturnedThread
+    let ahead!: ReturnedThread
+    let behind!: ReturnedThread
+    client.events
+      .mockImplementationOnce((_path: string, input: Turn) => {
+        first = after(input, [], 'first answer')
+        return answering(
+          input,
+          'run-first',
+          first,
+          (thread, runId) => ({
+            ...finished(input.threadId!, thread, runId),
+            metadata: { thread, cancelled: true },
+          }),
+          firstEnds.promise,
+        )
+      })
+      .mockImplementationOnce(async function* (_path: string, input: Turn) {
+        yield { id: 0, event: queued(input, 'run-behind') }
+        await behindStarts.promise
+        behind = after(input, ahead.messages, 'second answer')
+        yield* answering(input, 'run-behind', behind, finishedIn(input))
+      })
+      .mockImplementationOnce(async function* (_path: string, input: Turn) {
+        yield { id: 0, event: queued(input, 'run-ahead') }
+        await aheadStarts.promise
+        ahead = after(input, first.messages, 'third answer')
+        yield { id: 1, event: started(input.threadId!, 'run-ahead') }
+        aheadStarted.release()
+        await aheadEnds.promise
+        yield { id: 2, event: finished(input.threadId!, ahead, 'run-ahead') }
+      })
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+    const sending: (Promise<boolean> | undefined)[] = []
+    act(() => {
+      sending.push(result.current.send({ content: 'first' }))
+    })
+    await waitFor(() => expect(result.current.status).toBe('streaming'))
+    act(() => {
+      sending.push(result.current.send({ content: 'second' }))
+    })
+    await waitFor(() => expect(result.current.queue).toHaveLength(1))
+    act(() => {
+      sending.push(result.current.send({ content: 'third' }))
+    })
+    await waitFor(() =>
+      expect(result.current.queue.map((q) => q.text)).toEqual([
+        'second',
+        'third',
+      ]),
+    )
+    const threadId = turn(0).threadId!
+    client.post.mockImplementationOnce(async () => ({}))
+    await act(() => result.current.sendQueued('run-ahead'))
+    expect(client.post).toHaveBeenLastCalledWith(
+      '/v1/threads/queue/send',
+      { threadId, queueId: 'run-ahead' },
+      expect.any(AbortSignal),
+    )
+
+    // The harness stops the reply and runs the turn sent ahead from its
+    // thread, then the turn queued first from that one's.
+    await act(async () => {
+      firstEnds.release()
+      await sending[0]
+    })
+    await act(async () => {
+      aheadStarts.release()
+      await aheadStarted.promise
+    })
+    await act(async () => {
+      behindStarts.release()
+      await sending[1]
+    })
+    expect(await stored(threadId)).toEqual(behind)
+    await act(async () => {
+      aheadEnds.release()
+      await sending[2]
+    })
+
+    expect(await stored(threadId)).toEqual(behind)
+  })
+})
+
 describe('a chat on this device whose stream drops once another chat is open', () => {
   const OTHER_ID = '8233746419001_2d5f8b63-0a3c-4e8f-9e7d-6c7d8e9f0a11'
   const OTHER_MESSAGES: ThreadMessage[] = [
