@@ -186,6 +186,13 @@ async function send(content: string) {
   fireEvent.click(screen.getByRole('button', { name: 'Send' }))
 }
 
+// Resolves once the conversation shows the reply, which the page also
+// announces once it finished.
+const shownReply = (text: string) =>
+  waitFor(() =>
+    within(screen.getByRole('log', { name: 'Conversation' })).getByText(text),
+  )
+
 it('offers a signed-out visitor a temporary chat that is kept out of the tab', async () => {
   chatPage.auth = { isLoaded: true, isSignedIn: false, userId: null }
   signIn({ userId: null })
@@ -196,7 +203,7 @@ it('offers a signed-out visitor a temporary chat that is kept out of the tab', a
   const exit = screen.getByRole('button', { name: 'Exit temporary chat' })
   expect(exit).toHaveAttribute('aria-pressed', 'true')
   await send('Off the record')
-  await screen.findByText('Noted')
+  await shownReply('Noted')
 
   expect((client.events.mock.calls[0][1] as Turn).local).toBe(true)
   expect(returned).toHaveLength(1)
@@ -210,7 +217,7 @@ it('saves a temporary chat on this device with its title', async () => {
   render(view())
   fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
   await send('Plan a trip')
-  await screen.findByText('Noted')
+  await shownReply('Noted')
   const threadId = (client.events.mock.calls[0][1] as Turn).threadId!
   expect(await rawRows('chats')).toEqual([])
   expect(chatPage.router.replace).not.toHaveBeenCalled()
@@ -300,7 +307,7 @@ it('saves a temporary chat to the cloud with cloud sync', async () => {
   render(view())
   fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
   await send('Plan a trip')
-  await screen.findByText('Noted')
+  await shownReply('Noted')
   const threadId = (client.events.mock.calls[0][1] as Turn).threadId!
 
   fireEvent.click(screen.getByRole('button', { name: 'Save chat' }))
@@ -348,7 +355,7 @@ it('keeps an attached document when the chat becomes temporary', async () => {
     screen.getByRole('button', { name: 'Exit temporary chat' }),
   ).toHaveAttribute('aria-pressed', 'true')
   await send('Summarize these')
-  await screen.findByText('Noted')
+  await shownReply('Noted')
 
   expect(client.events.mock.calls[0][1]).toMatchObject({
     local: true,
@@ -364,7 +371,7 @@ it('starts a normal chat after a temporary one', async () => {
   render(view())
   fireEvent.click(await screen.findByRole('button', { name: 'Temporary chat' }))
   await send('Off the record')
-  await screen.findByText('Noted')
+  await shownReply('Noted')
 
   fireEvent.click(
     within(screen.getByRole('banner')).getByRole('link', { name: 'New chat' }),
@@ -374,7 +381,7 @@ it('starts a normal chat after a temporary one', async () => {
     await screen.findByRole('button', { name: 'Temporary chat' }),
   ).toHaveAttribute('aria-pressed', 'false')
   await send('Keep this')
-  await screen.findByText('Noted')
+  await shownReply('Noted')
   const kept = client.events.mock.calls[1][1] as Turn
   expect(kept.threadId).not.toBe(
     (client.events.mock.calls[0][1] as Turn).threadId,
@@ -472,7 +479,7 @@ it('keeps the base tab title while a new chat is untitled', async () => {
   ).toHaveTextContent('Untitled')
   expect(document.title).toBe('Tinfoil Chat')
 
-  await screen.findByText('Noted')
+  await shownReply('Noted')
   expect(document.title).toBe('Trip ideas · Tinfoil Chat')
   const threadId = (client.events.mock.calls[0][1] as Turn).threadId!
   await waitFor(async () =>
@@ -490,7 +497,7 @@ it('titles a temporary chat as one, though the harness named it, and keeps the b
   expect(header.getByRole('heading', { level: 1 })).toHaveTextContent(
     'Temporary Chat',
   )
-  await screen.findByText('Noted')
+  await shownReply('Noted')
   expect(header.getByRole('heading', { level: 1 })).toHaveTextContent(
     'Temporary Chat',
   )

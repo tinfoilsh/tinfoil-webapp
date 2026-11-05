@@ -15,7 +15,7 @@ import {
 } from './reducer'
 import { showsRateLimit, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
-import { createStore } from './store'
+import { createFrameStore, createStore } from './store'
 import type {
   HarnessErrorBody,
   HarnessEvent,
@@ -62,6 +62,44 @@ function pause(ms: number, signal: AbortSignal): Promise<void> {
 // had applied a turn sent again, or no longer has the run, finished or not.
 const gone = (cause: unknown) =>
   cause instanceof HarnessError && cause.detail.action === ERROR_ACTIONS.reload
+
+// How long applying a run's frames back to back may hold the page before
+// the browser gets a turn to draw and answer input.
+export const YIELD_AFTER_MS = 8
+
+// Resolves in a task of its own, once the tasks queued before it ran.
+function nextTask(): Promise<void> {
+  return new Promise((resolve) => {
+    const { port1, port2 } = new MessageChannel()
+    port1.onmessage = () => {
+      port1.close()
+      resolve()
+    }
+    port2.postMessage(null)
+  })
+}
+
+// Paces work done back to back: once it held the page for YIELD_AFTER_MS
+// without the browser getting a turn, it waits for one.
+function pacer() {
+  let since: number | undefined
+  return (): Promise<void> | undefined => {
+    const now = performance.now()
+    if (since === undefined) {
+      since = now
+      void nextTask().then(() => {
+        since = undefined
+      })
+      return
+    }
+    if (now - since < YIELD_AFTER_MS) return
+    since = undefined
+    const { scheduler } = globalThis as {
+      scheduler?: { yield?(): Promise<void> }
+    }
+    return scheduler?.yield?.() ?? nextTask()
+  }
+}
 
 // Following a run resumes after the last frame of it this client applied,
 // when it applied one.
@@ -138,7 +176,7 @@ export interface Receipt {
 // the frames it applied. A run whose stream drops is rejoined, backing off
 // while the harness cannot be reached.
 export class RunController {
-  readonly view = createStore<ChatState>(initialChat())
+  readonly view = createFrameStore<ChatState>(initialChat())
   // The device chats whose runs this page reads, by chat.
   readonly deviceRuns = createStore<ReadonlyMap<string, DeviceRun>>(new Map())
   // The messages whose reply the user stopped on this page, which keep
@@ -268,8 +306,13 @@ export class RunController {
     })
     // The stream applied a frame the view did not hold yet.
     let progressed = false
+    // A long backlog of frames, as a slow device falls behind its stream,
+    // lets the browser draw and answer input as it applies them.
+    const pace = pacer()
     try {
       for await (const frame of this.api.client.events(route, sent, signal)) {
+        const pause = pace()
+        if (pause) await pause
         const shown = attached()
         const { event } = frame
         if ('threadId' in event && event.threadId) threadId = event.threadId
@@ -297,7 +340,17 @@ export class RunController {
           if (isTerminal(event)) this.markCanceled(canceledBy(base, event))
           progressed = true
           view = next
-          if (shown) this.view.set(next)
+          // A change of the run's status shows at once, and what it streams
+          // with the next animation frame.
+          if (shown) {
+            if (
+              event.type === 'RUN_STARTED' ||
+              isTerminal(event) ||
+              next.status !== base.status
+            )
+              this.view.set(next)
+            else this.view.stage(next)
+          }
           if (event.type === 'RUN_STARTED') {
             this.started(
               {
