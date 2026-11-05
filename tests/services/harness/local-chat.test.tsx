@@ -1686,7 +1686,12 @@ describe('stored local chat changes', () => {
 
   it('deletes every chat from the device, and tells the harness without a key', async () => {
     const { result } = await openSeeded()
-    client.post.mockResolvedValue({ deleted: 1 })
+    // A harness out of reach for the notice leaves the chats deleted.
+    client.post.mockImplementation(async (_path, body) => {
+      if ((body as { local?: boolean }).local)
+        throw new TypeError('Failed to fetch')
+      return { deleted: 1 }
+    })
 
     await act(async () => {
       await result.current.removeAll()
