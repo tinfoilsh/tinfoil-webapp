@@ -1857,24 +1857,25 @@ describe('signed-out chats', () => {
   })
 })
 
-describe('chats on this device whose dropped run the harness no longer has', () => {
-  // The harness no longer has a run whose stream dropped, as once it ended
-  // longer ago than the harness keeps a device chat's reply to collect.
-  const runNotFound = async function* (): AsyncGenerator<Frame> {
-    yield* []
-    throw new HarnessError(
-      {
-        code: 'RUN_NOT_FOUND',
-        message: 'The run is not running here',
-        action: 'reload',
-      },
-      404,
-    )
-  }
-  // The seeded chat as the harness shows it: a reply without its text.
-  const seededView = SEEDED_MESSAGES.map(({ content, ...message }): Message =>
-    message.role === 'assistant' ? message : { ...message, content },
+// The harness no longer has a run whose stream dropped, as once it ended
+// longer ago than the harness keeps a device chat's reply to collect.
+const runNotFound = async function* (): AsyncGenerator<Frame> {
+  yield* []
+  throw new HarnessError(
+    {
+      code: 'RUN_NOT_FOUND',
+      message: 'The run is not running here',
+      action: 'reload',
+    },
+    404,
   )
+}
+// The seeded chat as the harness shows it: a reply without its text.
+const seededView = SEEDED_MESSAGES.map(({ content, ...message }): Message =>
+  message.role === 'assistant' ? message : { ...message, content },
+)
+
+describe('chats on this device whose dropped run the harness no longer has', () => {
   const [, , , secondAnswer] = SEEDED_MESSAGES
 
   const reply = {
@@ -2049,6 +2050,197 @@ describe('chats on this device whose dropped run the harness no longer has', () 
       })
     },
   )
+})
+
+describe('a chat on this device whose stream drops once another chat is open', () => {
+  const OTHER_ID = '8233746419001_2d5f8b63-0a3c-4e8f-9e7d-6c7d8e9f0a11'
+  const OTHER_MESSAGES: ThreadMessage[] = [
+    { id: 'o1', role: 'user', createdAt: 't1', content: 'Elsewhere?' },
+    {
+      id: 'o2',
+      role: 'assistant',
+      createdAt: 't2',
+      content: 'Elsewhere.',
+      timeline: [{ id: 'ob', type: 'content', content: 'Elsewhere.' }],
+    },
+  ]
+  // The run of the question the seeded chat sends, the last frame of which
+  // streams after the stream dropped.
+  const run = (input: Turn): Frame['event'][] => [
+    {
+      type: 'RUN_STARTED',
+      threadId: SEEDED_ID,
+      runId: 'run-a3',
+      instance: 'instance-1',
+    },
+    {
+      type: 'MESSAGES_SNAPSHOT',
+      messages: [
+        ...seededView,
+        {
+          id: input.clientRequestId,
+          role: 'user',
+          createdAt: 't5',
+          content: 'third',
+        },
+      ],
+      hasOlder: false,
+    },
+    {
+      type: 'TEXT_MESSAGE_CHUNK',
+      messageId: 'a3',
+      role: 'assistant',
+      delta: 'Half an ',
+      timestamp: 't6',
+    },
+    {
+      type: 'TEXT_MESSAGE_CHUNK',
+      messageId: 'a3',
+      role: 'assistant',
+      delta: 'answer',
+    },
+    {
+      type: 'TEXT_MESSAGE_CHUNK',
+      messageId: 'a3',
+      role: 'assistant',
+      delta: '.',
+    },
+  ]
+  // The frames of the run streamed before its stream drops.
+  const DROPS_AFTER = 3
+  const shownInOther = (thread: ReturnType<typeof useThread>) =>
+    thread.chat.messages.map(({ id, content }) => [id, content])
+
+  // Sends a question in the seeded chat, then opens the other chat; the
+  // question's stream drops once `drop` is called, and the rejoins follow.
+  async function sendThenLeave(
+    ...rejoins: ((
+      path: string,
+      input: FollowRequest,
+    ) => AsyncGenerator<Frame>)[]
+  ) {
+    signIn('alice')
+    const device = localThreadStore('device')
+    await device.update(SEEDED_ID, () => seeded())
+    await device.update(OTHER_ID, () =>
+      storedThread(OTHER_ID, { messages: OTHER_MESSAGES }),
+    )
+    let drop!: () => void
+    const dropped = new Promise<void>((resolve) => {
+      drop = resolve
+    })
+    client.events.mockImplementationOnce(async function* (
+      _path: string,
+      input: Turn,
+    ) {
+      for (const [id, event] of run(input).entries())
+        if (id <= DROPS_AFTER) yield { id, event }
+      await dropped
+      throw new TypeError('network error')
+    })
+    for (const rejoin of rejoins) client.events.mockImplementationOnce(rejoin)
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    let sending!: Promise<boolean | undefined> | undefined
+    act(() => {
+      sending = result.current.send({ content: 'third' })
+    })
+    await waitFor(() =>
+      expect(result.current.chat.messages.at(-1)?.content).toBe(
+        'Half an answer',
+      ),
+    )
+    await act(() => result.current.open(OTHER_ID, { local: true }))
+    expect(shownInOther(result.current)).toEqual([
+      ['o1', 'Elsewhere?'],
+      ['o2', 'Elsewhere.'],
+    ])
+    return { result, drop, sending: () => sending }
+  }
+
+  it('finishes in its own chat when it is rejoined, leaving the open chat as it was', async () => {
+    let returned!: ReturnedThread
+    const { result, drop, sending } = await sendThenLeave(
+      // The first attempt reaches nothing, and the next resumes the run
+      // after the last frame applied.
+      async function* () {
+        yield* []
+        throw new TypeError('network error')
+      },
+      async function* (_path, input) {
+        returned = recorded(
+          seeded({
+            lastRequestId: turn().clientRequestId,
+            messages: [
+              ...SEEDED_MESSAGES,
+              {
+                id: turn().clientRequestId,
+                role: 'user',
+                createdAt: 't5',
+                content: 'third',
+              },
+              {
+                id: 'a3',
+                role: 'assistant',
+                createdAt: 't6',
+                content: 'Half an answer.',
+                timeline: [
+                  {
+                    id: 'a3_content_0',
+                    type: 'content',
+                    content: 'Half an answer.',
+                  },
+                ],
+              },
+            ],
+          }),
+        )
+        const events = [...run(turn()), finished(SEEDED_ID, returned, 'run-a3')]
+        for (const [id, event] of events.entries())
+          if (id > (input.lastEventId ?? -1)) yield { id, event }
+      },
+    )
+    fakeTimeouts()
+
+    drop()
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(client.events).toHaveBeenCalledTimes(2)
+    await act(() => vi.advanceTimersByTimeAsync(REJOIN_DELAYS_MS[1]))
+    await act(() => sending())
+
+    expect(result.current.chat.id).toBe(OTHER_ID)
+    expect(shownInOther(result.current)).toEqual([
+      ['o1', 'Elsewhere?'],
+      ['o2', 'Elsewhere.'],
+    ])
+    expect(result.current.status).toBe('idle')
+    expect(
+      client.events.mock.calls.slice(1).map(([path, input]) => [path, input]),
+    ).toEqual([
+      [
+        '/v1/threads/follow',
+        { threadId: SEEDED_ID, runId: 'run-a3', lastEventId: DROPS_AFTER },
+      ],
+      [
+        '/v1/threads/follow',
+        { threadId: SEEDED_ID, runId: 'run-a3', lastEventId: DROPS_AFTER },
+      ],
+    ])
+    expect(await stored(SEEDED_ID)).toEqual(returned)
+
+    vi.useRealTimers()
+    await act(() => result.current.open(SEEDED_ID, { local: true }))
+    expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+      'first',
+      'first answer',
+      'second',
+      'second answer',
+      'third',
+      'Half an answer.',
+    ])
+  })
 })
 
 describe('temporary chats', () => {

@@ -145,6 +145,11 @@ export interface RunOptions {
   // A widget's retry leaves the chat's status and error as they were, and
   // keeps why it failed here instead.
   widgetRetry?: { failure?: HarnessErrorBody }
+  // A rejoined run stays the run of the chat it started from: it shows only
+  // while the view shows that chat, and otherwise goes on from the chat as
+  // the run left it.
+  generation?: number
+  state?: ChatState
 }
 
 // What the chat around a run does as the run goes.
@@ -280,12 +285,12 @@ export class RunController {
     let started = options.started ?? 'runId' in input
     const controller = new AbortController()
     if (!device) this.followers.set(controller, options.submission)
-    const version = this.generation
+    const version = options.generation ?? this.generation
     const attached = () => version === this.generation
     let runId = 'runId' in input ? input.runId : undefined
     let threadId = input.threadId
     let succeeded = false
-    let view = this.view.get()
+    let view = attached() || !options.state ? this.view.get() : options.state
     const sent =
       'clientRequestId' in input
         ? scopedTurn(input, this.api.userId)
@@ -312,8 +317,8 @@ export class RunController {
     const pace = pacer()
     try {
       for await (const frame of this.api.client.events(route, sent, signal)) {
-        const pause = pace()
-        if (pause) await pause
+        const browserTurn = pace()
+        if (browserTurn) await browserTurn
         const shown = attached()
         const { event } = frame
         if ('threadId' in event && event.threadId) threadId = event.threadId
@@ -441,6 +446,8 @@ export class RunController {
           ...options,
           rejoins: rejoins + 1,
           started,
+          generation: version,
+          state: view,
         })
       }
       if (attached()) {
