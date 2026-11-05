@@ -55,7 +55,30 @@ describe('harness SSE', () => {
     expect(frames).toHaveLength(2)
     expect(frames[0]).toMatchObject({ id: 0, event: { delta: '🙂 café' } })
     expect(frames[1].id).toBeUndefined()
+    // A CR alone ends a line too, even as the last character of a chunk.
+    const bare = await collect(
+      stream(
+        'data: {"type":"RUN_STARTED"}\r\rdata: {"type":"RUN_FINISHED"}\r\r',
+      ),
+    )
+    expect(bare.map(({ event }) => event.type)).toEqual([
+      'RUN_STARTED',
+      'RUN_FINISHED',
+    ])
   })
+  // The harness decides how large an event grows. Reading one searches each
+  // chunk once, so an event in thousands of small chunks reads in a moment.
+  it('reads an event of any size in time proportional to it', async () => {
+    const delta = 'x'.repeat(9 << 20)
+    const frames = await collect(
+      stream(
+        `data: {"type":"TEXT_MESSAGE_CHUNK","messageId":"m","delta":"${delta}"}\n\ndata: {"type":"RUN_FINISHED"}\n\n`,
+        1 << 10,
+      ),
+    )
+    expect(frames).toHaveLength(2)
+    expect(frames[0].event).toMatchObject({ messageId: 'm', delta })
+  }, 10_000)
   // A stream that closed early can be rejoined; one that breaks the
   // protocol cannot be read again either.
   it('requires a terminal event and rejects invalid cursors and JSON', async () => {

@@ -14,40 +14,46 @@ export class HarnessError extends Error {
   }
 }
 
-const maxFrameCharacters = 8 * 1024 * 1024
-
 // SSE fields are parsed after UTF-8 decoding, so split multibyte characters,
 // CRLF boundaries, comments, and multiline data survive arbitrary chunking.
+// Each chunk's text is searched for line breaks once, so an event of any size
+// is read in time proportional to it.
 export async function* readEvents(
   body: ReadableStream<Uint8Array>,
 ): AsyncGenerator<Frame> {
   const reader = body.getReader()
   const decoder = new TextDecoder('utf-8', { fatal: true })
-  let buffer = ''
+  const lineBreak = /[\r\n]/g
+  // The line read so far, and whether the text before ended in a CR, whose
+  // LF may start the next text.
+  let partial = ''
+  let afterCR = false
   let data: string[] = []
-  let size = 0
   let id: number | undefined
   let terminal = false
   try {
     while (true) {
       const chunk = await reader.read()
-      buffer += decoder.decode(chunk.value, { stream: !chunk.done })
-      while (buffer.length) {
-        const boundary = buffer.search(/[\r\n]/)
-        if (
-          boundary < 0 ||
-          (buffer[boundary] === '\r' &&
-            boundary === buffer.length - 1 &&
-            !chunk.done)
-        )
-          break
-        const line = buffer.slice(0, boundary)
-        buffer = buffer.slice(
-          boundary +
-            (buffer[boundary] === '\r' && buffer[boundary + 1] === '\n'
-              ? 2
-              : 1),
-        )
+      let text = decoder.decode(chunk.value, { stream: !chunk.done })
+      if (afterCR && text) {
+        if (text[0] === '\n') text = text.slice(1)
+        afterCR = false
+      }
+      let start = 0
+      lineBreak.lastIndex = 0
+      for (
+        let found = lineBreak.exec(text);
+        found;
+        found = lineBreak.exec(text)
+      ) {
+        const line = partial + text.slice(start, found.index)
+        partial = ''
+        start = found.index + 1
+        if (text[found.index] === '\r') {
+          if (text[start] === '\n') start++
+          else afterCR = start === text.length
+        }
+        lineBreak.lastIndex = start
         if (line === '') {
           if (data.length) {
             let event: HarnessEvent
@@ -72,14 +78,12 @@ export async function* readEvents(
           }
           data = []
           id = undefined
-          size = 0
         } else if (!line.startsWith(':')) {
           const colon = line.indexOf(':')
           const field = colon < 0 ? line : line.slice(0, colon)
           const value = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '')
           if (field === 'data') {
             data.push(value)
-            size += value.length
           } else if (field === 'id') {
             if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
               throw new HarnessError({
@@ -91,19 +95,8 @@ export async function* readEvents(
             id = Number(value)
           }
         }
-        if (size > maxFrameCharacters)
-          throw new HarnessError({
-            code: ERROR_CODES.invalidStream,
-            action: ERROR_ACTIONS.stop,
-            message: 'The chat event exceeded its size limit.',
-          })
       }
-      if (size + buffer.length > maxFrameCharacters)
-        throw new HarnessError({
-          code: ERROR_CODES.invalidStream,
-          action: ERROR_ACTIONS.stop,
-          message: 'The chat event exceeded its size limit.',
-        })
+      partial += text.slice(start)
       if (chunk.done) break
     }
     if (!terminal)
