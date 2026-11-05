@@ -1,6 +1,6 @@
 import { cn } from '@/components/ui/utils'
 import { logError } from '@/utils/error-handling'
-import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxX, TfImageSlash } from '@tinfoilsh/tinfoil-icons'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { PiSpinner } from 'react-icons/pi'
@@ -115,6 +115,18 @@ export const DocumentList = memo(function DocumentList({
     }
   }, [attachments, loadText, readText])
 
+  // An image shown without a thumbnail loads its full copy instead.
+  useEffect(() => {
+    if (!gallery || messageIndex === undefined) return
+    attachments
+      ?.filter((attachment) => attachment.type === 'image')
+      .slice(0, MAX_PILE_THUMBNAILS)
+      .forEach((attachment, imageIndex) => {
+        if (!attachment.thumbnailBase64 && !attachment.base64)
+          gallery.show(`${messageIndex}:${imageIndex}`)
+      })
+  }, [attachments, gallery, messageIndex])
+
   if (!attachments?.length) {
     return null
   }
@@ -151,14 +163,15 @@ export const DocumentList = memo(function DocumentList({
       })
   }
 
-  const localImages: GalleryImage[] = imageAttachments
-    .map((attachment, i) => {
-      const src = attachmentToImageSrc(attachment)
-      return src
-        ? { key: String(i), src, alt: attachment.fileName || 'Image' }
-        : null
-    })
-    .filter((image): image is GalleryImage => image !== null)
+  const localImages: GalleryImage[] = imageAttachments.map((attachment, i) => {
+    const src = attachmentToImageSrc(attachment) ?? undefined
+    return {
+      key: String(i),
+      src,
+      alt: attachment.fileName || 'Image',
+      failed: !src,
+    }
+  })
 
   const openImage = (imageIndex: number) => {
     if (gallery && messageIndex !== undefined) {
@@ -179,6 +192,14 @@ export const DocumentList = memo(function DocumentList({
           <div className="flex items-center">
             {visibleImages.map((attachment, i) => {
               const thumb = attachment.thumbnailBase64 || attachment.base64
+              const full =
+                thumb || !gallery || messageIndex === undefined
+                  ? undefined
+                  : gallery.imageByKey(`${messageIndex}:${i}`)
+              const src = thumb
+                ? `data:${attachment.mimeType || 'image/jpeg'};base64,${thumb}`
+                : full?.src
+              const failed = !src && (!full || !!full.failed)
               const isLastVisible = i === visibleImages.length - 1
               const overflowBadge =
                 isLastVisible && hiddenImageCount > 0 ? hiddenImageCount : 0
@@ -187,20 +208,29 @@ export const DocumentList = memo(function DocumentList({
                   key={attachment.id}
                   type="button"
                   onClick={() => openImage(i)}
-                  aria-label={`View image ${attachment.fileName}`}
+                  aria-label={
+                    failed
+                      ? `Image ${attachment.fileName} could not be loaded`
+                      : `View image ${attachment.fileName}`
+                  }
+                  aria-busy={(!src && !failed) || undefined}
                   style={{ zIndex: visibleImages.length - i }}
                   className={cn(
                     'bg-surface-secondary relative h-24 w-24 flex-none overflow-hidden rounded-lg border-2 border-surface-chat shadow-md transition-all duration-200 ease-out hover:z-10 hover:-translate-y-1',
                     i > 0 && '-ml-14 group-hover/pile:ml-1',
                   )}
                 >
-                  {thumb ? (
+                  {src ? (
                     <img
-                      src={`data:${attachment.mimeType || 'image/jpeg'};base64,${thumb}`}
+                      src={src}
                       alt={attachment.fileName}
                       className="h-full w-full object-cover"
                       loading="lazy"
                     />
+                  ) : failed ? (
+                    <div className="flex h-full w-full items-center justify-center text-content-muted">
+                      <TfImageSlash className="h-5 w-5" aria-hidden="true" />
+                    </div>
                   ) : (
                     <div className="flex h-full w-full items-center justify-center">
                       <PiSpinner

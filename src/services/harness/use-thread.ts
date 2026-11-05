@@ -654,8 +654,8 @@ export function useThread(
   const messages = shownList.map((m) => {
     const view = viewOf(m, running && !stopped && m === state.messages.at(-1))
     if (!onDevice(openState) || !view.attachments?.length) return view
-    // An image the previous client stored without a thumbnail shows its
-    // bytes; others load them when opened in the gallery.
+    // An image stored without a thumbnail shows the bytes the chat holds, or
+    // loads them as it shows; others load them when opened in the gallery.
     return {
       ...view,
       attachments: view.attachments.map((attachment) => {
