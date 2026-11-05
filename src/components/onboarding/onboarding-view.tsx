@@ -6,12 +6,9 @@ import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useUser } from '@clerk/react'
 import { TfShieldCheck } from '@tinfoilsh/tinfoil-icons'
-import {
-  TfLockLockedAnimated,
-  TfLockOpenedAnimated,
-} from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useState } from 'react'
+import { PrivacyLock } from './privacy-lock'
 
 interface OnboardingViewProps {
   onComplete: () => void
@@ -262,39 +259,10 @@ function OnboardingPrivacyPage({
     >
       <div className="flex w-full flex-col items-center gap-8">
         <div className="flex h-28 items-center justify-center">
-          <AnimatePresence mode="wait">
-            {privacyEnabled ? (
-              <motion.div
-                key="locked"
-                initial={{ opacity: 0, scale: 0.85, rotate: 0 }}
-                animate={{
-                  opacity: 1,
-                  scale: [0.85, 1.12, 1],
-                  rotate: [0, -6, 6, -3, 3, 0],
-                }}
-                exit={{ opacity: 0, scale: 0.85 }}
-                transition={{ duration: 0.5, ease: 'easeOut' }}
-              >
-                <TfLockLockedAnimated
-                  className="h-24 w-24 text-content-primary"
-                  aria-hidden="true"
-                />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="unlocked"
-                initial={{ opacity: 0, scale: 0.85 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.85 }}
-                transition={{ duration: 0.15, ease: 'easeOut' }}
-              >
-                <TfLockOpenedAnimated
-                  className="h-24 w-24 text-content-primary"
-                  aria-hidden="true"
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <PrivacyLock
+            locked={privacyEnabled}
+            className="h-24 w-24 text-content-primary"
+          />
         </div>
 
         <div className="space-y-2 text-center">
