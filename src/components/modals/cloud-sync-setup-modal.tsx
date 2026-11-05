@@ -23,12 +23,12 @@ import {
   TfFingerprint,
   TfKey,
   TfRefresh,
-  TfShieldCheck,
   TfTinSad,
 } from '@tinfoilsh/tinfoil-icons'
 import {
   TfCloudFaceAnimated,
   TfLockLockedAnimated,
+  TfShieldCheckAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -486,6 +486,7 @@ ${generatedKey.replace('key_', '')}
   const renderIntroStep = () => (
     <div className="flex h-full flex-col gap-6">
       <TfCloudFaceAnimated
+        animation="appear"
         className={ILLUSTRATION_ICON_CLASS_NAME}
         aria-hidden="true"
       />
@@ -507,6 +508,7 @@ ${generatedKey.replace('key_', '')}
         <div className="grid w-full max-w-xs grid-cols-1 gap-8">
           <Card dashedLines texture className="relative z-10 space-y-1 p-4">
             <TfLockLockedAnimated
+              animation="appear"
               className="mx-auto h-5 w-5 text-content-secondary"
               aria-hidden="true"
             />
@@ -626,7 +628,8 @@ ${generatedKey.replace('key_', '')}
 
   const renderKeyDisplayStep = () => (
     <div className="flex h-full flex-col gap-8">
-      <TfShieldCheck
+      <TfShieldCheckAnimated
+        animation="appear"
         className={ILLUSTRATION_ICON_CLASS_NAME}
         aria-hidden="true"
       />
@@ -808,7 +811,8 @@ ${generatedKey.replace('key_', '')}
 
   const renderRestoreSuccessStep = () => (
     <div className="flex h-full flex-col gap-8">
-      <TfShieldCheck
+      <TfShieldCheckAnimated
+        animation="appear"
         className={ILLUSTRATION_ICON_CLASS_NAME}
         aria-hidden="true"
       />
@@ -947,6 +951,7 @@ ${generatedKey.replace('key_', '')}
   const renderPasskeyRecoveryStep = () => (
     <div className="flex h-full flex-col gap-8">
       <TfLockLockedAnimated
+        animation="appear"
         className={ILLUSTRATION_ICON_CLASS_NAME}
         aria-hidden="true"
       />
