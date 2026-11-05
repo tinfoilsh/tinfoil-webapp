@@ -2050,6 +2050,129 @@ describe('chats on this device whose dropped run the harness no longer has', () 
       })
     },
   )
+
+  it('keeps a reply before the message another tab sent in its chat meanwhile', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    // Two tabs show the chat, each with runs of its own; this device keeps
+    // the chat for both.
+    const first = renderHook(() => useThread(SEEDED_ID, null, { local: true }))
+    const second = renderHook(() => useThread(SEEDED_ID, null, { local: true }))
+    await waitFor(() =>
+      expect(first.result.current.chat.messages).toHaveLength(4),
+    )
+    await waitFor(() =>
+      expect(second.result.current.chat.messages).toHaveLength(4),
+    )
+    let drop!: () => void
+    const dropped = new Promise<void>((resolve) => {
+      drop = resolve
+    })
+    let end!: () => void
+    const ended = new Promise<void>((resolve) => {
+      end = resolve
+    })
+    client.events
+      .mockImplementationOnce(async function* (_path: string, input: Turn) {
+        for (const [id, event] of reply.streamed(input).entries())
+          yield { id, event }
+        await dropped
+        throw new TypeError('network error')
+      })
+      // The harness queues the other tab's turn behind the reply, and ends
+      // it once the reply is lost.
+      .mockImplementationOnce(async function* () {
+        yield {
+          id: 0,
+          event: {
+            type: 'STATE_DELTA',
+            threadId: SEEDED_ID,
+            runId: 'run-b',
+            delta: [
+              {
+                op: 'add',
+                path: '/queue/-',
+                value: {
+                  queueId: 'run-b',
+                  kind: 'send',
+                  content: 'fourth',
+                  quote: null,
+                  attachments: [],
+                  createdAt: 't7',
+                },
+              },
+            ],
+          },
+        }
+        await ended
+        yield {
+          id: 1,
+          event: {
+            type: 'RUN_FINISHED',
+            threadId: SEEDED_ID,
+            runId: 'run-b',
+            metadata: { cancelled: true },
+          },
+        }
+      })
+      .mockImplementationOnce(runNotFound)
+    let sending!: Promise<boolean | undefined> | undefined
+    act(() => {
+      sending = first.result.current.send({ content: 'third' })
+    })
+    await waitFor(() =>
+      expect(first.result.current.chat.messages.at(-1)?.content).toBe(
+        'Half an answer',
+      ),
+    )
+    let queuing!: Promise<boolean | undefined> | undefined
+    act(() => {
+      queuing = second.result.current.send({ content: 'fourth' })
+    })
+    const contents = async () =>
+      (await stored(SEEDED_ID))!.messages.map(({ content }) => content)
+    await waitFor(async () =>
+      expect(await contents()).toEqual([
+        'first',
+        'first answer',
+        'second',
+        'second answer',
+        'third',
+        'fourth',
+      ]),
+    )
+
+    drop()
+    await act(() => sending)
+
+    const kept = await stored(SEEDED_ID)
+    const sentAt = (index: number) =>
+      kept!.messages.find(({ id }) => id === turn(index).clientRequestId)!
+        .createdAt
+    const asked = (index: number, content: string): ThreadMessage => ({
+      id: turn(index).clientRequestId,
+      role: 'user',
+      createdAt: sentAt(index),
+      content,
+    })
+    expect(kept).toEqual(
+      seeded({
+        updatedAt: sentAt(1),
+        messages: [...reply.expected(asked(0, 'third')), asked(1, 'fourth')],
+      }),
+    )
+    expect(first.result.current.chat.messages.map((m) => m.content)).toEqual([
+      'first',
+      'first answer',
+      'second',
+      'second answer',
+      'third',
+      'Half an answer',
+      'fourth',
+    ])
+    end()
+    await act(() => queuing)
+  })
 })
 
 describe('a chat on this device whose run fails asking for the stored chat', () => {

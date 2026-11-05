@@ -290,11 +290,15 @@ export function useThread(
       thread
         ? storedChat({
             ...thread,
-            messages: withReplies(thread.messages, replies),
+            messages: withReplies(thread.messages, replies, streamed.messages),
           })
         : {
             ...streamed,
-            messages: withReplies(streamed.messages, replies),
+            messages: withReplies(
+              streamed.messages,
+              replies,
+              streamed.messages,
+            ),
             status: 'idle',
             error: undefined,
             stopping: undefined,
