@@ -1189,6 +1189,39 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(turn().thread).toEqual(seeded({ messages: photos }))
   })
 
+  it('keeps a message showing the image bytes the chat holds the same from render to render', async () => {
+    signIn('alice')
+    const photo: ThreadMessage = {
+      id: 'p1',
+      role: 'user',
+      createdAt: 't1',
+      content: 'Look',
+      attachments: [
+        {
+          id: 'att_p1',
+          kind: 'image',
+          fileName: 'p1.jpg',
+          mimeType: 'image/jpeg',
+          size: 5,
+          base64: btoa('p1'),
+        },
+      ],
+    }
+    await localThreadStore('device').update(SEEDED_ID, () =>
+      seeded({ messages: [photo] }),
+    )
+    const { result, rerender } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(1))
+    const [shown] = result.current.chat.messages
+    expect(shown.attachments?.[0].base64).toBe(btoa('p1'))
+
+    rerender()
+
+    expect(result.current.chat.messages[0]).toBe(shown)
+  })
+
   it("shows an image's model copy when this device has no original, and deletes an original with its message", async () => {
     signIn('alice')
     const photo: AttachmentDescriptor = {

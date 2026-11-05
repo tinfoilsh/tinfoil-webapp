@@ -5,8 +5,7 @@ import { speakText } from '@/services/harness/speech'
 import { HarnessError } from '@/services/harness/sse'
 import type { SharedThread } from '@/services/harness/types'
 import { messageView, shownMessages } from '@/services/harness/view-model'
-import { uint8ArrayToBase64 } from '@/utils/binary-codec'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { DocumentTextProvider } from './document-text-context'
 import { ImageGalleryProvider } from './image-gallery-context'
 import { MessageRendererHost } from './message-renderer-host'
@@ -21,50 +20,13 @@ export function SharedChatView({
   isDarkMode: boolean
   model: BaseModel
 }) {
-  const [messages, setMessages] = useState(() =>
-    shownMessages(chatData.messages).map((m) => messageView(m)),
+  const messages = useMemo(
+    () => shownMessages(chatData.messages).map((m) => messageView(m)),
+    [chatData],
   )
-  useEffect(() => {
-    const abort = new AbortController()
-    const shown = shownMessages(chatData.messages)
-    setMessages(shown.map((m) => messageView(m)))
-    for (const message of shown)
-      for (const attachment of message.attachments ?? []) {
-        if (attachment.kind !== 'image' || !attachment.attKey) continue
-        void sharedAttachment(attachment.id, attachment.attKey, abort.signal)
-          .then((blob) => blob.arrayBuffer())
-          .then((bytes) => {
-            if (!abort.signal.aborted)
-              setMessages((previous) =>
-                previous.map((m) =>
-                  m.id !== message.id
-                    ? m
-                    : {
-                        ...m,
-                        attachments: m.attachments?.map((a) =>
-                          a.id !== attachment.id
-                            ? a
-                            : {
-                                ...a,
-                                base64: uint8ArrayToBase64(
-                                  new Uint8Array(bytes),
-                                ),
-                              },
-                        ),
-                      },
-                ),
-              )
-          })
-          .catch(() => {
-            /* retain the thumbnail when the full image is unavailable */
-          })
-      }
-    return () => abort.abort()
-  }, [chatData])
-  // A shared stored document holds its text in its blob, which the harness
-  // reads as text with the share's attachment key.
-  const loadDocumentText = useCallback(
-    async (attachment: Attachment) => {
+  // A shared attachment's blob, read with the key the share names for it.
+  const readShared = useCallback(
+    async (attachment: Attachment, signal?: AbortSignal) => {
       const attKey = chatData.messages
         .flatMap((message) => message.attachments ?? [])
         .find((candidate) => candidate.id === attachment.id)?.attKey
@@ -72,11 +34,17 @@ export function SharedChatView({
         throw new HarnessError({
           code: ERROR_CODES.threadNotFound,
           action: ERROR_ACTIONS.stop,
-          message: 'This document is not part of the share.',
+          message: 'This attachment is not part of the share.',
         })
-      return (await sharedAttachment(attachment.id, attKey)).text()
+      return sharedAttachment(attachment.id, attKey, signal)
     },
     [chatData],
+  )
+  // A shared stored document holds its text in its blob, which the harness
+  // reads as text with the share's attachment key.
+  const loadDocumentText = useCallback(
+    async (attachment: Attachment) => (await readShared(attachment)).text(),
+    [readShared],
   )
   // The harness reads a shared message's text, as it reads text a user
   // selected.
@@ -89,7 +57,7 @@ export function SharedChatView({
     [messages],
   )
   return (
-    <ImageGalleryProvider messages={messages}>
+    <ImageGalleryProvider messages={messages} loadImage={readShared}>
       <DocumentTextProvider load={loadDocumentText}>
         <SpeechProvider speak={speak}>
           <div className="mx-auto w-full min-w-0 max-w-3xl px-4 pb-6 pt-8">

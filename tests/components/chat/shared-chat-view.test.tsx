@@ -78,14 +78,17 @@ it("keeps loading a shared image when the viewer's content key changes", async (
     expect.any(AbortSignal),
   )
 
-  act(() => harnessAPI().invalidateKey())
-  await act(async () =>
-    finish(new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })),
+  const photo = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })
+  vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) =>
+    blob === photo ? 'blob:photo' : 'blob:other',
   )
+
+  act(() => harnessAPI().invalidateKey())
+  await act(async () => finish(photo))
 
   expect(await screen.findByRole('img', { name: 'photo.png' })).toHaveAttribute(
     'src',
-    'data:image/png;base64,AQID',
+    'blob:photo',
   )
 })
 
