@@ -266,6 +266,7 @@ export default function SharePage({ chatId }: { chatId?: string }) {
 
       <main className="flex-1 overflow-auto">
         <SharedChatView
+          key={chatId}
           chatData={chatData}
           isDarkMode={isDarkMode}
           model={model}
