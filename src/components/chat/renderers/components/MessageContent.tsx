@@ -5,12 +5,12 @@ import {
 } from '@/utils/latex-processing'
 import { preprocessMarkdown } from '@/utils/markdown-preprocessing'
 import { memo, useMemo } from 'react'
-import ReactMarkdown from 'react-markdown'
 import { GeneratingTable } from './GeneratingTable'
 import {
   markdownComponents,
   MarkdownRenderingProvider,
 } from './markdown-components'
+import { StreamingMarkdown } from './StreamingMarkdown'
 import { useMathPlugins } from './use-math-plugins'
 
 interface MessageContentProps {
@@ -83,13 +83,13 @@ export const MessageContent = memo(function MessageContent({
     <TooltipProvider>
       <div translate="no">
         <MarkdownRenderingProvider value={renderingOptions}>
-          <ReactMarkdown
+          <StreamingMarkdown
+            text={sanitizedContent}
+            streaming={isStreaming}
             remarkPlugins={remarkPlugins}
             rehypePlugins={rehypePlugins}
             components={markdownComponents}
-          >
-            {sanitizedContent}
-          </ReactMarkdown>
+          />
         </MarkdownRenderingProvider>
         {showMarkdownTablePlaceholder && <GeneratingTable />}
       </div>
