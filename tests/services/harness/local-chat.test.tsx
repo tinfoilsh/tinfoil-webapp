@@ -1668,14 +1668,41 @@ describe('stored local chat changes', () => {
     expect(result.current.chat.isLocalOnly).toBe(true)
   })
 
-  it('deletes a chat from the device', async () => {
+  it('deletes a chat from the device, and tells the harness without a key', async () => {
     const { result } = await openSeeded()
+    // A harness out of reach leaves the chat deleted.
+    client.post.mockRejectedValue(new TypeError('Failed to fetch'))
 
     await act(() => result.current.remove(SEEDED_ID))
 
     expect(await stored(SEEDED_ID)).toBeNull()
     expect(result.current.chat.id).toBe('')
-    expect(client.post).not.toHaveBeenCalled()
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/delete',
+      { id: SEEDED_ID, local: true },
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('deletes every chat from the device, and tells the harness without a key', async () => {
+    const { result } = await openSeeded()
+    // A harness out of reach for the notice leaves the chats deleted.
+    client.post.mockImplementation(async (_path, body) => {
+      if ((body as { local?: boolean }).local)
+        throw new TypeError('Failed to fetch')
+      return { deleted: 1 }
+    })
+
+    await act(async () => {
+      await result.current.removeAll()
+    })
+
+    expect(await stored(SEEDED_ID)).toBeNull()
+    expect(client.post).toHaveBeenLastCalledWith(
+      '/v1/threads/delete-all',
+      { local: true },
+      expect.any(AbortSignal),
+    )
   })
 
   it('asks about a local chat with its thread instead of a key', async () => {

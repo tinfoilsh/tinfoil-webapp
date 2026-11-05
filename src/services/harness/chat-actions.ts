@@ -335,6 +335,20 @@ export function chatActions({
         cloudDeletionCompleted = true
       }
       await device.deleteAll()
+      // The harness keeps chats' last replies for a while for this device to
+      // collect. They are deleted here whether or not it hears.
+      void api
+        .post(ROUTES.deleteAll, { local: true }, { keyless: true })
+        .catch((error) =>
+          logError(
+            'Failed to tell the chat service chats were deleted',
+            error,
+            {
+              component: 'chatActions',
+              action: 'removeAll',
+            },
+          ),
+        )
       reset()
       list.clearCloud({ confirmedEmpty: cloudDeletionCompleted })
       list.deviceThreads.set([])
