@@ -72,7 +72,6 @@ import { useAuth, useUser } from '@clerk/react'
 import { Dialog } from '@headlessui/react'
 import { ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import {
-  TfAdjustmentToggle,
   TfBoxCheckmark,
   TfBoxX,
   TfCard,
@@ -88,13 +87,12 @@ import {
   TfNumber3,
   TfNumber4,
   TfPersonKey,
-  TfShieldWithExclamation,
   TfSignIn,
-  TfStack,
   TfSunLightMode,
   TfTrash,
 } from '@tinfoilsh/tinfoil-icons'
 import {
+  TfAdjustmentToggleAnimated,
   TfChat2Animated,
   TfChevronDownAnimated,
   TfChevronRightAnimated,
@@ -103,6 +101,8 @@ import {
   TfPersonAnimated,
   TfPlusAnimated,
   TfShieldCheckAnimated,
+  TfShieldWithExclamationAnimated,
+  TfStackAnimated,
   TfToolsAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -1985,7 +1985,7 @@ ${encryptionKey.replace('key_', '')}
     {
       id: 'general' as const,
       label: 'General',
-      icon: TfAdjustmentToggle,
+      icon: TfAdjustmentToggleAnimated,
     },
     {
       id: 'chat' as const,
@@ -2012,11 +2012,11 @@ ${encryptionKey.replace('key_', '')}
           {
             id: 'safeguards' as const,
             label: 'Safeguards',
-            icon: TfShieldWithExclamation,
+            icon: TfShieldWithExclamationAnimated,
           },
         ]
       : []),
-    { id: 'data' as const, label: 'Data', icon: TfStack },
+    { id: 'data' as const, label: 'Data', icon: TfStackAnimated },
   ]
 
   return (
