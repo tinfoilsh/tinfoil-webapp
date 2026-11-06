@@ -69,7 +69,7 @@ export interface paths {
     put?: never
     /**
      * Run a turn
-     * @description Starts a run that carries out one user action on a chat, and streams it.
+     * @description Starts a run that carries out one user action on a chat, and streams it. While the enclave is low on memory, a new turn is refused with SERVICE_BUSY and a retryAfter, so the replies already running can finish; a request sent again for a turn already started still follows its run.
      */
     post: operations['turn']
     delete?: never
@@ -89,7 +89,7 @@ export interface paths {
     put?: never
     /**
      * Rejoin a live run
-     * @description Streams a live run again, for a client that lost its stream, from after the last event it applied.
+     * @description Streams a live run again, for a client that lost its stream, from after the last event it applied. A device chat's run can still be followed for thirty minutes after it ends, until a client following it again reads it to its end, so a client that lost its stream collects the chat the run returns.
      */
     post: operations['follow']
     delete?: never
@@ -320,7 +320,7 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Delete a stored chat */
+    /** Delete a chat */
     post: operations['delete']
     delete?: never
     options?: never
@@ -337,7 +337,7 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Delete every stored chat */
+    /** Delete every chat */
     post: operations['deleteAll']
     delete?: never
     options?: never
@@ -482,7 +482,10 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Read the profile */
+    /**
+     * Read the profile
+     * @description Refuses a key other than the account's registered one with KEY_MISMATCH, also while no profile is stored, so a client learns from this read whether its key opens the account.
+     */
     post: operations['profileGet']
     delete?: never
     options?: never
@@ -1076,6 +1079,7 @@ export interface components {
           | 'MAX_TURNS'
           | 'MISSING_ATTACHMENT'
           | 'MODEL_UNAVAILABLE'
+          | 'NOTHING_TO_COMPACT'
           | 'PAYLOAD_TOO_LARGE'
           | 'PROJECTS_REQUIRE_CLOUD'
           | 'QUEUE_FULL'
@@ -1088,6 +1092,7 @@ export interface components {
           | 'RUN_LOG_FULL'
           | 'RUN_NOT_FOUND'
           | 'SEARCH_INDEX_FAILED'
+          | 'SERVICE_BUSY'
           | 'SYNC_OUTCOME_UNKNOWN'
           | 'TEMP_SPACE_BUSY'
           | 'THREAD_EXISTS'
@@ -1128,7 +1133,7 @@ export interface components {
       profileDefaults: components['schemas']['Profile']
       composer: components['schemas']['Composer']
       presets: components['schemas']['Preset'][]
-      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. */
+      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. */
       features: {
         [key: string]: boolean
       }
@@ -1202,6 +1207,14 @@ export interface components {
       threadId: components['schemas']['Identifier']
       /**
        * @description send when absent.
+       *
+       *     compact compacts the chat on request, as COMPACTION_START describes,
+       *     and asks the model nothing: its run sends the compaction and ends.
+       *     It is refused with NOTHING_TO_COMPACT when no message after the
+       *     chat's latest compaction marker comes before its last question, and
+       *     with RUN_IN_FLIGHT while the chat has a running reply. A retry after
+       *     a compact turn failed compacts again. A client sends it only while
+       *     the session's features.manualCompaction is true.
        * @enum {string}
        */
       kind?:
@@ -1212,6 +1225,7 @@ export interface components {
         | 'retry'
         | 'retryToolCall'
         | 'ask'
+        | 'compact'
       /** @description An ask that is never stored. */
       ephemeral?: boolean
       /** @description The chat is kept on the device, which sends it as thread. */
@@ -1524,7 +1538,9 @@ export interface components {
      *     the model goes on reading as they were. The marker sits before the
      *     first question it keeps, or else before the turn's question. A run
      *     compacts at most once, before its first model turn or between two of
-     *     them. beforeMessageId names a message of the run's MESSAGES_SNAPSHOT.
+     *     them. A compact turn compacts its chat the same way, taking the chat's
+     *     last question and what follows it for the turn's question.
+     *     beforeMessageId names a message of the run's MESSAGES_SNAPSHOT.
      *     A client shows the marker before that message, and the messages
      *     before it as ones the model no longer reads.
      */
@@ -1850,7 +1866,7 @@ export interface components {
       webSearchEnabled: boolean
       messages: components['schemas']['MessageRecord'][]
       lastRequestId?: string
-      /** @description What the last request's turn did, which a retry repeats. */
+      /** @description What the last request's turn did, which a retry repeats. A compaction is recorded only when it failed. */
       lastRequestKind?: string
       /** @description A hint that a reply may be streaming, until the run's deadline. It never locks the chat. */
       activeRun?: {
@@ -2704,6 +2720,8 @@ export interface operations {
           id: components['schemas']['Identifier']
           /** @description Set when a chat moved to the device is deleted from the cloud; the delete then needs the revision the move read. */
           revision?: string
+          /** @description The chat is a device chat its client deleted. Its running reply stops and the harness drops the replies it keeps of it; nothing stored changes. */
+          local?: boolean
         }
       }
     }
@@ -2725,6 +2743,8 @@ export interface operations {
           /** @description The account's content key, base64. Absent for device chats and signed-out callers. */
           key?: string
           projectId?: string | null
+          /** @description The client deleted every device chat. Their running replies stop and the harness drops the replies it keeps of them; nothing stored changes. The count is of the chats it held anything of. */
+          local?: boolean
         }
       }
     }

@@ -73,6 +73,7 @@ import {
   getChatSpacerHeight,
 } from './chat-scroll'
 import { ChatSidebar } from './chat-sidebar'
+import { CompactionStatus } from './compaction-status'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { DragProvider } from './drag-context'
@@ -294,6 +295,11 @@ export function ChatInterface({
   const loadingState = isReplyStreaming ? 'loading' : 'idle'
   const isWaitingForResponse =
     isReplyStreaming && currentChat.messages.at(-1)?.role !== 'assistant'
+  // A compaction runs: one the user asked for, or one a turn makes before
+  // the model answers.
+  const isCompacting =
+    thread.compacting ||
+    Object.values(thread.compactions).some(({ isRunning }) => isRunning)
   const historyProblem: ChatHistoryProblem | null =
     initialChatId && !isLocalChatUrl && isAuthLoaded && !isSignedIn
       ? 'sign-in'
@@ -335,6 +341,7 @@ export function ChatInterface({
         upstreamCode: failure?.upstreamCode,
         action: failure?.action,
         timestamp: thread.errorAt,
+        compactTurn: thread.compactTurn,
       }
     : null
   // A capped subscriber's cap may lift before it resets.
@@ -692,6 +699,10 @@ export function ChatInterface({
   const retryLastMessage = () => {
     if (generationBlocked) return
     void thread.retry({ options }).catch(thread.report)
+  }
+  const compactChat = () => {
+    if (generationBlocked) return
+    void thread.compact({ options })?.catch(thread.report)
   }
   // The open chat's questions widgets take answers while the chat is idle
   // and can change, and their button sends a question of the answers alone.
@@ -1764,6 +1775,7 @@ export function ChatInterface({
     setReasoningEffort,
     setThinkingEnabled,
     setAutoIntelligence,
+    compact: compactChat,
   })
   const composerHeader = useMemo(
     () =>
@@ -2557,7 +2569,7 @@ export function ChatInterface({
           sidebar makes that area inert. */}
       <ChatAnnouncer
         messages={currentChat.messages}
-        isStreaming={isStreaming}
+        isStreaming={isStreaming && !thread.compacting}
         isWaitingForResponse={isWaitingForResponse}
       />
 
@@ -2728,7 +2740,9 @@ export function ChatInterface({
                       isDarkMode={isDarkMode}
                       chatId={currentChat.id}
                       isWaitingForResponse={isWaitingForResponse}
-                      isStreamingResponse={isReplyStreaming}
+                      isStreamingResponse={
+                        isReplyStreaming && !thread.compacting
+                      }
                       activeArtifactToolCallId={
                         isArtifactSidebarOpen ? activeArtifactToolCallId : null
                       }
@@ -2879,6 +2893,7 @@ export function ChatInterface({
                         />
                       )}
                       {streamErrorBanner}
+                      {isCompacting && <CompactionStatus />}
                       <MessageQueue
                         queue={queuedMessages}
                         onRemove={removeQueuedMessage}
@@ -2902,6 +2917,9 @@ export function ChatInterface({
                         removeDocument={composerActions.removeDocument}
                         isPremium={showPremiumComposerControls}
                         contextUsage={contextUsage}
+                        canCompact={thread.canCompact && !generationBlocked}
+                        compacting={thread.compacting}
+                        onCompact={composerActions.compact}
                         quote={quote}
                         onClearQuote={composerActions.clearQuote}
                         isTemporaryMode={isTemporaryMode}

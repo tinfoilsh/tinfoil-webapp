@@ -33,6 +33,9 @@ export interface ChatState {
   failedRun?: string
   // A run continuing a reply streams into it, as RUN_STARTED names it.
   continued?: string
+  // The chat's latest turn compacts it on request instead of asking for a
+  // reply, so its last reply is not the one the run streams.
+  compactTurn?: boolean
   // The leading blocks of a continued reply that new text starts after: as
   // in the harness, only a trailing text block takes the continuation.
   sealed?: Record<string, number>
@@ -58,10 +61,12 @@ export const isStopping = (state: ChatState) =>
   isRunning(state) && !!state.stopping
 
 // The messages whose reply the user stopped, as the run they stopped ends:
-// the reply it had begun, or the message it stopped before answering.
+// the reply it had begun, or the message it stopped before answering. A
+// compaction answers no message.
 export function canceledBy(state: ChatState, event: TerminalEvent): string[] {
   if (
     !state.stopping ||
+    state.compactTurn ||
     event.type !== 'RUN_FINISHED' ||
     event.runId !== state.runId ||
     !event.metadata?.cancelled
@@ -468,10 +473,14 @@ function applyEvent(
         sealed: _sealed,
         continued: _continued,
         summaries: _summaries,
+        compactTurn,
         ...rest
       } = next
       return {
         ...rest,
+        // A compaction is the run of the turn the chat submitted, not one
+        // queued after it.
+        ...(compactTurn && next.status === 'submitting' ? { compactTurn } : {}),
         runId: event.runId,
         status: 'streaming',
         ...(event.messageId
@@ -691,9 +700,11 @@ function applyEvent(
       const committed = new Map(
         event.metadata?.messages?.map((message) => [message.id, message]),
       )
-      const { stopping: _stopping, ...rest } = next
+      const { stopping: _stopping, compactTurn, ...rest } = next
       return {
         ...rest,
+        // A compaction that failed is retried as one.
+        ...(failed && compactTurn ? { compactTurn } : {}),
         snapshot: withoutQueued(next.snapshot, runId),
         status: failed ? 'error' : 'idle',
         ...(failed

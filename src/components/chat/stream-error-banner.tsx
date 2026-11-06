@@ -24,6 +24,9 @@ export type StreamErrorInfo = {
   upstreamCode?: string
   // What the client does about an error it has no copy for.
   action?: ErrorAction
+  // The failed turn compacted the chat on request rather than sending a
+  // message.
+  compactTurn?: boolean
   // When the error happened; a retry wait counts from then.
   timestamp?: number
 }
@@ -246,7 +249,20 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
     case ERROR_CODES.contextTooLarge:
       return CLASSIFICATIONS['context-length']
     case ERROR_CODES.compactionFailed:
-      return CLASSIFICATIONS.compaction
+      return error.compactTurn
+        ? {
+            ...CLASSIFICATIONS.compaction,
+            title: 'This chat could not be compacted',
+            suggestion: 'Try again. The chat is unchanged.',
+          }
+        : CLASSIFICATIONS.compaction
+    case ERROR_CODES.nothingToCompact:
+      return {
+        ...CLASSIFICATIONS.refused,
+        title: 'There is nothing to compact yet',
+        suggestion:
+          'Compacting summarizes the messages before your latest exchange, and this chat has none to summarize.',
+      }
     case ERROR_CODES.threadTooLarge:
       return CLASSIFICATIONS['too-large']
     case ERROR_CODES.modelUnavailable:

@@ -4,7 +4,11 @@ import {
   INFERENCE_KEY_HEADER,
   type HarnessRoute,
 } from '@/services/harness/protocol'
-import { initialChat, reduceEvent } from '@/services/harness/reducer'
+import {
+  canceledBy,
+  initialChat,
+  reduceEvent,
+} from '@/services/harness/reducer'
 import { HarnessError, readEvents } from '@/services/harness/sse'
 import type {
   Frame,
@@ -12,6 +16,7 @@ import type {
   Message,
   QueueItem,
   RateLimit,
+  TerminalEvent,
   TimelineBlock,
 } from '@/services/harness/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -1019,6 +1024,65 @@ describe('compacting a chat', () => {
       marker,
       ...window.slice(2),
     ])
+  })
+
+  it('takes the run of a compaction the chat asked for for one until it ends, keeping one that failed to retry', () => {
+    const begun = (runId: string): Frame => ({
+      id: 0,
+      event: { type: 'RUN_STARTED', threadId: 't', runId, instance: 'i' },
+    })
+    const compacting = reduceEvent(
+      { ...initialChat(), status: 'submitting', compactTurn: true },
+      begun('compact'),
+    )
+    expect(compacting).toMatchObject({ status: 'streaming', compactTurn: true })
+
+    const compacted = reduceEvent(compacting, {
+      id: 1,
+      event: {
+        type: 'RUN_FINISHED',
+        threadId: 't',
+        runId: 'compact',
+        metadata: {},
+      },
+    })
+    const failed = reduceEvent(compacting, {
+      id: 1,
+      event: {
+        type: 'RUN_ERROR',
+        threadId: 't',
+        runId: 'compact',
+        code: 'COMPACTION_FAILED',
+        message: 'failed',
+        action: 'retry',
+      },
+    })
+
+    expect(compacted).not.toHaveProperty('compactTurn')
+    expect(failed).toMatchObject({ status: 'error', compactTurn: true })
+    // A turn queued behind the failed compaction streams its own reply.
+    const replying = reduceEvent(failed, begun('queued'))
+    expect(replying.runId).toBe('queued')
+    expect(replying).not.toHaveProperty('compactTurn')
+  })
+
+  it('stops a compaction the chat asked for without canceling the question it left unanswered', () => {
+    const stopping = {
+      ...initialChat(),
+      messages: window,
+      runId: 'compact',
+      status: 'streaming' as const,
+      stopping: true,
+    }
+    const stopped: TerminalEvent = {
+      type: 'RUN_FINISHED',
+      threadId: 't',
+      runId: 'compact',
+      metadata: { cancelled: true, messages: [] },
+    }
+    expect(canceledBy(stopping, stopped)).toEqual(['u3'])
+
+    expect(canceledBy({ ...stopping, compactTurn: true }, stopped)).toEqual([])
   })
 })
 

@@ -53,6 +53,7 @@ import type {
   Message as WireMessage,
 } from './types'
 import {
+  compactable,
   compactionViews,
   lastActive,
   messageView,
@@ -663,11 +664,14 @@ export function useThread(
     state.status === 'submitting' ||
     state.status === 'streaming' ||
     state.status === 'queued'
+  // A compaction the user asked for runs without a reply of its own.
+  const compacting = running && !!state.compactTurn
   const isLocalChat = local && !temporary
   const shownList = shownMessages(state.messages)
   // A reply the user stopped shows as stopped at once, before the harness
   // ends it: the reply, or the message it had not begun answering.
-  const stopped = isStopping(state) ? shownList.at(-1) : undefined
+  const stopped =
+    isStopping(state) && !compacting ? shownList.at(-1) : undefined
   const viewOf = (message: ShownMessage, streaming: boolean) => {
     // A stopped reply continued since is no longer one.
     const canceled =
@@ -692,7 +696,10 @@ export function useThread(
     return view
   }
   const messages = shownList.map((m) => {
-    const view = viewOf(m, running && !stopped && m === state.messages.at(-1))
+    const view = viewOf(
+      m,
+      running && !compacting && !stopped && m === state.messages.at(-1),
+    )
     if (!onDevice(openState) || !view.attachments?.length) return view
     // An image stored without a thumbnail shows the bytes the chat holds, or
     // loads them as it shows; others load them when opened in the gallery.
@@ -905,6 +912,17 @@ export function useThread(
       profileReady &&
       (onDevice(openState) || keyReady),
     canChangeMessages: !loading && !openState.failedId && !!chat.id,
+    // The open chat can be compacted while no reply runs and it holds
+    // earlier messages to summarize.
+    canCompact:
+      !loading &&
+      !openState.failedId &&
+      !!id &&
+      !running &&
+      compactable(state.messages),
+    compacting,
+    // The chat's latest turn compacted it on request, which an error reports.
+    compactTurn: !!state.compactTurn,
     // The saves of the open chat's questions widgets, by widget call, and
     // what its questions last sent the model of each widget's answers.
     answerSaves: (id && answerSaves[id]) || NO_ANSWER_SAVES,
