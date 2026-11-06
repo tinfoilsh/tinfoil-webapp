@@ -31,6 +31,7 @@ import {
   type HarnessRoute,
 } from './protocol'
 import { HarnessError } from './sse'
+import { createStore } from './store'
 import type {
   Json,
   PresetUpdate,
@@ -122,6 +123,15 @@ interface ChangeTokens {
   profile: string
   projects: string
 }
+// When this browser last read what the harness stores of the account's
+// chats, and whether its latest attempt failed. Kept apart from the view,
+// which most of the page renders from, so a check every few seconds redraws
+// only what shows it.
+export interface CloudSyncStatus {
+  lastSyncedAt: number | null
+  failing: boolean
+}
+const UNSYNCED: CloudSyncStatus = { lastSyncedAt: null, failing: false }
 const empty: View = {
   profile: {},
   keyReady: false,
@@ -163,6 +173,19 @@ export class HarnessAPI {
   private storedProfile: Profile = {}
   private unsavedProfile: Profile[] = []
   private changeTokens: ChangeTokens | undefined
+  readonly syncStatus = createStore<CloudSyncStatus>(UNSYNCED)
+
+  reportSynced() {
+    if (this.lifetime.signal.aborted) return
+    this.syncStatus.set({ lastSyncedAt: Date.now(), failing: false })
+  }
+  // The harness could not be reached. The last time it was stays shown.
+  reportSyncFailed() {
+    if (this.lifetime.signal.aborted) return
+    this.syncStatus.update((status) =>
+      status.failing ? status : { ...status, failing: true },
+    )
+  }
 
   private showProfile(stored: Profile, fields: Partial<View> = {}) {
     this.storedProfile = stored
@@ -206,12 +229,15 @@ export class HarnessAPI {
             projectRevision: tokens.projects,
           })
         }
+        this.reportSynced()
       } catch (cause) {
-        if (!this.lifetime.signal.aborted)
+        if (!this.lifetime.signal.aborted) {
           logError('Failed to refresh remote changes', cause, {
             component: 'HarnessAPI',
             action: 'watchChanges',
           })
+          this.reportSyncFailed()
+        }
       } finally {
         pending = false
       }
@@ -230,6 +256,7 @@ export class HarnessAPI {
   }
   invalidateKey() {
     this.changeTokens = undefined
+    this.syncStatus.set(UNSYNCED)
     this.contentLifetime.abort()
     this.contentLifetime = new AbortController()
     this.profileVersion++

@@ -799,6 +799,31 @@ it('shows a failed chat list refresh in the list, not as a problem with the open
   )
 })
 
+it('reports whether listing the stored chats reached the cloud', async () => {
+  const api = signIn({ cloud: true })
+  const alpha = cloudChat('alpha-chat', 'Alpha chat', '2026-10-22T12:00:00Z')
+  let reachable = true
+  client.post.mockImplementation(async (path) => {
+    if (path === '/v1/threads/list') {
+      if (!reachable) throw new Error('Chats unavailable')
+      return { threads: [summaryOf(alpha)], nextCursor: null }
+    }
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  render(<ChatInterface suppressIntroModals />)
+  await row('Alpha chat')
+  const synced = api.syncStatus.get()
+  expect(synced).toEqual({ lastSyncedAt: expect.any(Number), failing: false })
+
+  reachable = false
+  await act(async () => publish({ chatRevision: 'changed' }))
+  await screen.findByRole('alert')
+  expect(api.syncStatus.get()).toEqual({
+    lastSyncedAt: synced.lastSyncedAt,
+    failing: true,
+  })
+})
+
 it('leaves the address of the open chat when it is deleted', async () => {
   signIn({ cloud: true })
   const alpha = cloudChat('alpha-chat', 'Alpha chat', '2026-10-22T12:00:00Z')

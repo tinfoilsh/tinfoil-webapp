@@ -344,6 +344,7 @@ export function useChatList({
           loaded: true,
           error: null,
         })
+        api.reportSynced()
       } catch (cause) {
         if (
           version !== lists.listing.version ||
@@ -351,6 +352,7 @@ export function useChatList({
           (cause instanceof DOMException && cause.name === 'AbortError')
         )
           return
+        api.reportSyncFailed()
         lists.loadState.set({
           projectId: projectId ?? null,
           loaded: true,

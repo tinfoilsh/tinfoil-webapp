@@ -2,7 +2,7 @@ import { SettingsModal } from '@/components/chat/settings-modal'
 import { publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import { act, render, screen } from '@testing-library/react'
-import { expect, it, vi } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import { client, signIn } from '../../harness-fixture'
 
 vi.mock('@/hooks/use-toast', () => ({
@@ -112,6 +112,48 @@ it('asks to recover the key only after the chat service refuses it', async () =>
   expect(
     screen.queryByRole('button', { name: 'Manage key' }),
   ).not.toBeInTheDocument()
+})
+
+it('shows when the cloud was last reached, and keeps it while sync is paused', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+  onTestFinished(() => {
+    vi.useRealTimers()
+  })
+  const api = signIn({ cloud: true })
+  let reachable = true
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/profile/get') return {}
+    if (path !== '/v1/changes')
+      throw new Error(`Unexpected harness request: ${path}`)
+    if (!reachable) throw new TypeError('Network unavailable')
+    return { chats: 'c1', profile: 'p1', projects: 'j1' }
+  })
+  onTestFinished(api.watchChanges())
+  renderCloudSync()
+  expect(screen.getByText('Checking sync...')).toBeInTheDocument()
+
+  // A check runs as the window gains focus.
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'))
+  })
+  expect(await screen.findByText('Synced just now')).toBeInTheDocument()
+
+  // The checks every few seconds fail for over a minute.
+  reachable = false
+  await act(() => vi.advanceTimersByTimeAsync(75_000))
+  expect(screen.getByText('Sync paused')).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      'Having trouble reaching the cloud. Retrying automatically. Last synced 1m ago.',
+    ),
+  ).toBeInTheDocument()
+
+  reachable = true
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'))
+  })
+  expect(await screen.findByText('Synced just now')).toBeInTheDocument()
+  expect(screen.queryByText('Sync paused')).not.toBeInTheDocument()
 })
 
 it.each([

@@ -116,7 +116,10 @@ import {
   describeExportWarnings,
   type ChatExportState,
 } from './chat-export-status'
-import { CloudSyncHealthCard } from './cloud-sync-health-card'
+import {
+  CloudSyncHealthCard,
+  CloudSyncStatusCard,
+} from './cloud-sync-health-card'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
@@ -2980,7 +2983,7 @@ ${encryptionKey.replace('key_', '')}
                         </label>
                       </div>
                     </div>
-                    {keyLocked && (
+                    {keyLocked ? (
                       <CloudSyncHealthCard
                         isDarkMode={isDarkMode}
                         reason={encryptionKey ? 'key-mismatch' : 'key-recovery'}
@@ -2993,6 +2996,13 @@ ${encryptionKey.replace('key_', '')}
                             : undefined
                         }
                       />
+                    ) : (
+                      cloudSyncEnabled && (
+                        <CloudSyncStatusCard
+                          isDarkMode={isDarkMode}
+                          status={api.syncStatus}
+                        />
+                      )
                     )}
                     <NativeBackupExport
                       available={Boolean(
