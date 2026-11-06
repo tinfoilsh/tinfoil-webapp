@@ -156,6 +156,31 @@ it('shows when the cloud was last reached, and keeps it while sync is paused', a
   expect(screen.queryByText('Sync paused')).not.toBeInTheDocument()
 })
 
+it('shows sync as paused while the account cannot load from the cloud', async () => {
+  const api = signIn({ cloud: true })
+  scriptProfiles(
+    async () => {
+      throw new TypeError('Network unavailable')
+    },
+    async () => ({}),
+  )
+  // The page has opened and the account's profile has not loaded yet.
+  publish({ profile: {}, keyReady: false, profileReady: false })
+  renderCloudSync()
+  expect(screen.getByText('Checking sync...')).toBeInTheDocument()
+
+  await act(() => api.refreshProfile())
+  expect(screen.getByText('Sync paused')).toBeInTheDocument()
+  // Nothing checks again until the account is loaded again.
+  expect(
+    screen.getByText('Having trouble reaching the cloud.'),
+  ).toBeInTheDocument()
+
+  await act(() => api.refreshProfile())
+  expect(screen.queryByText('Sync paused')).not.toBeInTheDocument()
+  expect(screen.getByText('Checking sync...')).toBeInTheDocument()
+})
+
 it.each([
   [null, 'Sync is paused because your encryption key needs to be recovered.'],
   [

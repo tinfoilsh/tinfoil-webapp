@@ -97,6 +97,9 @@ function SyncAge({ at }: { at: number }) {
 interface CloudSyncStatusCardProps {
   isDarkMode: boolean
   status: Store<CloudSyncStatus>
+  // The account could not load from the cloud, so no check runs until it is
+  // tried again.
+  loadFailed: boolean
 }
 
 /**
@@ -107,8 +110,10 @@ interface CloudSyncStatusCardProps {
 export function CloudSyncStatusCard({
   isDarkMode,
   status,
+  loadFailed,
 }: CloudSyncStatusCardProps) {
   const { lastSyncedAt, failing } = useStore(status)
+  const paused = failing || loadFailed
   return (
     <div
       className={cn(
@@ -117,7 +122,7 @@ export function CloudSyncStatusCard({
       )}
     >
       <div className="flex min-w-0 items-start gap-2">
-        {failing ? (
+        {paused ? (
           <TfWarning
             className="mt-0.5 h-4 w-4 shrink-0 text-amber-500"
             aria-hidden="true"
@@ -135,7 +140,7 @@ export function CloudSyncStatusCard({
         )}
         <div className="min-w-0">
           <div className="font-aeonik text-sm font-medium text-content-primary">
-            {failing ? (
+            {paused ? (
               'Sync paused'
             ) : lastSyncedAt !== null ? (
               <>
@@ -145,9 +150,10 @@ export function CloudSyncStatusCard({
               'Checking sync...'
             )}
           </div>
-          {failing && (
+          {paused && (
             <div className="mt-0.5 font-aeonik-fono text-xs text-content-muted">
-              Having trouble reaching the cloud. Retrying automatically.
+              Having trouble reaching the cloud.
+              {failing && ' Retrying automatically.'}
               {lastSyncedAt !== null && (
                 <>
                   {' '}

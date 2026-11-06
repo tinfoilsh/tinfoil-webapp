@@ -830,7 +830,14 @@ export function SettingsModal({
     usePromptLibrary()
   const { toast } = useToast()
   // Without cloud sync every chat and setting stays on this device.
-  const { api, profile, keyLocked, cloud: cloudSyncEnabled } = useHarness()
+  const {
+    api,
+    profile,
+    keyLocked,
+    cloud: cloudSyncEnabled,
+    profileReady,
+    error: sessionError,
+  } = useHarness()
 
   const { refresh: refreshProjects } = useProjects({ autoLoad: false })
   // Encryption key management state
@@ -3001,6 +3008,7 @@ ${encryptionKey.replace('key_', '')}
                         <CloudSyncStatusCard
                           isDarkMode={isDarkMode}
                           status={api.syncStatus}
+                          loadFailed={!profileReady && !!sessionError}
                         />
                       )
                     )}
