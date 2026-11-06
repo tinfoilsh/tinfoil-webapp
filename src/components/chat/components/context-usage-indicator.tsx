@@ -75,6 +75,13 @@ export function ContextUsageIndicator({
     : isFull
       ? `Context window full (~${formatTokens(usage.limitTokens)} tokens). ${compacts ? COMPACTION_NOTE : 'Older messages may be omitted to make room.'}`
       : `Context window ${percentage}% used (~${formatTokens(usage.usedTokens)} of ${formatTokens(usage.limitTokens)} tokens)`
+  // The popover's title, with the tokens used on a line of their own.
+  const headline = isOverBudget
+    ? "Context exceeds this model's input budget"
+    : isFull
+      ? 'Context window full'
+      : `Context window ${percentage}% used`
+  const tokensUsed = `~${formatTokens(usage.usedTokens)} out of ${formatTokens(usage.limitTokens)} tokens`
 
   const compacting = !!compaction?.compacting
 
@@ -179,9 +186,12 @@ export function ContextUsageIndicator({
             className="absolute bottom-full right-0 z-20 mb-2 w-72 rounded-xl border border-border-subtle bg-surface-chat p-3 text-left shadow-lg outline-none"
           >
             <p className="text-sm font-medium text-content-primary">
-              {tooltip}
+              {headline}
             </p>
-            <p className="mt-1.5 text-xs text-content-secondary">
+            <p className="mt-0.5 text-xs text-content-secondary">
+              {tokensUsed}
+            </p>
+            <p className="mt-2 text-xs text-content-secondary">
               {COMPACT_EXPLANATION}
             </p>
             <button
