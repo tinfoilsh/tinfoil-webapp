@@ -20,19 +20,22 @@ info:
     A run's events arrive as server-sent events. Each frame's `data` is one
     event, described by `x-item-schema` (OpenAPI 3.2's `itemSchema`), and its
     `id` is the event's cursor in the run, which a client following the run
-    again sends back as `Last-Event-ID`. No event is larger than 8 MiB: a
-    MESSAGES_SNAPSHOT that would be leaves out its oldest messages and sets
+    again sends back as `Last-Event-ID`. A MESSAGES_SNAPSHOT holds at most
+    8 MiB of messages: it leaves out the oldest that do not fit and sets
     `hasOlder`, and sends a latest message too large alone with its
     attachments' text left out, which the client reads as it reads a stored
     chat's.
 
     The harness holds only the recent events of a long run. A client
     following it from before them is sent a checkpoint first: the run's
-    events besides the reply's content and its tools' activity, in order,
-    with a MESSAGES_SNAPSHOT of the chat and the reply so far, then an
-    ACTIVITY_SNAPSHOT of each tool's activity, in the place of the run's
-    first MESSAGES_SNAPSHOT. Only the checkpoint's last frame has an `id`, so
-    a client that misses part of it is sent all of it again.
+    events from its start, in order, with each run of TEXT_MESSAGE_CHUNK,
+    REASONING_MESSAGE_CHUNK or TOOL_CALL_ARGS events that extend the same
+    message or call merged into fewer, which keep the times of the run's
+    first and last events, and each tool's activity as one
+    ACTIVITY_SNAPSHOT of it as it stands, in the place of its first event.
+    Only the checkpoint's last frame has an `id`, so a client that misses
+    part of it is sent all of it again; the run's own MESSAGES_SNAPSHOT, which
+    the checkpoint holds, sets the chat back to where the run began.
 
     This document changes by these rules, so a client released against it
     keeps working:
@@ -41,6 +44,8 @@ info:
       removed, and does not change meaning, while a supported client uses it.
     - A client ignores members and events it does not know. It handles an
       error code it does not know by the error's action.
+    - A client reads an event whatever its size. How large the harness lets
+      an event grow is its own to change.
     - A list of values a response holds may gain values: such a list is an
       anyOf of the values it names and any string. The harness sends only
       the values named; a client treats one it does not know as the list's
@@ -172,7 +177,7 @@ paths:
       operationId: turn
       summary: Run a turn
       tags: [runs]
-      description: Starts a run that carries out one user action on a chat, and streams it.
+      description: Starts a run that carries out one user action on a chat, and streams it. While the enclave is low on memory, a new turn is refused with SERVICE_BUSY and a retryAfter, so the replies already running can finish; a request sent again for a turn already started still follows its run.
       requestBody:
         required: true
         content:
@@ -190,7 +195,7 @@ paths:
       parameters:
         - {$ref: "#/components/parameters/HarnessInstance"}
         - {$ref: "#/components/parameters/LastEventId"}
-      description: Streams a live run again, for a client that lost its stream, from after the last event it applied.
+      description: Streams a live run again, for a client that lost its stream, from after the last event it applied. A device chat's run can still be followed for thirty minutes after it ends, until a client following it again reads it to its end, so a client that lost its stream collects the chat the run returns.
       requestBody:
         required: true
         content:
@@ -467,7 +472,7 @@ paths:
   /v1/threads/delete:
     post:
       operationId: delete
-      summary: Delete a stored chat
+      summary: Delete a chat
       tags: [threads]
       requestBody:
         required: true
@@ -480,6 +485,7 @@ paths:
                 key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
                 id: {$ref: "#/components/schemas/Identifier"}
                 revision: {type: string, description: "Set when a chat moved to the device is deleted from the cloud; the delete then needs the revision the move read."}
+                local: {type: boolean, description: "The chat is a device chat its client deleted. Its running reply stops and the harness drops the replies it keeps of it; nothing stored changes."}
       responses:
         "200": {$ref: "#/components/responses/Empty"}
         default: {$ref: "#/components/responses/Error"}
@@ -487,7 +493,7 @@ paths:
   /v1/threads/delete-all:
     post:
       operationId: deleteAll
-      summary: Delete every stored chat
+      summary: Delete every chat
       tags: [threads]
       requestBody:
         required: true
@@ -498,6 +504,7 @@ paths:
               properties:
                 key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
                 projectId: {type: [string, "null"]}
+                local: {type: boolean, description: "The client deleted every device chat. Their running replies stop and the harness drops the replies it keeps of them; nothing stored changes. The count is of the chats it held anything of."}
       responses:
         "200": {$ref: "#/components/responses/Deleted"}
         default: {$ref: "#/components/responses/Error"}
@@ -677,6 +684,7 @@ paths:
       operationId: profileGet
       summary: Read the profile
       tags: [profile]
+      description: Refuses a key other than the account's registered one with KEY_MISMATCH, also while no profile is stored, so a client learns from this read whether its key opens the account.
       requestBody:
         required: true
         content:
@@ -1551,6 +1559,7 @@ components:
             - MAX_TURNS
             - MISSING_ATTACHMENT
             - MODEL_UNAVAILABLE
+            - NOTHING_TO_COMPACT
             - PAYLOAD_TOO_LARGE
             - PROJECTS_REQUIRE_CLOUD
             - QUEUE_FULL
@@ -1563,6 +1572,7 @@ components:
             - RUN_LOG_FULL
             - RUN_NOT_FOUND
             - SEARCH_INDEX_FAILED
+            - SERVICE_BUSY
             - SYNC_OUTCOME_UNKNOWN
             - TEMP_SPACE_BUSY
             - THREAD_EXISTS
@@ -1615,7 +1625,7 @@ components:
         composer: {$ref: "#/components/schemas/Composer"}
         presets: {type: array, items: {$ref: "#/components/schemas/Preset"}}
         features:
-          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused.
+          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request.
           type: object
           additionalProperties: {type: boolean}
 
@@ -1715,7 +1725,19 @@ components:
         key: {type: string, description: "The account's content key, base64. Absent for device chats and signed-out callers."}
         clientRequestId: {type: string, format: uuid, description: "A nonce. A turn sent again with it is answered with the run it started."}
         threadId: {$ref: "#/components/schemas/Identifier"}
-        kind: {type: string, enum: [send, edit, regenerate, continue, retry, retryToolCall, ask], description: "send when absent."}
+        kind:
+          type: string
+          enum: [send, edit, regenerate, continue, retry, retryToolCall, ask, compact]
+          description: |
+            send when absent.
+
+            compact compacts the chat on request, as COMPACTION_START describes,
+            and asks the model nothing: its run sends the compaction and ends.
+            It is refused with NOTHING_TO_COMPACT when no message after the
+            chat's latest compaction marker comes before its last question, and
+            with RUN_IN_FLIGHT while the chat has a running reply. A retry after
+            a compact turn failed compacts again. A client sends it only while
+            the session's features.manualCompaction is true.
         ephemeral: {type: boolean, description: "An ask that is never stored."}
         local: {type: boolean, description: "The chat is kept on the device, which sends it as thread."}
         thread: {$ref: "#/components/schemas/ThreadInput"}
@@ -2047,7 +2069,9 @@ components:
         the model goes on reading as they were. The marker sits before the
         first question it keeps, or else before the turn's question. A run
         compacts at most once, before its first model turn or between two of
-        them. beforeMessageId names a message of the run's MESSAGES_SNAPSHOT.
+        them. A compact turn compacts its chat the same way, taking the chat's
+        last question and what follows it for the turn's question.
+        beforeMessageId names a message of the run's MESSAGES_SNAPSHOT.
         A client shows the marker before that message, and the messages
         before it as ones the model no longer reads.
       type: object
@@ -2435,7 +2459,7 @@ components:
         webSearchEnabled: {type: boolean}
         messages: {type: array, items: {$ref: "#/components/schemas/MessageRecord"}}
         lastRequestId: {type: string}
-        lastRequestKind: {type: string, description: "What the last request's turn did, which a retry repeats."}
+        lastRequestKind: {type: string, description: "What the last request's turn did, which a retry repeats. A compaction is recorded only when it failed."}
         activeRun:
           description: "A hint that a reply may be streaming, until the run's deadline. It never locks the chat."
           type: [object, "null"]
