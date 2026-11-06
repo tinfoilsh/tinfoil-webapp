@@ -6,7 +6,7 @@ import { StepDetails, StepHeader } from './WorkStep'
 
 export const COMPACTING_LABEL = 'Compacting conversation'
 
-type CompactionMarkerProps = Omit<Compaction, 'id'> & {
+type CompactionMarkerProps = Compaction & {
   // A marker before the chat's latest one, whose summary the model no longer
   // reads either.
   outOfContext?: boolean
@@ -15,6 +15,7 @@ type CompactionMarkerProps = Omit<Compaction, 'id'> & {
 // Where the messages above were summarized for the model, which reads the
 // summary in their place. It opens to show the summary once written.
 export const CompactionMarker = memo(function CompactionMarker({
+  id,
   isRunning,
   summary,
   messageCount,
@@ -32,6 +33,7 @@ export const CompactionMarker = memo(function CompactionMarker({
           : 'Earlier messages above were summarized and are no longer read by the assistant'
       }
       data-out-of-context={outOfContext || undefined}
+      data-compaction-id={id}
       className={cn(
         'no-scroll-anchoring mx-auto mb-6 w-full max-w-3xl px-4',
         outOfContext && 'opacity-50',

@@ -54,6 +54,7 @@ import type {
 } from './types'
 import {
   compactable,
+  compactedView,
   compactionViews,
   lastActive,
   messageView,
@@ -512,7 +513,13 @@ export function useThread(
       }
       if (cancelled || !shown() || controller.view.get().status !== 'idle')
         return
-      controller.view.set(storedChat(thread))
+      // The compaction the chat points out outlives the chat read again,
+      // as the compaction itself changes the chat's revision.
+      const { compacted } = controller.view.get()
+      controller.view.set({
+        ...storedChat(thread),
+        ...(compacted ? { compacted } : {}),
+      })
       refreshedChat.current = { id, revision: chatRevision }
       patch({
         model: thread.model,
@@ -923,6 +930,14 @@ export function useThread(
     compacting,
     // The chat's latest turn compacted it on request, which an error reports.
     compactTurn: !!state.compactTurn,
+    // The compaction the chat's run just completed, which the chat points
+    // out until the user sends again or dismisses it.
+    compacted: compactedView(state),
+    dismissCompacted: () =>
+      controller.view.update((current) => ({
+        ...current,
+        compacted: undefined,
+      })),
     // The saves of the open chat's questions widgets, by widget call, and
     // what its questions last sent the model of each widget's answers.
     answerSaves: (id && answerSaves[id]) || NO_ANSWER_SAVES,

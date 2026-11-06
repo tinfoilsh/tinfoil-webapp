@@ -1,5 +1,6 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
+import { publish } from '@/services/harness/runtime'
 import type {
   Frame,
   HarnessEvent,
@@ -203,11 +204,14 @@ function compactFromIndicator() {
   )
 }
 
-// The status above the composer saying the chat is being compacted.
-const compactingStatus = () =>
+// The statuses above the composer saying the chat is being, or was just,
+// compacted.
+const composerStatus = (name: string) =>
   within(
     screen.getByRole('textbox', { name: /message/i }).closest('form')!,
-  ).queryByRole('status', { name: 'Compacting conversation' })
+  ).queryByRole('status', { name })
+const compactingStatus = () => composerStatus('Compacting conversation')
+const compactedNotice = () => composerStatus('Conversation compacted')
 
 const started = (runId: string, shown = messages): HarnessEvent[] => [
   { type: 'RUN_STARTED', threadId: THREAD_ID, runId, instance: 'instance-1' },
@@ -320,6 +324,60 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
     screen.getByRole('button', { name: 'Compacted 2 earlier messages' }),
   ).toBeInTheDocument()
   expect(compactingStatus()).not.toBeInTheDocument()
+
+  // The chat says it was compacted, also once the revision the compaction
+  // saved has the chat read again.
+  expect(compactedNotice()).toHaveTextContent('Summarized 2 earlier messages.')
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/threads/get')
+      return structuredClone({
+        ...threadOf([
+          ...stoppedThinking.slice(0, 2),
+          marker,
+          ...stoppedThinking.slice(2),
+        ]),
+        contextUsage: {
+          usedTokens: 23_000,
+          limitTokens: 210_000,
+          percentage: 11,
+        },
+      })
+    if (path === '/v1/threads/list')
+      return {
+        threads: [summaryOf(threadOf(stoppedThinking))],
+        nextCursor: null,
+      }
+    throw new Error(`Unexpected ${path}`)
+  })
+  await act(async () => publish({ chatRevision: 'compacted' }))
+  expect(
+    await screen.findByRole('button', {
+      name: 'Context window 11% used (~23k of 210k tokens)',
+    }),
+  ).toBeInTheDocument()
+
+  // It shows where, as its marker sits above the exchange it kept.
+  const notice = compactedNotice()
+  expect(notice).toHaveTextContent('Summarized 2 earlier messages.')
+  const scrolled = vi.fn()
+  const hadScroll = Object.hasOwn(Element.prototype, 'scrollIntoView')
+  const scroll = Element.prototype.scrollIntoView
+  Element.prototype.scrollIntoView = scrolled
+  try {
+    fireEvent.click(
+      within(notice!).getByRole('button', { name: 'Show summary' }),
+    )
+  } finally {
+    if (hadScroll) Element.prototype.scrollIntoView = scroll
+    else delete (Element.prototype as Partial<Element>).scrollIntoView
+  }
+  expect(scrolled.mock.contexts).toEqual([
+    screen.getByRole('note', {
+      name: 'Earlier messages above were summarized and are no longer read by the assistant',
+    }),
+  ])
+  fireEvent.click(within(notice!).getByRole('button', { name: 'Dismiss' }))
+  expect(compactedNotice()).not.toBeInTheDocument()
 })
 
 it('queues a message sent while the chat compacts, and streams its reply once the compaction ends', async () => {
@@ -426,6 +484,8 @@ it('queues a message sent while the chat compacts, and streams its reply once th
     screen.getByRole('button', { name: 'Stop generation' }),
   ).toBeInTheDocument()
   expect(screen.getByText('Al is responding')).toBeInTheDocument()
+  // The message it queued does not hide that the chat was compacted.
+  expect(compactedNotice()).toBeInTheDocument()
   run.emit(1, {
     type: 'RUN_FINISHED',
     threadId: THREAD_ID,
@@ -479,6 +539,32 @@ it('says the chat is compacting while a turn compacts it before the reply', asyn
     metadata: {},
   })
   run.end(0)
+  await waitFor(() => expect(compactedNotice()).toBeInTheDocument())
+
+  // The next message the user sends puts the compaction behind them.
+  fireEvent.change(screen.getByRole('textbox', { name: /message/i }), {
+    target: { value: 'Fourth question' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+  await waitFor(() => expect(run.turns).toHaveLength(2))
+  expect(compactedNotice()).not.toBeInTheDocument()
+  run.emit(
+    1,
+    {
+      type: 'RUN_STARTED',
+      threadId: THREAD_ID,
+      runId: 'run-next',
+      instance: 'instance-1',
+    },
+    {
+      type: 'RUN_FINISHED',
+      threadId: THREAD_ID,
+      runId: 'run-next',
+      metadata: {},
+    },
+  )
+  run.end(1)
 })
 
 it('stops a compaction without saying the user stopped the reply before it', async () => {

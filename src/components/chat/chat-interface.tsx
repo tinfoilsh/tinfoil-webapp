@@ -73,7 +73,7 @@ import {
   getChatSpacerHeight,
 } from './chat-scroll'
 import { ChatSidebar } from './chat-sidebar'
-import { CompactionStatus } from './compaction-status'
+import { CompactedNotice, CompactionStatus } from './compaction-status'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { DragProvider } from './drag-context'
@@ -300,6 +300,15 @@ export function ChatInterface({
   const isCompacting =
     thread.compacting ||
     Object.values(thread.compactions).some(({ isRunning }) => isRunning)
+  // The compaction the chat just completed, whose marker sits above earlier
+  // messages, often out of view.
+  const compacted = thread.compacted
+  const showCompaction = () => {
+    if (!compacted) return
+    document
+      .querySelector(`[data-compaction-id="${compacted.id}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   const historyProblem: ChatHistoryProblem | null =
     initialChatId && !isLocalChatUrl && isAuthLoaded && !isSignedIn
       ? 'sign-in'
@@ -2893,7 +2902,17 @@ export function ChatInterface({
                         />
                       )}
                       {streamErrorBanner}
-                      {isCompacting && <CompactionStatus />}
+                      {isCompacting ? (
+                        <CompactionStatus />
+                      ) : (
+                        compacted && (
+                          <CompactedNotice
+                            messageCount={compacted.messageCount}
+                            onShow={showCompaction}
+                            onDismiss={thread.dismissCompacted}
+                          />
+                        )
+                      )}
                       <MessageQueue
                         queue={queuedMessages}
                         onRemove={removeQueuedMessage}

@@ -257,6 +257,19 @@ export function compactionViews(
   }
   return views
 }
+// The compaction marker a run of the chat just completed, with the number of
+// messages its summary covers, while the chat holds it.
+export function compactedView(state: {
+  compacted?: string
+  messages: readonly WireMessage[]
+}): { id: string; messageCount: number } | undefined {
+  const marker = state.messages.find(
+    ({ id, role }) => id === state.compacted && role === COMPACTION_ROLE,
+  )
+  return marker?.compaction
+    ? { id: marker.id, messageCount: marker.compaction.messages }
+    : undefined
+}
 // Whether compacting the chat on request has anything to summarize, as the
 // harness decides it: a message after the latest compaction marker that
 // comes before the last question, which the harness keeps with its reply.
