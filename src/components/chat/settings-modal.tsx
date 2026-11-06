@@ -118,7 +118,7 @@ import {
 } from './chat-export-status'
 import {
   CloudSyncHealthCard,
-  CloudSyncStatusCard,
+  CloudSyncStatusLine,
 } from './cloud-sync-health-card'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
@@ -2975,6 +2975,12 @@ ${encryptionKey.replace('key_', '')}
                                 ? 'Unlock your encryption key to access your saved chats.'
                                 : 'End-to-end encrypted. Only you can access your chats and data.'}
                           </div>
+                          {cloudSyncEnabled && !keyLocked && (
+                            <CloudSyncStatusLine
+                              status={api.syncStatus}
+                              loadFailed={!profileReady && !!sessionError}
+                            />
+                          )}
                         </div>
                         <label className="relative inline-flex cursor-pointer items-center">
                           <input
@@ -2990,7 +2996,7 @@ ${encryptionKey.replace('key_', '')}
                         </label>
                       </div>
                     </div>
-                    {keyLocked ? (
+                    {keyLocked && (
                       <CloudSyncHealthCard
                         isDarkMode={isDarkMode}
                         reason={encryptionKey ? 'key-mismatch' : 'key-recovery'}
@@ -3003,14 +3009,6 @@ ${encryptionKey.replace('key_', '')}
                             : undefined
                         }
                       />
-                    ) : (
-                      cloudSyncEnabled && (
-                        <CloudSyncStatusCard
-                          isDarkMode={isDarkMode}
-                          status={api.syncStatus}
-                          loadFailed={!profileReady && !!sessionError}
-                        />
-                      )
                     )}
                     <NativeBackupExport
                       available={Boolean(
