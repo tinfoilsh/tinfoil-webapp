@@ -14,6 +14,7 @@ import {
   TfQuote,
 } from '@tinfoilsh/tinfoil-icons'
 import {
+  TfArrowUpAnimated,
   TfFolderAnimated,
   TfMicrophoneAnimated,
   TfPlusAnimated,
@@ -29,7 +30,6 @@ import {
   useRef,
   useState,
 } from 'react'
-import { FiArrowUp } from 'react-icons/fi'
 import { PiSpinner } from 'react-icons/pi'
 import {
   ContextUsageIndicator,
@@ -1440,7 +1440,7 @@ export const ChatInput = memo(function ChatInput({
                           aria-hidden="true"
                         />
                       ) : (
-                        <FiArrowUp
+                        <TfArrowUpAnimated
                           className="h-6 w-6 text-current transition-colors md:h-5 md:w-5"
                           aria-hidden="true"
                         />

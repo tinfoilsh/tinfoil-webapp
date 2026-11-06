@@ -1,7 +1,7 @@
 import { cn } from '@/components/ui/utils'
 import type { BaseModel } from '@/config/models'
 import { acquireInteractionLock } from '@/utils/interaction-lock'
-import { ArrowLeftIcon, StarIcon } from '@heroicons/react/24/outline'
+import { StarIcon } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import {
@@ -13,6 +13,7 @@ import {
   TfTrash,
 } from '@tinfoilsh/tinfoil-icons'
 import {
+  TfArrowLeftAnimated,
   TfPlusAnimated,
   TfToolsAnimated,
   TfWritingAnimated,
@@ -334,7 +335,10 @@ export function PromptLibraryModal({
                       className="-ml-1 flex h-8 w-8 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat md:hidden"
                       aria-label="Back to library"
                     >
-                      <ArrowLeftIcon className="h-5 w-5" aria-hidden="true" />
+                      <TfArrowLeftAnimated
+                        className="h-5 w-5"
+                        aria-hidden="true"
+                      />
                     </button>
                   )}
                   <TfToolsAnimated

@@ -12,6 +12,8 @@ import {
   TfVerticalEllipsis,
 } from '@tinfoilsh/tinfoil-icons'
 import {
+  TfChevronLeftAnimated,
+  TfChevronRightAnimated,
   TfCloudFaceAnimated,
   TfFolderAnimated,
   TfThumbtackAnimated,
@@ -20,7 +22,7 @@ import {
 import Link from 'next/link'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { PiPushPinFill, PiSpinner } from 'react-icons/pi'
+import { PiSpinner } from 'react-icons/pi'
 import { RedactedText } from '../ui/redacted-text'
 import { cn } from '../ui/utils'
 import { getBlankQueueId } from './message-queue-identity'
@@ -438,7 +440,7 @@ export function ChatListItem({
                 )
               )}
               {isPinned && showPinnedIndicator && !isStreaming && (
-                <PiPushPinFill
+                <TfThumbtackAnimated
                   className="h-3.5 w-3.5 flex-shrink-0 text-content-muted"
                   title="Pinned to Favorites"
                   aria-label="Pinned to Favorites"
@@ -651,20 +653,10 @@ export function ChatListItem({
                                 />
                                 Move to project
                               </span>
-                              <svg
+                              <TfChevronRightAnimated
                                 className="h-4 w-4 text-content-muted"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
                                 aria-hidden="true"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M9 5l7 7-7 7"
-                                />
-                              </svg>
+                              />
                             </button>
                           )}
 
@@ -783,20 +775,10 @@ export function ChatListItem({
                             setMobileMenuView('main')
                           }}
                         >
-                          <svg
+                          <TfChevronLeftAnimated
                             className="h-4 w-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
                             aria-hidden="true"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M15 19l-7-7 7-7"
-                            />
-                          </svg>
+                          />
                           Back
                         </button>
 

@@ -1,5 +1,6 @@
 import { LoadingDots } from '@/components/loading-dots'
 import { cn } from '@/components/ui/utils'
+import { TfChevronRightAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import { useEffect, useState, type ReactNode } from 'react'
 import { formatElapsed } from './format-duration'
 
@@ -26,24 +27,14 @@ function ElapsedTime({ startedAt }: { startedAt?: number }) {
 
 function Chevron({ isExpanded }: { isExpanded: boolean }) {
   return (
-    <svg
+    <TfChevronRightAnimated
       className={cn(
         'h-3.5 w-3.5 shrink-0 text-content-primary/40 transition-transform motion-reduce:transition-none',
         isExpanded && 'rotate-90',
       )}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
       aria-hidden="true"
       focusable="false"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M9 5l7 7-7 7"
-      />
-    </svg>
+    />
   )
 }
 

@@ -94,8 +94,7 @@ function SyncAge({ at }: { at: number }) {
   )
 }
 
-interface CloudSyncStatusCardProps {
-  isDarkMode: boolean
+interface CloudSyncStatusLineProps {
   status: Store<CloudSyncStatus>
   // The account could not load from the cloud, so no check runs until it is
   // tried again.
@@ -103,66 +102,58 @@ interface CloudSyncStatusCardProps {
 }
 
 /**
- * Status row for Settings > Cloud Sync while the key is accepted: whether
- * this browser reached the chats the cloud stores on its latest try, and
- * when it last did.
+ * Status line in the Settings > Cloud Sync card while the key is accepted:
+ * whether this browser reached the chats the cloud stores on its latest try,
+ * and when it last did.
  */
-export function CloudSyncStatusCard({
-  isDarkMode,
+export function CloudSyncStatusLine({
   status,
   loadFailed,
-}: CloudSyncStatusCardProps) {
+}: CloudSyncStatusLineProps) {
   const { lastSyncedAt, failing } = useStore(status)
   const paused = failing || loadFailed
   return (
-    <div
-      className={cn(
-        'rounded-lg border border-border-subtle p-4',
-        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+    <div className="mt-2 flex min-w-0 items-start gap-1.5 font-aeonik-fono text-xs">
+      {paused ? (
+        <TfWarning
+          className="mt-px h-3.5 w-3.5 shrink-0 text-amber-500"
+          aria-hidden="true"
+        />
+      ) : lastSyncedAt !== null ? (
+        <TfBoxCheckmark
+          className="mt-px h-3.5 w-3.5 shrink-0 text-brand-accent-dark dark:text-brand-accent-light"
+          aria-hidden="true"
+        />
+      ) : (
+        <TfCloud
+          className="mt-px h-3.5 w-3.5 shrink-0 text-content-muted"
+          aria-hidden="true"
+        />
       )}
-    >
-      <div className="flex min-w-0 items-start gap-2">
-        {paused ? (
-          <TfWarning
-            className="mt-0.5 h-4 w-4 shrink-0 text-amber-500"
-            aria-hidden="true"
-          />
-        ) : lastSyncedAt !== null ? (
-          <TfBoxCheckmark
-            className="mt-0.5 h-4 w-4 shrink-0 text-brand-accent-dark dark:text-brand-accent-light"
-            aria-hidden="true"
-          />
-        ) : (
-          <TfCloud
-            className="mt-0.5 h-4 w-4 shrink-0 text-content-muted"
-            aria-hidden="true"
-          />
-        )}
-        <div className="min-w-0">
-          <div className="font-aeonik text-sm font-medium text-content-primary">
-            {paused ? (
-              'Sync paused'
-            ) : lastSyncedAt !== null ? (
-              <>
-                Synced <SyncAge at={lastSyncedAt} />
-              </>
-            ) : (
-              'Checking sync...'
-            )}
-          </div>
-          {paused && (
-            <div className="mt-0.5 font-aeonik-fono text-xs text-content-muted">
-              Having trouble reaching the cloud.
-              {failing && ' Retrying automatically.'}
-              {lastSyncedAt !== null && (
-                <>
-                  {' '}
-                  Last synced <SyncAge at={lastSyncedAt} />.
-                </>
-              )}
-            </div>
+      <div className="min-w-0">
+        <div className="text-content-secondary">
+          {paused ? (
+            'Sync paused'
+          ) : lastSyncedAt !== null ? (
+            <>
+              Synced <SyncAge at={lastSyncedAt} />
+            </>
+          ) : (
+            'Checking sync...'
           )}
         </div>
+        {paused && (
+          <div className="mt-0.5 text-content-muted">
+            Having trouble reaching the cloud.
+            {failing && ' Retrying automatically.'}
+            {lastSyncedAt !== null && (
+              <>
+                {' '}
+                Last synced <SyncAge at={lastSyncedAt} />.
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

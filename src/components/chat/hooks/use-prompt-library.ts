@@ -1,15 +1,14 @@
 import { reportProfileError, useHarness } from '@/services/harness/provider'
 import type { PresetUpdate, PromptEdits } from '@/services/harness/types'
 import {
-  TfLightbulb,
   TfLightning,
   TfMask,
   TfTranslation,
-  TfWriting2,
   type IconType,
 } from '@tinfoilsh/tinfoil-icons'
 import {
   TfCode2Animated,
+  TfLightbulbAnimated,
   TfScholarAnimated,
   TfWritingAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
@@ -22,8 +21,8 @@ import type {
 const presetIcons: Record<string, IconType> = {
   student: TfScholarAnimated,
   code: TfCode2Animated,
-  'pencil-line': TfWriting2,
-  lightbulb: TfLightbulb,
+  'pencil-line': TfWritingAnimated,
+  lightbulb: TfLightbulbAnimated,
   translate: TfTranslation,
   lightning: TfLightning,
   'mask-happy': TfMask,

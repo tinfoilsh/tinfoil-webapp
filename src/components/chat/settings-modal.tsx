@@ -72,7 +72,6 @@ import { useAuth, useUser } from '@clerk/react'
 import { Dialog } from '@headlessui/react'
 import { ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import {
-  TfAdjustmentToggle,
   TfBoxCheckmark,
   TfBoxX,
   TfCard,
@@ -88,13 +87,12 @@ import {
   TfNumber3,
   TfNumber4,
   TfPersonKey,
-  TfShieldWithExclamation,
   TfSignIn,
-  TfStack,
   TfSunLightMode,
   TfTrash,
 } from '@tinfoilsh/tinfoil-icons'
 import {
+  TfAdjustmentToggleAnimated,
   TfChat2Animated,
   TfChevronDownAnimated,
   TfChevronRightAnimated,
@@ -103,6 +101,8 @@ import {
   TfPersonAnimated,
   TfPlusAnimated,
   TfShieldCheckAnimated,
+  TfShieldWithExclamationAnimated,
+  TfStackAnimated,
   TfToolsAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -118,7 +118,7 @@ import {
 } from './chat-export-status'
 import {
   CloudSyncHealthCard,
-  CloudSyncStatusCard,
+  CloudSyncStatusLine,
 } from './cloud-sync-health-card'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
@@ -1985,7 +1985,7 @@ ${encryptionKey.replace('key_', '')}
     {
       id: 'general' as const,
       label: 'General',
-      icon: TfAdjustmentToggle,
+      icon: TfAdjustmentToggleAnimated,
     },
     {
       id: 'chat' as const,
@@ -2012,11 +2012,11 @@ ${encryptionKey.replace('key_', '')}
           {
             id: 'safeguards' as const,
             label: 'Safeguards',
-            icon: TfShieldWithExclamation,
+            icon: TfShieldWithExclamationAnimated,
           },
         ]
       : []),
-    { id: 'data' as const, label: 'Data', icon: TfStack },
+    { id: 'data' as const, label: 'Data', icon: TfStackAnimated },
   ]
 
   return (
@@ -2975,6 +2975,12 @@ ${encryptionKey.replace('key_', '')}
                                 ? 'Unlock your encryption key to access your saved chats.'
                                 : 'End-to-end encrypted. Only you can access your chats and data.'}
                           </div>
+                          {cloudSyncEnabled && !keyLocked && (
+                            <CloudSyncStatusLine
+                              status={api.syncStatus}
+                              loadFailed={!profileReady && !!sessionError}
+                            />
+                          )}
                         </div>
                         <label className="relative inline-flex cursor-pointer items-center">
                           <input
@@ -2990,7 +2996,7 @@ ${encryptionKey.replace('key_', '')}
                         </label>
                       </div>
                     </div>
-                    {keyLocked ? (
+                    {keyLocked && (
                       <CloudSyncHealthCard
                         isDarkMode={isDarkMode}
                         reason={encryptionKey ? 'key-mismatch' : 'key-recovery'}
@@ -3003,14 +3009,6 @@ ${encryptionKey.replace('key_', '')}
                             : undefined
                         }
                       />
-                    ) : (
-                      cloudSyncEnabled && (
-                        <CloudSyncStatusCard
-                          isDarkMode={isDarkMode}
-                          status={api.syncStatus}
-                          loadFailed={!profileReady && !!sessionError}
-                        />
-                      )
                     )}
                     <NativeBackupExport
                       available={Boolean(
