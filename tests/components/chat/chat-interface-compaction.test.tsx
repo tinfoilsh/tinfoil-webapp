@@ -1,5 +1,6 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
+import { publish } from '@/services/harness/runtime'
 import type {
   Frame,
   HarnessEvent,
@@ -324,8 +325,38 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
   ).toBeInTheDocument()
   expect(compactingStatus()).not.toBeInTheDocument()
 
-  // The chat says it was compacted, and shows where, as its marker sits
-  // above the exchange it kept.
+  // The chat says it was compacted, also once the revision the compaction
+  // saved has the chat read again.
+  expect(compactedNotice()).toHaveTextContent('Summarized 2 earlier messages.')
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/threads/get')
+      return structuredClone({
+        ...threadOf([
+          ...stoppedThinking.slice(0, 2),
+          marker,
+          ...stoppedThinking.slice(2),
+        ]),
+        contextUsage: {
+          usedTokens: 23_000,
+          limitTokens: 210_000,
+          percentage: 11,
+        },
+      })
+    if (path === '/v1/threads/list')
+      return {
+        threads: [summaryOf(threadOf(stoppedThinking))],
+        nextCursor: null,
+      }
+    throw new Error(`Unexpected ${path}`)
+  })
+  await act(async () => publish({ chatRevision: 'compacted' }))
+  expect(
+    await screen.findByRole('button', {
+      name: 'Context window 11% used (~23k of 210k tokens)',
+    }),
+  ).toBeInTheDocument()
+
+  // It shows where, as its marker sits above the exchange it kept.
   const notice = compactedNotice()
   expect(notice).toHaveTextContent('Summarized 2 earlier messages.')
   const scrolled = vi.fn()

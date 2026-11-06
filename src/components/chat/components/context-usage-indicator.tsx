@@ -70,10 +70,20 @@ export function ContextUsageIndicator({
   const isOverBudget = usage.usedTokens > usage.limitTokens
   const dashOffset = RING_CIRCUMFERENCE * (1 - percentage / 100)
 
-  const tooltip = isOverBudget
-    ? `Context exceeds this model's input budget (~${formatTokens(usage.usedTokens)} of ${formatTokens(usage.limitTokens)} tokens). ${compacts ? COMPACTION_NOTE : 'Replies may fail. Reduce project documents or instructions, remove attachments, or shorten your message.'}`
+  // What happens to a prompt over the budget, or one that fills it.
+  const note = isOverBudget
+    ? compacts
+      ? COMPACTION_NOTE
+      : 'Replies may fail. Reduce project documents or instructions, remove attachments, or shorten your message.'
     : isFull
-      ? `Context window full (~${formatTokens(usage.limitTokens)} tokens). ${compacts ? COMPACTION_NOTE : 'Older messages may be omitted to make room.'}`
+      ? compacts
+        ? COMPACTION_NOTE
+        : 'Older messages may be omitted to make room.'
+      : undefined
+  const tooltip = isOverBudget
+    ? `Context exceeds this model's input budget (~${formatTokens(usage.usedTokens)} of ${formatTokens(usage.limitTokens)} tokens). ${note}`
+    : isFull
+      ? `Context window full (~${formatTokens(usage.limitTokens)} tokens). ${note}`
       : `Context window ${percentage}% used (~${formatTokens(usage.usedTokens)} of ${formatTokens(usage.limitTokens)} tokens)`
   // The popover's title, with the tokens used on a line of their own.
   const headline = isOverBudget
@@ -191,6 +201,9 @@ export function ContextUsageIndicator({
             <p className="mt-0.5 text-xs text-content-secondary">
               {tokensUsed}
             </p>
+            {note && (
+              <p className="mt-2 text-xs text-content-secondary">{note}</p>
+            )}
             <p className="mt-2 text-xs text-content-secondary">
               {COMPACT_EXPLANATION}
             </p>

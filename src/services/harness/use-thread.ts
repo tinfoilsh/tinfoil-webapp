@@ -513,7 +513,13 @@ export function useThread(
       }
       if (cancelled || !shown() || controller.view.get().status !== 'idle')
         return
-      controller.view.set(storedChat(thread))
+      // The compaction the chat points out outlives the chat read again,
+      // as the compaction itself changes the chat's revision.
+      const { compacted } = controller.view.get()
+      controller.view.set({
+        ...storedChat(thread),
+        ...(compacted ? { compacted } : {}),
+      })
       refreshedChat.current = { id, revision: chatRevision }
       patch({
         model: thread.model,
