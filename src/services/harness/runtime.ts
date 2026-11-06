@@ -125,8 +125,8 @@ interface ChangeTokens {
 }
 // When this browser last read what the harness stores of the account's
 // chats, and whether its latest attempt failed. Kept apart from the view,
-// which most of the page renders from, so a check every few seconds redraws
-// only what shows it.
+// which most of the page renders from, so the regular checks redraw only what
+// shows it.
 export interface CloudSyncStatus {
   lastSyncedAt: number | null
   failing: boolean
