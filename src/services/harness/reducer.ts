@@ -700,9 +700,11 @@ function applyEvent(
       const committed = new Map(
         event.metadata?.messages?.map((message) => [message.id, message]),
       )
-      const { stopping: _stopping, ...rest } = next
+      const { stopping: _stopping, compactTurn, ...rest } = next
       return {
         ...rest,
+        // A compaction that failed is retried as one.
+        ...(failed && compactTurn ? { compactTurn } : {}),
         snapshot: withoutQueued(next.snapshot, runId),
         status: failed ? 'error' : 'idle',
         ...(failed

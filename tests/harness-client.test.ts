@@ -1026,7 +1026,7 @@ describe('compacting a chat', () => {
     ])
   })
 
-  it('takes the run of a compaction the chat asked for for one, but not a run queued after it', () => {
+  it('takes the run of a compaction the chat asked for for one until it ends, keeping one that failed to retry', () => {
     const begun = (runId: string): Frame => ({
       id: 0,
       event: { type: 'RUN_STARTED', threadId: 't', runId, instance: 'i' },
@@ -1036,6 +1036,7 @@ describe('compacting a chat', () => {
       begun('compact'),
     )
     expect(compacting).toMatchObject({ status: 'streaming', compactTurn: true })
+
     const compacted = reduceEvent(compacting, {
       id: 1,
       event: {
@@ -1045,9 +1046,22 @@ describe('compacting a chat', () => {
         metadata: {},
       },
     })
+    const failed = reduceEvent(compacting, {
+      id: 1,
+      event: {
+        type: 'RUN_ERROR',
+        threadId: 't',
+        runId: 'compact',
+        code: 'COMPACTION_FAILED',
+        message: 'failed',
+        action: 'retry',
+      },
+    })
 
-    const replying = reduceEvent(compacted, begun('queued'))
-
+    expect(compacted).not.toHaveProperty('compactTurn')
+    expect(failed).toMatchObject({ status: 'error', compactTurn: true })
+    // A turn queued behind the failed compaction streams its own reply.
+    const replying = reduceEvent(failed, begun('queued'))
     expect(replying.runId).toBe('queued')
     expect(replying).not.toHaveProperty('compactTurn')
   })
