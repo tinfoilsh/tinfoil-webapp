@@ -10,9 +10,9 @@ import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { toast } from '@/hooks/use-toast'
 import { logError } from '@/utils/error-handling'
 import { useAuth, useUser } from '@clerk/react'
-import { ArrowDownIcon } from '@heroicons/react/24/outline'
 import { TfDocumentPlus, TfShare, TfTinSad } from '@tinfoilsh/tinfoil-icons'
 import {
+  TfArrowDownAnimated,
   TfGhost2Animated,
   TfLockLockedAnimated,
   TfLockOpenedAnimated,
@@ -2843,9 +2843,8 @@ export function ChatInterface({
                         className="flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle bg-surface-sidebar-button shadow-md transition-colors hover:bg-surface-sidebar-button-hover"
                         aria-label="Scroll to latest message"
                       >
-                        <ArrowDownIcon
+                        <TfArrowDownAnimated
                           className="h-4 w-4 text-content-secondary"
-                          strokeWidth={2}
                           aria-hidden="true"
                         />
                       </button>

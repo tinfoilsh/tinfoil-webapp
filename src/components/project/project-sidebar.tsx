@@ -45,7 +45,7 @@ import {
   isPlainPrimaryClick,
 } from '@/utils/navigation'
 import { useAuth } from '@clerk/react'
-import { ArrowLeftIcon, NoSymbolIcon } from '@heroicons/react/24/outline'
+import { NoSymbolIcon } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
   TfDocument,
@@ -54,6 +54,7 @@ import {
   TfTrash,
 } from '@tinfoilsh/tinfoil-icons'
 import {
+  TfArrowLeftAnimated,
   TfChat2Animated,
   TfChevronDownAnimated,
   TfChevronRightAnimated,
@@ -856,7 +857,7 @@ export const ProjectSidebar = memo(function ProjectSidebar({
                   'bg-tinfoil-accent-blue-darker ring-2 ring-tinfoil-accent-blue-soft',
               )}
             >
-              <ArrowLeftIcon className="h-4 w-4" aria-hidden="true" />
+              <TfArrowLeftAnimated className="h-4 w-4" aria-hidden="true" />
               <span className="font-aeonik font-medium">Exit Project</span>
             </button>
           </div>

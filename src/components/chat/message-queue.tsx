@@ -1,6 +1,6 @@
 import { cn } from '@/components/ui/utils'
 import { TfQueue, TfTrash } from '@tinfoilsh/tinfoil-icons'
-import { FiArrowUp } from 'react-icons/fi'
+import { TfArrowUpAnimated } from '@tinfoilsh/tinfoil-icons/animated'
 import type { Attachment, QueuedMessage } from './types'
 
 const QUEUED_PREVIEW_MAX_LENGTH = 240
@@ -87,7 +87,7 @@ export function MessageQueue({ queue, onRemove, onSend }: MessageQueueProps) {
               aria-label="Send queued message now"
               className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
             >
-              <FiArrowUp className="h-4 w-4" aria-hidden="true" />
+              <TfArrowUpAnimated className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               type="button"
