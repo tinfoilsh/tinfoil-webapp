@@ -787,8 +787,13 @@ export function ChatInterface({
     loadDocumentText: thread.documentText,
     speak: thread.speak,
   })
+  // The harness ends the turns queued behind a reply it stops, so with a
+  // message queued Stop sends that message now, which stops the reply first.
   const cancelGenerationAndResumeQueue = () => {
-    void thread.cancel().catch(thread.report)
+    const [next] = thread.queue
+    void (next ? thread.sendQueued(next.id) : thread.cancel()).catch(
+      thread.report,
+    )
   }
   // Escape stops the reply from anywhere in the chat. A dialog, menu or
   // field that uses Escape holds the focus, or marks it handled first.

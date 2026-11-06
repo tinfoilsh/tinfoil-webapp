@@ -762,6 +762,70 @@ it('sends a message written while the reply stops once it has stopped, and keeps
   })
 })
 
+it('sends a message queued behind a reply the user stops, rather than dropping it', async () => {
+  signIn({ cloud: true })
+  const stopped = gate()
+  scriptStoppedRun(stopped.promise)
+  client.events.mockImplementationOnce(async function* (
+    _path: string,
+    input: Turn,
+  ): AsyncGenerator<Frame> {
+    yield {
+      id: 0,
+      event: {
+        type: 'STATE_DELTA',
+        threadId: input.threadId!,
+        runId: 'queued',
+        delta: [
+          {
+            op: 'add',
+            path: '/queue/-',
+            value: {
+              queueId: 'queued',
+              kind: 'send',
+              content: input.content!,
+              quote: null,
+              attachments: [],
+              createdAt: '2026-04-01T09:00:02Z',
+            },
+          },
+        ],
+      },
+    }
+    await stopped.promise
+  })
+  const sent: unknown[] = []
+  client.post.mockImplementation(async (path, input) => {
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/threads/queue/send') {
+      sent.push(input)
+      return {}
+    }
+    throw new Error(`Unexpected ${path}`)
+  })
+  renderChat()
+  await send()
+  await screen.findByText('The answer is')
+  const threadId = (client.events.mock.calls[0][1] as Turn).threadId
+  fireEvent.change(screen.getByRole('textbox', { name: /message/i }), {
+    target: { value: 'That list is wrong' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+  await screen.findByRole('button', { name: 'Send queued message now' })
+
+  fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }))
+
+  await waitFor(() =>
+    expect(sent).toEqual([
+      expect.objectContaining({ threadId, queueId: 'queued' }),
+    ]),
+  )
+  expect(client.post.mock.calls.map(([path]) => path)).not.toContain(
+    '/v1/threads/cancel',
+  )
+  await act(async () => stopped.resolve())
+})
+
 it('says a reply the service stopped stopped, without blaming the user', async () => {
   signIn({ cloud: true })
   scriptStoppedRun(Promise.resolve())
