@@ -61,10 +61,12 @@ export const isStopping = (state: ChatState) =>
   isRunning(state) && !!state.stopping
 
 // The messages whose reply the user stopped, as the run they stopped ends:
-// the reply it had begun, or the message it stopped before answering.
+// the reply it had begun, or the message it stopped before answering. A
+// compaction answers no message.
 export function canceledBy(state: ChatState, event: TerminalEvent): string[] {
   if (
     !state.stopping ||
+    state.compactTurn ||
     event.type !== 'RUN_FINISHED' ||
     event.runId !== state.runId ||
     !event.metadata?.cancelled

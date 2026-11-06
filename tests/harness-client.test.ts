@@ -4,7 +4,11 @@ import {
   INFERENCE_KEY_HEADER,
   type HarnessRoute,
 } from '@/services/harness/protocol'
-import { initialChat, reduceEvent } from '@/services/harness/reducer'
+import {
+  canceledBy,
+  initialChat,
+  reduceEvent,
+} from '@/services/harness/reducer'
 import { HarnessError, readEvents } from '@/services/harness/sse'
 import type {
   Frame,
@@ -12,6 +16,7 @@ import type {
   Message,
   QueueItem,
   RateLimit,
+  TerminalEvent,
   TimelineBlock,
 } from '@/services/harness/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -1045,6 +1050,25 @@ describe('compacting a chat', () => {
 
     expect(replying.runId).toBe('queued')
     expect(replying).not.toHaveProperty('compactTurn')
+  })
+
+  it('stops a compaction the chat asked for without canceling the question it left unanswered', () => {
+    const stopping = {
+      ...initialChat(),
+      messages: window,
+      runId: 'compact',
+      status: 'streaming' as const,
+      stopping: true,
+    }
+    const stopped: TerminalEvent = {
+      type: 'RUN_FINISHED',
+      threadId: 't',
+      runId: 'compact',
+      metadata: { cancelled: true, messages: [] },
+    }
+    expect(canceledBy(stopping, stopped)).toEqual(['u3'])
+
+    expect(canceledBy({ ...stopping, compactTurn: true }, stopped)).toEqual([])
   })
 })
 

@@ -166,7 +166,8 @@ function scriptRuns() {
   }
 }
 
-// Opens the stored chat, whose list and stops the harness answers.
+// Opens the stored chat, with the harness answering its reads, its listing
+// and stops.
 async function openChat(shown = messages) {
   const stops: unknown[] = []
   client.post.mockImplementation(async (path: string, input: unknown) => {
@@ -260,6 +261,7 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
   expect(screen.getByText('Thought')).toBeInTheDocument()
   expect(screen.queryByText('Thinking')).not.toBeInTheDocument()
   expect(screen.getAllByRole('button', { name: 'Read aloud' })).toHaveLength(2)
+  expect(screen.queryByText('Al is responding')).not.toBeInTheDocument()
 
   run.emit(
     {

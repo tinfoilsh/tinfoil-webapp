@@ -2563,7 +2563,7 @@ export function ChatInterface({
           sidebar makes that area inert. */}
       <ChatAnnouncer
         messages={currentChat.messages}
-        isStreaming={isStreaming}
+        isStreaming={isStreaming && !thread.compacting}
         isWaitingForResponse={isWaitingForResponse}
       />
 
