@@ -171,7 +171,8 @@ it('shows sync as paused while the account cannot load from the cloud', async ()
 
   await act(() => api.refreshProfile())
   expect(screen.getByText('Sync paused')).toBeInTheDocument()
-  // Nothing checks again until the account is loaded again.
+  // Nothing retries the load on its own, so the card does not say it is
+  // retrying.
   expect(
     screen.getByText('Having trouble reaching the cloud.'),
   ).toBeInTheDocument()
