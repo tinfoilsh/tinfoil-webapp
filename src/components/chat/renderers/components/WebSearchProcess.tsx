@@ -23,31 +23,24 @@ function getDomainName(url: string): string {
   }
 }
 
-function FadeInFavicon({
-  url,
-  className,
-  style,
-}: {
-  url: string
-  className: string
-  style?: React.CSSProperties
-}) {
+function FadeInFavicon({ url, className }: { url: string; className: string }) {
   return (
-    <span className="relative block" style={style}>
+    <span className="relative block">
       <Favicon url={url} className={className} />
     </span>
   )
 }
 
+// The favicons overlap each other. A favicon that is loading or has none
+// renders nothing, so it neither takes space nor shifts the next one.
 function InlineSourceFavicons({ sources }: { sources: WebSearchSource[] }) {
   return (
     <span className="inline-flex shrink-0 items-center align-middle">
       {sources.map((source, index) => (
-        <FadeInFavicon
+        <Favicon
           key={`${source.url}-${index}`}
           url={source.url}
-          className="h-4 w-4 shrink-0 rounded-full border border-surface-chat bg-surface-chat"
-          style={{ marginLeft: index === 0 ? 0 : -6 }}
+          className="-ml-1.5 h-4 w-4 shrink-0 rounded-full border border-surface-chat bg-surface-chat first:ml-0"
         />
       ))}
     </span>
