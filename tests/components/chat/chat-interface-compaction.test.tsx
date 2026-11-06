@@ -132,36 +132,42 @@ beforeEach(() => {
   refuseFetch()
 })
 
-// Each run the harness streams, frame by frame as the test emits them.
+// The stream of each turn the chat sends, in the order it sends them, frame
+// by frame as the test emits them.
 function scriptRuns() {
   const turns: Turn[] = []
-  const frames: HarnessEvent[] = []
-  let wake: (() => void) | undefined
-  let ended = false
+  const streams: {
+    frames: HarnessEvent[]
+    wake?: () => void
+    ended: boolean
+  }[] = []
+  const stream = (index: number) =>
+    (streams[index] ??= { frames: [], ended: false })
   client.events.mockImplementation(async function* (
     _path: string,
     input: Turn,
   ): AsyncGenerator<Frame> {
-    turns.push(input)
-    ended = false
+    const own = stream(turns.push(input) - 1)
     let id = 0
     for (;;) {
-      while (frames.length) yield { id: id++, event: frames.shift()! }
-      if (ended) return
+      while (own.frames.length) yield { id: id++, event: own.frames.shift()! }
+      if (own.ended) return
       await new Promise<void>((resolve) => {
-        wake = resolve
+        own.wake = resolve
       })
     }
   })
   return {
     turns,
-    emit(...events: HarnessEvent[]) {
-      frames.push(...events)
-      wake?.()
+    emit(index: number, ...events: HarnessEvent[]) {
+      const own = stream(index)
+      own.frames.push(...events)
+      own.wake?.()
     },
-    end() {
-      ended = true
-      wake?.()
+    end(index: number) {
+      const own = stream(index)
+      own.ended = true
+      own.wake?.()
     },
   }
 }
@@ -196,6 +202,12 @@ function compactFromIndicator() {
     ),
   )
 }
+
+// The status above the composer saying the chat is being compacted.
+const compactingStatus = () =>
+  within(
+    screen.getByRole('textbox', { name: /message/i }).closest('form')!,
+  ).queryByRole('status', { name: 'Compacting conversation' })
 
 const started = (runId: string, shown = messages): HarnessEvent[] => [
   { type: 'RUN_STARTED', threadId: THREAD_ID, runId, instance: 'instance-1' },
@@ -249,7 +261,9 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
   expect(
     screen.queryByRole('dialog', { name: 'Context window' }),
   ).not.toBeInTheDocument()
-  run.emit(...started('run-compact', stoppedThinking))
+  // The chat says so at once, before the harness starts compacting.
+  expect(compactingStatus()).toBeInTheDocument()
+  run.emit(0, ...started('run-compact', stoppedThinking))
   await screen.findByRole('note', {
     name: 'Earlier messages above are being summarized for the assistant',
   })
@@ -262,8 +276,10 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
   expect(screen.queryByText('Thinking')).not.toBeInTheDocument()
   expect(screen.getAllByRole('button', { name: 'Read aloud' })).toHaveLength(2)
   expect(screen.queryByText('Al is responding')).not.toBeInTheDocument()
+  expect(compactingStatus()).toBeInTheDocument()
 
   run.emit(
+    0,
     {
       type: 'COMPACTION_END',
       messageId: 'c1',
@@ -293,7 +309,7 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
       metadata: {},
     },
   )
-  run.end()
+  run.end(0)
 
   expect(
     await screen.findByRole('button', {
@@ -303,6 +319,166 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
   expect(
     screen.getByRole('button', { name: 'Compacted 2 earlier messages' }),
   ).toBeInTheDocument()
+  expect(compactingStatus()).not.toBeInTheDocument()
+})
+
+it('queues a message sent while the chat compacts, and streams its reply once the compaction ends', async () => {
+  signIn({ cloud: true, session: compacting })
+  const run = scriptRuns()
+  await openChat()
+  compactFromIndicator()
+  await waitFor(() => expect(run.turns).toHaveLength(1))
+  run.emit(0, ...started('run-compact'))
+  await waitFor(() => expect(compactingStatus()).toBeInTheDocument())
+
+  const input = screen.getByRole('textbox', { name: /message/i })
+  fireEvent.change(input, { target: { value: 'Third question' } })
+  fireEvent.submit(input.closest('form')!)
+
+  await waitFor(() => expect(run.turns).toHaveLength(2))
+  expect(run.turns[1]).toMatchObject({
+    kind: 'send',
+    threadId: THREAD_ID,
+    content: 'Third question',
+  })
+  const queued = {
+    queueId: 'run-queued',
+    kind: 'send',
+    content: 'Third question',
+    quote: null,
+    attachments: [],
+    createdAt: '2026-04-01T09:00:05Z',
+  }
+  run.emit(1, {
+    type: 'STATE_DELTA',
+    threadId: THREAD_ID,
+    runId: 'run-queued',
+    delta: [{ op: 'add', path: '/queue/-', value: queued }],
+  })
+  expect(
+    await screen.findByRole('button', { name: 'Remove queued message' }),
+  ).toBeInTheDocument()
+  expect(compactingStatus()).toBeInTheDocument()
+
+  run.emit(
+    0,
+    {
+      type: 'COMPACTION_END',
+      messageId: 'c1',
+      beforeMessageId: 'u2',
+      outcome: 'completed',
+      marker,
+    },
+    {
+      type: 'RUN_FINISHED',
+      threadId: THREAD_ID,
+      runId: 'run-compact',
+      metadata: {},
+    },
+  )
+  run.end(0)
+  run.emit(
+    1,
+    {
+      type: 'RUN_STARTED',
+      threadId: THREAD_ID,
+      runId: 'run-queued',
+      instance: 'instance-1',
+    },
+    {
+      type: 'MESSAGES_SNAPSHOT',
+      messages: [
+        ...messages.slice(0, 2),
+        marker,
+        ...messages.slice(2),
+        {
+          id: 'u3',
+          role: 'user',
+          createdAt: '2026-04-01T09:00:05Z',
+          content: 'Third question',
+        },
+      ],
+      hasOlder: false,
+    },
+    {
+      type: 'STATE_SNAPSHOT',
+      snapshot: {
+        thread: summaryOf(threadOf(messages)),
+        queue: [],
+        rateLimit: testSession.rateLimit,
+      },
+    },
+    {
+      type: 'TEXT_MESSAGE_CHUNK',
+      messageId: 'a3',
+      role: 'assistant',
+      delta: 'Third answer',
+    },
+  )
+
+  expect(await screen.findByText('Third answer')).toBeInTheDocument()
+  // The queued message's reply streams as any reply does.
+  expect(compactingStatus()).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Remove queued message' }),
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: 'Stop generation' }),
+  ).toBeInTheDocument()
+  expect(screen.getByText('Al is responding')).toBeInTheDocument()
+  run.emit(1, {
+    type: 'RUN_FINISHED',
+    threadId: THREAD_ID,
+    runId: 'run-queued',
+    metadata: {},
+  })
+  run.end(1)
+})
+
+it('says the chat is compacting while a turn compacts it before the reply', async () => {
+  signIn({ cloud: true, session: compacting })
+  const run = scriptRuns()
+  await openChat()
+  const input = screen.getByRole('textbox', { name: /message/i })
+  fireEvent.change(input, { target: { value: 'Third question' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+  await waitFor(() => expect(run.turns).toHaveLength(1))
+  const question: Message = {
+    id: run.turns[0].clientRequestId,
+    role: 'user',
+    createdAt: '2026-04-01T09:00:05Z',
+    content: 'Third question',
+  }
+  expect(compactingStatus()).not.toBeInTheDocument()
+
+  run.emit(0, ...started('run-turn', [...messages, question]))
+
+  await waitFor(() => expect(compactingStatus()).toBeInTheDocument())
+  run.emit(
+    0,
+    {
+      type: 'COMPACTION_END',
+      messageId: 'c1',
+      beforeMessageId: 'u2',
+      outcome: 'completed',
+      marker,
+    },
+    {
+      type: 'TEXT_MESSAGE_CHUNK',
+      messageId: 'a3',
+      role: 'assistant',
+      delta: 'Third answer',
+    },
+  )
+  expect(await screen.findByText('Third answer')).toBeInTheDocument()
+  expect(compactingStatus()).not.toBeInTheDocument()
+  run.emit(0, {
+    type: 'RUN_FINISHED',
+    threadId: THREAD_ID,
+    runId: 'run-turn',
+    metadata: {},
+  })
+  run.end(0)
 })
 
 it('stops a compaction without saying the user stopped the reply before it', async () => {
@@ -312,7 +488,7 @@ it('stops a compaction without saying the user stopped the reply before it', asy
   expect(screen.getByText('Response stopped')).toBeInTheDocument()
   compactFromIndicator()
   await waitFor(() => expect(run.turns).toHaveLength(1))
-  run.emit(...started('run-compact', stoppedThinking))
+  run.emit(0, ...started('run-compact', stoppedThinking))
   await screen.findByRole('note', {
     name: 'Earlier messages above are being summarized for the assistant',
   })
@@ -329,6 +505,7 @@ it('stops a compaction without saying the user stopped the reply before it', asy
   ).not.toBeInTheDocument()
   await act(async () => {
     run.emit(
+      0,
       {
         type: 'COMPACTION_END',
         messageId: 'c1',
@@ -342,7 +519,7 @@ it('stops a compaction without saying the user stopped the reply before it', asy
         metadata: { cancelled: true, messages: [] },
       },
     )
-    run.end()
+    run.end(0)
   })
   await waitFor(() =>
     expect(
@@ -364,6 +541,7 @@ it('compacts again when the user retries a compaction that failed', async () => 
   compactFromIndicator()
   await waitFor(() => expect(run.turns).toHaveLength(1))
   run.emit(
+    0,
     ...started('run-compact'),
     {
       type: 'COMPACTION_END',
@@ -380,7 +558,7 @@ it('compacts again when the user retries a compaction that failed', async () => 
       action: 'retry',
     },
   )
-  run.end()
+  run.end(0)
   expect(await screen.findByRole('alert')).toHaveTextContent(
     'This chat could not be compacted',
   )
@@ -389,12 +567,12 @@ it('compacts again when the user retries a compaction that failed', async () => 
 
   await waitFor(() => expect(run.turns).toHaveLength(2))
   expect(run.turns[1]).toMatchObject({ kind: 'compact', threadId: THREAD_ID })
-  run.emit(...started('run-again'))
+  run.emit(1, ...started('run-again'))
   await screen.findByRole('note', {
     name: 'Earlier messages above are being summarized for the assistant',
   })
   expect(screen.getAllByRole('button', { name: 'Read aloud' })).toHaveLength(2)
-  run.end()
+  run.end(1)
 })
 
 it('offers no compaction of a chat whose only exchange is its latest', async () => {

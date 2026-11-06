@@ -73,6 +73,7 @@ import {
   getChatSpacerHeight,
 } from './chat-scroll'
 import { ChatSidebar } from './chat-sidebar'
+import { CompactionStatus } from './compaction-status'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { DragProvider } from './drag-context'
@@ -294,6 +295,11 @@ export function ChatInterface({
   const loadingState = isReplyStreaming ? 'loading' : 'idle'
   const isWaitingForResponse =
     isReplyStreaming && currentChat.messages.at(-1)?.role !== 'assistant'
+  // A compaction runs: one the user asked for, or one a turn makes before
+  // the model answers.
+  const isCompacting =
+    thread.compacting ||
+    Object.values(thread.compactions).some(({ isRunning }) => isRunning)
   const historyProblem: ChatHistoryProblem | null =
     initialChatId && !isLocalChatUrl && isAuthLoaded && !isSignedIn
       ? 'sign-in'
@@ -2887,6 +2893,7 @@ export function ChatInterface({
                         />
                       )}
                       {streamErrorBanner}
+                      {isCompacting && <CompactionStatus />}
                       <MessageQueue
                         queue={queuedMessages}
                         onRemove={removeQueuedMessage}
