@@ -12,6 +12,7 @@ import {
   TfGlobe,
   TfGlobeX,
   TfQuote,
+  TfStack,
 } from '@tinfoilsh/tinfoil-icons'
 import {
   TfArrowUpAnimated,
@@ -32,6 +33,8 @@ import {
 } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import {
+  COMPACTING_LABEL,
+  COMPACT_LABEL,
   ContextUsageIndicator,
   type ContextUsage,
 } from './components/context-usage-indicator'
@@ -83,6 +86,10 @@ type ChatInputProps = {
   onOpenPromptLibrary?: () => void
   onClearPromptPreset?: () => void
   contextUsage?: ContextUsage
+  // Compacting the open chat on request.
+  canCompact?: boolean
+  compacting?: boolean
+  onCompact?: () => void
   mobileHeader?: React.ReactNode
 }
 
@@ -121,6 +128,9 @@ export const ChatInput = memo(function ChatInput({
   onOpenPromptLibrary,
   onClearPromptPreset,
   contextUsage,
+  canCompact = false,
+  compacting = false,
+  onCompact,
   mobileHeader,
 }: ChatInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -129,6 +139,10 @@ export const ChatInput = memo(function ChatInput({
   const { isProjectMode, activeProject } = useProject()
   const { api, session } = useHarness()
   const transcriptionAvailable = !!session?.features.transcription
+  const compaction =
+    onCompact && session?.features.manualCompaction
+      ? { canCompact, compacting, onCompact }
+      : undefined
   const enterToNewline = useEnterToNewline()
   const [textareaResetNonce, setTextareaResetNonce] = useState(0)
   const prevInputValueRef = useRef(input)
@@ -1332,6 +1346,32 @@ export const ChatInput = memo(function ChatInput({
                             <ContextUsageIndicator usage={contextUsage} />
                           </div>
                         )}
+                        {contextUsage && compaction && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            aria-disabled={!compaction.canCompact}
+                            onClick={() => {
+                              if (!compaction.canCompact) return
+                              compaction.onCompact()
+                              closeInputMenu(true)
+                            }}
+                            className={cn(
+                              'flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary md:hidden',
+                              compaction.canCompact
+                                ? 'hover:bg-surface-chat-background'
+                                : 'cursor-default opacity-50',
+                            )}
+                          >
+                            <TfStack
+                              className="h-5 w-5 text-content-secondary"
+                              aria-hidden="true"
+                            />
+                            {compaction.compacting
+                              ? COMPACTING_LABEL
+                              : COMPACT_LABEL}
+                          </button>
+                        )}
                       </div>
                     </>
                   )}
@@ -1464,6 +1504,7 @@ export const ChatInput = memo(function ChatInput({
               <ContextUsageIndicator
                 usage={contextUsage}
                 className="hidden md:flex"
+                compaction={compaction}
               />
             )}
             {modelSelectorButton}

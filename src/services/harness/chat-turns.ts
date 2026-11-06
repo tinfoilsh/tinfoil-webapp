@@ -272,6 +272,7 @@ export function chatTurns({
           runId: undefined,
           error: undefined,
           stopping: undefined,
+          compactTurn: fields.kind === 'compact' || undefined,
         }))
       }
       return (async () => {
@@ -378,9 +379,11 @@ export function chatTurns({
       held: undefined,
     }))
     // A reply already streaming is the one stopped, which keeps saying so
-    // even if the chat is left before its run ends.
+    // even if the chat is left before its run ends. A compaction streams no
+    // reply.
     const last = shownMessages(state.messages).at(-1)
-    if (last?.role === 'assistant') controller.markCanceled([last.id])
+    if (last?.role === 'assistant' && !state.compactTurn)
+      controller.markCanceled([last.id])
     try {
       await controller.cancel(input)
     } catch (cause) {
@@ -449,11 +452,18 @@ export function chatTurns({
   // Retries what failed. A run that ended with an error runs again, as the
   // harness decides from the chat: a continuation continues again, a reply
   // is regenerated, and a message left without a reply is answered. A
-  // refused request or a dropped stream reconnects.
+  // compaction compacts again, as the chat shows it does. A refused request
+  // or a dropped stream reconnects.
   async function retry(fields: Partial<Turn> = {}) {
-    const { failedRun, status } = controller.view.get()
+    const { failedRun, status, compactTurn } = controller.view.get()
     if (!failedRun || status !== 'error') return reconnect()
-    return send({ ...fields, kind: 'retry' })
+    return send({ ...fields, kind: compactTurn ? 'compact' : 'retry' })
+  }
+  // Compacts the open chat on request: the harness summarizes its earlier
+  // messages without asking the model. It does so only while no reply runs.
+  function compact(fields: Partial<Turn> = {}) {
+    if (!open.get().id || isRunning(controller.view.get())) return
+    return send({ ...fields, kind: 'compact' })
   }
   // Asks the harness for new arguments for a widget call, while the chat
   // shows no run or error of its own. A retry that does not repair the
@@ -514,6 +524,7 @@ export function chatTurns({
     continueReply,
     reconnect,
     retry,
+    compact,
     retryToolCall,
     sendQueued: async (queueId: string) =>
       controller.sendQueued(queueInput(queueId)),

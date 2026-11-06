@@ -88,6 +88,9 @@ export const ERROR_CODES = {
   // The chat's earlier messages could not be summarized to make room for a
   // turn.
   compactionFailed: 'COMPACTION_FAILED',
+  // A chat compacted on request holds nothing before its latest exchange to
+  // summarize.
+  nothingToCompact: 'NOTHING_TO_COMPACT',
   modelUnavailable: 'MODEL_UNAVAILABLE',
   // A stream that closed before its run ended. The run may go on.
   streamInterrupted: 'STREAM_INTERRUPTED',

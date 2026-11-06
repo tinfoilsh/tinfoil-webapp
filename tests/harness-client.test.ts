@@ -1020,6 +1020,32 @@ describe('compacting a chat', () => {
       ...window.slice(2),
     ])
   })
+
+  it('takes the run of a compaction the chat asked for for one, but not a run queued after it', () => {
+    const begun = (runId: string): Frame => ({
+      id: 0,
+      event: { type: 'RUN_STARTED', threadId: 't', runId, instance: 'i' },
+    })
+    const compacting = reduceEvent(
+      { ...initialChat(), status: 'submitting', compactTurn: true },
+      begun('compact'),
+    )
+    expect(compacting).toMatchObject({ status: 'streaming', compactTurn: true })
+    const compacted = reduceEvent(compacting, {
+      id: 1,
+      event: {
+        type: 'RUN_FINISHED',
+        threadId: 't',
+        runId: 'compact',
+        metadata: {},
+      },
+    })
+
+    const replying = reduceEvent(compacted, begun('queued'))
+
+    expect(replying.runId).toBe('queued')
+    expect(replying).not.toHaveProperty('compactTurn')
+  })
 })
 
 describe('attested harness transport', () => {
