@@ -116,7 +116,10 @@ import {
   describeExportWarnings,
   type ChatExportState,
 } from './chat-export-status'
-import { CloudSyncHealthCard } from './cloud-sync-health-card'
+import {
+  CloudSyncHealthCard,
+  CloudSyncStatusCard,
+} from './cloud-sync-health-card'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
@@ -827,7 +830,14 @@ export function SettingsModal({
     usePromptLibrary()
   const { toast } = useToast()
   // Without cloud sync every chat and setting stays on this device.
-  const { api, profile, keyLocked, cloud: cloudSyncEnabled } = useHarness()
+  const {
+    api,
+    profile,
+    keyLocked,
+    cloud: cloudSyncEnabled,
+    profileReady,
+    error: sessionError,
+  } = useHarness()
 
   const { refresh: refreshProjects } = useProjects({ autoLoad: false })
   // Encryption key management state
@@ -2980,7 +2990,7 @@ ${encryptionKey.replace('key_', '')}
                         </label>
                       </div>
                     </div>
-                    {keyLocked && (
+                    {keyLocked ? (
                       <CloudSyncHealthCard
                         isDarkMode={isDarkMode}
                         reason={encryptionKey ? 'key-mismatch' : 'key-recovery'}
@@ -2993,6 +3003,14 @@ ${encryptionKey.replace('key_', '')}
                             : undefined
                         }
                       />
+                    ) : (
+                      cloudSyncEnabled && (
+                        <CloudSyncStatusCard
+                          isDarkMode={isDarkMode}
+                          status={api.syncStatus}
+                          loadFailed={!profileReady && !!sessionError}
+                        />
+                      )
                     )}
                     <NativeBackupExport
                       available={Boolean(
