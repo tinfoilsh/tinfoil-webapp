@@ -273,6 +273,7 @@ export function chatTurns({
           error: undefined,
           stopping: undefined,
           compactTurn: fields.kind === 'compact' || undefined,
+          compacted: undefined,
         }))
       }
       return (async () => {

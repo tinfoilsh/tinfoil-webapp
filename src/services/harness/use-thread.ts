@@ -54,6 +54,7 @@ import type {
 } from './types'
 import {
   compactable,
+  compactedView,
   compactionViews,
   lastActive,
   messageView,
@@ -923,6 +924,14 @@ export function useThread(
     compacting,
     // The chat's latest turn compacted it on request, which an error reports.
     compactTurn: !!state.compactTurn,
+    // The compaction the chat's run just completed, which the chat points
+    // out until the user sends again or dismisses it.
+    compacted: compactedView(state),
+    dismissCompacted: () =>
+      controller.view.update((current) => ({
+        ...current,
+        compacted: undefined,
+      })),
     // The saves of the open chat's questions widgets, by widget call, and
     // what its questions last sent the model of each widget's answers.
     answerSaves: (id && answerSaves[id]) || NO_ANSWER_SAVES,

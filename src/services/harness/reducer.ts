@@ -36,6 +36,10 @@ export interface ChatState {
   // The chat's latest turn compacts it on request instead of asking for a
   // reply, so its last reply is not the one the run streams.
   compactTurn?: boolean
+  // The compaction marker a run of the chat completed as the chat showed it,
+  // which the chat points out until the user sends again or dismisses it:
+  // the marker sits above earlier messages, often out of view.
+  compacted?: string
   // The leading blocks of a continued reply that new text starts after: as
   // in the harness, only a trailing text block takes the continuation.
   sealed?: Record<string, number>
@@ -692,6 +696,7 @@ function applyEvent(
           at < 0
             ? withMarker(next.messages, event.marker, event.beforeMessageId)
             : replaceAt(next.messages, at, event.marker),
+        compacted: event.messageId,
       }
     }
     case 'RUN_FINISHED':

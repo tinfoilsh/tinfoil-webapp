@@ -605,6 +605,7 @@ export function ChatMessages({
                     <React.Fragment key={message.id ?? `${chatId}-${index}`}>
                       {compaction && (
                         <CompactionMarker
+                          id={compaction.id}
                           isRunning={compaction.isRunning}
                           summary={compaction.summary}
                           messageCount={compaction.messageCount}
