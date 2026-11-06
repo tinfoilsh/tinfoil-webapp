@@ -325,12 +325,13 @@ export const ChatInput = memo(function ChatInput({
   const inputMenuRef = useRef<HTMLDivElement>(null)
   const inputMenuTriggerRef = useRef<HTMLButtonElement>(null)
 
+  // Items a breakpoint hides take no focus, so arrow keys skip them.
   const getInputMenuItems = (): HTMLElement[] =>
     Array.from(
       inputMenuRef.current?.querySelectorAll<HTMLElement>(
         '[role="menuitem"], [role="menuitemcheckbox"]',
       ) ?? [],
-    )
+    ).filter((item) => getComputedStyle(item).display !== 'none')
 
   // ARIA menu keyboard contract: focus moves into the menu on open,
   // Escape dismisses and restores focus to the trigger, and arrow keys

@@ -164,7 +164,7 @@ export function ContextUsageIndicator({
       )}
       {compaction && isOpen && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => close(false)} />
+          <div className="fixed inset-0 z-10" onClick={() => close(true)} />
           <div
             ref={popoverRef}
             role="dialog"
