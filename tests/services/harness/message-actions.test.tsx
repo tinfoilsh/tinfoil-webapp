@@ -2,7 +2,7 @@ import { ChatMessages } from '@/components/chat/chat-messages'
 import { initializeRenderers } from '@/components/chat/renderers/client'
 import type { BaseModel } from '@/config/models'
 import { localThreadStore } from '@/services/harness/local-threads'
-import { getView } from '@/services/harness/runtime'
+import { getView, publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type {
   Frame,
@@ -1420,4 +1420,143 @@ describe('a chat whose earlier messages were compacted', () => {
       expect(result.current.compactions).toEqual({})
     },
   )
+})
+
+describe('reading a stored chat again while the user changes it', () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void
+    const promise = new Promise<T>((done) => {
+      resolve = done
+    })
+    return { promise, resolve }
+  }
+  // Opens the stored chat. Each later read of it, and each change of it,
+  // waits for the test to answer.
+  async function openHeld() {
+    signIn({ cloud: true, session })
+    const reads: ReturnType<typeof deferred<Thread>>[] = []
+    const changes: ReturnType<typeof deferred<unknown>>[] = []
+    let opened = false
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/get') {
+        if (!opened) {
+          opened = true
+          return cloudThread()
+        }
+        const read = deferred<Thread>()
+        reads.push(read)
+        return read.promise
+      }
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      if (
+        path === '/v1/threads/messages/update' ||
+        path === '/v1/threads/update'
+      ) {
+        const change = deferred<unknown>()
+        changes.push(change)
+        return change.promise
+      }
+      throw new Error(`Unexpected ${path}`)
+    })
+    const hook = renderHook(() => useThread(THREAD_ID, null))
+    await waitFor(() =>
+      expect(hook.result.current.chat.messages).toHaveLength(4),
+    )
+    return { ...hook, reads, changes }
+  }
+  const readAgain = async (reads: unknown[]) => {
+    await act(async () => publish({ chatRevision: 'changed elsewhere' }))
+    await waitFor(() => expect(reads).toHaveLength(1))
+  }
+  const edited = () =>
+    cloudThread([
+      ...transcript.slice(0, 3),
+      {
+        ...transcript[3],
+        timeline: [{ id: 'b2', type: 'content', content: 'Better' }],
+      },
+    ])
+  const replies = (thread: ReturnType<typeof useThread>) =>
+    thread.chat.messages.map((message) => message.content)
+
+  it('keeps a reply edited since the read began', async () => {
+    const { result, reads, changes } = await openHeld()
+    await readAgain(reads)
+    let editing!: Promise<void>
+    act(() => {
+      editing = result.current.editReply(3, 'Better')
+    })
+    await waitFor(() => expect(changes).toHaveLength(1))
+    await act(async () => {
+      changes[0].resolve(edited())
+      await editing
+    })
+
+    await act(async () => reads[0].resolve(cloudThread()))
+
+    expect(replies(result.current)).toEqual([
+      'one',
+      'first answer',
+      'two',
+      'Better',
+    ])
+  })
+
+  it('keeps a reply edit the harness has not answered yet', async () => {
+    const { result, reads, changes } = await openHeld()
+    let editing!: Promise<void>
+    act(() => {
+      editing = result.current.editReply(3, 'Better')
+    })
+    await waitFor(() => expect(changes).toHaveLength(1))
+    await readAgain(reads)
+
+    await act(async () => reads[0].resolve(cloudThread()))
+    expect(replies(result.current)).toEqual([
+      'one',
+      'first answer',
+      'two',
+      'Better',
+    ])
+
+    await act(async () => {
+      changes[0].resolve(edited())
+      await editing
+    })
+    expect(replies(result.current)).toEqual([
+      'one',
+      'first answer',
+      'two',
+      'Better',
+    ])
+  })
+
+  it('keeps a title the harness has not saved yet', async () => {
+    const { result, reads, changes } = await openHeld()
+    let renaming!: Promise<unknown>
+    act(() => {
+      renaming = result.current.update(THREAD_ID, { title: 'Counting' })
+    })
+    await waitFor(() => expect(changes).toHaveLength(1))
+    expect(result.current.chat.title).toBe('Counting')
+    await readAgain(reads)
+
+    await act(async () => reads[0].resolve(cloudThread()))
+    expect(result.current.chat.title).toBe('Counting')
+
+    const {
+      messages: _messages,
+      hasOlder: _hasOlder,
+      ...summary
+    } = cloudThread()
+    await act(async () => {
+      changes[0].resolve({
+        ...summary,
+        title: 'Counting',
+        titleState: 'manual',
+      })
+      await renaming
+    })
+    expect(result.current.chat.title).toBe('Counting')
+  })
 })

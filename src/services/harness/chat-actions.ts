@@ -182,7 +182,9 @@ export function chatActions({
     }
     let thread: Thread | null
     try {
-      thread = await change(storeOf(threadId), threadId, messageId)
+      thread = await controller.changing(threadId, () =>
+        change(storeOf(threadId), threadId, messageId),
+      )
     } catch (cause) {
       undo()
       throw cause
@@ -294,7 +296,9 @@ export function chatActions({
       let summary: ThreadSummary | null = null
       let latest = false
       try {
-        summary = await store.update(threadId, patch)
+        summary = await controller.changing(threadId, () =>
+          store.update(threadId, patch),
+        )
       } catch (cause) {
         undo()
         throw cause

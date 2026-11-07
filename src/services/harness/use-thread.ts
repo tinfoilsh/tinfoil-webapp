@@ -502,6 +502,10 @@ export function useThread(
     )
       return
     const shown = controller.track()
+    // The chat as it shows when it is read again. A copy read before a
+    // change the user made since, or one its store has not answered, would
+    // take the change back.
+    const viewed = controller.view.get()
     let cancelled = false
     void (async () => {
       const thread = await cloudStore.get(id)
@@ -513,7 +517,13 @@ export function useThread(
         thread.messages.unshift(...older.messages)
         thread.hasOlder = older.hasOlder
       }
-      if (cancelled || !shown() || controller.view.get().status !== 'idle')
+      if (
+        cancelled ||
+        !shown() ||
+        controller.view.get().status !== 'idle' ||
+        controller.view.get() !== viewed ||
+        controller.isChanging(id)
+      )
         return
       // The compaction the chat points out outlives the chat read again,
       // as the compaction itself changes the chat's revision.
