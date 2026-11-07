@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '@/config'
-import { HarnessClient } from '@/services/harness/client'
+import { HarnessClient, REQUEST_TIMEOUT_MS } from '@/services/harness/client'
 import {
   INFERENCE_KEY_HEADER,
   type HarnessRoute,
@@ -20,7 +20,7 @@ import type {
   TimelineBlock,
 } from '@/services/harness/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { SEALED, stubChatAccess } from './harness-fixture'
+import { fakeTimeouts, SEALED, stubChatAccess } from './harness-fixture'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
 
@@ -1567,6 +1567,117 @@ describe('attested harness transport', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+  describe('a connection that stalls', () => {
+    function deferred<T>() {
+      let resolve!: (value: T) => void
+      const promise = new Promise<T>((done) => {
+        resolve = done
+      })
+      return { promise, resolve }
+    }
+    // A transport whose requests never answer, and fail as fetch does when
+    // their signal ends them.
+    function stalled() {
+      const secure = transport()
+      secure.fetch.mockImplementation(
+        (_url: string, init: RequestInit) =>
+          new Promise((_, reject) => {
+            init.signal?.addEventListener('abort', () =>
+              reject(init.signal!.reason),
+            )
+          }),
+      )
+      const client = new HarnessClient(
+        'https://harness.example',
+        async () => 'clerk',
+        () => secure,
+      )
+      const signalOf = (call: number): AbortSignal | undefined =>
+        secure.fetch.mock.calls[call][1].signal
+      return { secure, client, signalOf }
+    }
+    function track<T>(request: Promise<T>) {
+      const outcome: { settled: boolean; failure?: unknown } = {
+        settled: false,
+      }
+      void request.then(
+        () => {
+          outcome.settled = true
+        },
+        (failure: unknown) => {
+          outcome.settled = true
+          outcome.failure = failure
+        },
+      )
+      return outcome
+    }
+
+    it('fails a request about a chat it does not answer in time as a lost connection', async () => {
+      fakeTimeouts()
+      const { secure, client, signalOf } = stalled()
+      const deleting = track(client.post('/v1/threads/delete', { id: 't' }))
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS - 1)
+      expect(secure.fetch).toHaveBeenCalledOnce()
+      expect(deleting.settled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1)
+
+      expect(deleting.failure).toBeInstanceOf(HarnessError)
+      expect(deleting.failure).toMatchObject({
+        status: undefined,
+        detail: { code: 'CONNECTION', action: 'retry' },
+      })
+      expect(signalOf(0)?.aborted).toBe(true)
+    })
+
+    it('gives a request about a chat the time its body takes to send', async () => {
+      fakeTimeouts()
+      const { secure, client, signalOf } = stalled()
+      const answered = deferred<Response>()
+      secure.fetch.mockReturnValueOnce(answered.promise)
+      const editing = track(
+        client.post('/v1/threads/messages/update', {
+          threadId: 't',
+          messageId: 'm',
+          local: true,
+          thread: { messages: [{ content: 'x'.repeat(1 << 20) }] },
+        }),
+      )
+
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS * 2)
+      expect(editing.settled).toBe(false)
+      expect(signalOf(0)?.aborted).toBe(false)
+      answered.resolve(Response.json({ thread: null }))
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(editing).toEqual({ settled: true })
+    })
+
+    it('ends a request its caller ended as the caller did', async () => {
+      fakeTimeouts()
+      const { client } = stalled()
+      const caller = new AbortController()
+      const listing = track(client.post('/v1/threads/list', {}, caller.signal))
+      await vi.advanceTimersByTimeAsync(0)
+
+      caller.abort()
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(listing.failure).toBeInstanceOf(DOMException)
+      expect(listing.failure).toMatchObject({ name: 'AbortError' })
+    })
+
+    it('leaves a request that may take long, as deleting every chat, to finish', async () => {
+      fakeTimeouts()
+      const { client, signalOf } = stalled()
+      const deleting = track(client.post('/v1/threads/delete-all', {}))
+
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS * 2)
+
+      expect(signalOf(0)?.aborted).not.toBe(true)
+      expect(deleting.settled).toBe(false)
+    })
   })
   it('does not send keys or JWTs to arbitrary URLs', async () => {
     const secure = transport()

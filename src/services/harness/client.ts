@@ -12,6 +12,7 @@ import {
   LAST_EVENT_ID_HEADER,
   RESPONSE_NONCE_HEADER,
   ROUTES,
+  unanswered,
   unsealedRefusal,
   type HarnessRoute,
   type RunRoute,
@@ -32,6 +33,12 @@ const ATTESTATION_TIMEOUT_MS = 20_000
 // A live run's chat token that could not be minted again, for a reason that
 // names no time to ask again, is asked for again after this long.
 const RUN_RENEWAL_RETRY_MS = 30_000
+// A request a chat route answers at once is abandoned when no answer has
+// arrived by then, so a connection that stalled fails it rather than
+// holding it. It also has the time its body takes to send at this many
+// bytes a millisecond, as over a slow connection.
+export const REQUEST_TIMEOUT_MS = 30_000
+const SLOW_UPLOAD_BYTES_PER_MS = 32
 type GetToken = (options?: { skipCache?: boolean }) => Promise<string | null>
 type Transport = Pick<
   SecureClient,
@@ -63,6 +70,41 @@ const RUN_ROUTES: ReadonlySet<HarnessRoute> = new Set([
   ROUTES.queueSend,
   ROUTES.queueRemove,
 ])
+
+// The routes that read or change a chat, or check for changes, and answer
+// at once.
+const PROMPT_ROUTES: ReadonlySet<HarnessRoute> = new Set([
+  ROUTES.changes,
+  ROUTES.list,
+  ROUTES.get,
+  ROUTES.update,
+  ROUTES.delete,
+  ROUTES.messageDelete,
+  ROUTES.messageUpdate,
+  ROUTES.messageAnswer,
+])
+
+// Sends a request that must be answered by a deadline. One that is not
+// fails as unanswered, unless the caller ended it first.
+async function withDeadline<T>(
+  ms: number,
+  signal: AbortSignal | undefined,
+  send: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const deadline = new AbortController()
+  const timer = setTimeout(() => deadline.abort(), ms)
+  try {
+    return await send(
+      signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal,
+    )
+  } catch (cause) {
+    if (deadline.signal.aborted && !signal?.aborted)
+      throw new HarnessError(unanswered())
+    throw cause
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 export class HarnessClient {
   private readonly origin: string
@@ -337,19 +379,30 @@ export class HarnessClient {
     input: unknown,
     signal?: AbortSignal,
   ): Promise<T> {
-    const response = await this.request(path, JSON.stringify(input), signal, {
-      instance: this.instanceFor(path, input),
-      threadId: threadOf(input),
-    })
-    try {
-      return (await response.json()) as T
-    } catch (cause) {
-      // An answer that is not JSON is not one the protocol allows. One that
-      // stopped arriving is a lost connection, and fails as it is.
-      if (cause instanceof SyntaxError)
-        throw new HarnessError(invalidResponse(), response.status)
-      throw cause
+    const body = JSON.stringify(input)
+    const send = async (signal?: AbortSignal) => {
+      const response = await this.request(path, body, signal, {
+        instance: this.instanceFor(path, input),
+        threadId: threadOf(input),
+      })
+      try {
+        return (await response.json()) as T
+      } catch (cause) {
+        // An answer that is not JSON is not one the protocol allows. One that
+        // stopped arriving is a lost connection, and fails as it is.
+        if (cause instanceof SyntaxError)
+          throw new HarnessError(invalidResponse(), response.status)
+        throw cause
+      }
     }
+    return PROMPT_ROUTES.has(path)
+      ? withDeadline(
+          REQUEST_TIMEOUT_MS +
+            Math.floor(body.length / SLOW_UPLOAD_BYTES_PER_MS),
+          signal,
+          send,
+        )
+      : send(signal)
   }
   // Routes requests about a chat's run to the instance a hint names, for a
   // run this client did not see start.
