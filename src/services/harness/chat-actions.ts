@@ -278,7 +278,7 @@ export function chatActions({
     async update(threadId: string, patch: ThreadPatch) {
       if (moving.has(threadId)) return null
       const store = storeOf(threadId)
-      const unlist = list.preview(threadId, patch)
+      const settleListed = list.preview(threadId, patch)
       const shown = controller.view.get().snapshot.thread
       const titled =
         shown?.id === threadId && patch.title !== undefined && isOpen(threadId)
@@ -286,13 +286,12 @@ export function chatActions({
           : null
       if (titled) showSummary(titled)
       const undo = () => {
-        unlist()
         if (shown && titled && controller.view.get().snapshot.thread === titled)
           showSummary(shown)
       }
       const update = ++updates
       latestUpdate.set(threadId, update)
-      let summary: ThreadSummary | null
+      let summary: ThreadSummary | null = null
       let latest = false
       try {
         summary = await store.update(threadId, patch)
@@ -300,6 +299,7 @@ export function chatActions({
         undo()
         throw cause
       } finally {
+        settleListed(!!summary)
         latest = latestUpdate.get(threadId) === update
         if (latest) latestUpdate.delete(threadId)
       }
@@ -315,13 +315,12 @@ export function chatActions({
       const runId = controller.deviceRuns.get().get(threadId)?.run?.runId
       if (runId) void controller.cancel({ threadId, runId }).catch(() => {})
       const store = storeOf(threadId)
-      const undo = list.previewRemoval(threadId)
+      const settleListed = list.previewRemoval(threadId)
       if (isOpen(threadId)) reset()
       try {
         await store.remove(threadId)
-      } catch (cause) {
-        undo()
-        throw cause
+      } finally {
+        settleListed()
       }
     },
     // Deletes every chat the user can see here: the harness's stored chats

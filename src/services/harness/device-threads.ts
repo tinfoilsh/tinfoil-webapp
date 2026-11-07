@@ -223,7 +223,10 @@ export function deviceThreads({
         ...patch,
         profile: getView().profile,
       })
-      return changed && localSummary(changed)
+      if (!changed) return null
+      const summary = localSummary(changed)
+      list.replace(summary)
+      return summary
     },
     async remove(threadId) {
       await store.delete(threadId)

@@ -45,49 +45,63 @@ const editsOf = (store: Store<ThreadSummary[]>): ListEdits => ({
     store.update((listed) => listed.filter((thread) => thread.id !== threadId)),
 })
 
-// Changes a listed copy of a chat at once, and returns what takes the
-// change back. A copy the list read again meanwhile stays as read.
-// The copy each shown edit replaced, and the edit that replaced it in turn,
-// so undoing an edit a later one already replaced hands the later edit the
-// copy to go back to.
-const shownBefore = new WeakMap<ThreadSummary, ThreadSummary>()
-const shownAfter = new WeakMap<ThreadSummary, ThreadSummary>()
-const replaceShown = (
-  store: Store<ThreadSummary[]>,
-  before: ThreadSummary,
-  after: ThreadSummary,
-) => {
-  shownBefore.set(after, before)
-  shownAfter.set(before, after)
-  store.update((listed) =>
-    listed.map((thread) => (thread === before ? after : thread)),
-  )
-  return () => {
-    const previous = shownBefore.get(after) ?? before
-    const later = shownAfter.get(after)
-    if (later) {
-      shownBefore.set(later, previous)
-      shownAfter.set(previous, later)
-    }
-    store.update((listed) =>
-      listed.map((thread) => (thread === after ? previous : thread)),
-    )
+// A change the user made to a listed chat that its store has not answered:
+// the chat left out of the lists, or listed with a new title or favorite
+// state. A chat pinned joins the favorites as the stored chats listed it.
+interface PendingChange {
+  threadId: string
+  removed?: boolean
+  title?: string
+  pinned?: boolean
+  favorite?: ThreadSummary
+}
+
+type Listing = 'stored' | 'favorites' | 'device'
+
+// A list with a change that is still saving shown in it. A chat on this
+// device takes only its new title, as only a stored chat is a favorite.
+function withChange(
+  listed: ThreadSummary[],
+  { threadId, removed, title, pinned, favorite }: PendingChange,
+  listing: Listing,
+): ThreadSummary[] {
+  const at = listed.findIndex((thread) => thread.id === threadId)
+  if (removed || (listing === 'favorites' && pinned === false))
+    return at < 0 ? listed : listed.filter((thread) => thread.id !== threadId)
+  const fields: Partial<ThreadSummary> = {
+    ...(title !== undefined ? { title, titleState: 'manual' as const } : {}),
+    ...(pinned !== undefined && listing !== 'device' ? { pinned } : {}),
   }
+  if (at < 0)
+    return listing === 'favorites' && pinned && favorite
+      ? [...listed, { ...favorite, ...fields }]
+      : listed
+  if (!Object.keys(fields).length) return listed
+  return listed.map((thread, index) =>
+    index === at ? { ...thread, ...fields } : thread,
+  )
 }
-const removeShown = (store: Store<ThreadSummary[]>, before: ThreadSummary) => {
-  const index = store.get().indexOf(before)
-  store.update((listed) => listed.filter((thread) => thread !== before))
-  return () =>
-    store.update((listed) =>
-      listed.some((thread) => thread.id === before.id)
-        ? listed
-        : [...listed.slice(0, index), before, ...listed.slice(index)],
-    )
-}
-const appendShown = (store: Store<ThreadSummary[]>, after: ThreadSummary) => {
-  store.update((listed) => [...listed, after])
-  return () =>
-    store.update((listed) => listed.filter((thread) => thread !== after))
+
+// A list as it was last read or changed, which renders and is read with
+// the changes still saving shown in it.
+function showingPending(
+  initial: ThreadSummary[],
+  show: (listed: ThreadSummary[]) => ThreadSummary[],
+): Store<ThreadSummary[]> & { reshow(): void } {
+  let listed = initial
+  const shown = createStore(show(listed))
+  const set = (next: ThreadSummary[]) => {
+    listed = next
+    shown.set(show(listed))
+  }
+  return {
+    get: shown.get,
+    subscribe: shown.subscribe,
+    set,
+    update: (change) => set(change(listed)),
+    // Shows the list again as the changes still saving now change it.
+    reshow: () => shown.set(show(listed)),
+  }
 }
 
 // The chats the sidebar lists: the harness's stored chats with cloud sync,
@@ -110,10 +124,24 @@ export function useChatList({
   const [lists] = useState(() => {
     const cached = cloud ? readChatListCache(api.userId, projectId) : undefined
     const scope = { projectId: projectId ?? null, restored: cloud }
-    const cloudThreads = createStore<ThreadSummary[]>(cached?.threads ?? [])
-    const deviceThreads = createStore<ThreadSummary[]>([])
+    // The changes the user made that their stores have not answered, in
+    // the order they were made. Every list shows them over what it read.
+    const pending = new Set<PendingChange>()
+    const showing = (listing: Listing) => (listed: ThreadSummary[]) =>
+      [...pending].reduce(
+        (shown, change) => withChange(shown, change, listing),
+        listed,
+      )
+    const cloudThreads = showingPending(
+      cached?.threads ?? [],
+      showing('stored'),
+    )
+    const deviceThreads = showingPending([], showing('device'))
     const deviceFailure = createStore<string | null>(null)
-    const pinnedThreads = createStore<ThreadSummary[]>(cached?.pinned ?? [])
+    const pinnedThreads = showingPending(
+      cached?.pinned ?? [],
+      showing('favorites'),
+    )
     const cursor = createStore<string | null>(null)
     const edits = createStore(0)
     const loadState = createStore<CloudListState>({
@@ -146,6 +174,36 @@ export function useChatList({
         threads: cloudThreads.get(),
         pinned: pinnedThreads.get(),
       })
+    }
+    // Shows a change before its store answers, and returns what settles
+    // it. The lists then show what they read; a change the store saved
+    // also settles the earlier changes of the same settings of the chat.
+    const showPending = (change: PendingChange) => {
+      const reshow = () => {
+        cloudThreads.reshow()
+        pinnedThreads.reshow()
+        deviceThreads.reshow()
+        persist()
+      }
+      pending.add(change)
+      reshow()
+      return (saved: boolean) => {
+        if (!pending.has(change)) return
+        for (const earlier of pending) {
+          if (earlier === change) break
+          if (!saved || earlier.threadId !== change.threadId) continue
+          if (change.title !== undefined) delete earlier.title
+          if (change.pinned !== undefined) delete earlier.pinned
+          if (
+            !earlier.removed &&
+            earlier.title === undefined &&
+            earlier.pinned === undefined
+          )
+            pending.delete(earlier)
+        }
+        pending.delete(change)
+        reshow()
+      }
     }
     return {
       cloudThreads,
@@ -215,57 +273,23 @@ export function useChatList({
         },
       },
       device: editsOf(deviceThreads),
-      // Shows a new title or favorite state of a chat before its store
-      // saves it, and returns what takes it back when the store refuses.
-      // Only a stored chat is a favorite.
+      // Shows a new title or favorite state of a chat until its store
+      // answers, and returns what settles it with whether the store saved
+      // it. Only a stored chat is a favorite.
       preview(threadId: string, { title, pinned }: ThreadPatch) {
         if (title === undefined && pinned === undefined) return () => {}
-        const titled: Partial<ThreadSummary> =
-          title !== undefined ? { title, titleState: 'manual' } : {}
-        const fields = {
-          ...titled,
-          ...(pinned !== undefined ? { pinned } : {}),
-        }
-        const find = (store: Store<ThreadSummary[]>) =>
-          store.get().find((thread) => thread.id === threadId)
-        const stored = find(cloudThreads)
-        const favorite = find(pinnedThreads)
-        const onDevice = find(deviceThreads)
-        const undo: (() => void)[] = []
-        if (stored)
-          undo.push(
-            replaceShown(cloudThreads, stored, { ...stored, ...fields }),
-          )
-        if (onDevice && title !== undefined)
-          undo.push(
-            replaceShown(deviceThreads, onDevice, { ...onDevice, ...titled }),
-          )
-        if (favorite && pinned === false)
-          undo.push(removeShown(pinnedThreads, favorite))
-        else if (favorite)
-          undo.push(
-            replaceShown(pinnedThreads, favorite, { ...favorite, ...fields }),
-          )
-        else if (stored && pinned)
-          undo.push(appendShown(pinnedThreads, { ...stored, ...fields }))
-        return () => {
-          undo.forEach((step) => step())
-          persist()
-        }
+        return showPending({
+          threadId,
+          title,
+          pinned,
+          favorite: cloudThreads.get().find((thread) => thread.id === threadId),
+        })
       },
-      // Leaves a chat out of the list before its store deletes it, and
-      // returns what lists it again when the store refuses.
+      // Leaves a chat out of the lists until its store answers its
+      // deletion, and returns what settles it.
       previewRemoval(threadId: string) {
-        const undo = [cloudThreads, pinnedThreads, deviceThreads].flatMap(
-          (store) => {
-            const before = store.get().find((thread) => thread.id === threadId)
-            return before ? [removeShown(store, before)] : []
-          },
-        )
-        return () => {
-          undo.forEach((step) => step())
-          persist()
-        }
+        const settle = showPending({ threadId, removed: true })
+        return () => settle(false)
       },
       // The stored chats are not listed, as once cloud sync is off.
       clearCloud({
