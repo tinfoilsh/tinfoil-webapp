@@ -226,6 +226,17 @@ export const ChatInput = memo(function ChatInput({
       const next = Math.max(min, Math.min(raw, max))
       el.style.height = `${next}px`
       el.style.overflowY = raw > max ? 'auto' : 'hidden'
+
+      // Once capped, a line typed at the end lands below the visible area,
+      // and browsers do not reliably scroll to it after the height changes
+      // above, so keep the caret's line in view.
+      if (
+        raw > max &&
+        document.activeElement === el &&
+        el.selectionEnd === el.value.length
+      ) {
+        el.scrollTop = el.scrollHeight
+      }
     },
     [inputMinHeight],
   )
