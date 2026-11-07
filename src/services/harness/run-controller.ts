@@ -196,6 +196,9 @@ export class RunController {
   // The messages whose reply the user stopped on this page, which keep
   // saying so as the chat is read again.
   readonly canceled = createStore<ReadonlySet<string>>(new Set())
+  // The replies on this page the model ran out of room for, which keep
+  // saying so as the chat is read again.
+  readonly truncated = createStore<ReadonlySet<string>>(new Set())
   // When the open chat's error happened, so a wait the harness asks for
   // counts from then.
   errorAt = 0
@@ -366,7 +369,10 @@ export class RunController {
             else if (event.type === 'RUN_ERROR' && shown)
               this.errorAt = Date.now()
           }
-          if (isTerminal(event)) this.markCanceled(canceledBy(base, event))
+          if (isTerminal(event)) {
+            this.markCanceled(canceledBy(base, event))
+            this.noteTruncation(event)
+          }
           progressed = true
           view = next
           // A change of the run's status shows at once, and what it streams
@@ -602,6 +608,23 @@ export class RunController {
   markCanceled(messageIds: string[]) {
     if (messageIds.length)
       this.canceled.update((canceled) => new Set([...canceled, ...messageIds]))
+  }
+
+  // Records whether the model ran out of room for each reply a run committed
+  // as it ended, so a reply continued since says so only if it ran out again.
+  noteTruncation(event: TerminalEvent) {
+    const replies = event.metadata?.messages?.map(({ id }) => id) ?? []
+    if (!replies.length) return
+    const truncated =
+      event.type === 'RUN_FINISHED' && !!event.metadata?.truncated
+    this.truncated.update((current) => {
+      const next = new Set(current)
+      for (const id of replies) {
+        if (truncated) next.add(id)
+        else next.delete(id)
+      }
+      return next
+    })
   }
 
   // Resolves once the run the open chat stops has ended, or the view moved

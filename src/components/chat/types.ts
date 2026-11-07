@@ -122,6 +122,9 @@ export type Message = {
   // The user stopped this reply here, or the reply to this message before it
   // began.
   canceledByUser?: boolean
+  // The model ran out of room for this reply in its context window, which
+  // stopped it here.
+  truncated?: boolean
   role: 'user' | 'assistant'
   content: string
   turnId?: string

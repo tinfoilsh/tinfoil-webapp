@@ -120,8 +120,8 @@ export function useThread(
   // The answers picked in questions widgets that are not saved yet.
   const [answers] = useState(() => new AnswerSaves())
   // The view of each message, kept until the message, whether it streams,
-  // the reasoning summaries or whether the user stopped its reply change, so
-  // a message that did not change keeps its view.
+  // the reasoning summaries or why its reply stopped change, so a message
+  // that did not change keeps its view.
   const [views] = useState(
     () =>
       new WeakMap<
@@ -130,6 +130,7 @@ export function useThread(
           streaming: boolean
           summaries: ChatState['summaries']
           canceled: boolean
+          truncated: boolean
           view: Message
         }
       >(),
@@ -473,6 +474,7 @@ export function useThread(
   const state = useStore(controller.view)
   const deviceRuns = useStore(controller.deviceRuns)
   const canceledMessages = useStore(controller.canceled)
+  const truncatedMessages = useStore(controller.truncated)
   const answerSaves = useStore(answers.status)
   // What the open chat's questions last sent the model of each widget's
   // answers, the same while that does not change.
@@ -685,19 +687,27 @@ export function useThread(
       message === stopped ||
       (canceledMessages.has(message.id) &&
         (message.role === 'user' || !!message.isInterrupted))
+    const truncated =
+      !canceled && truncatedMessages.has(message.id) && !!message.isInterrupted
     const kept = views.get(message)
     if (
       kept?.streaming === streaming &&
       kept.summaries === state.summaries &&
-      kept.canceled === canceled
+      kept.canceled === canceled &&
+      kept.truncated === truncated
     )
       return kept.view
     const shown = messageView(message, streaming, state.summaries)
-    const view = canceled ? { ...shown, canceledByUser: true } : shown
+    const view = canceled
+      ? { ...shown, canceledByUser: true }
+      : truncated
+        ? { ...shown, truncated: true }
+        : shown
     views.set(message, {
       streaming,
       summaries: state.summaries,
       canceled,
+      truncated,
       view,
     })
     return view
