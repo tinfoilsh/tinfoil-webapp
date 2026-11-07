@@ -5,6 +5,7 @@ import {
 } from '@/utils/latex-processing'
 import { preprocessMarkdown } from '@/utils/markdown-preprocessing'
 import { memo, useMemo } from 'react'
+import type { Components } from 'react-markdown'
 import { GeneratingTable } from './GeneratingTable'
 import {
   markdownComponents,
@@ -22,6 +23,8 @@ interface MessageContentProps {
   // the current message. Used to render markdown links as citation pills so
   // they match the visual style of legacy #cite- anchor links.
   citationUrlTitles?: Map<string, string>
+  // How each markdown element renders; a chat reply's elements by default.
+  components?: Components
 }
 
 function hasStreamingMarkdownTableCodeBlock(content: string): boolean {
@@ -52,6 +55,7 @@ export const MessageContent = memo(function MessageContent({
   isUser = false,
   isStreaming = false,
   citationUrlTitles,
+  components = markdownComponents,
 }: MessageContentProps) {
   const { remarkPlugins, rehypePlugins } = useMathPlugins()
   const sanitizedContent = useMemo(() => {
@@ -88,7 +92,7 @@ export const MessageContent = memo(function MessageContent({
             streaming={isStreaming}
             remarkPlugins={remarkPlugins}
             rehypePlugins={rehypePlugins}
-            components={markdownComponents}
+            components={components}
           />
         </MarkdownRenderingProvider>
         {showMarkdownTablePlaceholder && <GeneratingTable />}
