@@ -1084,6 +1084,70 @@ describe('changing messages of a local chat', () => {
     expect(turn().thread).toEqual(edited)
   })
 
+  it('fails a rewrite of a chat that changed while the harness made it, and shows the chat as stored', async () => {
+    const { result } = await openLocal()
+    let answer!: (value: unknown) => void
+    client.post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve
+        }),
+    )
+    let editing!: Promise<void>
+    act(() => {
+      editing = result.current.editReply(3, 'Better')
+    })
+    await waitFor(() => expect(client.post).toHaveBeenCalledOnce())
+    expect(result.current.chat.messages[3].content).toBe('Better')
+    // Another tab stores the next exchange meanwhile.
+    const continued = localThread([
+      ...transcript,
+      {
+        id: 'u3',
+        role: 'user',
+        createdAt: '2026-04-01T09:02:00Z',
+        content: 'three',
+      },
+      {
+        id: 'a3',
+        role: 'assistant',
+        createdAt: '2026-04-01T09:02:01Z',
+        content: 'third answer',
+        timeline: [{ id: 'b3', type: 'content', content: 'third answer' }],
+      },
+    ])
+    await localThreadStore('device').update(THREAD_ID, () => continued)
+
+    let failure: unknown
+    await act(async () => {
+      answer({
+        thread: localThread([
+          ...transcript.slice(0, 3),
+          {
+            ...transcript[3],
+            content: 'Better',
+            timeline: [{ id: 'b2', type: 'content', content: 'Better' }],
+          },
+        ]),
+      })
+      failure = await editing.catch((cause: unknown) => cause)
+    })
+
+    expect(failure).toBeInstanceOf(HarnessError)
+    expect(failure).toMatchObject({
+      detail: { code: 'REVISION_CONFLICT', action: 'reload' },
+    })
+    expect(await saved()).toEqual(continued)
+    expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+      'one',
+      'first answer',
+      'two',
+      'second answer',
+      'three',
+      'third answer',
+    ])
+  })
+
   it('continues a reply with its thread and stores the thread its run returns', async () => {
     const { result } = await openLocal()
     const returned = {

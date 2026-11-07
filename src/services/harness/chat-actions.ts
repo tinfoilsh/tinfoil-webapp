@@ -187,6 +187,18 @@ export function chatActions({
       )
     } catch (cause) {
       undo()
+      // A chat that changed while its store made the change shows as the
+      // store now holds it.
+      if (
+        cause instanceof HarnessError &&
+        cause.detail.action === ERROR_ACTIONS.reload &&
+        shown()
+      ) {
+        const stored = await storeOf(threadId)
+          .get(threadId)
+          .catch(() => null)
+        if (stored && shown()) showAnswered(threadId, stored)
+      }
       throw cause
     }
     if (!thread) undo()
@@ -208,9 +220,10 @@ export function chatActions({
       snapshot: { ...state.snapshot, thread: summary },
     }))
   }
-  // Shows the open chat as its store answered a save of answers with, after
-  // the earlier messages the view loaded and under the picks still unsaved.
-  // A run's frames show the chat while it runs.
+  // Shows the open chat as its store answered a save of answers with, or
+  // holds it after refusing a change, after the earlier messages the view
+  // loaded and under the picks still unsaved. A run's frames show the chat
+  // while it runs.
   function showAnswered(threadId: string, thread: Thread) {
     if (!isOpen(threadId)) return
     const {

@@ -35,6 +35,16 @@ const notOnDevice = (what: string) =>
     message: `This ${what} is not stored on this device.`,
   })
 
+// Why a change of a chat's messages was not kept: the chat this device
+// stores changed while the harness made it.
+const changedMeanwhile = () =>
+  new HarnessError({
+    code: ERROR_CODES.revisionConflict,
+    action: ERROR_ACTIONS.reload,
+    message:
+      'The chat changed before your change was saved. It now shows as saved.',
+  })
+
 // The settings of a chat the user changes through the harness. A setting
 // changed while a run goes keeps the user's value when the run's thread is
 // stored.
@@ -174,7 +184,7 @@ export function deviceThreads({
   }
   // Stores the changed chat in place of the copy it was made from. When a
   // run stored its thread meanwhile, the run's thread keeps its messages and
-  // takes the settings the change made; a change of messages is dropped.
+  // takes the settings the change made; a change of messages fails.
   const change = async (
     threadId: string,
     path: ChangeRoute,
@@ -192,9 +202,8 @@ export function deviceThreads({
       if (!current) return null
       if (JSON.stringify(current) === before)
         return { ...changed, id: threadId }
-      return path === ROUTES.update
-        ? { ...current, ...pick(changed, settings) }
-        : null
+      if (path !== ROUTES.update) throw changedMeanwhile()
+      return { ...current, ...pick(changed, settings) }
     })
   }
   return {
