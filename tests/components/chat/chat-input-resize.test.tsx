@@ -1,6 +1,6 @@
 import { ChatInput } from '@/components/chat/chat-input'
-import { render, screen } from '@testing-library/react'
-import { createRef, type ComponentProps } from 'react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { createRef, useState, type ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/components/project', () => ({
@@ -19,6 +19,7 @@ vi.mock('@/hooks/use-toast', () => ({
 // Visual viewport height with the on-screen keyboard open.
 const VIEWPORT_HEIGHT_PX = 400
 const TEXT_CONTENT_HEIGHT_PX = 1000
+const MESSAGE = 'A long message that fills the text box'
 
 type ResizeEntry = { callback: () => void; targets: Set<Element> }
 const resizeObservers = new Set<ResizeEntry>()
@@ -126,7 +127,7 @@ function ChatInputInArea(
   return (
     <div data-chat-input-area>
       <ChatInput
-        input="A long message that fills the text box"
+        input={MESSAGE}
         setInput={vi.fn()}
         handleSubmit={vi.fn()}
         loadingState="idle"
@@ -164,5 +165,49 @@ describe('ChatInput height cap', () => {
     flushFrames()
 
     expect(textarea.style.height).toBe('126px')
+  })
+})
+
+function TypedChatInput() {
+  const [input, setInput] = useState(MESSAGE)
+  return <ChatInputInArea input={input} setInput={setInput} />
+}
+
+describe('ChatInput caret visibility', () => {
+  it('scrolls a capped text box to the line typed at its end', () => {
+    render(<TypedChatInput />)
+    flushFrames()
+    const textarea = screen.getByRole<HTMLTextAreaElement>('textbox')
+    expect(textarea).toHaveFocus()
+    textarea.scrollTop = 0
+
+    fireEvent.change(textarea, { target: { value: `${MESSAGE} and more` } })
+
+    expect(textarea.style.overflowY).toBe('auto')
+    expect(textarea.scrollTop).toBe(TEXT_CONTENT_HEIGHT_PX)
+  })
+
+  it('keeps the scroll position while typing earlier in the message', () => {
+    const scrollTop = 40
+    const prefix = 'Also '
+    render(<TypedChatInput />)
+    flushFrames()
+    const textarea = screen.getByRole<HTMLTextAreaElement>('textbox')
+    expect(textarea).toHaveFocus()
+    textarea.scrollTop = scrollTop
+    textarea.style.overflowY = ''
+
+    fireEvent.change(textarea, {
+      target: {
+        value: `${prefix}${MESSAGE}`,
+        selectionStart: prefix.length,
+        selectionEnd: prefix.length,
+      },
+    })
+    flushFrames()
+
+    expect(textarea.style.overflowY).toBe('auto')
+    expect(textarea.selectionEnd).toBe(prefix.length)
+    expect(textarea.scrollTop).toBe(scrollTop)
   })
 })
