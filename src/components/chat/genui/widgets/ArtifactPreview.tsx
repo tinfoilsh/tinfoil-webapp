@@ -26,6 +26,8 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { cn } from '@/components/ui/utils'
+import { toast } from '@/hooks/use-toast'
+import { logError } from '@/utils/error-handling'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { TfDownload, TfEye, type IconType } from '@tinfoilsh/tinfoil-icons'
 import {
@@ -34,6 +36,8 @@ import {
 } from '@tinfoilsh/tinfoil-icons/animated'
 import { FileText } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { BsFiletypePdf } from 'react-icons/bs'
+import { PiSpinner } from 'react-icons/pi'
 import { defineGenUIWidget } from '../types'
 import type { RenderArtifactPreviewArgs } from '../widget-args'
 
@@ -141,12 +145,15 @@ function sourceToCopyString(source: ArtifactSource): string {
   }
 }
 
+function artifactFileBase(title: string | undefined): string {
+  return (title ?? 'artifact').trim().replace(/[^\w.-]+/g, '-') || 'artifact'
+}
+
 function sourceToDownload(
   source: ArtifactSource,
   title: string | undefined,
 ): { content: string; mimeType: string; filename: string } {
-  const base =
-    (title ?? 'artifact').trim().replace(/[^\w.-]+/g, '-') || 'artifact'
+  const base = artifactFileBase(title)
   switch (source.type) {
     case 'url':
       return {
@@ -169,13 +176,7 @@ function sourceToDownload(
   }
 }
 
-function downloadArtifact(
-  source: ArtifactSource,
-  title: string | undefined,
-): void {
-  if (typeof window === 'undefined') return
-  const { content, mimeType, filename } = sourceToDownload(source, title)
-  const blob = new Blob([content], { type: mimeType })
+function saveFile(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -184,6 +185,54 @@ function downloadArtifact(
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+function downloadArtifact(
+  source: ArtifactSource,
+  title: string | undefined,
+): void {
+  if (typeof window === 'undefined') return
+  const { content, mimeType, filename } = sourceToDownload(source, title)
+  saveFile(new Blob([content], { type: mimeType }), filename)
+}
+
+/**
+ * Saves a Markdown artifact as a PDF made on this device. The PDF library
+ * loads on first use.
+ */
+function usePdfDownload(source: ArtifactSource, title: string | undefined) {
+  const [isGenerating, setIsGenerating] = useState(false)
+  const isGeneratingRef = useRef(false)
+
+  const downloadPdf = useCallback(async () => {
+    if (source.type !== 'markdown' || isGeneratingRef.current) return
+    isGeneratingRef.current = true
+    setIsGenerating(true)
+    try {
+      const { createMarkdownPdf } = await import('@/utils/markdown-pdf')
+      const pdf = await createMarkdownPdf(source.markdown, title)
+      saveFile(pdf, `${artifactFileBase(title)}.pdf`)
+    } catch (error) {
+      logError('Failed to generate artifact PDF', error, {
+        component: 'ArtifactPreview',
+        action: 'downloadPdf',
+      })
+      toast({ title: 'Failed to generate PDF', variant: 'destructive' })
+    } finally {
+      isGeneratingRef.current = false
+      setIsGenerating(false)
+    }
+  }, [source, title])
+
+  return { isGenerating, downloadPdf }
+}
+
+function PdfIcon({ isGenerating }: { isGenerating: boolean }) {
+  return isGenerating ? (
+    <PiSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+  ) : (
+    <BsFiletypePdf className="h-3.5 w-3.5" aria-hidden="true" />
+  )
 }
 
 type ViewMode = 'preview' | 'source'
@@ -374,6 +423,7 @@ export function ArtifactPreviewPanel({
   const { mode } = currentView
   const isSidebarLayout = layout === 'sidebar'
   const copyText = sourceToCopyString(source)
+  const { isGenerating, downloadPdf } = usePdfDownload(source, title)
   const tabsId = useId()
   const panelId = `${tabsId}-panel`
   const tabId = (tabMode: ViewMode) => `${tabsId}-${tabMode}-tab`
@@ -435,6 +485,18 @@ export function ArtifactPreviewPanel({
                 <span>Open</span>
               </a>
             )}
+            {source.type === 'markdown' && (
+              <button
+                type="button"
+                onClick={() => void downloadPdf()}
+                disabled={isGenerating}
+                aria-label="Download as PDF"
+                className="flex h-6 items-center gap-1 rounded px-2 text-xs text-content-muted hover:bg-surface-card hover:text-content-primary disabled:opacity-60"
+              >
+                <PdfIcon isGenerating={isGenerating} />
+                <span>PDF</span>
+              </button>
+            )}
             <CopyButton text={copyText} />
           </div>
         </div>
@@ -477,10 +539,13 @@ export function ArtifactPreviewPanel({
   )
 }
 
+const DOWNLOAD_BUTTON_CLASS_NAME =
+  'inline-flex flex-shrink-0 items-center gap-1.5 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-xs font-medium text-content-primary transition-colors hover:bg-surface-card disabled:opacity-60'
+
 /**
  * Full-width inline card shown in the chat scroll. The row itself is a
- * single click target that toggles the artifact sidebar, with a separate
- * download action beside it.
+ * single click target that toggles the artifact sidebar, with separate
+ * download actions beside it.
  */
 function ArtifactPreviewInlineCard({
   title,
@@ -502,6 +567,7 @@ function ArtifactPreviewInlineCard({
   )
   const displayTitle = title ?? getSourceLabel(source)
   const subtitle = description ?? getSourceLabel(source)
+  const { isGenerating, downloadPdf } = usePdfDownload(source, title)
 
   useEffect(() => {
     if (
@@ -548,15 +614,29 @@ function ArtifactPreviewInlineCard({
           </span>
         </span>
       </button>
-      <button
-        type="button"
-        onClick={() => downloadArtifact(source, title)}
-        className="mr-4 inline-flex flex-shrink-0 items-center gap-1.5 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-xs font-medium text-content-primary transition-colors hover:bg-surface-card"
-        aria-label="Download artifact"
-      >
-        <TfDownload className="h-3.5 w-3.5" />
-        Download
-      </button>
+      <div className="mr-4 flex flex-shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => downloadArtifact(source, title)}
+          className={DOWNLOAD_BUTTON_CLASS_NAME}
+          aria-label="Download artifact"
+        >
+          <TfDownload className="h-3.5 w-3.5" />
+          Download
+        </button>
+        {source.type === 'markdown' && (
+          <button
+            type="button"
+            onClick={() => void downloadPdf()}
+            disabled={isGenerating}
+            className={DOWNLOAD_BUTTON_CLASS_NAME}
+            aria-label="Download as PDF"
+          >
+            <PdfIcon isGenerating={isGenerating} />
+            PDF
+          </button>
+        )}
+      </div>
     </div>
   )
 }

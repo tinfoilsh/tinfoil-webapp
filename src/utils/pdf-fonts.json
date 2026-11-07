@@ -1,0 +1,14 @@
+{
+  "DejaVuSans.ttf": "dejavu-fonts-ttf/ttf/DejaVuSans.ttf",
+  "DejaVuSans-Bold.ttf": "dejavu-fonts-ttf/ttf/DejaVuSans-Bold.ttf",
+  "DejaVuSans-Oblique.ttf": "dejavu-fonts-ttf/ttf/DejaVuSans-Oblique.ttf",
+  "DejaVuSans-BoldOblique.ttf": "dejavu-fonts-ttf/ttf/DejaVuSans-BoldOblique.ttf",
+  "DejaVuSansMono.ttf": "dejavu-fonts-ttf/ttf/DejaVuSansMono.ttf",
+  "DejaVuSansMono-Bold.ttf": "dejavu-fonts-ttf/ttf/DejaVuSansMono-Bold.ttf",
+  "DejaVuSansMono-Oblique.ttf": "dejavu-fonts-ttf/ttf/DejaVuSansMono-Oblique.ttf",
+  "DejaVuSansMono-BoldOblique.ttf": "dejavu-fonts-ttf/ttf/DejaVuSansMono-BoldOblique.ttf",
+  "DejaVu-LICENSE.txt": "dejavu-fonts-ttf/LICENSE",
+  "NotoEmoji-Regular.ttf": "@expo-google-fonts/noto-emoji/400Regular/NotoEmoji_400Regular.ttf",
+  "NotoEmoji-Bold.ttf": "@expo-google-fonts/noto-emoji/700Bold/NotoEmoji_700Bold.ttf",
+  "NotoEmoji-OFL.txt": "@expo-google-fonts/noto-emoji/LICENSE_FONT"
+}

@@ -1,6 +1,7 @@
 // Copy the pinned Pyodide and Mermaid distributions into public/vendor/ so the
 // in-origin preview runners load them from this origin (hashed by the WEBCAT
-// manifest) instead of a CDN. Runs before `next build` and `next dev`.
+// manifest) instead of a CDN, and the fonts PDFs are made with. Runs before
+// `next build` and `next dev`.
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -31,6 +32,12 @@ for (const f of fs
     `node_modules/mermaid/dist/${chunks}/${f}`,
     out(`mermaid/${chunks}/${f}`),
   )
+}
+
+fs.mkdirSync(out('fonts'), { recursive: true })
+const fonts = JSON.parse(fs.readFileSync('src/utils/pdf-fonts.json', 'utf8'))
+for (const [name, source] of Object.entries(fonts)) {
+  fs.copyFileSync(`node_modules/${source}`, out(`fonts/${name}`))
 }
 
 const version = (pkg) =>
