@@ -91,6 +91,9 @@ export const ERROR_CODES = {
   // A chat compacted on request holds nothing before its latest exchange to
   // summarize.
   nothingToCompact: 'NOTHING_TO_COMPACT',
+  // A text read aloud holds nothing to read once its code, images and bare
+  // links are left out.
+  nothingToRead: 'NOTHING_TO_READ',
   modelUnavailable: 'MODEL_UNAVAILABLE',
   // A stream that closed before its run ended. The run may go on.
   streamInterrupted: 'STREAM_INTERRUPTED',

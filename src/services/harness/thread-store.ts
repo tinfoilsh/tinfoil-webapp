@@ -1,4 +1,5 @@
 import type { Attachment as UIAttachment } from '@/components/chat/types'
+import { speechSpeed } from '@/services/speech/speed'
 import { imageBlob, type OpenAttachments } from './open-attachments'
 import { ROUTES } from './protocol'
 import type { DeviceRun } from './run-controller'
@@ -213,7 +214,11 @@ export function cloudThreads(
       return url
     },
     speech: (threadId, messageId, signal) =>
-      api.stream(ROUTES.speech, { threadId, messageId }, { signal }),
+      api.stream(
+        ROUTES.speech,
+        { threadId, messageId, ...speechSpeed() },
+        { signal },
+      ),
     runKey: () => ({ key: api.key() }),
     async prepareTurn(threadId, { defaults, fields, key }, settings) {
       const { first, presetChosen, presetId, projectId } = settings

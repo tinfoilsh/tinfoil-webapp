@@ -230,10 +230,19 @@ describe('speech requests', () => {
   it.each([
     [
       400,
-      'BAD_REQUEST',
+      'NOTHING_TO_READ',
       'stop',
       'There is nothing to read aloud',
       'There is no readable text in this response.',
+    ],
+    // A request the harness could not take is not said to have nothing to
+    // read.
+    [
+      400,
+      'BAD_REQUEST',
+      'stop',
+      'threadId must be a valid identifier',
+      'Could not read this response aloud. Please try again.',
     ],
     [
       413,

@@ -15,9 +15,12 @@ export function speechErrorMessage(error: unknown): string {
   if (error instanceof HarnessError && error.status === 429) {
     return 'Speech usage limit reached. Please try again later.'
   }
-  // The harness refuses a text with nothing to read aloud as a bad request,
-  // and one too long to read as too large.
-  if (error instanceof HarnessError && error.code === ERROR_CODES.badRequest) {
+  // The harness refuses a text with nothing to read aloud, and one too long
+  // to read as too large.
+  if (
+    error instanceof HarnessError &&
+    error.code === ERROR_CODES.nothingToRead
+  ) {
     return 'There is no readable text in this response.'
   }
   if (

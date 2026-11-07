@@ -7,6 +7,7 @@ import {
 } from '@/constants/storage-keys'
 import { getView, harnessAPI, publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
+import { readAloudSpeed } from '@/services/speech/speed'
 import {
   act,
   fireEvent,
@@ -116,6 +117,17 @@ describe('settings opening', () => {
       'Export Projects for Claude',
     ])
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+  })
+
+  it('keeps the read aloud speed chosen in settings for this device', () => {
+    render(<Harness initialTab="chat" />)
+    const speeds = screen.getByRole('radiogroup', { name: 'Read aloud speed' })
+    expect(within(speeds).getByRole('radio', { name: '1×' })).toBeChecked()
+
+    fireEvent.click(within(speeds).getByRole('radio', { name: '1.5×' }))
+
+    expect(within(speeds).getByRole('radio', { name: '1.5×' })).toBeChecked()
+    expect(readAloudSpeed()).toBe(1.5)
   })
 
   it('requires confirmation before signing out with device chats', async () => {

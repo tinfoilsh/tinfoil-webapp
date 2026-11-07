@@ -45,6 +45,7 @@ import {
   PrfNotSupportedError,
   type PasskeyCredentialEntry,
 } from '@/services/passkey'
+import { READ_ALOUD_SPEEDS, useReadAloudSpeed } from '@/services/speech/speed'
 import { TINFOIL_COLORS } from '@/theme/colors'
 import {
   clearExplicitSignoutIntent,
@@ -926,6 +927,9 @@ export function SettingsModal({
     'system',
   )
   const chatFont = normalizeChatFont(chatFontSetting)
+
+  const [readAloudSpeed, setReadAloudSpeed] = useReadAloudSpeed()
+  const readAloudSpeedLabelId = useId()
 
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false)
   const importSectionId = useId()
@@ -2385,6 +2389,52 @@ ${encryptionKey.replace('key_', '')}
                               {font.label}
                             </span>
                           </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Read aloud speed, kept on this device */}
+                    <div
+                      className={cn(
+                        'rounded-lg border border-border-subtle p-4',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <div className="mb-3">
+                        <div
+                          id={readAloudSpeedLabelId}
+                          className="font-aeonik text-sm font-medium text-content-primary"
+                        >
+                          Read aloud speed
+                        </div>
+                        <div className="font-aeonik-fono text-xs text-content-muted">
+                          How fast replies are read aloud on this device
+                        </div>
+                      </div>
+                      <div
+                        role="radiogroup"
+                        aria-labelledby={readAloudSpeedLabelId}
+                        className="grid grid-cols-5 gap-2"
+                      >
+                        {READ_ALOUD_SPEEDS.map((speed) => (
+                          <label
+                            key={speed}
+                            className={cn(
+                              'cursor-pointer rounded-lg border px-2 py-1.5 text-center text-xs text-content-primary transition-all has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-accent-light',
+                              readAloudSpeed === speed
+                                ? 'border-brand-accent-light bg-brand-accent-light/10'
+                                : 'border-border-subtle hover:border-border-strong',
+                            )}
+                          >
+                            <input
+                              type="radio"
+                              name={readAloudSpeedLabelId}
+                              value={speed}
+                              checked={readAloudSpeed === speed}
+                              onChange={() => setReadAloudSpeed(speed)}
+                              className="sr-only"
+                            />
+                            {speed}×
+                          </label>
                         ))}
                       </div>
                     </div>

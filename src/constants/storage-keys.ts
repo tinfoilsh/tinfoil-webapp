@@ -69,6 +69,8 @@ export const SETTINGS_GENUI_ENABLED = 'tinfoil-settings-genui-enabled'
 export const SETTINGS_THEME_MODE = 'tinfoil-settings-theme-mode'
 export const SETTINGS_THEME = 'tinfoil-settings-theme'
 export const SETTINGS_CHAT_FONT = 'tinfoil-settings-chat-font'
+// How fast replies are read aloud on this device.
+export const SETTINGS_READ_ALOUD_SPEED = 'tinfoil-settings-read-aloud-speed'
 export const SETTINGS_CACHED_SUBSCRIPTION_STATUS =
   'tinfoil-settings-cached-subscription-status'
 // Set once the first-open onboarding (founders letter + privacy switch) has
