@@ -1180,7 +1180,7 @@ paths:
       operationId: speech
       summary: Read text aloud
       tags: [speech]
-      description: Reads a message, or text a client sends, aloud.
+      description: Reads a message, or text a client sends, aloud. Text with nothing left to read once its code, images and bare links are left out is refused with NOTHING_TO_READ.
       requestBody:
         required: true
         content:
@@ -1195,6 +1195,7 @@ paths:
                 threadId: {$ref: "#/components/schemas/Identifier"}
                 messageId: {$ref: "#/components/schemas/Identifier"}
                 text: {type: string, description: "Text to read when no message is named, such as a selection or a shared chat's message."}
+                speed: {type: number, minimum: 0.5, maximum: 2, description: "How fast the audio plays, as a multiple of how fast the voice speaks, keeping its pitch. 1 when absent."}
       responses:
         "200":
           description: The audio, streamed as it is made.
@@ -1560,6 +1561,7 @@ components:
             - MISSING_ATTACHMENT
             - MODEL_UNAVAILABLE
             - NOTHING_TO_COMPACT
+            - NOTHING_TO_READ
             - PAYLOAD_TOO_LARGE
             - PROJECTS_REQUIRE_CLOUD
             - QUEUE_FULL

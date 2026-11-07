@@ -868,7 +868,7 @@ export interface paths {
     put?: never
     /**
      * Read text aloud
-     * @description Reads a message, or text a client sends, aloud.
+     * @description Reads a message, or text a client sends, aloud. Text with nothing left to read once its code, images and bare links are left out is refused with NOTHING_TO_READ.
      */
     post: operations['speech']
     delete?: never
@@ -1080,6 +1080,7 @@ export interface components {
           | 'MISSING_ATTACHMENT'
           | 'MODEL_UNAVAILABLE'
           | 'NOTHING_TO_COMPACT'
+          | 'NOTHING_TO_READ'
           | 'PAYLOAD_TOO_LARGE'
           | 'PROJECTS_REQUIRE_CLOUD'
           | 'QUEUE_FULL'
@@ -3540,6 +3541,8 @@ export interface operations {
           messageId?: components['schemas']['Identifier']
           /** @description Text to read when no message is named, such as a selection or a shared chat's message. */
           text?: string
+          /** @description How fast the audio plays, as a multiple of how fast the voice speaks, keeping its pitch. 1 when absent. */
+          speed?: number
         }
       }
     }
