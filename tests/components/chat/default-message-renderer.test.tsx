@@ -465,6 +465,32 @@ describe('DefaultMessageRenderer message actions', () => {
     },
   )
 
+  it('offers to continue a reply the model ran out of room for before it wrote any text', () => {
+    const onContinueAssistantMessage = vi.fn()
+    render(
+      <Renderer
+        message={{
+          ...assistantMessage,
+          content: '',
+          thoughts: 'Working through the cases',
+          isInterrupted: true,
+          truncated: true,
+        }}
+        messageIndex={3}
+        model={model}
+        isDarkMode={false}
+        isLastMessage
+        onContinueAssistantMessage={onContinueAssistantMessage}
+      />,
+    )
+
+    expect(
+      screen.getByText('Response reached the length limit'),
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue response' }))
+    expect(onContinueAssistantMessage).toHaveBeenCalledExactlyOnceWith(3)
+  })
+
   it('saves an assistant edit in place', () => {
     const onEditAssistantMessage = vi.fn()
     const onContinueAssistantMessage = vi.fn()

@@ -577,8 +577,9 @@ function scriptStoppedRun(
   })
 }
 
-// Streams the next turn as a continuation of the reply `answer` that ends it.
-function scriptContinuation() {
+// Streams the next turn as a continuation of the reply `answer` that ends it,
+// or that the service stops when `interrupted`.
+function scriptContinuation({ interrupted = false } = {}) {
   client.events.mockImplementationOnce(async function* (
     _path: string,
     input: Turn,
@@ -608,7 +609,7 @@ function scriptContinuation() {
         type: 'RUN_FINISHED',
         runId: 'continued',
         threadId: input.threadId!,
-        metadata: { messages: [{ id: 'answer', isInterrupted: false }] },
+        metadata: { messages: [{ id: 'answer', isInterrupted: interrupted }] },
       },
     }
   })
@@ -923,27 +924,42 @@ it('continues a reply the service stopped where it stopped, in one tap', async (
   ).not.toBeInTheDocument()
 })
 
-it('says a reply the model ran out of room for reached the length limit until it is continued', async () => {
-  signIn({ cloud: true })
-  scriptStoppedRun(Promise.resolve(), { cancelled: false, truncated: true })
-  answerStops()
-  scriptContinuation()
-  renderChat()
-  await send()
+// A continuation the service stops for another reason says only that it
+// stopped.
+it.each([
+  [false, null],
+  [true, 'Response stopped'],
+])(
+  'says a reply the model ran out of room for reached the length limit until it is continued (continuation interrupted: %s)',
+  async (interrupted, note) => {
+    signIn({ cloud: true })
+    scriptStoppedRun(Promise.resolve(), { cancelled: false, truncated: true })
+    answerStops()
+    scriptContinuation({ interrupted })
+    renderChat()
+    await send()
 
-  expect(
-    await screen.findByText('Response reached the length limit'),
-  ).toBeInTheDocument()
-  expect(screen.queryByText('Response stopped')).not.toBeInTheDocument()
+    expect(
+      await screen.findByText('Response reached the length limit'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Response stopped')).not.toBeInTheDocument()
 
-  fireEvent.click(screen.getByRole('button', { name: 'Continue response' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue response' }))
 
-  await waitFor(() =>
-    expect(screen.getByRole('article', { name: 'Al said' })).toHaveTextContent(
-      'The answer is here.',
-    ),
-  )
-  expect(
-    screen.queryByText('Response reached the length limit'),
-  ).not.toBeInTheDocument()
-})
+    await waitFor(() =>
+      expect(
+        screen.getByRole('article', { name: 'Al said' }),
+      ).toHaveTextContent('The answer is here.'),
+    )
+    // The note hides while the continuation streams, so it is checked once
+    // the continuation ends.
+    expect(
+      await screen.findByRole('button', { name: 'Send' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('Response reached the length limit'),
+    ).not.toBeInTheDocument()
+    if (note) expect(screen.getByText(note)).toBeInTheDocument()
+    else expect(screen.queryByText('Response stopped')).not.toBeInTheDocument()
+  },
+)

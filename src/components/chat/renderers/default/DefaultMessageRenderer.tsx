@@ -939,13 +939,14 @@ const DefaultMessageComponent = ({
                   ? 'Response reached the length limit'
                   : 'Response stopped'}
             </p>
-            {/* The last reply the service stopped goes on where it stopped. */}
+            {/* The last reply the service stopped goes on where it stopped,
+                even one the model ran out of room for as it reasoned. */}
             {!message.canceledByUser &&
               isLastMessage &&
               onContinueAssistantMessage &&
               !hideActions &&
               !isEditing &&
-              message.content && (
+              (message.content || message.truncated) && (
                 <button
                   type="button"
                   onClick={handleContinue}

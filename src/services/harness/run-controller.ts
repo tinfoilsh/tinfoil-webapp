@@ -10,7 +10,6 @@ import {
   reduceEvent,
   runErrorOf,
   runOf,
-  truncatedBy,
   unstopped,
   type ChatState,
 } from './reducer'
@@ -372,7 +371,7 @@ export class RunController {
           }
           if (isTerminal(event)) {
             this.markCanceled(canceledBy(base, event))
-            this.markTruncated(truncatedBy(event))
+            this.noteTruncation(event)
           }
           progressed = true
           view = next
@@ -611,11 +610,21 @@ export class RunController {
       this.canceled.update((canceled) => new Set([...canceled, ...messageIds]))
   }
 
-  markTruncated(messageIds: string[]) {
-    if (messageIds.length)
-      this.truncated.update(
-        (truncated) => new Set([...truncated, ...messageIds]),
-      )
+  // Records whether the model ran out of room for each reply a run committed
+  // as it ended, so a reply continued since says so only if it ran out again.
+  noteTruncation(event: TerminalEvent) {
+    const replies = event.metadata?.messages?.map(({ id }) => id) ?? []
+    if (!replies.length) return
+    const truncated =
+      event.type === 'RUN_FINISHED' && !!event.metadata?.truncated
+    this.truncated.update((current) => {
+      const next = new Set(current)
+      for (const id of replies) {
+        if (truncated) next.add(id)
+        else next.delete(id)
+      }
+      return next
+    })
   }
 
   // Resolves once the run the open chat stops has ended, or the view moved
