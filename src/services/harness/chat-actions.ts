@@ -334,10 +334,12 @@ export function chatActions({
       const store = storeOf(threadId)
       const settleListed = list.previewRemoval(threadId)
       if (isOpen(threadId)) reset()
+      let removed = false
       try {
         await store.remove(threadId)
+        removed = true
       } finally {
-        settleListed()
+        settleListed(removed)
       }
     },
     // Deletes every chat the user can see here: the harness's stored chats

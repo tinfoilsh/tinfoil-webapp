@@ -142,6 +142,9 @@ export function cloudThreads(
       { id: attachment.id, ...(threadId ? { threadId } : {}) },
       { signal },
     )
+  // The chats deleted here, which a change answered after the deletion
+  // does not list again.
+  const deleted = new Set<string>()
   // The harness changes a stored chat's message and answers with its
   // latest window.
   const changeMessage = async (
@@ -158,7 +161,7 @@ export function cloudThreads(
     },
   ) => {
     const thread = await api.post<Thread>(path, input)
-    list.replace(summaryOf(thread))
+    if (!deleted.has(input.threadId)) list.replace(summaryOf(thread))
     return thread
   }
   // The changes of each chat still saving, and the latest of them the
@@ -181,7 +184,7 @@ export function cloudThreads(
           id: threadId,
           ...patch,
         })
-        if (update > chat.saved) {
+        if (update > chat.saved && !deleted.has(threadId)) {
           chat.saved = update
           list.replace(summary)
         }
@@ -192,6 +195,7 @@ export function cloudThreads(
     },
     async remove(threadId) {
       await api.post(ROUTES.delete, { id: threadId })
+      deleted.add(threadId)
       list.remove(threadId)
     },
     async fork(threadId, messageId) {

@@ -177,7 +177,8 @@ export function useChatList({
     }
     // Shows a change before its store answers, and returns what settles
     // it. The lists then show what they read; a change the store saved
-    // also settles the earlier changes of the same settings of the chat.
+    // also settles the earlier changes of the same settings of the chat,
+    // and a deletion every earlier change of it.
     const showPending = (change: PendingChange) => {
       const reshow = () => {
         cloudThreads.reshow()
@@ -195,9 +196,10 @@ export function useChatList({
           if (change.title !== undefined) delete earlier.title
           if (change.pinned !== undefined) delete earlier.pinned
           if (
-            !earlier.removed &&
-            earlier.title === undefined &&
-            earlier.pinned === undefined
+            change.removed ||
+            (!earlier.removed &&
+              earlier.title === undefined &&
+              earlier.pinned === undefined)
           )
             pending.delete(earlier)
         }
@@ -286,10 +288,10 @@ export function useChatList({
         })
       },
       // Leaves a chat out of the lists until its store answers its
-      // deletion, and returns what settles it.
+      // deletion, and returns what settles it with whether the store
+      // deleted it.
       previewRemoval(threadId: string) {
-        const settle = showPending({ threadId, removed: true })
-        return () => settle(false)
+        return showPending({ threadId, removed: true })
       },
       // The stored chats are not listed, as once cloud sync is off.
       clearCloud({

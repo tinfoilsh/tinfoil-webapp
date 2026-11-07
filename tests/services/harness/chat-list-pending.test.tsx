@@ -166,6 +166,40 @@ describe('a stored chat deleted while the list is read again', () => {
     },
   )
 
+  it('stays out of the favorites when it is deleted before its pin is answered', async () => {
+    const { result, changes } = listThenHold([doomed, kept])
+    await waitFor(() => expect(result.current.chats).toHaveLength(2))
+    let pinning!: Promise<unknown>
+    act(() => {
+      pinning = result.current.update(doomed.id, { pinned: true })
+    })
+    expect(result.current.favoriteIds).toEqual([doomed.id])
+    let removing!: Promise<void>
+    act(() => {
+      removing = result.current.remove(doomed.id)
+    })
+    await waitFor(() =>
+      expect(changes.map(({ path }) => path)).toEqual([
+        '/v1/threads/update',
+        '/v1/threads/delete',
+      ]),
+    )
+
+    await act(async () => {
+      changes[1].answer.resolve({})
+      await removing
+    })
+    expect(result.current.favoriteIds).toEqual([])
+
+    // The harness pinned the chat before it deleted it.
+    await act(async () => {
+      changes[0].answer.resolve({ ...doomed, pinned: true })
+      await pinning
+    })
+    expect(result.current.favoriteIds).toEqual([])
+    expect(listed(result)).toEqual([{ id: 'kept', title: 'kept' }])
+  })
+
   it('stays out of the list a reload restores while its deletion saves', async () => {
     const first = listThenHold([doomed, kept])
     await waitFor(() => expect(first.result.current.chats).toHaveLength(2))
