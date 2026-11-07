@@ -321,8 +321,9 @@ function Preview({
   }
 }
 
+// The colors a chat reply's markdown takes, in light and dark mode alike.
 const MARKDOWN_PREVIEW_CLASS_NAME =
-  'prose prose-sm max-w-none text-content-primary prose-pre:bg-transparent prose-pre:p-0'
+  'prose prose-sm max-w-none text-content-primary prose-headings:text-content-primary prose-strong:text-content-primary prose-code:text-content-primary prose-a:text-blue-500 hover:prose-a:text-blue-600 prose-pre:bg-transparent prose-pre:p-0'
 
 function getSidebarPreviewClassName(source: ArtifactSource): string {
   switch (source.type) {
