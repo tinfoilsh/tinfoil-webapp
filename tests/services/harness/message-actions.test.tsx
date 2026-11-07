@@ -1532,50 +1532,29 @@ describe('reading a stored chat again while the user changes it', () => {
     await act(async () => publish({ chatRevision: 'changed elsewhere' }))
     await waitFor(() => expect(reads).toHaveLength(1))
   }
-  const edited = () =>
+  // The chat with its last reply rewritten, and any exchanges after it.
+  const edited = (...later: ThreadMessage[]) =>
     cloudThread([
       ...transcript.slice(0, 3),
       {
         ...transcript[3],
         timeline: [{ id: 'b2', type: 'content', content: 'Better' }],
       },
+      ...later,
     ])
   const replies = (thread: ReturnType<typeof useThread>) =>
     thread.chat.messages.map((message) => message.content)
 
-  it('keeps a reply edited since the read began', async () => {
+  it('keeps a reply edited as the chat read again arrives', async () => {
     const { result, reads, changes } = await openHeld()
     await readAgain(reads)
     let editing!: Promise<void>
-    act(() => {
-      editing = result.current.editReply(3, 'Better')
-    })
-    await waitFor(() => expect(changes).toHaveLength(1))
+
     await act(async () => {
-      changes[0].resolve(edited())
-      await editing
-    })
-
-    await act(async () => reads[0].resolve(cloudThread()))
-
-    expect(replies(result.current)).toEqual([
-      'one',
-      'first answer',
-      'two',
-      'Better',
-    ])
-  })
-
-  it('keeps a reply edit the harness has not answered yet', async () => {
-    const { result, reads, changes } = await openHeld()
-    let editing!: Promise<void>
-    act(() => {
       editing = result.current.editReply(3, 'Better')
+      reads[0].resolve(cloudThread())
     })
-    await waitFor(() => expect(changes).toHaveLength(1))
-    await readAgain(reads)
-
-    await act(async () => reads[0].resolve(cloudThread()))
+    expect(changes).toHaveLength(1)
     expect(replies(result.current)).toEqual([
       'one',
       'first answer',
@@ -1595,15 +1574,14 @@ describe('reading a stored chat again while the user changes it', () => {
     ])
   })
 
-  it('keeps a title the harness has not saved yet', async () => {
+  it('keeps a title changed while the chat is read again', async () => {
     const { result, reads, changes } = await openHeld()
+    await readAgain(reads)
     let renaming!: Promise<unknown>
     act(() => {
       renaming = result.current.update(THREAD_ID, { title: 'Counting' })
     })
     await waitFor(() => expect(changes).toHaveLength(1))
-    expect(result.current.chat.title).toBe('Counting')
-    await readAgain(reads)
 
     await act(async () => reads[0].resolve(cloudThread()))
     expect(result.current.chat.title).toBe('Counting')
@@ -1622,5 +1600,61 @@ describe('reading a stored chat again while the user changes it', () => {
       await renaming
     })
     expect(result.current.chat.title).toBe('Counting')
+  })
+
+  it('reads the chat again once a change the user made meanwhile is saved', async () => {
+    const { result, reads, changes } = await openHeld()
+    let editing!: Promise<void>
+    act(() => {
+      editing = result.current.editReply(3, 'Better')
+    })
+    await waitFor(() => expect(changes).toHaveLength(1))
+    await act(async () => publish({ chatRevision: 'changed elsewhere' }))
+    expect(replies(result.current)).toEqual([
+      'one',
+      'first answer',
+      'two',
+      'Better',
+    ])
+
+    const early = reads.length
+    await act(async () => {
+      changes[0].resolve(edited())
+      await editing
+    })
+    // A copy read before the edit was saved lacks it. One read since holds
+    // it, and an exchange another device added.
+    await act(async () =>
+      reads.slice(0, early).forEach((read) => read.resolve(cloudThread())),
+    )
+    await waitFor(() => expect(reads.length).toBeGreaterThan(early))
+    await act(async () =>
+      reads.at(-1)!.resolve(
+        edited(
+          {
+            id: 'u3',
+            role: 'user',
+            createdAt: '2026-04-01T09:02:00Z',
+            content: 'three',
+          },
+          {
+            id: 'a3',
+            role: 'assistant',
+            createdAt: '2026-04-01T09:02:01Z',
+            content: 'third answer',
+            timeline: [{ id: 'b3', type: 'content', content: 'third answer' }],
+          },
+        ),
+      ),
+    )
+
+    expect(replies(result.current)).toEqual([
+      'one',
+      'first answer',
+      'two',
+      'Better',
+      'three',
+      'third answer',
+    ])
   })
 })

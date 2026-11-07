@@ -484,6 +484,9 @@ export function useThread(
     [sentKey],
   )
   const refreshedChat = useRef<{ id: string; revision: string } | null>(null)
+  // The open chat has changes its store has not answered. A copy read
+  // meanwhile would take them back, so the chat is read again once they are.
+  const changingOpen = useStore(controller.changes).has(openState.id ?? '')
   useEffect(() => {
     if (
       !chatRevision ||
@@ -492,7 +495,8 @@ export function useThread(
       !open.get().id ||
       open.get().loadingId ||
       open.get().unsaved === open.get().id ||
-      state.status !== 'idle'
+      state.status !== 'idle' ||
+      changingOpen
     )
       return
     const id = open.get().id!
@@ -502,10 +506,6 @@ export function useThread(
     )
       return
     const shown = controller.track()
-    // The chat as it shows when it is read again. A copy read before a
-    // change the user made since, or one its store has not answered, would
-    // take the change back.
-    const viewed = controller.view.get()
     let cancelled = false
     void (async () => {
       const thread = await cloudStore.get(id)
@@ -517,13 +517,7 @@ export function useThread(
         thread.messages.unshift(...older.messages)
         thread.hasOlder = older.hasOlder
       }
-      if (
-        cancelled ||
-        !shown() ||
-        controller.view.get().status !== 'idle' ||
-        controller.view.get() !== viewed ||
-        controller.isChanging(id)
-      )
+      if (cancelled || !shown() || controller.view.get().status !== 'idle')
         return
       // The compaction the chat points out outlives the chat read again,
       // as the compaction itself changes the chat's revision.
@@ -563,6 +557,7 @@ export function useThread(
     reset,
     state.status,
     storedChat,
+    changingOpen,
   ])
   // A new chat follows the model the user picked last, as the profile
   // loads, until the user chooses one in it or sends its first message. A

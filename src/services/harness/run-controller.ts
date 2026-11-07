@@ -228,9 +228,9 @@ export class RunController {
   private readonly settingChanges = new Map<string, Map<string, number>>()
   // When the device run whose thread each chat stored last started.
   private readonly storedRuns = new Map<string, number>()
-  // The changes the user made to each chat that its store has not answered,
-  // by chat. A copy of the chat read meanwhile lacks them.
-  private readonly unanswered = new Map<string, number>()
+  // How many changes the user made to each chat that its store has not
+  // answered, by chat. A copy of the chat read meanwhile lacks them.
+  readonly changes = createStore<ReadonlyMap<string, number>>(new Map())
 
   constructor(
     private readonly api: HarnessAPI,
@@ -307,19 +307,22 @@ export class RunController {
 
   // Counts a change the user made to a chat until its store answers it.
   async changing<T>(threadId: string, change: () => Promise<T>): Promise<T> {
-    this.unanswered.set(threadId, (this.unanswered.get(threadId) ?? 0) + 1)
+    this.countChanges(threadId, 1)
     try {
       return await change()
     } finally {
-      const left = (this.unanswered.get(threadId) ?? 1) - 1
-      if (left > 0) this.unanswered.set(threadId, left)
-      else this.unanswered.delete(threadId)
+      this.countChanges(threadId, -1)
     }
   }
 
-  // The user changed the chat, and its store has not answered yet.
-  isChanging(threadId: string) {
-    return this.unanswered.has(threadId)
+  private countChanges(threadId: string, by: number) {
+    this.changes.update((counts) => {
+      const next = new Map(counts)
+      const left = (counts.get(threadId) ?? 0) + by
+      if (left > 0) next.set(threadId, left)
+      else next.delete(threadId)
+      return next
+    })
   }
 
   async run(
