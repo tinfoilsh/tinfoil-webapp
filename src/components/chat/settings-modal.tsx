@@ -2392,7 +2392,7 @@ ${encryptionKey.replace('key_', '')}
                         ))}
                       </div>
                     </div>
-                    {/* Read aloud speed, kept on this device */}
+                    {/* Read aloud speed */}
                     <div
                       className={cn(
                         'rounded-lg border border-border-subtle p-4',
@@ -2407,7 +2407,7 @@ ${encryptionKey.replace('key_', '')}
                           Read aloud speed
                         </div>
                         <div className="font-aeonik-fono text-xs text-content-muted">
-                          How fast replies are read aloud on this device
+                          How fast replies are read aloud
                         </div>
                       </div>
                       <div

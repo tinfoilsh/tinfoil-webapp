@@ -7,7 +7,6 @@ import {
 } from '@/constants/storage-keys'
 import { getView, harnessAPI, publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
-import { readAloudSpeed } from '@/services/speech/speed'
 import {
   act,
   fireEvent,
@@ -119,15 +118,28 @@ describe('settings opening', () => {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
   })
 
-  it('keeps the read aloud speed chosen in settings for this device', () => {
+  it('keeps the read aloud speed chosen in settings in the profile', async () => {
+    signIn({ cloud: true })
+    client.post.mockImplementation(async (path: string, input) => {
+      if (path !== '/v1/profile/update')
+        throw new Error(`Unexpected harness request: ${path}`)
+      return { ...(input as { patch: object }).patch }
+    })
     render(<Harness initialTab="chat" />)
     const speeds = screen.getByRole('radiogroup', { name: 'Read aloud speed' })
     expect(within(speeds).getByRole('radio', { name: '1×' })).toBeChecked()
 
     fireEvent.click(within(speeds).getByRole('radio', { name: '1.5×' }))
 
-    expect(within(speeds).getByRole('radio', { name: '1.5×' })).toBeChecked()
-    expect(readAloudSpeed()).toBe(1.5)
+    await waitFor(() =>
+      expect(within(speeds).getByRole('radio', { name: '1.5×' })).toBeChecked(),
+    )
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/profile/update',
+      { key: KEY, patch: { readAloudSpeed: 1.5 } },
+      expect.any(AbortSignal),
+    )
+    expect(getView().profile.readAloudSpeed).toBe(1.5)
   })
 
   it('requires confirmation before signing out with device chats', async () => {

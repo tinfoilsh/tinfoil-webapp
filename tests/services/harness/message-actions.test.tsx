@@ -14,7 +14,6 @@ import type {
 } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { speechPlayer } from '@/services/speech/player'
-import { setReadAloudSpeed } from '@/services/speech/speed'
 import {
   act,
   fireEvent,
@@ -830,8 +829,8 @@ describe('reading a reply aloud', () => {
     )
   })
 
-  it('reads at the speed chosen on this device', async () => {
-    signIn({ cloud: true, session })
+  it('reads at the speed the profile holds', async () => {
+    signIn({ cloud: true, session, profile: { readAloudSpeed: 1.5 } })
     client.post.mockImplementation(async (path: string) =>
       path === '/v1/threads/get'
         ? cloudThread()
@@ -839,7 +838,6 @@ describe('reading a reply aloud', () => {
           ? { threads: [], nextCursor: null }
           : {},
     )
-    setReadAloudSpeed(1.5)
     const context = playsAudio()
     render(<Conversation local={false} />)
 
