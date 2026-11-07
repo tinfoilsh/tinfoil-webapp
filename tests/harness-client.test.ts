@@ -1613,23 +1613,29 @@ describe('attested harness transport', () => {
       return outcome
     }
 
-    it('fails a request about a chat it does not answer in time as a lost connection', async () => {
-      fakeTimeouts()
-      const { secure, client, signalOf } = stalled()
-      const deleting = track(client.post('/v1/threads/delete', { id: 't' }))
-      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS - 1)
-      expect(secure.fetch).toHaveBeenCalledOnce()
-      expect(deleting.settled).toBe(false)
+    it.each([
+      { path: '/v1/threads/delete', input: { id: 't' } },
+      { path: '/v1/threads/search', input: { query: 'peroxide', limit: 20 } },
+    ] as const)(
+      'fails a request to $path it does not answer in time as a lost connection',
+      async ({ path, input }) => {
+        fakeTimeouts()
+        const { secure, client, signalOf } = stalled()
+        const request = track(client.post(path, input))
+        await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS - 1)
+        expect(secure.fetch).toHaveBeenCalledOnce()
+        expect(request.settled).toBe(false)
 
-      await vi.advanceTimersByTimeAsync(1)
+        await vi.advanceTimersByTimeAsync(1)
 
-      expect(deleting.failure).toBeInstanceOf(HarnessError)
-      expect(deleting.failure).toMatchObject({
-        status: undefined,
-        detail: { code: 'CONNECTION', action: 'retry' },
-      })
-      expect(signalOf(0)?.aborted).toBe(true)
-    })
+        expect(request.failure).toBeInstanceOf(HarnessError)
+        expect(request.failure).toMatchObject({
+          status: undefined,
+          detail: { code: 'CONNECTION', action: 'retry' },
+        })
+        expect(signalOf(0)?.aborted).toBe(true)
+      },
+    )
 
     it('fails a request about a chat in time while the account token it waits for stalls', async () => {
       fakeTimeouts()

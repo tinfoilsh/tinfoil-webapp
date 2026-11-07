@@ -71,11 +71,13 @@ const RUN_ROUTES: ReadonlySet<HarnessRoute> = new Set([
   ROUTES.queueRemove,
 ])
 
-// The routes that read or change a chat, or check for changes, and answer
-// at once.
+// The routes that read, search or change chats, or check for changes, and
+// answer at once. A search the index is not ready for answers so, and the
+// harness rebuilds the index apart from it.
 const PROMPT_ROUTES: ReadonlySet<HarnessRoute> = new Set([
   ROUTES.changes,
   ROUTES.list,
+  ROUTES.search,
   ROUTES.get,
   ROUTES.update,
   ROUTES.delete,
