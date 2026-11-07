@@ -247,11 +247,8 @@ export function chatActions({
   const saveAnswersOf = (threadId: string): SaveAnswers => {
     const store = storeOf(threadId)
     return async (messageId, toolCallId, changes) => {
-      const thread = await store.answerQuestions(
-        threadId,
-        messageId,
-        toolCallId,
-        changes,
+      const thread = await controller.changing(threadId, () =>
+        store.answerQuestions(threadId, messageId, toolCallId, changes),
       )
       if (!thread) throw answersNotKept()
       showAnswered(threadId, thread)
