@@ -57,6 +57,9 @@ info:
       written, reads one without a version as an older client kept it, and
       refuses any other with RECORD_UNSUPPORTED. It knows versions 1 and 2;
       version 2 adds compaction markers to chats and is otherwise version 1.
+      A version 2 profile row may also hold readAloudSpeed, which a harness
+      that does not name it keeps, as it keeps any profile member it does not
+      name; the next version names it.
       A harness reads a version before it writes it. A member of a stored row it
       does not name is read past, since other clients of the same rows write
       members of their own; the harness leaves such members out when it
@@ -736,6 +739,7 @@ paths:
                     pixelateSidebarChatTitlesEnabled: {type: boolean}
                     browserTabChatTitleEnabled: {type: boolean}
                     enterToNewlineEnabled: {type: boolean}
+                    readAloudSpeed: {type: number, minimum: 0.5, maximum: 2}
                     hasSeenOnboarding: {type: boolean}
                     hasSeenWebSearchIntro: {type: boolean}
                     dismissed: {type: object, additionalProperties: {type: boolean}}
@@ -2637,6 +2641,7 @@ components:
         pixelateSidebarChatTitlesEnabled: {type: boolean}
         browserTabChatTitleEnabled: {type: boolean}
         enterToNewlineEnabled: {type: boolean}
+        readAloudSpeed: {type: number, minimum: 0.5, maximum: 2, description: "How fast replies are read aloud, as the speed a speech request sends."}
         hasSeenOnboarding: {type: boolean}
         hasSeenWebSearchIntro: {type: boolean}
         dismissed: {type: object, additionalProperties: {type: boolean}}
@@ -2676,6 +2681,7 @@ components:
         pixelateSidebarChatTitlesEnabled: {type: boolean}
         browserTabChatTitleEnabled: {type: boolean}
         enterToNewlineEnabled: {type: boolean}
+        readAloudSpeed: {type: number, minimum: 0.5, maximum: 2, description: "How fast replies are read aloud, as the speed a speech request sends."}
         hasSeenOnboarding: {type: boolean}
         hasSeenWebSearchIntro: {type: boolean}
         dismissed: {type: object, additionalProperties: {type: boolean}}

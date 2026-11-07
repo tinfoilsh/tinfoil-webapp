@@ -2013,6 +2013,8 @@ export interface components {
       pixelateSidebarChatTitlesEnabled?: boolean
       browserTabChatTitleEnabled?: boolean
       enterToNewlineEnabled?: boolean
+      /** @description How fast replies are read aloud, as the speed a speech request sends. */
+      readAloudSpeed?: number
       hasSeenOnboarding?: boolean
       hasSeenWebSearchIntro?: boolean
       dismissed?: {
@@ -2046,6 +2048,8 @@ export interface components {
       pixelateSidebarChatTitlesEnabled?: boolean
       browserTabChatTitleEnabled?: boolean
       enterToNewlineEnabled?: boolean
+      /** @description How fast replies are read aloud, as the speed a speech request sends. */
+      readAloudSpeed?: number
       hasSeenOnboarding?: boolean
       hasSeenWebSearchIntro?: boolean
       dismissed?: {
@@ -3010,6 +3014,7 @@ export interface operations {
             pixelateSidebarChatTitlesEnabled?: boolean
             browserTabChatTitleEnabled?: boolean
             enterToNewlineEnabled?: boolean
+            readAloudSpeed?: number
             hasSeenOnboarding?: boolean
             hasSeenWebSearchIntro?: boolean
             dismissed?: {
