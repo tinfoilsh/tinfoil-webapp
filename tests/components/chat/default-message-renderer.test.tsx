@@ -1015,9 +1015,11 @@ describe('DefaultMessageRenderer work traces', () => {
 
   it('drops a refused widget call once the reply draws that widget again', () => {
     const failure = "Couldn't display artifact preview"
+    const accepted = '[rendered for the user]'
     const artifactCall = (
       id: string,
       args: unknown,
+      result?: unknown,
       invalidArguments?: boolean,
     ): WireBlock => ({
       id,
@@ -1026,11 +1028,13 @@ describe('DefaultMessageRenderer work traces', () => {
       name: 'render_artifact_preview',
       arguments: typeof args === 'string' ? args : JSON.stringify(args),
       complete: true,
+      ...(result !== undefined ? { result } : {}),
       ...(invalidArguments ? { invalidArguments } : {}),
     })
     const refused = artifactCall(
       'call-1',
       { source: { type: 'markdown' } },
+      { status: 'error', error: 'The arguments did not match.' },
       true,
     )
     const playbook = {
@@ -1048,6 +1052,7 @@ describe('DefaultMessageRenderer work traces', () => {
         variants: [{ label: 'Concise', body: 'Thanks.' }],
       }),
       complete: true,
+      result: accepted,
     }
     const reply = (...timeline: WireBlock[]): WireMessage => ({
       id: 'a1',
@@ -1068,7 +1073,7 @@ describe('DefaultMessageRenderer work traces', () => {
 
     // An artifact drawn before the refused call is not its retry.
     const { rerender } = render(
-      view(reply(artifactCall('call-0', playbook), refused), false),
+      view(reply(artifactCall('call-0', playbook, accepted), refused), false),
     )
     expect(screen.getByText(failure)).toBeInTheDocument()
 
@@ -1085,8 +1090,18 @@ describe('DefaultMessageRenderer work traces', () => {
     )
     expect(screen.getByText(failure)).toBeInTheDocument()
 
+    // The harness has yet to accept the retry.
+    rerender(view(reply(refused, compose, artifactCall('call-3', playbook))))
+    expect(
+      screen.getByRole('button', { name: /^Playbook/ }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(failure)).toBeInTheDocument()
+
     rerender(
-      view(reply(refused, compose, artifactCall('call-3', playbook)), false),
+      view(
+        reply(refused, compose, artifactCall('call-3', playbook, accepted)),
+        false,
+      ),
     )
     expect(screen.queryByText(failure)).not.toBeInTheDocument()
     expect(

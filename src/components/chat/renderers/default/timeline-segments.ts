@@ -34,8 +34,10 @@ export function isInvisibleBlock(block: TimelineBlock): boolean {
   }
 }
 
-function hasDrawableArguments(block: TimelineToolCallBlock): boolean {
-  if (block.invalidArguments) return false
+// Whether the harness accepted a widget call's arguments, which it answers
+// with a result, and they can be drawn.
+function isAcceptedCall(block: TimelineToolCallBlock): boolean {
+  if (block.invalidArguments || block.result === undefined) return false
   try {
     JSON.parse(block.arguments)
     return true
@@ -45,10 +47,10 @@ function hasDrawableArguments(block: TimelineToolCallBlock): boolean {
 }
 
 /**
- * Leaves out widget calls the harness refused once the reply goes on to draw
- * the same widget. The harness asks the model to call a widget again when it
- * refuses its arguments, so a later call is the retry and the refused one has
- * nothing left to show or offer.
+ * Leaves out widget calls the harness refused once it accepts a later call to
+ * the same widget in the reply. The harness asks the model to call a widget
+ * again when it refuses its arguments, so the later call is the retry and the
+ * refused one has nothing left to show or offer.
  */
 export function withoutRetriedWidgetCalls(
   timeline: TimelineBlock[],
@@ -64,7 +66,7 @@ export function withoutRetriedWidgetCalls(
   for (const block of [...timeline].reverse()) {
     if (block.type === 'tool_call' && refused.has(block.name)) {
       if (block.invalidArguments && drawnLater.has(block.name)) continue
-      if (hasDrawableArguments(block)) drawnLater.add(block.name)
+      if (isAcceptedCall(block)) drawnLater.add(block.name)
     }
     shown.push(block)
   }
