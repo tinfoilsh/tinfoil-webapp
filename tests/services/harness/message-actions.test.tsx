@@ -819,7 +819,12 @@ describe('reading a reply aloud', () => {
 
     expect(client.stream).toHaveBeenCalledExactlyOnceWith(
       '/v1/speech',
-      { local: true, thread: localThread(), messageId: 'a2' },
+      {
+        local: true,
+        threadId: THREAD_ID,
+        thread: localThread(),
+        messageId: 'a2',
+      },
       expect.any(AbortSignal),
     )
   })

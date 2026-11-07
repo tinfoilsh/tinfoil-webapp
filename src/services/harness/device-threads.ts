@@ -303,7 +303,7 @@ export function deviceThreads({
       if (!thread) throw notOnDevice('chat')
       return api.stream(
         ROUTES.speech,
-        { local: true, thread, messageId },
+        { local: true, threadId, thread, messageId },
         { signal, keyless: true },
       )
     },

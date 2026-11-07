@@ -1,3 +1,4 @@
+import { HarnessError } from '@/services/harness/sse'
 import { getAudioContextClass } from '@/utils/audio-context'
 import { logWarning } from '@/utils/error-handling'
 import { SPEECH } from './constants'
@@ -147,7 +148,12 @@ export class SpeechPlayer {
     logWarning('Read aloud failed', {
       component: 'SpeechPlayer',
       metadata: {
-        code: error instanceof SpeechError ? error.code : 'request-failed',
+        code:
+          error instanceof SpeechError
+            ? error.code
+            : error instanceof HarnessError
+              ? error.code
+              : 'request-failed',
       },
     })
     this.update({
