@@ -166,7 +166,9 @@ const shownAnswers = ({ result }: Hook) =>
 
 // Opens the stored quiz. The harness answers each save of answers with the
 // next of `saves`, held until the test settles it.
-async function openCloud(stored: () => Thread = () => cloudThread(quiz())) {
+async function openCloud(
+  stored: () => Thread | Promise<Thread> = () => cloudThread(quiz()),
+) {
   signIn({ cloud: true, session })
   const saves: {
     resolve: (thread: Thread) => void
@@ -308,12 +310,20 @@ describe('answering the questions of a stored chat', () => {
     expect(hook.result.current.answerSaves).toEqual({ quiz: 'failed' })
   })
 
-  it('keeps showing unsaved picks when the chat is read again', async () => {
+  it('keeps showing picks it failed to save when the chat is read again', async () => {
     const { hook, saves } = await openCloud()
+    let answering!: Promise<void>
     act(() => {
-      void hook.result.current.answerQuestions('a1', 'quiz', { q2: ['y'] })
+      answering = hook.result.current.answerQuestions('a1', 'quiz', {
+        q2: ['y'],
+      })
     })
     await waitFor(() => expect(saves).toHaveLength(1))
+    await act(async () => {
+      saves[0].reject(new TypeError('Failed to fetch'))
+      await answering
+    })
+    expect(hook.result.current.answerSaves).toEqual({ quiz: 'failed' })
     const reads = () =>
       client.post.mock.calls.filter(([path]) => path === '/v1/threads/get')
         .length
@@ -323,9 +333,35 @@ describe('answering the questions of a stored chat', () => {
     await waitFor(() => expect(reads()).toBe(before + 1))
 
     expect(shownAnswers(hook)).toEqual({ q2: ['y'] })
-    await act(async () => saves[0].resolve(cloudThread(quiz({ q2: ['y'] }))))
-    expect(shownAnswers(hook)).toEqual({ q2: ['y'] })
-    expect(hook.result.current.answerSaves).toEqual({})
+    expect(hook.result.current.answerSaves).toEqual({ quiz: 'failed' })
+  })
+
+  it('keeps answers saved while the chat is read again', async () => {
+    // The chat opens at once; each later read of it waits for the test.
+    const reads: ((thread: Thread) => void)[] = []
+    let opened = false
+    const { hook, saves } = await openCloud(() => {
+      if (opened)
+        return new Promise<Thread>((resolve) => {
+          reads.push(resolve)
+        })
+      opened = true
+      return cloudThread(quiz())
+    })
+    await act(async () => publish({ chatRevision: 'changed elsewhere' }))
+    await waitFor(() => expect(reads).toHaveLength(1))
+
+    act(() => {
+      void hook.result.current.answerQuestions('a1', 'quiz', { q1: ['b'] })
+    })
+    await waitFor(() => expect(saves).toHaveLength(1))
+    await act(async () => saves[0].resolve(cloudThread(quiz({ q1: ['b'] }))))
+    expect(shownAnswers(hook)).toEqual({ q1: ['b'] })
+
+    // The copy read before the answers were saved lacks them.
+    await act(async () => reads[0](cloudThread(quiz())))
+
+    expect(shownAnswers(hook)).toEqual({ q1: ['b'] })
   })
 })
 

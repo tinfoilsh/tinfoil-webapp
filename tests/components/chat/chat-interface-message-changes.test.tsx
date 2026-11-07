@@ -15,6 +15,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
 import { refuseFetch } from './chat-interface-fixture'
 
+const page = vi.hoisted(() => ({ toast: vi.fn() }))
+
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
 vi.mock('next/router', async () => (await import('./chat-page-mocks')).router)
 vi.mock('next/head', async () => (await import('./chat-page-mocks')).head)
@@ -47,6 +49,10 @@ vi.mock(
   '@/utils/error-handling',
   async () => (await import('./chat-page-mocks')).errorHandling,
 )
+vi.mock('@/hooks/use-toast', () => ({
+  toast: page.toast,
+  useToast: () => ({ toast: page.toast }),
+}))
 
 const THREAD_ID = 'thread-1'
 const thread: Thread = {
@@ -113,6 +119,7 @@ async function openHeld() {
 }
 
 beforeEach(() => {
+  page.toast.mockReset()
   authTokenManager.initialize(async () => 'clerk-jwt')
   refuseFetch()
 })
@@ -123,7 +130,7 @@ afterEach(() => {
 })
 
 describe('changing a message on the chat page', () => {
-  it('shows a rewritten reply at once, and its text again in the editor when the harness refuses it', async () => {
+  it('shows a rewritten reply at once, and its text again in the editor with a notice when the harness refuses it', async () => {
     const refuse = await openHeld()
     fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Edit response' }))
@@ -156,12 +163,18 @@ describe('changing a message on the chat page', () => {
     expect(screen.getByRole('textbox', { name: 'Edit response' })).toHaveValue(
       'A better reply',
     )
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Failed to edit response',
+      description: 'The message was not found',
+      variant: 'destructive',
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(screen.getByText('Hello there')).toBeInTheDocument()
     expect(screen.queryByText('A better reply')).not.toBeInTheDocument()
   })
 
-  it('removes a deleted message at once, and shows it again when the harness refuses', async () => {
+  it('removes a deleted message at once, and shows it again with a notice when the harness refuses', async () => {
     const refuse = await openHeld()
     fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
 
@@ -185,5 +198,11 @@ describe('changing a message on the chat page', () => {
 
     expect(screen.getByText('Hi')).toBeInTheDocument()
     expect(screen.getByText('Hello there')).toBeInTheDocument()
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Failed to delete message',
+      description: 'The message was not found',
+      variant: 'destructive',
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

@@ -603,11 +603,25 @@ export function ChatInterface({
         metadata: { chatId },
       })
     }
+  // A change to a chat that fails is undone where it showed, logged, and
+  // explained in a notice, rather than shown as a failure of the open
+  // chat's reply. The chat service, or this client, says why it failed.
+  const reportChatChange =
+    (message: string, chatId: string) => (cause: unknown) => {
+      if (cause instanceof DOMException && cause.name === 'AbortError') return
+      logListAction(message, chatId)(cause)
+      toast({
+        title: message,
+        description:
+          cause instanceof HarnessError ? cause.message : 'Please try again.',
+        variant: 'destructive',
+      })
+    }
   // Deleting the open chat leaves its address for a new chat's, which
   // replaces it in the history, as the chat is gone.
   const deleteChat = (id: string) => {
     const leaving = currentChat.id === id
-    void thread.remove(id).catch(logListAction('Failed to delete chat', id))
+    void thread.remove(id).catch(reportChatChange('Failed to delete chat', id))
     if (!leaving) return
     void router
       .replace(
@@ -629,7 +643,7 @@ export function ChatInterface({
   const updateChatTitle = (id: string, title: string) => {
     void thread
       .update(id, { title })
-      .catch(logListAction('Failed to rename chat', id))
+      .catch(reportChatChange('Failed to rename chat', id))
   }
   const handleModelSelect = (model: string) => {
     thread.setModel(model)
@@ -745,12 +759,14 @@ export function ChatInterface({
   // Message actions wait for the reply in progress, as on main.
   const deleteMessage = (index: number) => {
     if (isStreaming || currentChatIsFlagged) return
-    void thread.deleteMessage(index).catch(thread.report)
+    void thread
+      .deleteMessage(index)
+      .catch(reportChatChange('Failed to delete message', currentChat.id))
   }
   const editAssistantMessage = (index: number, content: string) => {
     if (isStreaming || currentChatIsFlagged) return
     const editing = thread.editReply(index, content)
-    editing.catch(thread.report)
+    editing.catch(reportChatChange('Failed to edit response', currentChat.id))
     return editing
   }
   const continueAssistantMessage = (index: number) => {
@@ -853,7 +869,7 @@ export function ChatInterface({
   const unpinChat = (id: string) => {
     void thread
       .update(id, { pinned: false })
-      .catch(logListAction('Failed to unpin chat', id))
+      .catch(reportChatChange('Failed to unpin chat', id))
   }
   // Chats move between the cloud and this device with cloud sync.
   const canMoveChats = cloudSyncEnabled
@@ -924,7 +940,7 @@ export function ChatInterface({
     }
     await thread
       .update(favorite.id, { pinned: true })
-      .catch(logListAction('Failed to pin chat', favorite.id))
+      .catch(reportChatChange('Failed to pin chat', favorite.id))
   }
   const handleOpenFavorite = (chat: { id: string }) => handleChatSelect(chat.id)
   // A chat kept on this device moves to the cloud before it joins a project;

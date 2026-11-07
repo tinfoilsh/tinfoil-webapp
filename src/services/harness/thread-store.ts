@@ -142,6 +142,9 @@ export function cloudThreads(
       { id: attachment.id, ...(threadId ? { threadId } : {}) },
       { signal },
     )
+  // The chats deleted here, which a change answered after the deletion
+  // does not list again.
+  const deleted = new Set<string>()
   // The harness changes a stored chat's message and answers with its
   // latest window.
   const changeMessage = async (
@@ -158,12 +161,13 @@ export function cloudThreads(
     },
   ) => {
     const thread = await api.post<Thread>(path, input)
-    list.replace(summaryOf(thread))
+    if (!deleted.has(input.threadId)) list.replace(summaryOf(thread))
     return thread
   }
-  // The latest change asked of each chat, so an earlier change answered
-  // after it does not list the chat as it was before the latest.
-  const latestUpdate = new Map<string, number>()
+  // The changes of each chat still saving, and the latest of them the
+  // harness saved, so an earlier change answered after a later one does not
+  // list the chat as it was before the later one.
+  const saving = new Map<string, { unanswered: number; saved: number }>()
   let updates = 0
   return {
     local: false,
@@ -172,20 +176,26 @@ export function cloudThreads(
       api.post<Thread>(ROUTES.get, { id: threadId, before }),
     async update(threadId, patch) {
       const update = ++updates
-      latestUpdate.set(threadId, update)
+      const chat = saving.get(threadId) ?? { unanswered: 0, saved: 0 }
+      chat.unanswered++
+      saving.set(threadId, chat)
       try {
         const summary = await api.post<ThreadSummary>(ROUTES.update, {
           id: threadId,
           ...patch,
         })
-        if (latestUpdate.get(threadId) === update) list.replace(summary)
+        if (update > chat.saved && !deleted.has(threadId)) {
+          chat.saved = update
+          list.replace(summary)
+        }
         return summary
       } finally {
-        if (latestUpdate.get(threadId) === update) latestUpdate.delete(threadId)
+        if (--chat.unanswered === 0) saving.delete(threadId)
       }
     },
     async remove(threadId) {
       await api.post(ROUTES.delete, { id: threadId })
+      deleted.add(threadId)
       list.remove(threadId)
     },
     async fork(threadId, messageId) {

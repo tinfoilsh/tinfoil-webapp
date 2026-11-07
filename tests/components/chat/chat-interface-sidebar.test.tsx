@@ -28,6 +28,8 @@ import {
 import { refuseFetch } from './chat-interface-fixture'
 import { chatPage, errorHandling } from './chat-page-mocks'
 
+const page = vi.hoisted(() => ({ toast: vi.fn() }))
+
 vi.mock('@clerk/react', async () => (await import('./chat-page-mocks')).clerk)
 vi.mock('next/router', async () => (await import('./chat-page-mocks')).router)
 vi.mock('next/head', async () => (await import('./chat-page-mocks')).head)
@@ -65,6 +67,10 @@ vi.mock(
   '@/utils/error-handling',
   async () => (await import('./chat-page-mocks')).errorHandling,
 )
+vi.mock('@/hooks/use-toast', () => ({
+  toast: page.toast,
+  useToast: () => ({ toast: page.toast }),
+}))
 
 resetChatStoresAroundEachTest()
 
@@ -118,6 +124,7 @@ beforeEach(() => {
   chatPage.router.push.mockReset().mockResolvedValue(true)
   chatPage.router.replace.mockReset().mockResolvedValue(true)
   errorHandling.logError.mockReset()
+  page.toast.mockReset()
   refuseFetch()
 })
 
@@ -715,7 +722,7 @@ it.each(['saved', 'refused'] as const)(
 )
 
 it.each(['rename', 'delete', 'pin'] as const)(
-  'logs a refused %s instead of reporting a problem with the open chat',
+  'tells the user a %s failed instead of reporting a problem with the open chat',
   async (action) => {
     signIn({ cloud: true })
     const alpha = cloudChat('alpha-chat', 'Alpha chat', '2026-10-22T12:00:00Z')
@@ -766,6 +773,13 @@ it.each(['rename', 'delete', 'pin'] as const)(
         metadata: { chatId: beta.id },
       }),
     )
+    // The refusal's own words are not the chat service's, so the notice
+    // does not repeat them.
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: message,
+      description: 'Please try again.',
+      variant: 'destructive',
+    })
     expect(screen.queryByText('Connection problem')).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   },
