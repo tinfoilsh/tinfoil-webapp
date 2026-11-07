@@ -62,17 +62,28 @@ it('stays while the pointer or focus is on it, coming back if it was sliding awa
   expect(onDismiss).toHaveBeenCalledOnce()
 })
 
-it('waits for the page to show again before it slides away', () => {
+it('waits for the page to show again before it slides away, coming back if it was sliding away', () => {
   const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
   const onDismiss = renderNotice()
+  const notice = screen.getByRole('status', { name: 'Conversation compacted' })
+  const show = (shown: boolean) => {
+    hidden.mockReturnValue(!shown)
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+  }
+  waitToLeave()
+  waitToLeave()
+  show(true)
+  wait(COMPACTED_NOTICE_SHOWN_MS)
+  expect(notice).toHaveAttribute('data-leaving')
+
+  show(false)
+  expect(notice).not.toHaveAttribute('data-leaving')
   waitToLeave()
   waitToLeave()
   expect(onDismiss).not.toHaveBeenCalled()
-
-  hidden.mockReturnValue(false)
-  act(() => {
-    document.dispatchEvent(new Event('visibilitychange'))
-  })
+  show(true)
   waitToLeave()
 
   expect(onDismiss).toHaveBeenCalledOnce()

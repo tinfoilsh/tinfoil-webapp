@@ -1,5 +1,5 @@
 import { TfBoxCheckmark, TfBoxX } from '@tinfoilsh/tinfoil-icons'
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import { COMPACTING_LABEL } from './renderers/components/CompactionMarker'
 
@@ -10,11 +10,6 @@ const COMPACTED_LABEL = 'Conversation compacted'
 // composer, and how long sliding away takes.
 export const COMPACTED_NOTICE_SHOWN_MS = 3000
 export const COMPACTED_NOTICE_EXIT_MS = 400
-
-function onVisibilityChange(changed: () => void) {
-  document.addEventListener('visibilitychange', changed)
-  return () => document.removeEventListener('visibilitychange', changed)
-}
 
 // Says the open chat is being compacted, above the composer and the messages
 // queued behind the compaction, which send once it ends.
@@ -55,14 +50,19 @@ export function CompactedNotice({
   const [leaving, setLeaving] = useState(false)
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
-  const pageHidden = useSyncExternalStore(
-    onVisibilityChange,
-    () => document.hidden,
-    () => false,
-  )
+  const [pageHidden, setPageHidden] = useState(() => document.hidden)
   const dismiss = useRef(onDismiss)
   dismiss.current = onDismiss
   const held = hovered || focused || pageHidden
+  // A page hidden as the notice slides away shows it again when it returns.
+  useEffect(() => {
+    const changed = () => {
+      setPageHidden(document.hidden)
+      if (document.hidden) setLeaving(false)
+    }
+    document.addEventListener('visibilitychange', changed)
+    return () => document.removeEventListener('visibilitychange', changed)
+  }, [])
   useEffect(() => {
     if (held) return
     if (!leaving) {
