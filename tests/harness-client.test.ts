@@ -1631,6 +1631,25 @@ describe('attested harness transport', () => {
       expect(signalOf(0)?.aborted).toBe(true)
     })
 
+    it('fails a request about a chat in time while the account token it waits for stalls', async () => {
+      fakeTimeouts()
+      const secure = transport()
+      const client = new HarnessClient(
+        'https://harness.example',
+        () => new Promise<string>(() => {}),
+        () => secure,
+      )
+      const listing = track(client.post('/v1/threads/list', {}))
+
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS)
+
+      expect(listing.failure).toBeInstanceOf(HarnessError)
+      expect(listing.failure).toMatchObject({
+        detail: { code: 'CONNECTION', action: 'retry' },
+      })
+      expect(secure.fetch).not.toHaveBeenCalled()
+    })
+
     it('gives a request about a chat the time its body takes to send', async () => {
       fakeTimeouts()
       const { secure, client, signalOf } = stalled()

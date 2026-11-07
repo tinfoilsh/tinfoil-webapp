@@ -85,18 +85,28 @@ const PROMPT_ROUTES: ReadonlySet<HarnessRoute> = new Set([
 ])
 
 // Sends a request that must be answered by a deadline. One that is not
-// fails as unanswered, unless the caller ended it first.
+// fails as unanswered, unless the caller ended it first, even while a step
+// that takes no signal, such as reading the account's token, holds it.
 async function withDeadline<T>(
   ms: number,
   signal: AbortSignal | undefined,
   send: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   const deadline = new AbortController()
-  const timer = setTimeout(() => deadline.abort(), ms)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      deadline.abort()
+      reject(new HarnessError(unanswered()))
+    }, ms)
+  })
   try {
-    return await send(
-      signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal,
-    )
+    return await Promise.race([
+      send(
+        signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal,
+      ),
+      expired,
+    ])
   } catch (cause) {
     if (deadline.signal.aborted && !signal?.aborted)
       throw new HarnessError(unanswered())
