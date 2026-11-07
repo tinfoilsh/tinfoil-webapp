@@ -1,4 +1,7 @@
-import type { TimelineBlock } from '@/components/chat/types'
+import type {
+  TimelineBlock,
+  TimelineToolCallBlock,
+} from '@/components/chat/types'
 import { isAnyURLFetching } from '../components/URLFetchProcess'
 import type { WorkBlock } from '../components/WorkProcess'
 
@@ -29,6 +32,43 @@ export function isInvisibleBlock(block: TimelineBlock): boolean {
     default:
       return false
   }
+}
+
+function hasDrawableArguments(block: TimelineToolCallBlock): boolean {
+  if (block.invalidArguments) return false
+  try {
+    JSON.parse(block.arguments)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Leaves out widget calls the harness refused once the reply goes on to draw
+ * the same widget. The harness asks the model to call a widget again when it
+ * refuses its arguments, so a later call is the retry and the refused one has
+ * nothing left to show or offer.
+ */
+export function withoutRetriedWidgetCalls(
+  timeline: TimelineBlock[],
+): TimelineBlock[] {
+  const refused = new Set(
+    timeline.flatMap((block) =>
+      block.type === 'tool_call' && block.invalidArguments ? [block.name] : [],
+    ),
+  )
+  if (refused.size === 0) return timeline
+  const drawnLater = new Set<string>()
+  const shown: TimelineBlock[] = []
+  for (const block of [...timeline].reverse()) {
+    if (block.type === 'tool_call' && refused.has(block.name)) {
+      if (block.invalidArguments && drawnLater.has(block.name)) continue
+      if (hasDrawableArguments(block)) drawnLater.add(block.name)
+    }
+    shown.push(block)
+  }
+  return shown.length === timeline.length ? timeline : shown.reverse()
 }
 
 // Whether a block is a step that still runs.

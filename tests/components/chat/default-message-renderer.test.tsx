@@ -1013,6 +1013,88 @@ describe('DefaultMessageRenderer work traces', () => {
     expect(onRetryToolCall).toHaveBeenCalledExactlyOnceWith(1, 'call-1')
   })
 
+  it('drops a refused widget call once the reply draws that widget again', () => {
+    const failure = "Couldn't display artifact preview"
+    const artifactCall = (
+      id: string,
+      args: unknown,
+      invalidArguments?: boolean,
+    ): WireBlock => ({
+      id,
+      type: 'tool_call',
+      toolCallId: id,
+      name: 'render_artifact_preview',
+      arguments: typeof args === 'string' ? args : JSON.stringify(args),
+      complete: true,
+      ...(invalidArguments ? { invalidArguments } : {}),
+    })
+    const refused = artifactCall(
+      'call-1',
+      { source: { type: 'markdown' } },
+      true,
+    )
+    const playbook = {
+      title: 'Playbook',
+      source: { type: 'markdown', markdown: '# Playbook' },
+    }
+    const compose: WireBlock = {
+      id: 'call-2',
+      type: 'tool_call',
+      toolCallId: 'call-2',
+      name: 'render_message_compose',
+      arguments: JSON.stringify({
+        channel: 'message',
+        title: 'Reply draft',
+        variants: [{ label: 'Concise', body: 'Thanks.' }],
+      }),
+      complete: true,
+    }
+    const reply = (...timeline: WireBlock[]): WireMessage => ({
+      id: 'a1',
+      role: 'assistant',
+      createdAt: '2026-08-07T00:00:01.000Z',
+      timeline,
+    })
+    const view = (message: WireMessage, isStreaming = true) => (
+      <Renderer
+        message={messageView(message, isStreaming)}
+        messageIndex={1}
+        model={model}
+        isDarkMode={false}
+        isLastMessage
+        isStreaming={isStreaming}
+      />
+    )
+
+    // An artifact drawn before the refused call is not its retry.
+    const { rerender } = render(
+      view(reply(artifactCall('call-0', playbook), refused), false),
+    )
+    expect(screen.getByText(failure)).toBeInTheDocument()
+
+    rerender(view(reply(refused)))
+    expect(screen.getByText(failure)).toBeInTheDocument()
+
+    // Another widget is not its retry either.
+    rerender(view(reply(refused, compose)))
+    expect(screen.getByText('Reply draft')).toBeInTheDocument()
+    expect(screen.getByText(failure)).toBeInTheDocument()
+
+    rerender(
+      view(reply(refused, compose, artifactCall('call-3', '{"title":"Play'))),
+    )
+    expect(screen.getByText(failure)).toBeInTheDocument()
+
+    rerender(
+      view(reply(refused, compose, artifactCall('call-3', playbook)), false),
+    )
+    expect(screen.queryByText(failure)).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /^Playbook/ }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Reply draft')).toBeInTheDocument()
+  })
+
   it('shows a link the reply cites as a citation', () => {
     renderReply(
       searchReply(

@@ -39,6 +39,7 @@ import {
   isInvisibleBlock,
   isRunningStep,
   segmentTimeline,
+  withoutRetriedWidgetCalls,
 } from './timeline-segments'
 
 const hasVisibleAssistantMessage = (message: MessageRenderProps['message']) =>
@@ -106,7 +107,7 @@ const DefaultMessageComponent = ({
   const showMetadata = hasVisibleAssistantMessage(message)
 
   const displayTimeline = React.useMemo(
-    () => (isUser ? [] : (message.timeline ?? [])),
+    () => (isUser ? [] : withoutRetriedWidgetCalls(message.timeline ?? [])),
     [isUser, message.timeline],
   )
   const timelineSegments = React.useMemo(
