@@ -2416,21 +2416,25 @@ ${encryptionKey.replace('key_', '')}
                         className="grid grid-cols-5 gap-2"
                       >
                         {READ_ALOUD_SPEEDS.map((speed) => (
-                          <button
+                          <label
                             key={speed}
-                            type="button"
-                            role="radio"
-                            aria-checked={readAloudSpeed === speed}
-                            onClick={() => setReadAloudSpeed(speed)}
                             className={cn(
-                              'rounded-lg border px-2 py-1.5 text-xs text-content-primary transition-all',
+                              'cursor-pointer rounded-lg border px-2 py-1.5 text-center text-xs text-content-primary transition-all has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-accent-light',
                               readAloudSpeed === speed
                                 ? 'border-brand-accent-light bg-brand-accent-light/10'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
+                            <input
+                              type="radio"
+                              name={readAloudSpeedLabelId}
+                              value={speed}
+                              checked={readAloudSpeed === speed}
+                              onChange={() => setReadAloudSpeed(speed)}
+                              className="sr-only"
+                            />
                             {speed}×
-                          </button>
+                          </label>
                         ))}
                       </div>
                     </div>
