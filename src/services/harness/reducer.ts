@@ -85,6 +85,13 @@ export function canceledBy(state: ChatState, event: TerminalEvent): string[] {
   return last?.role === 'user' ? [last.id] : []
 }
 
+// The replies a run committed stopped because the model ran out of room for
+// them in its context window.
+export function truncatedBy(event: TerminalEvent): string[] {
+  if (event.type !== 'RUN_FINISHED' || !event.metadata?.truncated) return []
+  return (event.metadata.messages ?? []).map(({ id }) => id)
+}
+
 export function initialChat(thread?: Thread): ChatState {
   return {
     snapshot: { thread: thread ?? null, queue: [] },

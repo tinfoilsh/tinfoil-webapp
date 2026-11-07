@@ -927,14 +927,17 @@ const DefaultMessageComponent = ({
         )}
 
       {/* A reply stopped early says so. Only one the user stopped here says
-          who stopped it: the service stops replies when it restarts too. */}
+          who stopped it: the service stops replies when it restarts too, and
+          when the model runs out of room for them, which says so. */}
       {!(isStreaming && isLastMessage) &&
         (message.canceledByUser || (!isUser && message.isInterrupted)) && (
           <div className="flex w-full items-center gap-2 px-4 pt-2">
             <p className="text-left text-xs text-content-muted">
               {message.canceledByUser
                 ? 'Response canceled by user'
-                : 'Response stopped'}
+                : message.truncated
+                  ? 'Response reached the length limit'
+                  : 'Response stopped'}
             </p>
             {/* The last reply the service stopped goes on where it stopped. */}
             {!message.canceledByUser &&

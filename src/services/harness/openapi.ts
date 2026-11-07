@@ -1385,7 +1385,7 @@ export interface components {
           path: '/thread/titleState'
           value: components['schemas']['TitleState']
         }
-    /** @description A turn waiting behind its chat's running reply. */
+    /** @description A turn waiting behind its chat's running reply. A run that ends lists the turn starting after it until that turn's run starts. */
     QueueItem: {
       queueId: string
       kind: string
@@ -1612,6 +1612,8 @@ export interface components {
       }
       rateLimit?: components['schemas']['RateLimit']
       cancelled?: boolean
+      /** @description The model filled the room its window left the run's reply, which ended it there. The reply is committed interrupted, so a continue turn goes on from where it stopped; a client may say why it stopped while it shows the run's end. */
+      truncated?: boolean
     }
     /** @description What a run commits to a reply beyond its streamed content. */
     CommittedReply: {

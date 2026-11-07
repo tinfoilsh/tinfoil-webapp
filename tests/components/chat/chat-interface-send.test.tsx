@@ -527,7 +527,12 @@ it('shows a chat the locked key keeps closed as unavailable, then loads it once 
 // committed as interrupted, or not.
 function scriptStoppedRun(
   end: Promise<void>,
-  { cancelled = true, started = Promise.resolve(), replied = true } = {},
+  {
+    cancelled = true,
+    truncated = false,
+    started = Promise.resolve(),
+    replied = true,
+  } = {},
 ) {
   client.events.mockImplementationOnce(async function* (
     _path: string,
@@ -562,8 +567,48 @@ function scriptStoppedRun(
         threadId: input.threadId!,
         metadata: {
           cancelled,
-          messages: replied ? [{ id: 'answer', isInterrupted: cancelled }] : [],
+          ...(truncated ? { truncated } : {}),
+          messages: replied
+            ? [{ id: 'answer', isInterrupted: cancelled || truncated }]
+            : [],
         },
+      },
+    }
+  })
+}
+
+// Streams the next turn as a continuation of the reply `answer` that ends it.
+function scriptContinuation() {
+  client.events.mockImplementationOnce(async function* (
+    _path: string,
+    input: Turn,
+  ): AsyncGenerator<Frame> {
+    yield {
+      id: 0,
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'continued',
+        threadId: input.threadId!,
+        instance: 'instance-1',
+        messageId: 'answer',
+      },
+    }
+    yield {
+      id: 1,
+      event: {
+        type: 'TEXT_MESSAGE_CHUNK',
+        messageId: 'answer',
+        role: 'assistant',
+        delta: ' here.',
+      },
+    }
+    yield {
+      id: 2,
+      event: {
+        type: 'RUN_FINISHED',
+        runId: 'continued',
+        threadId: input.threadId!,
+        metadata: { messages: [{ id: 'answer', isInterrupted: false }] },
       },
     }
   })
@@ -844,39 +889,7 @@ it('continues a reply the service stopped where it stopped, in one tap', async (
   signIn({ cloud: true })
   scriptStoppedRun(Promise.resolve())
   answerStops()
-  client.events.mockImplementationOnce(async function* (
-    _path: string,
-    input: Turn,
-  ): AsyncGenerator<Frame> {
-    yield {
-      id: 0,
-      event: {
-        type: 'RUN_STARTED',
-        runId: 'continued',
-        threadId: input.threadId!,
-        instance: 'instance-1',
-        messageId: 'answer',
-      },
-    }
-    yield {
-      id: 1,
-      event: {
-        type: 'TEXT_MESSAGE_CHUNK',
-        messageId: 'answer',
-        role: 'assistant',
-        delta: ' here.',
-      },
-    }
-    yield {
-      id: 2,
-      event: {
-        type: 'RUN_FINISHED',
-        runId: 'continued',
-        threadId: input.threadId!,
-        metadata: { messages: [{ id: 'answer', isInterrupted: false }] },
-      },
-    }
-  })
+  scriptContinuation()
   renderChat()
   await send()
 
@@ -907,5 +920,30 @@ it('continues a reply the service stopped where it stopped, in one tap', async (
   expect(screen.queryByText('Response stopped')).not.toBeInTheDocument()
   expect(
     screen.queryByRole('button', { name: 'Continue response' }),
+  ).not.toBeInTheDocument()
+})
+
+it('says a reply the model ran out of room for reached the length limit until it is continued', async () => {
+  signIn({ cloud: true })
+  scriptStoppedRun(Promise.resolve(), { cancelled: false, truncated: true })
+  answerStops()
+  scriptContinuation()
+  renderChat()
+  await send()
+
+  expect(
+    await screen.findByText('Response reached the length limit'),
+  ).toBeInTheDocument()
+  expect(screen.queryByText('Response stopped')).not.toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Continue response' }))
+
+  await waitFor(() =>
+    expect(screen.getByRole('article', { name: 'Al said' })).toHaveTextContent(
+      'The answer is here.',
+    ),
+  )
+  expect(
+    screen.queryByText('Response reached the length limit'),
   ).not.toBeInTheDocument()
 })
