@@ -1673,6 +1673,27 @@ describe('attested harness transport', () => {
       expect(editing).toEqual({ settled: true })
     })
 
+    // A character outside ASCII takes more than one byte to send: each of
+    // these takes three.
+    it('gives a request about a chat the time each byte of its text takes to send', async () => {
+      fakeTimeouts()
+      const { client, signalOf } = stalled()
+      const text = '€'.repeat(1 << 20)
+      const editing = track(
+        client.post('/v1/threads/messages/update', {
+          threadId: 't',
+          messageId: 'm',
+          content: text,
+        }),
+      )
+
+      // Past the time its characters, counted as bytes, would take.
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS * 3)
+
+      expect(editing.settled).toBe(false)
+      expect(signalOf(0)?.aborted).toBe(false)
+    })
+
     it('ends a request its caller ended as the caller did', async () => {
       fakeTimeouts()
       const { client } = stalled()

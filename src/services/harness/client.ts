@@ -408,7 +408,10 @@ export class HarnessClient {
     return PROMPT_ROUTES.has(path)
       ? withDeadline(
           REQUEST_TIMEOUT_MS +
-            Math.floor(body.length / SLOW_UPLOAD_BYTES_PER_MS),
+            Math.floor(
+              new TextEncoder().encode(body).byteLength /
+                SLOW_UPLOAD_BYTES_PER_MS,
+            ),
           signal,
           send,
         )
