@@ -175,7 +175,7 @@ export function ContextUsageIndicator({
         </span>
       )}
       {!isOpen && (
-        <span className="pointer-events-none absolute bottom-full right-0 z-20 mb-1 w-max max-w-xs whitespace-normal rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-center text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+        <span className="pointer-events-none absolute bottom-full right-0 z-20 mb-1 w-max max-w-xs whitespace-normal text-balance rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-center text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
           {tooltip}
         </span>
       )}
