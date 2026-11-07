@@ -469,3 +469,53 @@ function createMarkdownComponents(): Components {
 }
 
 export const markdownComponents = createMarkdownComponents()
+
+const TASK_LIST_CLASS = 'contains-task-list'
+
+// An artifact is a document of its own: its rules separate sections, its
+// task lists show checkboxes instead of bullets, and its tables scroll
+// inside the panel instead of breaking out of the chat column.
+export const artifactMarkdownComponents: Components = {
+  ...markdownComponents,
+
+  hr({ node: _node, ...props }: any) {
+    return <hr {...props} className="my-5 border-border-subtle" />
+  },
+
+  table({ children }: any) {
+    return (
+      <div
+        tabIndex={0}
+        role="group"
+        aria-label="Table, scroll horizontally to see more"
+        className="my-4 overflow-x-auto rounded-lg border border-border-subtle"
+      >
+        <table className="my-0 w-full divide-y divide-border-subtle">
+          {children}
+        </table>
+      </div>
+    )
+  },
+
+  ul({ children, className, node: _node, ...props }: any) {
+    const isTaskList = String(className ?? '')
+      .split(' ')
+      .includes(TASK_LIST_CLASS)
+    return (
+      <ul
+        {...props}
+        className={
+          isTaskList
+            ? 'my-2 list-none pl-1 text-content-primary'
+            : 'my-2 list-disc pl-6 text-content-primary'
+        }
+      >
+        {children}
+      </ul>
+    )
+  },
+
+  input({ node: _node, ...props }: any) {
+    return <input {...props} className="mr-2 align-middle" />
+  },
+}

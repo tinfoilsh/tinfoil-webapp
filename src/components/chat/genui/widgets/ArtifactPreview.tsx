@@ -10,6 +10,8 @@
  * Supported source types: `url`, `html`, `markdown`, `svg`, `mermaid`.
  */
 import { CONSTANTS } from '@/components/chat/constants'
+import { artifactMarkdownComponents } from '@/components/chat/renderers/components/markdown-components'
+import { MessageContent } from '@/components/chat/renderers/components/MessageContent'
 import CopyButton from '@/components/copy-button'
 import {
   SandboxUnavailable,
@@ -32,7 +34,6 @@ import {
 } from '@tinfoilsh/tinfoil-icons/animated'
 import { FileText } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
 import { defineGenUIWidget } from '../types'
 import type { RenderArtifactPreviewArgs } from '../widget-args'
 
@@ -273,11 +274,13 @@ function Preview({
   source,
   title,
   className,
+  isDarkMode,
   shouldAutoFocusIframe = false,
 }: {
   source: ArtifactSource
   title?: string
   className?: string
+  isDarkMode: boolean
   shouldAutoFocusIframe?: boolean
 }) {
   switch (source.type) {
@@ -305,18 +308,22 @@ function Preview({
         />
       )
     case 'markdown':
+      // Rendered like a chat reply, with the same plugins and elements.
       return (
-        <div
-          className={
-            className ??
-            'prose prose-sm max-w-none text-content-primary dark:prose-invert'
-          }
-        >
-          <ReactMarkdown>{source.markdown}</ReactMarkdown>
+        <div className={className ?? MARKDOWN_PREVIEW_CLASS_NAME}>
+          <MessageContent
+            content={source.markdown}
+            isDarkMode={isDarkMode}
+            components={artifactMarkdownComponents}
+          />
         </div>
       )
   }
 }
+
+// The colors a chat reply's markdown takes, in light and dark mode alike.
+const MARKDOWN_PREVIEW_CLASS_NAME =
+  'prose prose-sm max-w-none text-content-primary prose-headings:text-content-primary prose-strong:text-content-primary prose-code:text-content-primary prose-a:text-blue-500 hover:prose-a:text-blue-600 prose-pre:bg-transparent prose-pre:p-0'
 
 function getSidebarPreviewClassName(source: ArtifactSource): string {
   switch (source.type) {
@@ -324,7 +331,7 @@ function getSidebarPreviewClassName(source: ArtifactSource): string {
     case 'html':
       return 'h-full w-full border-0 bg-white'
     case 'markdown':
-      return 'prose prose-sm h-full max-w-none overflow-auto px-4 py-3 text-content-primary dark:prose-invert'
+      return cn(MARKDOWN_PREVIEW_CLASS_NAME, 'h-full overflow-auto px-4 py-3')
   }
 }
 
@@ -446,6 +453,7 @@ export function ArtifactPreviewPanel({
             className={
               isSidebarLayout ? getSidebarPreviewClassName(source) : undefined
             }
+            isDarkMode={isDarkMode}
             shouldAutoFocusIframe={isSidebarLayout}
           />
         ) : (
