@@ -156,9 +156,12 @@ export default function App({ Component, pageProps, router }: AppProps) {
     <>
       <Head>
         <title key="page-title">Tinfoil Chat</title>
+        {/* Without interactive-widget, Android browsers keep the layout full
+            height under the on-screen keyboard, leaving the composer at the
+            bottom of the app shell behind it. */}
         <meta
           name="viewport"
-          content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
+          content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
         />
         <meta
           key="description"
