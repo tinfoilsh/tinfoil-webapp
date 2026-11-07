@@ -1,4 +1,5 @@
 import type { Attachment as UIAttachment } from '@/components/chat/types'
+import { speechSpeed } from '@/services/speech/speed'
 import { logError } from '@/utils/error-handling'
 import {
   heldImages,
@@ -303,7 +304,7 @@ export function deviceThreads({
       if (!thread) throw notOnDevice('chat')
       return api.stream(
         ROUTES.speech,
-        { local: true, threadId, thread, messageId },
+        { local: true, threadId, thread, messageId, ...speechSpeed() },
         { signal, keyless: true },
       )
     },
