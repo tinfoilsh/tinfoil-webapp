@@ -174,7 +174,7 @@ describe('Markdown artifact PDF', () => {
   )
 
   it('fetches the monospace and regular emoji fonts only for code and emoji that use them', async () => {
-    renderChatCard('Run `npm test` 🎉')
+    renderChatCard('Run `npm test` 🎉 to check $$E = mc^2$$')
     fireEvent.click(screen.getByRole('button', { name: 'Download as PDF' }))
     await waitFor(() => expect(saved).toHaveLength(1))
 
@@ -182,11 +182,56 @@ describe('Markdown artifact PDF', () => {
       new Uint8Array(await saved[0].blob.arrayBuffer()),
       { mergePages: true },
     )
-    expect(normalized(text)).toContain('Run npm test 🎉')
+    expect(normalized(text)).toContain('Run npm test 🎉 to check E = mc^2')
+    expect(text).not.toContain('$$')
     expect(requests.map(({ url }) => new URL(url).pathname)).toEqual(
       ['DejaVuSans.ttf', 'DejaVuSansMono.ttf', 'NotoEmoji-Regular.ttf'].map(
         (name) => `${FONT_DIRECTORY}${name}`,
       ),
+    )
+  })
+
+  it('keeps a row taller than a page whole, and a closing heading with the text before it', async () => {
+    const words = Array.from({ length: 1500 }, (_, index) => `w${index}`)
+    renderChatCard(
+      `| Item | Notes |\n|---|---|\n| long | ${words.join(' ')} |\n| next | row |\n\nAfter the table.\n\n## Closing heading\n`,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Download as PDF' }))
+    await waitFor(() => expect(saved).toHaveLength(1))
+
+    const { totalPages, text } = await extractText(
+      new Uint8Array(await saved[0].blob.arrayBuffer()),
+      { mergePages: false },
+    )
+    expect(totalPages).toBeGreaterThan(1)
+    const pages = text.map(normalized)
+    const printed = new Set(pages.join(' ').split(' '))
+    expect(words.filter((word) => !printed.has(word))).toEqual([])
+    expect(pages.slice(1).every((page) => page.startsWith('Item Notes '))).toBe(
+      true,
+    )
+    expect(pages.at(-1)).toContain('next row After the table. Closing heading')
+  })
+
+  it('moves a heading that would end a page to the next page', async () => {
+    const { createMarkdownPdf } = await import('@/utils/markdown-pdf')
+    const pageEnds: string[] = []
+    // As the filler grows, the heading reaches the foot of the first page.
+    for (let lines = 24; lines <= 44; lines++) {
+      const filler = Array.from({ length: lines }, (_, line) => `Line ${line}.`)
+      const pdf = await createMarkdownPdf(
+        `${filler.join('\n\n')}\n\n## Section heading\n\nSection text.`,
+      )
+      const { text } = await extractText(
+        new Uint8Array(await pdf.arrayBuffer()),
+        { mergePages: false },
+      )
+      for (const page of text.slice(0, -1))
+        pageEnds.push(normalized(page).replace(/\s*\d+ \/ \d+\s*$/, ''))
+    }
+    expect(pageEnds.length).toBeGreaterThan(0)
+    expect(pageEnds.filter((end) => end.endsWith('Section heading'))).toEqual(
+      [],
     )
   })
 

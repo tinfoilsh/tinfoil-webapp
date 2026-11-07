@@ -10,6 +10,10 @@
  * outlines, as PDF fonts cannot draw color emoji. Letters of scripts neither
  * covers, such as Chinese or Japanese, show as empty boxes.
  */
+import {
+  processLatexTags,
+  sanitizeUnsupportedMathBlocks,
+} from '@/utils/latex-processing'
 import { preprocessMarkdown } from '@/utils/markdown-preprocessing'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import type {
@@ -44,6 +48,7 @@ import type {
 } from 'pdfmake/interfaces'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 
@@ -81,6 +86,7 @@ const PAGE_WIDTH = 595.28
 const PAGE_MARGINS: [number, number, number, number] = [56, 56, 56, 56]
 const CONTENT_WIDTH = PAGE_WIDTH - PAGE_MARGINS[0] - PAGE_MARGINS[2]
 const FOOTER_OFFSET = 24
+const PAGE_NUMBER_STYLE = 'pageNumber'
 
 const FONT_SIZE = 10.5
 const LINE_HEIGHT = 1.3
@@ -334,6 +340,9 @@ class PdfWriter {
         return node.alt ? this.runs(node.alt, { ...marks, italics: true }) : []
       case 'footnoteReference':
         return this.runs(node.label ?? node.identifier, { ...marks, sup: true })
+      // Formulas keep their TeX source, as code.
+      case 'inlineMath':
+        return this.runs(node.value, { ...marks, code: true })
       case 'html':
         return INLINE_LINE_BREAK.test(node.value.trim())
           ? this.runs('\n', marks)
@@ -362,6 +371,14 @@ class PdfWriter {
         return [{ ...this.list(node, context), margin: gap }]
       case 'code':
         return [this.code(node)]
+      case 'math':
+        return [
+          {
+            text: this.runs(node.value, { code: true }),
+            alignment: 'center',
+            margin: gap,
+          },
+        ]
       case 'table':
         return [this.table(node)]
       case 'html': {
@@ -504,8 +521,6 @@ class PdfWriter {
     return {
       table: {
         headerRows: 1,
-        keepWithHeaderRows: 1,
-        dontBreakRows: true,
         widths,
         body: rows,
       },
@@ -551,10 +566,16 @@ interface MarkdownPdf {
 }
 
 function markdownPdf(markdown: string, title?: string): MarkdownPdf {
-  const processor = unified().use(remarkParse).use(remarkGfm).use(remarkBreaks)
-  const root = processor.runSync(
-    processor.parse(preprocessMarkdown(markdown)),
-  ) as Root
+  // Parsed with the plugins a chat reply uses.
+  const processor = unified()
+    .use(remarkParse)
+    .use(remarkMath, { singleDollarTextMath: false })
+    .use(remarkGfm)
+    .use(remarkBreaks)
+  const text = sanitizeUnsupportedMathBlocks(
+    processLatexTags(preprocessMarkdown(markdown)),
+  )
+  const root = processor.runSync(processor.parse(text)) as Root
   const writer = new PdfWriter(definitionsOf(root))
   const content = [
     ...writer.blocks(root.children, { width: CONTENT_WIDTH, tight: false }),
@@ -586,17 +607,28 @@ function markdownPdf(markdown: string, title?: string): MarkdownPdf {
         color: COLORS.text,
       },
       content,
+      styles: {
+        [PAGE_NUMBER_STYLE]: {
+          alignment: 'right',
+          fontSize: FOOTER_FONT_SIZE,
+          color: COLORS.muted,
+        },
+      },
       footer: (currentPage, pageCount) => ({
         text: `${currentPage} / ${pageCount}`,
-        alignment: 'right',
-        fontSize: FOOTER_FONT_SIZE,
-        color: COLORS.muted,
+        style: PAGE_NUMBER_STYLE,
         margin: [PAGE_MARGINS[0], FOOTER_OFFSET, PAGE_MARGINS[2], 0],
       }),
-      // A heading starts the next page rather than end this one.
+      // A heading starts the next page rather than end this one, unless
+      // nothing follows it. Page numbers do not count as what follows.
       pageBreakBefore: (node, nodes) =>
         node.headlineLevel !== undefined &&
-        nodes.getFollowingNodesOnPage().length === 0,
+        nodes
+          .getFollowingNodesOnPage()
+          .every((next) => next.style === PAGE_NUMBER_STYLE) &&
+        nodes
+          .getNodesOnNextPage()
+          .some((next) => next.style !== PAGE_NUMBER_STYLE),
     },
     fonts,
   }
