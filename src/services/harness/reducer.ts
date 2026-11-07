@@ -14,6 +14,7 @@ import type {
   HarnessErrorBody,
   HarnessEvent,
   Message,
+  QueueItem,
   Snapshot,
   StatePatch,
   TerminalEvent,
@@ -56,6 +57,9 @@ export interface ChatState {
   // it only if the run goes on: when the stop fails, or the run ends without
   // being stopped.
   held?: Frame[]
+  // Messages sent while a reply runs, which the queue shows at once, each
+  // under its turn's id, until the harness lists it.
+  sending?: QueueItem[]
 }
 
 export const isRunning = ({ status }: ChatState) =>
@@ -338,6 +342,41 @@ export function withReplies<M extends Pick<Message, 'id'>>(
   return merged
 }
 
+// A message sent while a reply runs shows in the queue until the harness
+// lists it.
+export const withSending = (state: ChatState, item: QueueItem): ChatState => ({
+  ...state,
+  sending: [...(state.sending ?? []), item],
+})
+
+// The message sent under the turn id is no longer waiting to be listed: the
+// harness listed or refused it.
+export function withoutSending(state: ChatState, id: string): ChatState {
+  if (!state.sending?.some(({ queueId }) => queueId === id)) return state
+  const sending = state.sending.filter(({ queueId }) => queueId !== id)
+  return { ...state, sending: sending.length ? sending : undefined }
+}
+
+// The messages still waiting once the queue changed: each turn it newly
+// lists stands for the first one sent with its text, so the queue never
+// shows a message twice, whichever stream lists it first.
+function stillSending(
+  sending: QueueItem[] | undefined,
+  before: readonly QueueItem[],
+  after: readonly QueueItem[],
+): QueueItem[] | undefined {
+  if (!sending || before === after) return sending
+  let left = sending
+  for (const item of after) {
+    if (before.some(({ queueId }) => queueId === item.queueId)) continue
+    const at = left.findIndex(
+      (sent) => sent.content === item.content && sent.quote === item.quote,
+    )
+    if (at >= 0) left = left.filter((_, index) => index !== at)
+  }
+  return left.length ? left : undefined
+}
+
 const withoutQueued = (snapshot: Snapshot, runId?: string): Snapshot => ({
   ...snapshot,
   queue: snapshot.queue.filter((item) => item.queueId !== runId),
@@ -496,12 +535,25 @@ function applyEvent(
       }
     }
     case 'STATE_SNAPSHOT':
-      return { ...next, snapshot: event.snapshot }
+      return {
+        ...next,
+        snapshot: event.snapshot,
+        sending: stillSending(
+          next.sending,
+          next.snapshot.queue,
+          event.snapshot.queue,
+        ),
+      }
     case 'STATE_DELTA': {
       const snapshot = applyStateDelta(next.snapshot, event.delta)
+      const sending = stillSending(
+        next.sending,
+        next.snapshot.queue,
+        snapshot.queue,
+      )
       return event.runId && next.status !== 'streaming'
-        ? { ...next, snapshot, status: 'queued', runId: event.runId }
-        : { ...next, snapshot }
+        ? { ...next, snapshot, sending, status: 'queued', runId: event.runId }
+        : { ...next, snapshot, sending }
     }
     case 'MESSAGES_SNAPSHOT': {
       const shown = afterLoaded(next, event.messages, event.hasOlder ?? false)

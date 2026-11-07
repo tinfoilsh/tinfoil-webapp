@@ -15,7 +15,13 @@ import {
 } from './open-chat'
 import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import type { AnswerSaves } from './question-answers'
-import { isRunning, isStopping, unstopped } from './reducer'
+import {
+  isRunning,
+  isStopping,
+  unstopped,
+  withoutSending,
+  withSending,
+} from './reducer'
 import type { RunController } from './run-controller'
 import { getView, type HarnessAPI, type Profile } from './runtime'
 import { HarnessError } from './sse'
@@ -24,6 +30,7 @@ import type { ThreadStore, TurnSettings } from './thread-store'
 import type {
   HarnessErrorBody,
   Message,
+  QueueItem,
   Session,
   ThreadMessage,
   Turn,
@@ -162,6 +169,33 @@ export function chatTurns({
       ...(sent.length ? { attachments: sent } : {}),
     }
   }
+  // A message sent while a reply runs, as the queue shows it until the
+  // harness lists it there.
+  function queuedMessage(input: Turn): QueueItem | null {
+    const { status } = controller.view.get()
+    if (
+      input.kind !== 'send' ||
+      (status !== 'streaming' && status !== 'queued')
+    )
+      return null
+    return {
+      queueId: input.clientRequestId,
+      kind: input.kind,
+      content: input.content ?? null,
+      quote: input.quote ?? null,
+      attachments: uploaded(input.attachments).map(
+        ({ id, kind, fileName, mimeType, size, thumbnail }) => ({
+          id,
+          kind,
+          fileName,
+          mimeType,
+          size,
+          thumbnail,
+        }),
+      ),
+      createdAt: now(),
+    }
+  }
   // A message as the view shows it, without its uploads' contents.
   const shownMessage = ({
     attachments: sent,
@@ -249,6 +283,8 @@ export function chatTurns({
     const before = controller.view.get().messages
     const message = sentMessage({ ...defaults, ...fields })
     if (message) showSent(message)
+    const queued = queuedMessage({ ...defaults, ...fields })
+    if (queued) controller.view.update((state) => withSending(state, queued))
     const applied = appliedTurn({ ...defaults, ...fields })
     if (applied)
       controller.view.update((state) => ({ ...state, messages: applied }))
@@ -348,6 +384,10 @@ export function chatTurns({
           return false
         })
         .finally(() => {
+          if (queued && shown())
+            controller.view.update((state) =>
+              withoutSending(state, queued.queueId),
+            )
           if (submission && controller.submission === submission) {
             controller.submission = null
             controller.view.update((state) =>

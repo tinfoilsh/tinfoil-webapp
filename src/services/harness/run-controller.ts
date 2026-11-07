@@ -11,6 +11,7 @@ import {
   runErrorOf,
   runOf,
   unstopped,
+  withoutSending,
   type ChatState,
 } from './reducer'
 import { showsRateLimit, type HarnessAPI } from './runtime'
@@ -380,7 +381,13 @@ export class RunController {
         }
         if (event.type === 'RUN_STARTED') started = true
         const base = shown ? this.view.get() : view
-        const next = reduceEvent(base, frame, runId, !!widgetRetry)
+        const reduced = reduceEvent(base, frame, runId, !!widgetRetry)
+        // A message sent while a reply ran waits in the queue until its own
+        // stream names its run, which the harness listed or started.
+        const next =
+          runId && 'clientRequestId' in input
+            ? withoutSending(reduced, input.clientRequestId)
+            : reduced
         const replayed =
           next === base && (!isTerminal(event) || !device || device.saved)
         // A replayed frame leaves the view as it was.

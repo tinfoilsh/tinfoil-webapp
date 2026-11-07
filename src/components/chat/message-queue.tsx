@@ -84,16 +84,18 @@ export function MessageQueue({ queue, onRemove, onSend }: MessageQueueProps) {
             <button
               type="button"
               onClick={() => onSend(item.id)}
+              disabled={item.sending}
               aria-label="Send queued message now"
-              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
+              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary disabled:pointer-events-none"
             >
               <TfArrowUpAnimated className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               type="button"
               onClick={() => onRemove(item.id)}
+              disabled={item.sending}
               aria-label="Remove queued message"
-              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
+              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary disabled:pointer-events-none"
             >
               <TfTrash className="h-3.5 w-3.5" aria-hidden="true" />
             </button>

@@ -219,6 +219,9 @@ export type QueuedMessage = {
   text: string
   attachments?: Attachment[]
   quote?: string
+  // Sent, but not yet in the chat service's queue, so it cannot be sent
+  // now or removed.
+  sending?: boolean
 }
 
 export type AIModel = string

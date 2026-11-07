@@ -413,9 +413,11 @@ it('queues a message sent while the chat compacts, and streams its reply once th
     runId: 'run-queued',
     delta: [{ op: 'add', path: '/queue/-', value: queued }],
   })
-  expect(
-    await screen.findByRole('button', { name: 'Remove queued message' }),
-  ).toBeInTheDocument()
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Remove queued message' }),
+    ).toBeEnabled(),
+  )
   expect(compactingStatus()).toBeInTheDocument()
 
   run.emit(
