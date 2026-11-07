@@ -857,7 +857,11 @@ it('sends a message queued behind a reply the user stops, rather than dropping i
     target: { value: 'That list is wrong' },
   })
   fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-  await screen.findByRole('button', { name: 'Send queued message now' })
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Send queued message now' }),
+    ).toBeEnabled(),
+  )
 
   fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }))
 
@@ -870,6 +874,172 @@ it('sends a message queued behind a reply the user stops, rather than dropping i
     '/v1/threads/cancel',
   )
   await act(async () => stopped.resolve())
+})
+
+// The next turn of a chat whose reply is still streaming, which the service
+// lists in the chat's queue once answered, or refuses.
+function scriptQueuedTurn(answered: Promise<void>, refusal?: HarnessError) {
+  client.events.mockImplementationOnce(async function* (
+    _path: string,
+    input: Turn,
+  ): AsyncGenerator<Frame> {
+    await answered
+    if (refusal) throw refusal
+    yield {
+      id: 0,
+      event: {
+        type: 'STATE_DELTA',
+        threadId: input.threadId!,
+        runId: 'queued',
+        delta: [
+          {
+            op: 'add',
+            path: '/queue/-',
+            value: {
+              queueId: 'queued',
+              kind: 'send',
+              content: input.content!,
+              quote: null,
+              attachments: [],
+              createdAt: '2026-04-01T09:00:02Z',
+            },
+          },
+        ],
+      },
+    }
+  })
+}
+
+async function sendDuringReply() {
+  renderChat()
+  await send()
+  await screen.findByText('The answer is')
+  fireEvent.change(screen.getByRole('textbox', { name: /message/i }), {
+    target: { value: 'That list is wrong' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+  const queued = await screen.findByRole('button', {
+    name: 'Send queued message now',
+  })
+  expect(screen.getByText('That list is wrong')).toBeInTheDocument()
+  // It cannot be named until the service lists it.
+  expect(queued).toBeDisabled()
+  expect(
+    screen.getByRole('button', { name: 'Remove queued message' }),
+  ).toBeDisabled()
+}
+
+it('shows a message sent during a reply in the queue at once, before the service lists it', async () => {
+  signIn({ cloud: true })
+  const stopped = gate()
+  const answered = gate()
+  scriptStoppedRun(stopped.promise)
+  scriptQueuedTurn(answered.promise)
+  answerStops()
+  await sendDuringReply()
+
+  await act(async () => answered.resolve())
+
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Send queued message now' }),
+    ).toBeEnabled(),
+  )
+  expect(screen.getAllByText('That list is wrong')).toHaveLength(1)
+  await act(async () => stopped.resolve())
+})
+
+it('stops the reply when Stop is pressed before the service lists a message sent during it', async () => {
+  signIn({ cloud: true })
+  const stopped = gate()
+  const answered = gate()
+  scriptStoppedRun(stopped.promise)
+  scriptQueuedTurn(answered.promise)
+  const stops = answerStops()
+  await sendDuringReply()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }))
+
+  await waitFor(() => expect(stops).toHaveLength(1))
+  expect(client.post.mock.calls.map(([path]) => path)).not.toContain(
+    '/v1/threads/queue/send',
+  )
+  await act(async () => {
+    answered.resolve()
+    stopped.resolve()
+  })
+})
+
+it('takes a message sent during a reply out of the queue when the service refuses it', async () => {
+  signIn({ cloud: true })
+  const stopped = gate()
+  const answered = gate()
+  scriptStoppedRun(stopped.promise)
+  scriptQueuedTurn(
+    answered.promise,
+    new HarnessError({
+      code: 'QUEUE_FULL',
+      action: 'stop',
+      message: 'The chat holds the most messages it queues',
+    }),
+  )
+  answerStops()
+  await sendDuringReply()
+
+  await act(async () => answered.resolve())
+
+  await waitFor(() =>
+    expect(screen.queryByText('That list is wrong')).not.toBeInTheDocument(),
+  )
+  expect(
+    screen.queryByRole('button', { name: 'Send queued message now' }),
+  ).not.toBeInTheDocument()
+  await act(async () => stopped.resolve())
+})
+
+it('takes a message sent during a reply out of the queue when its turn starts without queueing', async () => {
+  signIn({ cloud: true })
+  const finished = gate()
+  const answered = gate()
+  const ended = gate()
+  scriptStoppedRun(finished.promise, { cancelled: false })
+  client.events.mockImplementationOnce(async function* (
+    _path: string,
+    input: Turn,
+  ): AsyncGenerator<Frame> {
+    await answered.promise
+    yield {
+      id: 0,
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'next',
+        threadId: input.threadId!,
+        instance: 'instance-1',
+      },
+    }
+    await ended.promise
+    yield {
+      id: 1,
+      event: {
+        type: 'RUN_FINISHED',
+        runId: 'next',
+        threadId: input.threadId!,
+        metadata: {},
+      },
+    }
+  })
+  answerStops()
+  await sendDuringReply()
+  await act(async () => finished.resolve())
+
+  await act(async () => answered.resolve())
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: 'Send queued message now' }),
+    ).not.toBeInTheDocument(),
+  )
+  await act(async () => ended.resolve())
 })
 
 it('says a reply the service stopped stopped, without blaming the user', async () => {

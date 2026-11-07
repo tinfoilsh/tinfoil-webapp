@@ -416,7 +416,12 @@ it('accepts more than one queued message in a device chat', async () => {
     act(() => {
       pending.push(result.current.send({ content: 'Second' }))
     })
-    await waitFor(() => expect(result.current.queue).toHaveLength(1))
+    // A device chat sends another turn once the harness listed this one.
+    await waitFor(() =>
+      expect(
+        result.current.queue.filter(({ sending }) => !sending),
+      ).toHaveLength(1),
+    )
     act(() => {
       pending.push(result.current.send({ content: 'Third' }))
     })

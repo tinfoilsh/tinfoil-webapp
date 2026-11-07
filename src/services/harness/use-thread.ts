@@ -47,6 +47,7 @@ import { createStore, useStore } from './store'
 import { cloudThreads, type AskContext, type ThreadStore } from './thread-store'
 import type {
   AttachmentDescriptor,
+  QueueItem,
   SavedAnswers,
   Thread,
   Turn,
@@ -883,14 +884,19 @@ export function useThread(
         ...(state.flagged ? { flagged: true } : {}),
       }
   const profileFailed = cloud && !profileReady && !keyLocked && !!sessionError
-  const queue: QueuedMessage[] = state.snapshot.queue.map((item) => ({
+  const queuedView = (item: QueueItem, sending: boolean): QueuedMessage => ({
     id: item.queueId,
     text: item.content ?? '',
     ...(item.quote ? { quote: item.quote } : {}),
     ...(item.attachments?.length
       ? { attachments: queuedAttachmentViews(item.attachments) }
       : {}),
-  }))
+    ...(sending ? { sending } : {}),
+  })
+  const queue: QueuedMessage[] = [
+    ...state.snapshot.queue.map((item) => queuedView(item, false)),
+    ...(state.sending ?? []).map((item) => queuedView(item, true)),
+  ]
   return {
     chat,
     // The compaction markers the open chat shows, by the message each shows

@@ -2552,7 +2552,12 @@ describe('a chat on this device whose runs end out of order', () => {
     act(() => {
       sending.push(result.current.send({ content: 'second' }))
     })
-    await waitFor(() => expect(result.current.queue).toHaveLength(1))
+    // A device chat sends another turn once the harness listed this one.
+    await waitFor(() =>
+      expect(
+        result.current.queue.filter(({ sending }) => !sending),
+      ).toHaveLength(1),
+    )
     act(() => {
       sending.push(result.current.send({ content: 'third' }))
     })

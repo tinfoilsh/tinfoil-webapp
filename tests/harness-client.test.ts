@@ -8,6 +8,7 @@ import {
   canceledBy,
   initialChat,
   reduceEvent,
+  withSending,
 } from '@/services/harness/reducer'
 import { HarnessError, readEvents } from '@/services/harness/sse'
 import type {
@@ -283,6 +284,42 @@ describe('harness reducer', () => {
     expect(state.snapshot.queue).toEqual([queued('queued', 'Hi')])
     expect(state.status).toBe('streaming')
     expect(state.runId).toBe('active')
+  })
+  it('shows a message sent during a reply until either stream lists it, one listed turn for each', () => {
+    let state = reduceEvent(initialChat(), {
+      id: 0,
+      event: {
+        type: 'RUN_STARTED',
+        runId: 'active',
+        threadId: 't',
+        instance: 'instance-1',
+      },
+    })
+    state = withSending(
+      withSending(state, queued('sent-1', 'Hi')),
+      queued('sent-2', 'Hi'),
+    )
+    const listed = (id: number, runId?: string, queueId = 'run-2') =>
+      reduceEvent(state, {
+        id,
+        event: {
+          type: 'STATE_DELTA',
+          ...(runId ? { threadId: 't', runId } : {}),
+          delta: [
+            { op: 'add', path: '/queue/-', value: queued(queueId, 'Hi') },
+          ],
+        },
+      })
+    state = listed(1)
+    expect(state.sending).toEqual([queued('sent-2', 'Hi')])
+    state = listed(0, 'run-2')
+    expect(state.sending).toEqual([queued('sent-2', 'Hi')])
+    state = listed(2, undefined, 'run-3')
+    expect(state.sending).toBeUndefined()
+    expect(state.snapshot.queue.map(({ queueId }) => queueId)).toEqual([
+      'run-2',
+      'run-3',
+    ])
   })
   it('replaces the cursor snapshot, deduplicates deltas and retries the same widget', () => {
     let state = initialChat()

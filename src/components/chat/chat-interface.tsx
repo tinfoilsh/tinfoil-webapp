@@ -825,8 +825,9 @@ export function ChatInterface({
   })
   // The harness ends the turns queued behind a reply it stops, so with a
   // message queued Stop sends that message now, which stops the reply first.
+  // A message the harness has not listed yet cannot be named.
   const cancelGenerationAndResumeQueue = () => {
-    const [next] = thread.queue
+    const next = thread.queue.find(({ sending }) => !sending)
     void (next ? thread.sendQueued(next.id) : thread.cancel()).catch(
       thread.report,
     )
@@ -1245,7 +1246,8 @@ export function ChatInterface({
     if (runningRef.current) void thread.cancel().catch(thread.report)
     else
       for (const item of queueRef.current)
-        void thread.removeQueued(item.id).catch(thread.report)
+        if (!item.sending)
+          void thread.removeQueued(item.id).catch(thread.report)
     setIsAskSidebarOpen(false)
     sidebarChat.reset()
     // Only a newly flagged chat is stopped.
