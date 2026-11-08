@@ -3634,6 +3634,69 @@ describe('cloud chats', () => {
     expect(result.current.status).toBe('idle')
   })
 
+  it('keep the title the user gave a chat over its run followed again from the start', async () => {
+    signIn('alice', true)
+    const renamed = {
+      ...summary('cloud-thread', 'Mine'),
+      titleState: 'manual' as const,
+    }
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list')
+        return { threads: [renamed], nextCursor: null }
+      if (path === '/v1/threads/get')
+        return {
+          ...renamed,
+          activeRun: {
+            runId: 'run-1',
+            expiresAt: '2026-05-01T10:10:00Z',
+            instance: 'instance-1',
+          },
+          messages: [
+            { id: 'u1', role: 'user', createdAt: 't1', content: 'Question' },
+          ],
+          hasOlder: false,
+        }
+      throw new Error(`Unexpected ${path}`)
+    })
+    // The run replays from its start, when the chat had another title.
+    const replayed = new Promise<void>(() => {})
+    client.events.mockImplementationOnce(async function* () {
+      yield {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          threadId: 'cloud-thread',
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+      }
+      yield {
+        id: 1,
+        event: {
+          type: 'STATE_SNAPSHOT',
+          snapshot: {
+            thread: summary('cloud-thread', 'Before'),
+            queue: [],
+            rateLimit: { kind: null },
+          },
+        },
+      }
+      await replayed
+    })
+
+    const { result } = renderHook(() => useThread('cloud-thread'))
+
+    await waitFor(() => expect(result.current.status).toBe('streaming'))
+    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+    expect(result.current.chat).toMatchObject({
+      title: 'Mine',
+      titleState: 'manual',
+    })
+    expect(
+      result.current.chats.map(({ id, title }) => ({ id, title })),
+    ).toEqual([{ id: 'cloud-thread', title: 'Mine' }])
+  })
+
   it('keep the chat list when a chat opens from its link', async () => {
     signIn('alice', true)
     const listed = [summary('cloud-a', 'First'), summary('cloud-b', 'Second')]

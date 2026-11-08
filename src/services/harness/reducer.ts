@@ -382,6 +382,21 @@ const withoutQueued = (snapshot: Snapshot, runId?: string): Snapshot => ({
   queue: snapshot.queue.filter((item) => item.queueId !== runId),
 })
 
+// A run followed again replays the chat as it started, so a title the user
+// gave the chat since stays: the harness never replaces one.
+const keepingTitle = (shown: Snapshot, snapshot: Snapshot): Snapshot =>
+  shown.thread?.titleState === 'manual' &&
+  snapshot.thread?.id === shown.thread.id
+    ? {
+        ...snapshot,
+        thread: {
+          ...snapshot.thread,
+          title: shown.thread.title,
+          titleState: shown.thread.titleState,
+        },
+      }
+    : snapshot
+
 // Why a run ended with RUN_ERROR. One without the code, message and action
 // the protocol requires of it is not one the client can read.
 export function runErrorOf(
@@ -537,7 +552,7 @@ function applyEvent(
     case 'STATE_SNAPSHOT':
       return {
         ...next,
-        snapshot: event.snapshot,
+        snapshot: keepingTitle(next.snapshot, event.snapshot),
         sending: stillSending(
           next.sending,
           next.snapshot.queue,
