@@ -492,6 +492,12 @@ export function ChatInterface({
     (profile.webSearchAvailable ?? true)
   const chatWebSearchEnabled = currentChat.webSearchEnabled ?? true
   const effectiveWebSearchEnabled = webSearchAvailable && chatWebSearchEnabled
+  // Deep research, which a subscriber's session offers, searches the web, so
+  // Settings turning web search off turns it off too.
+  const researchAvailable =
+    (session?.features.research ?? false) &&
+    (profile.webSearchAvailable ?? true)
+  const researchEnabled = researchAvailable && thread.research
   const contextUsage = thread.contextUsage
   const modKey =
     typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
@@ -1119,6 +1125,7 @@ export function ChatInterface({
         })
         .catch(logSettingError('Failed to save the chat web search setting'))
   }
+  const handleResearchToggle = () => thread.setResearch(!researchEnabled)
   const handleOpenVerifierSidebar = () => {
     handleSetVerifierSidebarOpen(!isVerifierSidebarOpen)
     if (!isVerifierSidebarOpen) {
@@ -1797,6 +1804,7 @@ export function ChatInterface({
     setActivePreset: handleSetActivePreset,
     clearPromptPreset: () => handleSetActivePreset(null),
     toggleWebSearch: handleWebSearchToggle,
+    toggleResearch: handleResearchToggle,
     selectModel: handleModelSelect,
     clickLabel: handleLabelClick,
     setReasoningEffort,
@@ -2830,6 +2838,10 @@ export function ChatInterface({
                       onWebSearchToggle={
                         webSearchAvailable ? handleWebSearchToggle : undefined
                       }
+                      researchEnabled={researchEnabled}
+                      onResearchToggle={
+                        researchAvailable ? handleResearchToggle : undefined
+                      }
                       reasoningEffort={reasoningEffort}
                       setReasoningEffort={setReasoningEffort}
                       thinkingEnabled={thinkingEnabled}
@@ -2970,6 +2982,12 @@ export function ChatInterface({
                         onWebSearchToggle={
                           webSearchAvailable
                             ? composerActions.toggleWebSearch
+                            : undefined
+                        }
+                        researchEnabled={researchEnabled}
+                        onResearchToggle={
+                          researchAvailable
+                            ? composerActions.toggleResearch
                             : undefined
                         }
                       />

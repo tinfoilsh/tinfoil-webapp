@@ -33,6 +33,9 @@ export interface OpenChat {
   // The open chat's web search setting, where the toggle set it before the
   // chat stores it.
   webSearch?: boolean
+  // The open chat's questions are researched in depth until a research
+  // answers one. The choice is not stored with the chat.
+  research: boolean
 }
 
 // The settings a new chat's saved prompt chooses.

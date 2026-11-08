@@ -13,6 +13,7 @@ import {
   TfGlobeX,
   TfQuote,
   TfStack,
+  TfWebSearch,
 } from '@tinfoilsh/tinfoil-icons'
 import {
   TfArrowUpAnimated,
@@ -84,6 +85,10 @@ type ChatInputProps = {
   modelSelectorButton?: React.ReactNode
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
+  // Whether the next question is researched in depth, and what toggles it
+  // where the session offers deep research.
+  researchEnabled?: boolean
+  onResearchToggle?: () => void
   quote?: string | null
   onClearQuote?: () => void
   isTemporaryMode?: boolean
@@ -126,6 +131,8 @@ export const ChatInput = memo(function ChatInput({
   modelSelectorButton,
   webSearchEnabled,
   onWebSearchToggle,
+  researchEnabled = false,
+  onResearchToggle,
   quote,
   onClearQuote,
   isTemporaryMode,
@@ -1153,6 +1160,30 @@ export const ChatInput = memo(function ChatInput({
                             )}
                           </button>
                         )}
+                        {onResearchToggle && (
+                          <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            aria-checked={researchEnabled}
+                            onClick={() => {
+                              onResearchToggle()
+                              closeInputMenu(true)
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
+                          >
+                            <TfWebSearch
+                              className="h-5 w-5 text-content-secondary"
+                              aria-hidden="true"
+                            />
+                            <span className="flex-1">Deep research</span>
+                            {researchEnabled && (
+                              <TfBoxCheckmark
+                                className="h-4 w-4 text-brand-accent-light"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </button>
+                        )}
                         {contextUsage && (
                           <div className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary md:hidden">
                             <span className="flex-1">Context</span>
@@ -1189,6 +1220,18 @@ export const ChatInput = memo(function ChatInput({
                     </>
                   )}
                 </div>
+                {researchEnabled && onResearchToggle && (
+                  <button
+                    type="button"
+                    onClick={onResearchToggle}
+                    aria-label="Turn off deep research"
+                    className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-brand-accent-light transition-colors hover:bg-surface-chat-background"
+                  >
+                    <TfWebSearch className="h-4 w-4" aria-hidden="true" />
+                    Deep research
+                    <TfBoxX className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                )}
               </div>
 
               <div

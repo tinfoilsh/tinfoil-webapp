@@ -207,6 +207,8 @@ interface WelcomeScreenProps {
   ) => void
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
+  researchEnabled?: boolean
+  onResearchToggle?: () => void
   reasoningEffort?: ReasoningEffort
   setReasoningEffort?: (effort: ReasoningEffort) => void
   thinkingEnabled?: boolean
@@ -245,6 +247,8 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   handleLabelClick,
   webSearchEnabled,
   onWebSearchToggle,
+  researchEnabled,
+  onResearchToggle,
   reasoningEffort,
   setReasoningEffort,
   thinkingEnabled,
@@ -459,6 +463,8 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   }
                   webSearchEnabled={webSearchEnabled}
                   onWebSearchToggle={onWebSearchToggle}
+                  researchEnabled={researchEnabled}
+                  onResearchToggle={onResearchToggle}
                   isTemporaryMode={isTemporaryMode}
                   activePromptPreset={activePromptPreset}
                   onOpenPromptLibrary={onOpenPromptLibrary}

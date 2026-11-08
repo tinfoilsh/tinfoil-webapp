@@ -103,6 +103,8 @@ type ChatMessagesProps = {
   showScrollButton?: boolean
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
+  researchEnabled?: boolean
+  onResearchToggle?: () => void
   reasoningEffort?: ReasoningEffort
   setReasoningEffort?: (effort: ReasoningEffort) => void
   thinkingEnabled?: boolean
@@ -324,6 +326,8 @@ export function ChatMessages({
   showScrollButton,
   webSearchEnabled,
   onWebSearchToggle,
+  researchEnabled,
+  onResearchToggle,
   reasoningEffort,
   setReasoningEffort,
   thinkingEnabled,
@@ -530,6 +534,8 @@ export function ChatMessages({
             handleLabelClick={handleLabelClick}
             webSearchEnabled={webSearchEnabled}
             onWebSearchToggle={onWebSearchToggle}
+            researchEnabled={researchEnabled}
+            onResearchToggle={onResearchToggle}
             reasoningEffort={reasoningEffort}
             setReasoningEffort={setReasoningEffort}
             thinkingEnabled={thinkingEnabled}
