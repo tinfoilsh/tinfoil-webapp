@@ -28,6 +28,18 @@ export interface SaveChatResult {
   isLocalOnly: boolean
 }
 
+// A stretch of dictation kept until its text reaches the composer: its
+// recording until it is transcribed, then its text.
+export interface StoredDictationSegment {
+  id: string
+  dictationId: string
+  index: number
+  startedAt: number
+  mimeType: string
+  audio?: ArrayBuffer
+  text?: string
+}
+
 interface StoredAttachmentPayload {
   id: string
   chatId: string
@@ -72,11 +84,12 @@ export class AttachmentPayloadMissingError extends Error {
 }
 
 export const DB_NAME = 'tinfoil-chat'
-export const DB_VERSION = 9
+export const DB_VERSION = 10
 const CHATS_STORE = 'chats'
 const MIGRATIONS_STORE = 'migrations'
 const ATTACHMENT_PAYLOADS_STORE = 'attachmentPayloads'
 const ATTACHMENT_ORIGINALS_STORE = 'attachmentOriginals'
+const DICTATION_SEGMENTS_STORE = 'dictationSegments'
 // The chat a payload or an original belongs to, in either store.
 const ATTACHMENT_PAYLOADS_CHAT_INDEX = 'chatId'
 const GENERATED_ATTACHMENT_PAYLOAD_PREFIX = 'attachment-payload:'
@@ -464,6 +477,9 @@ export class IndexedDBStorage {
               ATTACHMENT_PAYLOADS_CHAT_INDEX,
               { unique: false },
             )
+          }
+          if (!db.objectStoreNames.contains(DICTATION_SEGMENTS_STORE)) {
+            db.createObjectStore(DICTATION_SEGMENTS_STORE, { keyPath: 'id' })
           }
           if ((event as IDBVersionChangeEvent).oldVersion === 0) {
             request.transaction?.objectStore(MIGRATIONS_STORE).put({
@@ -1032,6 +1048,58 @@ export class IndexedDBStorage {
         }
         request.onerror = () =>
           reject(new Error('Failed to get chat summaries'))
+      }),
+    )
+  }
+
+  async putDictationSegment(segment: StoredDictationSegment): Promise<void> {
+    return this.enqueueSave('putDictationSegment', async () => {
+      const db = await this.ensureDB()
+      this.assertActiveSaveGeneration()
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(
+          [DICTATION_SEGMENTS_STORE],
+          'readwrite',
+        )
+        transaction.objectStore(DICTATION_SEGMENTS_STORE).put(segment)
+        transaction.oncomplete = () => resolve()
+        transaction.onerror = () =>
+          reject(new Error('Failed to save dictation'))
+        transaction.onabort = () =>
+          reject(transaction.error ?? new Error('Failed to save dictation'))
+      })
+    })
+  }
+
+  async deleteDictationSegment(id: string): Promise<void> {
+    return this.enqueueSave('deleteDictationSegment', async () => {
+      const db = await this.ensureDB()
+      this.assertActiveSaveGeneration()
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(
+          [DICTATION_SEGMENTS_STORE],
+          'readwrite',
+        )
+        transaction.objectStore(DICTATION_SEGMENTS_STORE).delete(id)
+        transaction.oncomplete = () => resolve()
+        transaction.onerror = () =>
+          reject(new Error('Failed to delete dictation'))
+      })
+    })
+  }
+
+  async getDictationSegments(): Promise<StoredDictationSegment[]> {
+    await this.waitForSaveQueue()
+    const db = await this.ensureDB()
+    return this.protectRead(
+      new Promise((resolve, reject) => {
+        const request = db
+          .transaction([DICTATION_SEGMENTS_STORE], 'readonly')
+          .objectStore(DICTATION_SEGMENTS_STORE)
+          .getAll()
+        request.onsuccess = () =>
+          resolve(request.result as StoredDictationSegment[])
+        request.onerror = () => reject(new Error('Failed to read dictation'))
       }),
     )
   }
