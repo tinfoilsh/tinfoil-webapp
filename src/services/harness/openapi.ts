@@ -849,7 +849,10 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Transcribe a recording */
+    /**
+     * Transcribe a recording
+     * @description A recording not transcribed within two minutes fails with UPSTREAM_REFUSED.
+     */
     post: operations['transcriptions']
     delete?: never
     options?: never
@@ -1174,7 +1177,10 @@ export interface components {
       attachments: components['schemas']['FileGroup'][]
       projectDocuments: components['schemas']['FileGroup'][]
       pasteAsFileChars: number
+      /** @description How long a client that sends dictation as one recording lets it run. */
       dictationMaxSeconds: number
+      /** @description How long a client lets dictation run before it sends what it recorded to be transcribed and records on: it ends each recording at the first pause after this long. Short recordings transcribe in seconds, and one that fails loses no more than itself. */
+      dictationSegmentSeconds: number
     }
     /** @description Files the composer takes by extension, and the largest each may be. */
     FileGroup: {

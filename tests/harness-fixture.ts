@@ -65,6 +65,7 @@ export const testSession: Session = {
     projectDocuments: [{ accept: ['.pdf', '.md', '.txt'], maxBytes: 500 }],
     pasteAsFileChars: 40,
     dictationMaxSeconds: 30,
+    dictationSegmentSeconds: 10,
   },
   features: {
     webSearch: true,
