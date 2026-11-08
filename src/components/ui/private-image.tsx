@@ -5,6 +5,7 @@ import {
 import { useEffect, useRef, useState, type ImgHTMLAttributes } from 'react'
 
 const IMAGE_PREFETCH_MARGIN = '256px'
+const IMAGE_SCROLL_ROOT = '[data-scroll-container]'
 
 interface PrivateImageProps extends ImgHTMLAttributes<HTMLImageElement> {
   onUnavailable?: () => void
@@ -54,7 +55,10 @@ function ImageSource({
           observer.disconnect()
         }
       },
-      { rootMargin: IMAGE_PREFETCH_MARGIN },
+      {
+        root: placeholder.current.closest(IMAGE_SCROLL_ROOT),
+        rootMargin: IMAGE_PREFETCH_MARGIN,
+      },
     )
     observer.observe(placeholder.current)
     return () => observer.disconnect()

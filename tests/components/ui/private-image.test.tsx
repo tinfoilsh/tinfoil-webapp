@@ -124,18 +124,25 @@ it('resolves relative image URLs before sending them through the harness', async
 
 it('waits for a lazy image to approach the viewport before fetching it', async () => {
   let reveal!: (entries: Array<{ isIntersecting: boolean }>) => void
+  let root: Element | Document | null | undefined
   vi.stubGlobal(
     'IntersectionObserver',
     class {
-      constructor(callback: typeof reveal) {
+      constructor(callback: typeof reveal, options: IntersectionObserverInit) {
         reveal = callback
+        root = options.root
       }
       observe() {}
       disconnect() {}
     },
   )
   client.post.mockResolvedValue(IMAGE)
-  render(<PrivateImage src={SOURCE} loading="lazy" alt="Lazy" />)
+  const { container } = render(
+    <div data-scroll-container="main">
+      <PrivateImage src={SOURCE} loading="lazy" alt="Lazy" />
+    </div>,
+  )
+  expect(root).toBe(container.firstElementChild)
   expect(client.post).not.toHaveBeenCalled()
   await act(async () => reveal([{ isIntersecting: false }]))
   expect(client.post).not.toHaveBeenCalled()
