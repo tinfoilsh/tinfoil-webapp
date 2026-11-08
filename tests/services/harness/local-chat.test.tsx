@@ -2598,6 +2598,70 @@ describe('a chat on this device whose runs end out of order', () => {
 
     expect(await stored(threadId)).toEqual(behind)
   })
+
+  it('keeps a rename made while a reply streams over the turn queued behind it', async () => {
+    signIn('alice')
+    const firstEnds = gate()
+    const behindStarts = gate()
+    let first!: ReturnedThread
+    let behind!: ReturnedThread
+    client.events
+      .mockImplementationOnce((_path: string, input: Turn) => {
+        first = after(input, [], 'first answer')
+        return answering(
+          input,
+          'run-first',
+          first,
+          finishedIn(input),
+          firstEnds.promise,
+        )
+      })
+      .mockImplementationOnce(async function* (_path: string, input: Turn) {
+        yield { id: 0, event: queued(input, 'run-behind') }
+        await behindStarts.promise
+        // The harness goes on from the reply's thread, which the rename
+        // never reached.
+        behind = after(input, first.messages, 'second answer')
+        yield* answering(input, 'run-behind', behind, finishedIn(input))
+      })
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+    const sending: (Promise<boolean> | undefined)[] = []
+    act(() => {
+      sending.push(result.current.send({ content: 'first' }))
+    })
+    await waitFor(() => expect(result.current.status).toBe('streaming'))
+    const threadId = turn(0).threadId!
+    client.post.mockImplementationOnce(
+      async (_path: string, input: { thread: StoredThread }) => ({
+        thread: { ...input.thread, title: 'Mine', titleState: 'manual' },
+      }),
+    )
+    await act(() => result.current.update(threadId, { title: 'Mine' }))
+    act(() => {
+      sending.push(result.current.send({ content: 'second' }))
+    })
+    await waitFor(() =>
+      expect(
+        result.current.queue.filter(({ sending }) => !sending),
+      ).toHaveLength(1),
+    )
+
+    await act(async () => {
+      firstEnds.release()
+      await sending[0]
+    })
+    await act(async () => {
+      behindStarts.release()
+      await sending[1]
+    })
+
+    expect(await stored(threadId)).toEqual({
+      ...behind,
+      title: 'Mine',
+      titleState: 'manual',
+    })
+  })
 })
 
 describe('a chat on this device whose stream drops once another chat is open', () => {

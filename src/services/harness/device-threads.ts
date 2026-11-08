@@ -329,7 +329,10 @@ export function deviceThreads({
         threadId,
         store,
         images: new Map(),
-        since: controller.tick(),
+        // A turn queued behind a reply goes on from the reply's thread, so
+        // it holds no more of the user's changes than the reply's turn read.
+        since:
+          controller.deviceRuns.get().get(threadId)?.since ?? controller.tick(),
       }
       controller.begin(run)
       const shown = controller.track()
