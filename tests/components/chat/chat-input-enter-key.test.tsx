@@ -1,6 +1,6 @@
 import { ChatInput } from '@/components/chat/chat-input'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { createRef } from 'react'
+import { createRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/components/project', () => ({
@@ -19,21 +19,28 @@ vi.mock('@/hooks/use-toast', () => ({
 const IPHONE_USER_AGENT =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
 
-function renderChatInput(handleSubmit = vi.fn()) {
-  render(
-    <ChatInput
-      input="hello"
-      setInput={vi.fn()}
-      handleSubmit={handleSubmit}
-      loadingState="idle"
-      cancelGeneration={vi.fn()}
-      inputRef={createRef<HTMLTextAreaElement>()}
-      handleInputFocus={vi.fn()}
-      inputMinHeight="40px"
-      isDarkMode
-    />,
-  )
-  return { handleSubmit, textarea: screen.getByRole('textbox') }
+function renderChatInput(handleSubmit = vi.fn(), initialInput = 'hello') {
+  function Input() {
+    const [input, setInput] = useState(initialInput)
+    return (
+      <ChatInput
+        input={input}
+        setInput={setInput}
+        handleSubmit={handleSubmit}
+        loadingState="idle"
+        cancelGeneration={vi.fn()}
+        inputRef={createRef<HTMLTextAreaElement>()}
+        handleInputFocus={vi.fn()}
+        inputMinHeight="40px"
+        isDarkMode
+      />
+    )
+  }
+  render(<Input />)
+  return {
+    handleSubmit,
+    textarea: screen.getByRole('textbox') as HTMLTextAreaElement,
+  }
 }
 
 describe('ChatInput Enter key handling', () => {
@@ -107,5 +114,51 @@ describe('ChatInput Enter key handling', () => {
 
     expect(handleSubmit).toHaveBeenCalledOnce()
     expect(textarea).not.toHaveFocus()
+  })
+
+  it('formats and continues bullets while preserving text after the caret', () => {
+    const { handleSubmit, textarea } = renderChatInput(
+      vi.fn(),
+      'Notes:\n*First item\nLast line',
+    )
+    const markerEnd = 'Notes:\n*'.length
+    textarea.setSelectionRange(markerEnd, markerEnd)
+
+    fireEvent.keyDown(textarea, { key: ' ' })
+
+    expect(textarea).toHaveValue('Notes:\n  •  First item\nLast line')
+    expect(textarea.selectionStart).toBe('Notes:\n  •  '.length)
+    const split = 'Notes:\n  •  First'.length
+    textarea.setSelectionRange(split, split)
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
+
+    expect(textarea).toHaveValue('Notes:\n  •  First\n  •   item\nLast line')
+    expect(textarea.selectionStart).toBe('Notes:\n  •  First\n  •  '.length)
+    expect(textarea.selectionEnd).toBe(textarea.selectionStart)
+    expect(handleSubmit).not.toHaveBeenCalled()
+  })
+
+  it('continues numbered lists on Enter on phones', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE_USER_AGENT)
+    const { handleSubmit, textarea } = renderChatInput(vi.fn(), '9. Draft')
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    expect(textarea).toHaveValue('9. Draft\n10. ')
+    expect(textarea.selectionStart).toBe(textarea.value.length)
+    expect(handleSubmit).not.toHaveBeenCalled()
+  })
+
+  it('lets native editing replace a selection instead of inserting a list marker', () => {
+    const { textarea } = renderChatInput(vi.fn(), '* draft')
+    textarea.setSelectionRange(1, textarea.value.length)
+
+    const notCancelled = fireEvent.keyDown(textarea, { key: ' ' })
+
+    expect(notCancelled).toBe(true)
+    expect(textarea).toHaveValue('* draft')
+    expect(textarea.selectionStart).toBe(1)
+    expect(textarea.selectionEnd).toBe(textarea.value.length)
   })
 })
