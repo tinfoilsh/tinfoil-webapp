@@ -328,6 +328,7 @@ export function messageView(
     ),
     isError: message.isError,
     isInterrupted: message.isInterrupted,
+    ...(message.research ? { research: true } : {}),
   }
 }
 // A chat waiting for its generated title shows the default one.

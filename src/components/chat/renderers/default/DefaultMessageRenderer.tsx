@@ -117,19 +117,30 @@ const DefaultMessageComponent = ({
     [displayTimeline],
   )
   // A reply that searched lists its last search's results and what it
-  // cites; earlier searches and read pages list theirs in their own rows.
+  // cites; earlier searches and read pages list theirs in their own rows. A
+  // research's report draws on every page it found or read, which it lists
+  // after what the report cites.
   const sources = React.useMemo(() => {
+    const cited = (message.annotations ?? []).map(
+      (annotation) => annotation.url_citation,
+    )
+    if (message.research)
+      return [
+        ...cited,
+        ...displayTimeline.flatMap((block) =>
+          block.type === 'web_search'
+            ? (block.state.sources ?? [])
+            : block.type === 'url_fetches'
+              ? block.fetches.flatMap((fetch) => fetch.sources ?? [])
+              : [],
+        ),
+      ]
     const lastSearch = displayTimeline.findLast(
       (block) => block.type === 'web_search',
     )
     if (lastSearch?.type !== 'web_search') return []
-    return [
-      ...(lastSearch.state.sources ?? []),
-      ...(message.annotations ?? []).map(
-        (annotation) => annotation.url_citation,
-      ),
-    ]
-  }, [displayTimeline, message.annotations])
+    return [...(lastSearch.state.sources ?? []), ...cited]
+  }, [displayTimeline, message.annotations, message.research])
   // A link to a page the reply's searches or reads found shows as a
   // citation while the reply streams, before the harness names what it
   // cites. The lookup changes only when its pages do, not with each chunk.
@@ -451,6 +462,7 @@ const DefaultMessageComponent = ({
                   blocks={segment.blocks}
                   isActive={isActive}
                   isDarkMode={isDarkMode}
+                  research={message.research}
                 />
               </div>
             )
