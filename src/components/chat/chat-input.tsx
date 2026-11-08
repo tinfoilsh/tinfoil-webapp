@@ -42,7 +42,12 @@ import { FilePreview, imageDataUrl } from './components/file-preview'
 import { UnsavedImagesNotice } from './components/unsaved-images-notice'
 import { CONSTANTS } from './constants'
 import { useEnterToNewline } from './hooks/use-enter-to-newline'
-import { isImeComposition, isMobileDevice } from './keyboard-utils'
+import { useListEditing } from './hooks/use-list-editing'
+import {
+  isImeComposition,
+  isMobileDevice,
+  isSubmitShortcut,
+} from './keyboard-utils'
 import type { PromptPreset } from './prompts/types'
 import { RecordingWaveform } from './recording-waveform'
 import type { ProcessedDocument } from './renderers/types'
@@ -144,6 +149,7 @@ export const ChatInput = memo(function ChatInput({
       ? { canCompact, compacting, onCompact }
       : undefined
   const enterToNewline = useEnterToNewline()
+  const handleListKeyDown = useListEditing(input, setInput)
   const [textareaResetNonce, setTextareaResetNonce] = useState(0)
   const prevInputValueRef = useRef(input)
   const shouldRemountOnClearRef = useRef(false)
@@ -994,137 +1000,7 @@ export const ChatInput = memo(function ChatInput({
                   if (e.key === 'Enter' && isImeComposition(e)) {
                     return
                   }
-                  if (e.key === 'Tab') {
-                    const textarea = e.currentTarget
-                    const cursorPosition = textarea.selectionStart
-                    const textBeforeCursor = input.slice(0, cursorPosition)
-                    const lastLineStart = textBeforeCursor.lastIndexOf('\n') + 1
-                    const currentLine = textBeforeCursor.slice(lastLineStart)
-
-                    // Check if we're on a list line
-                    const listMatch = currentLine.match(
-                      /^(\s*)(\s*\u2022\s+|[-*+]|\s*\d+\.)\s+(?!\[[ x]\])/,
-                    )
-
-                    if (listMatch) {
-                      e.preventDefault()
-                      const textAfterCursor = input.slice(cursorPosition)
-
-                      if (e.shiftKey) {
-                        // Shift+Tab: decrease indent (remove 4 spaces or exit list)
-                        const dedentMatch = currentLine.match(/^    /)
-                        if (dedentMatch) {
-                          // Has 4+ spaces, remove 4 spaces
-                          const newText =
-                            input.slice(0, lastLineStart) +
-                            currentLine.slice(4) +
-                            textAfterCursor
-
-                          setInput(newText)
-
-                          setTimeout(() => {
-                            textarea.selectionStart = textarea.selectionEnd =
-                              Math.max(lastLineStart, cursorPosition - 4)
-                          }, 0)
-                        } else {
-                          // Single indent level - remove the bullet/marker entirely
-                          const contentMatch = currentLine.match(
-                            /^(\s*)(\s*\u2022\s+|[-*+]|\s*\d+\.)\s+(.*)$/,
-                          )
-                          if (contentMatch) {
-                            const [, , , content] = contentMatch
-                            const newText =
-                              input.slice(0, lastLineStart) +
-                              content +
-                              textAfterCursor
-
-                            setInput(newText)
-
-                            setTimeout(() => {
-                              textarea.selectionStart = textarea.selectionEnd =
-                                lastLineStart + content.length
-                            }, 0)
-                          }
-                        }
-                      } else {
-                        // Tab: increase indent (add 4 spaces)
-                        const newText =
-                          input.slice(0, lastLineStart) +
-                          '    ' +
-                          currentLine +
-                          textAfterCursor
-
-                        setInput(newText)
-
-                        setTimeout(() => {
-                          textarea.selectionStart = textarea.selectionEnd =
-                            cursorPosition + 4
-                        }, 0)
-                      }
-                    }
-                  } else if (e.key === ' ') {
-                    const textarea = e.currentTarget
-                    const cursorPosition = textarea.selectionStart
-                    const textBeforeCursor = input.slice(0, cursorPosition)
-                    const lastLineStart = textBeforeCursor.lastIndexOf('\n') + 1
-                    const currentLine = textBeforeCursor.slice(lastLineStart)
-
-                    // Check if the line starts with * or - or + (for bullets)
-                    const bulletMatch = currentLine.match(/^(\s*)([-*+])$/)
-
-                    if (bulletMatch) {
-                      e.preventDefault()
-                      const [, indent] = bulletMatch
-                      const textAfterCursor = input.slice(cursorPosition)
-
-                      // Replace the marker with a bullet point and add space with indentation
-                      // Extra space after bullet to align with numbered lists
-                      const newText =
-                        input.slice(0, lastLineStart) +
-                        indent +
-                        '  \u2022  ' +
-                        textAfterCursor
-
-                      setInput(newText)
-
-                      setTimeout(() => {
-                        textarea.selectionStart = textarea.selectionEnd =
-                          lastLineStart + indent.length + 5
-                      }, 0)
-                    } else {
-                      // Check if the line starts with a number (for numbered lists)
-                      const numberMatch = currentLine.match(/^(\s*)(\d+\.)$/)
-
-                      if (numberMatch) {
-                        e.preventDefault()
-                        const [, indent, marker] = numberMatch
-                        const textAfterCursor = input.slice(cursorPosition)
-
-                        // Just add a space after the number marker (no extra indentation)
-                        const newText =
-                          input.slice(0, lastLineStart) +
-                          indent +
-                          marker +
-                          ' ' +
-                          textAfterCursor
-
-                        setInput(newText)
-
-                        setTimeout(() => {
-                          textarea.selectionStart = textarea.selectionEnd =
-                            lastLineStart + indent.length + marker.length + 1
-                        }, 0)
-                      }
-                    }
-                  } else if (
-                    e.key === 'Enter' &&
-                    !e.shiftKey &&
-                    (!enterToNewline || e.metaKey || e.ctrlKey)
-                  ) {
-                    // On mobile, Enter should insert a newline, not submit
-                    if (isMobileDevice() && !e.metaKey && !e.ctrlKey) {
-                      return
-                    }
+                  if (isSubmitShortcut(e, enterToNewline)) {
                     e.preventDefault()
                     const hasDocuments =
                       processedDocuments &&
@@ -1137,83 +1013,8 @@ export const ChatInput = memo(function ChatInput({
                       shouldRemountOnClearRef.current = true
                       handleSubmit(e)
                     }
-                  } else if (e.key === 'Enter') {
-                    const textarea = e.currentTarget
-                    const cursorPosition = textarea.selectionStart
-                    const textBeforeCursor = input.slice(0, cursorPosition)
-                    const lastLineStart = textBeforeCursor.lastIndexOf('\n') + 1
-                    const currentLine = textBeforeCursor.slice(lastLineStart)
-
-                    // Match list markers: •, -, *, +, 1.
-                    const listMarkerMatch = currentLine.match(
-                      /^(\s*)(\s*\u2022\s+|[-*+]|\s*\d+\.)\s+/,
-                    )
-
-                    if (!listMarkerMatch) {
-                      setTimeout(() => {
-                        resizeTextarea(textarea)
-                        textarea.scrollTop = textarea.scrollHeight
-                      }, 0)
-                    } else {
-                      e.preventDefault()
-                      const [fullMatch, indent, marker] = listMarkerMatch
-
-                      const contentAfterMarker = currentLine
-                        .slice(fullMatch.length)
-                        .trim()
-
-                      if (!contentAfterMarker) {
-                        // Empty list item - exit the list
-                        const textAfterCursor = input.slice(cursorPosition)
-                        const newText =
-                          input.slice(0, lastLineStart) +
-                          indent +
-                          textAfterCursor
-
-                        setInput(newText)
-
-                        setTimeout(() => {
-                          textarea.selectionStart = textarea.selectionEnd =
-                            lastLineStart + indent.length
-                        }, 0)
-                      } else {
-                        // Continue the list
-                        const textAfterCursor = input.slice(cursorPosition)
-                        let newMarker = marker
-
-                        // Increment numbered lists (handle with or without leading spaces)
-                        const numberMatch = marker.match(/^(\s*)(\d+\.)$/)
-                        if (numberMatch) {
-                          const [, markerIndent, number] = numberMatch
-                          const currentNumber = parseInt(number)
-                          newMarker = `${markerIndent}${currentNumber + 1}.`
-                        }
-
-                        const newText =
-                          textBeforeCursor +
-                          '\n' +
-                          indent +
-                          newMarker +
-                          ' ' +
-                          textAfterCursor
-
-                        setInput(newText)
-
-                        const newCursorPos =
-                          cursorPosition +
-                          1 +
-                          indent.length +
-                          newMarker.length +
-                          1
-
-                        setTimeout(() => {
-                          resizeTextarea(textarea)
-                          textarea.selectionStart = textarea.selectionEnd =
-                            newCursorPos
-                          textarea.scrollTop = textarea.scrollHeight
-                        }, 0)
-                      }
-                    }
+                  } else if (handleListKeyDown(e)) {
+                    return
                   } else if (e.key === 'Escape' && loadingState === 'loading') {
                     e.preventDefault()
                     cancelGeneration()

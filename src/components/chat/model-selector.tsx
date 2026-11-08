@@ -49,6 +49,7 @@ const MOBILE_BREAKPOINT_PX = 768
 const EFFORT_FLYOUT_WIDTH_PX = 240
 const EFFORT_FLYOUT_GAP_PX = 8
 const VIEWPORT_MARGIN_PX = 10
+const MAX_MENU_VIEWPORT_HEIGHT_RATIO = 0.7
 
 // The top section grows to fill the available height so tall screens see
 // more models before the "Other models" fold. Row heights are estimated from
@@ -161,8 +162,7 @@ export function ModelSelector({
         useAbove = true
       }
 
-      const isMobile = window.innerWidth < MOBILE_BREAKPOINT_PX
-      const maxHeightCap = isMobile ? 300 : viewportHeight * 0.7
+      const maxHeightCap = viewportHeight * MAX_MENU_VIEWPORT_HEIGHT_RATIO
 
       const menuWidth = 280
       const viewportWidth = window.innerWidth

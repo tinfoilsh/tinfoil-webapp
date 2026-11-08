@@ -17,6 +17,7 @@ import React, { memo, useState, type JSX } from 'react'
 import { ConfirmDialog } from '../../components/confirm-dialog'
 import { CONSTANTS } from '../../constants'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
+import { useListEditing } from '../../hooks/use-list-editing'
 import { isImeComposition, isSubmitShortcut } from '../../keyboard-utils'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
@@ -86,6 +87,7 @@ const DefaultMessageComponent = ({
   const enterToNewline = useEnterToNewline()
   const [isEditing, setIsEditing] = React.useState(false)
   const [editContent, setEditContent] = React.useState(message.content || '')
+  const handleListKeyDown = useListEditing(editContent, setEditContent)
   const [copiedUser, setCopiedUser] = React.useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
   const [isUserMessageExpanded, setIsUserMessageExpanded] =
@@ -601,6 +603,8 @@ const DefaultMessageComponent = ({
                 if (isSubmitShortcut(e, enterToNewline)) {
                   e.preventDefault()
                   handleSubmitAssistantEdit()
+                } else if (handleListKeyDown(e)) {
+                  return
                 } else if (e.key === 'Escape') {
                   e.preventDefault()
                   handleCancelEdit()
@@ -740,6 +744,8 @@ const DefaultMessageComponent = ({
                       if (isSubmitShortcut(e, enterToNewline)) {
                         e.preventDefault()
                         handleSubmitEdit()
+                      } else if (handleListKeyDown(e)) {
+                        return
                       } else if (e.key === 'Escape') {
                         e.preventDefault()
                         handleCancelEdit()

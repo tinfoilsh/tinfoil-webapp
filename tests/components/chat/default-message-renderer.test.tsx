@@ -6,6 +6,7 @@ import type {
   TimelineThinkingBlock,
 } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import { publish } from '@/services/harness/runtime'
 import type {
   Annotation,
   ToolDisplay,
@@ -673,6 +674,130 @@ describe('DefaultMessageRenderer edit keyboard shortcuts', () => {
         'Revised text',
       )
       expect(textbox).not.toBeInTheDocument()
+    })
+
+    it.each(['*', '-', '+'])('formats a %s bullet while editing', (marker) => {
+      const { onSave, textbox } = openEditorWithRevision()
+      const textarea = textbox as HTMLTextAreaElement
+      const prefix = `To a wide audience:\n${marker}`
+      fireEvent.change(textarea, {
+        target: { value: `${prefix}blog post\nKeep this line` },
+      })
+      textarea.setSelectionRange(prefix.length, prefix.length)
+
+      fireEvent.keyDown(textarea, { key: ' ' })
+
+      expect(textarea).toHaveValue(
+        'To a wide audience:\n  •  blog post\nKeep this line',
+      )
+      expect(textarea.selectionStart).toBe('To a wide audience:\n  •  '.length)
+      expect(textarea.selectionEnd).toBe(textarea.selectionStart)
+      expect(onSave).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      expect(onSave).toHaveBeenCalledExactlyOnceWith(
+        messageIndex,
+        'To a wide audience:\n  •  blog post\nKeep this line',
+      )
+    })
+
+    it.each(['Shift+Enter', 'Enter for new lines', 'phone'])(
+      'continues and exits a bullet list with %s',
+      (mode) => {
+        if (mode === 'phone') {
+          vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+            IPHONE_USER_AGENT,
+          )
+        } else if (mode === 'Enter for new lines') {
+          publish({ profile: { enterToNewlineEnabled: true } })
+        }
+        const { onSave, textbox } = openEditorWithRevision()
+        const textarea = textbox as HTMLTextAreaElement
+        const content = 'To a wide audience:\n  •  blog post'
+        fireEvent.change(textarea, { target: { value: content } })
+        textarea.setSelectionRange(content.length, content.length)
+
+        const key = { key: 'Enter', shiftKey: mode === 'Shift+Enter' }
+        fireEvent.keyDown(textarea, key)
+
+        expect(textarea).toHaveValue(`${content}\n  •  `)
+        expect(textarea.selectionStart).toBe(textarea.value.length)
+        fireEvent.keyDown(textarea, key)
+        expect(textarea).toHaveValue(`${content}\n  `)
+        expect(textarea.selectionStart).toBe(textarea.value.length)
+        expect(onSave).not.toHaveBeenCalled()
+      },
+    )
+
+    it('continues, indents, and dedents numbered lists', () => {
+      const { onSave, textbox } = openEditorWithRevision()
+      const textarea = textbox as HTMLTextAreaElement
+      const content = 'Plan:\n9. Draft'
+      fireEvent.change(textarea, { target: { value: content } })
+      textarea.setSelectionRange(content.length, content.length)
+
+      fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
+      expect(textarea).toHaveValue(`${content}\n10. `)
+      fireEvent.change(textarea, {
+        target: { value: `${textarea.value}Publish` },
+      })
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+      fireEvent.keyDown(textarea, { key: 'Tab' })
+      expect(textarea).toHaveValue(`${content}\n    10. Publish`)
+      expect(textarea.selectionStart).toBe(textarea.value.length)
+
+      fireEvent.keyDown(textarea, { key: 'Tab', shiftKey: true })
+      expect(textarea).toHaveValue(`${content}\n10. Publish`)
+      fireEvent.keyDown(textarea, { key: 'Tab', shiftKey: true })
+      expect(textarea).toHaveValue(`${content}\nPublish`)
+      expect(textarea.selectionStart).toBe(textarea.value.length)
+      expect(onSave).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      { marker: '- ', nextMarker: '- ' },
+      { marker: '9. ', nextMarker: '10. ' },
+    ])(
+      'keeps a $marker list when splitting immediately after its marker',
+      ({ marker, nextMarker }) => {
+        const { onSave, textbox } = openEditorWithRevision()
+        const textarea = textbox as HTMLTextAreaElement
+        const prefix = `Notes:\n${marker}`
+        fireEvent.change(textarea, {
+          target: { value: `${prefix}Item\nKeep this line` },
+        })
+        textarea.setSelectionRange(prefix.length, prefix.length)
+
+        fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
+
+        expect(textarea).toHaveValue(
+          `${prefix}\n${nextMarker}Item\nKeep this line`,
+        )
+        expect(textarea.selectionStart).toBe(`${prefix}\n${nextMarker}`.length)
+        expect(textarea.selectionEnd).toBe(textarea.selectionStart)
+
+        textarea.setSelectionRange(prefix.length, prefix.length)
+        fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
+        expect(textarea).toHaveValue(
+          `Notes:\n\n${nextMarker}Item\nKeep this line`,
+        )
+        expect(textarea.selectionStart).toBe('Notes:\n'.length)
+        expect(onSave).not.toHaveBeenCalled()
+      },
+    )
+
+    it('leaves a list alone while confirming an IME composition', () => {
+      const { onSave, textbox } = openEditorWithRevision()
+      const content = '* blog post'
+      fireEvent.change(textbox, { target: { value: content } })
+
+      fireEvent.keyDown(textbox, {
+        key: 'Enter',
+        shiftKey: true,
+        isComposing: true,
+      })
+
+      expect(textbox).toHaveValue(content)
+      expect(onSave).not.toHaveBeenCalled()
     })
   })
 })
