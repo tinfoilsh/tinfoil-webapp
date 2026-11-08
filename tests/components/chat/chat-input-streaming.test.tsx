@@ -1,8 +1,12 @@
 import { ChatInput } from '@/components/chat/chat-input'
+import { HarnessError } from '@/services/harness/sse'
+import { dictation } from '@/services/speech/dictation'
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import { createRef } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { signIn, testSession } from '../../harness-fixture'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { client, signIn, testSession } from '../../harness-fixture'
+import { grantMicrophone, recording } from '../../services/speech/fixtures'
 
 vi.mock('@/components/project', () => ({
   ProjectModeBanner: () => null,
@@ -79,49 +83,113 @@ describe('ChatInput streaming action', () => {
     expect(start).not.toHaveBeenCalled()
   })
 
-  it("stops dictation once the session's time limit is reached", async () => {
-    vi.useFakeTimers()
-    signIn({
-      session: {
-        ...testSession,
-        composer: { ...testSession.composer, dictationMaxSeconds: 7 },
-      },
+  describe('dictation', () => {
+    // A temporary chat keeps dictation off the device, so no recording one
+    // test leaves reaches the next; keeping it is the dictation tests' to
+    // check.
+    const renderComposer = (setInput: (value: string) => void) =>
+      render(
+        <ChatInput
+          isTemporaryMode
+          input="Draft"
+          setInput={setInput}
+          handleSubmit={vi.fn()}
+          loadingState="idle"
+          cancelGeneration={vi.fn()}
+          inputRef={createRef<HTMLTextAreaElement>()}
+          handleInputFocus={vi.fn()}
+          inputMinHeight="40px"
+          isDarkMode
+          isPremium
+        />,
+      )
+    const segmentMs = testSession.composer.dictationSegmentSeconds * 1000
+
+    beforeEach(() => {
+      vi.useFakeTimers({
+        toFake: [
+          'setTimeout',
+          'clearTimeout',
+          'setInterval',
+          'clearInterval',
+          'Date',
+        ],
+      })
+      vi.stubGlobal('indexedDB', new IDBFactory())
+      vi.stubGlobal('IDBKeyRange', FakeIDBKeyRange)
+      signIn()
+      grantMicrophone()
     })
-    const stop = vi.fn()
-    class SupportedMediaRecorder {
-      static isTypeSupported = () => true
-      state = 'recording'
-      start = vi.fn()
-      stop = stop
-    }
-    vi.stubGlobal('MediaRecorder', SupportedMediaRecorder)
-    vi.stubGlobal('navigator', {
-      mediaDevices: {
-        getUserMedia: vi.fn(async () => ({ getTracks: () => [] })),
-      },
-    })
-    render(
-      <ChatInput
-        input=""
-        setInput={vi.fn()}
-        handleSubmit={vi.fn()}
-        loadingState="idle"
-        cancelGeneration={vi.fn()}
-        inputRef={createRef<HTMLTextAreaElement>()}
-        handleInputFocus={vi.fn()}
-        inputMinHeight="40px"
-        isDarkMode
-        isPremium
-      />,
-    )
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Start recording' }))
+    afterEach(() => {
+      dictation.reset()
     })
 
-    await act(() => vi.advanceTimersByTimeAsync(6_999))
-    expect(stop).not.toHaveBeenCalled()
-    await act(() => vi.advanceTimersByTimeAsync(1))
-    expect(stop).toHaveBeenCalledOnce()
+    it('adds each recording to the draft as it is transcribed, while recording goes on', async () => {
+      const answers = ['Hello there.', 'And more.']
+      client.upload.mockImplementation(async () => ({
+        text: answers.shift(),
+      }))
+      const setInput = vi.fn()
+      renderComposer(setInput)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Start recording' }))
+      })
+      recording().hear('hello there')
+      await act(() => vi.advanceTimersByTimeAsync(segmentMs))
+      expect(setInput).toHaveBeenLastCalledWith('Draft Hello there.')
+      expect(
+        screen.getByRole('button', { name: 'Stop recording' }),
+      ).toBeInTheDocument()
+
+      recording().hear('and more')
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Stop recording' }))
+      })
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(setInput).toHaveBeenLastCalledWith('Draft Hello there. And more.')
+      expect(
+        screen.getByRole('button', { name: 'Start recording' }),
+      ).toBeInTheDocument()
+    })
+
+    it('keeps a recording that could not be transcribed for the user to try again', async () => {
+      client.upload.mockRejectedValueOnce(
+        new HarnessError(
+          {
+            code: 'ATTACHMENT_UNSUPPORTED',
+            action: 'revise',
+            message: 'Unsupported recording type',
+          },
+          415,
+        ),
+      )
+      client.upload.mockResolvedValueOnce({ text: 'Kept.' })
+      const setInput = vi.fn()
+      renderComposer(setInput)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Start recording' }))
+      })
+      recording().hear('kept')
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Stop recording' }))
+      })
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(
+        screen.getByText(/Couldn't transcribe part of your dictation/),
+      ).toBeInTheDocument()
+      expect(setInput).not.toHaveBeenCalled()
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+      })
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(setInput).toHaveBeenLastCalledWith('Draft Kept.')
+      expect(
+        screen.queryByRole('button', { name: 'Try again' }),
+      ).not.toBeInTheDocument()
+    })
   })
 
   it('shows Stop while a recovered response is streaming', () => {
