@@ -126,6 +126,8 @@ export class Dictation {
   private readonly segments = new Map<string, Segment>()
   private recorder: SegmentRecorder | null = null
   private stream: MediaStream | null = null
+  // The composer that started the dictation under way.
+  private owner: symbol | undefined
   // Counts starts, so a stop while the microphone is asked for ends it.
   private starts = 0
   private starting = false
@@ -158,9 +160,11 @@ export class Dictation {
   }
 
   async start({
+    owner,
     segmentSeconds,
     persist,
   }: {
+    owner: symbol
     segmentSeconds: number
     persist: boolean
   }): Promise<void> {
@@ -171,6 +175,7 @@ export class Dictation {
     )
       throw new DictationUnsupportedError()
     const start = ++this.starts
+    this.owner = owner
     this.starting = true
     let stream: MediaStream
     try {
@@ -237,8 +242,10 @@ export class Dictation {
     this.refresh()
   }
 
-  // Closes the microphone. What was recorded is still transcribed.
-  stop(): void {
+  // Closes the microphone, unless an owner is named that did not start the
+  // dictation under way. What was recorded is still transcribed.
+  stop(owner?: symbol): void {
+    if (owner !== undefined && owner !== this.owner) return
     this.starts++
     const recorder = this.recorder
     this.recorder = null

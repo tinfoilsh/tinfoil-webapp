@@ -327,9 +327,11 @@ export const ChatInput = memo(function ChatInput({
     draftRef.current = input
   }, [input])
 
-  // Leaving the composer closes the microphone; what was recorded is still
+  // Leaving the composer closes the microphone if it opened it, as another
+  // composer can stay mounted while hidden; what was recorded is still
   // transcribed and arrives in the composer shown then.
-  useEffect(() => () => dictation.stop(), [])
+  const [dictationOwner] = useState(() => Symbol('dictation'))
+  useEffect(() => () => dictation.stop(dictationOwner), [dictationOwner])
 
   // --- Input options menu state (the "+" button) ---
   const [isInputMenuOpen, setIsInputMenuOpen] = useState(false)
@@ -543,6 +545,7 @@ export const ChatInput = memo(function ChatInput({
     if (!session) return
     try {
       await dictation.start({
+        owner: dictationOwner,
         segmentSeconds: session.composer.dictationSegmentSeconds,
         persist: !isTemporaryMode,
       })
@@ -557,7 +560,7 @@ export const ChatInput = memo(function ChatInput({
         position: 'top-right',
       })
     }
-  }, [session, isTemporaryMode, toast])
+  }, [session, isTemporaryMode, toast, dictationOwner])
 
   // Handle paste event for images and long text detection
   const handlePaste = useCallback(

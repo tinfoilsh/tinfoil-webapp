@@ -12,6 +12,7 @@ const SEGMENT_SECONDS = 10
 // Where audio cannot be analyzed the microphone reads as quiet, so a
 // recording ends at its length.
 const SEGMENT_MS = SEGMENT_SECONDS * 1000
+const COMPOSER = Symbol('composer')
 
 const refused = (code: string, action: string) =>
   new HarnessError({ code, action, message: code } as never, 502)
@@ -78,7 +79,11 @@ describe('Dictation', () => {
     const dictation = new Dictation(new IndexedDBStorage())
     const received = listening(dictation)
 
-    await dictation.start({ segmentSeconds: SEGMENT_SECONDS, persist: true })
+    await dictation.start({
+      owner: COMPOSER,
+      segmentSeconds: SEGMENT_SECONDS,
+      persist: true,
+    })
     recording().hear('first part')
     await vi.advanceTimersByTimeAsync(SEGMENT_MS)
     await settle()
@@ -119,7 +124,11 @@ describe('Dictation', () => {
     const dictation = new Dictation(new IndexedDBStorage())
     const received = listening(dictation)
 
-    await dictation.start({ segmentSeconds: SEGMENT_SECONDS, persist: true })
+    await dictation.start({
+      owner: COMPOSER,
+      segmentSeconds: SEGMENT_SECONDS,
+      persist: true,
+    })
     recording().hear('earlier')
     await vi.advanceTimersByTimeAsync(SEGMENT_MS)
     recording().hear('later')
@@ -153,7 +162,11 @@ describe('Dictation', () => {
     const dictation = new Dictation(new IndexedDBStorage())
     const received = listening(dictation)
 
-    await dictation.start({ segmentSeconds: SEGMENT_SECONDS, persist: true })
+    await dictation.start({
+      owner: COMPOSER,
+      segmentSeconds: SEGMENT_SECONDS,
+      persist: true,
+    })
     recording().hear('kept')
     dictation.stop()
     await vi.advanceTimersByTimeAsync(
@@ -187,7 +200,11 @@ describe('Dictation', () => {
     const dictation = new Dictation(new IndexedDBStorage())
     const received = listening(dictation)
 
-    await dictation.start({ segmentSeconds: SEGMENT_SECONDS, persist: true })
+    await dictation.start({
+      owner: COMPOSER,
+      segmentSeconds: SEGMENT_SECONDS,
+      persist: true,
+    })
     recording().hear('first')
     await vi.advanceTimersByTimeAsync(SEGMENT_MS)
     recording().hear('second')
@@ -216,13 +233,21 @@ describe('Dictation', () => {
     const dictation = new Dictation(new IndexedDBStorage())
     listening(dictation)
 
-    await dictation.start({ segmentSeconds: SEGMENT_SECONDS, persist: false })
+    await dictation.start({
+      owner: COMPOSER,
+      segmentSeconds: SEGMENT_SECONDS,
+      persist: false,
+    })
     recording().hear('private')
     dictation.stop()
     await settle()
     expect(dictation.getSnapshot()).toMatchObject({ failed: 1 })
     // A dictation in a saved chat after it is kept, and it alone.
-    await dictation.start({ segmentSeconds: SEGMENT_SECONDS, persist: true })
+    await dictation.start({
+      owner: COMPOSER,
+      segmentSeconds: SEGMENT_SECONDS,
+      persist: true,
+    })
     recording().hear('kept')
     dictation.stop()
     await vi.waitFor(async () => expect(await saved()).not.toEqual([]))

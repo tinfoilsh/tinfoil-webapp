@@ -153,6 +153,22 @@ describe('ChatInput streaming action', () => {
       ).toBeInTheDocument()
     })
 
+    it('keeps recording when a composer that did not start it leaves', async () => {
+      const { unmount: leaveHidden } = renderComposer(vi.fn())
+      renderComposer(vi.fn())
+      const [, shown] = screen.getAllByRole('button', {
+        name: 'Start recording',
+      })
+      await act(async () => {
+        fireEvent.click(shown)
+      })
+      leaveHidden()
+      expect(
+        screen.getByRole('button', { name: 'Stop recording' }),
+      ).toBeInTheDocument()
+      expect(recording().state).toBe('recording')
+    })
+
     it('keeps a recording that could not be transcribed for the user to try again', async () => {
       client.upload.mockRejectedValueOnce(
         new HarnessError(
