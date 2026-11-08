@@ -6,6 +6,8 @@ import { MermaidPreview } from '@/components/preview/mermaid-preview'
 import {
   MERMAID_PREVIEW_URL,
   SANDBOX_PREVIEW_URL,
+  useSandboxRunner,
+  type SandboxRun,
 } from '@/components/preview/sandbox-frame'
 import {
   act,
@@ -14,6 +16,7 @@ import {
   render,
   waitFor,
 } from '@testing-library/react'
+import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, signIn } from '../harness-fixture'
 
@@ -32,6 +35,19 @@ afterEach(() => {
 
 const MAX_OUTPUT_LINES = 1000
 const MAX_OUTPUT_CHARACTERS = 100_000
+
+const IMAGE_RUN: SandboxRun = {
+  type: 'tinfoil-sandbox-run',
+  kind: 'artifact',
+  instanceId: 'image-run',
+  html: '<p>Images</p>',
+}
+
+function ImageBridgeFrame() {
+  const ref = useRef<HTMLIFrameElement>(null)
+  const sandbox = useSandboxRunner(ref, IMAGE_RUN)
+  return <iframe ref={ref} src={sandbox.src} title="Images" />
+}
 
 /** In-origin runner frames embed their payload as a JSON data block in srcdoc. */
 function runnerData(frame: HTMLIFrameElement): Record<string, unknown> {
@@ -429,24 +445,25 @@ it('answers image requests only from the ready artifact and its current run', as
     image_bytes: 'AQID',
     image_content_type: 'image/png',
   })
-  const { getByTitle } = render(
-    <ArtifactPreviewPanel
-      source={{
-        type: 'html',
-        html: '<img src="https://images.example/photo.png">',
-      }}
-      title="Images"
-    />,
-  )
+  const { getByTitle } = render(<ImageBridgeFrame />)
   const frame = getByTitle('Images') as HTMLIFrameElement
-  const run = sandboxRun(frame)
-  const reply = vi.spyOn(frame.contentWindow!, 'postMessage')
   const request = {
     type: 'tinfoil-sandbox-image-request',
-    instanceId: run.instanceId,
+    instanceId: IMAGE_RUN.instanceId,
     requestId: '1',
     url: 'https://images.example/photo.png',
   }
+  await act(async () => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: frame.contentWindow,
+        data: request,
+      }),
+    )
+  })
+  expect(client.post).not.toHaveBeenCalled()
+  const run = sandboxRun(frame)
+  const reply = vi.spyOn(frame.contentWindow!, 'postMessage')
   act(() => {
     window.dispatchEvent(
       new MessageEvent('message', { source: window, data: request }),
@@ -483,6 +500,7 @@ it('answers image requests only from the ready artifact and its current run', as
     { url: request.url },
     expect.any(AbortSignal),
   )
+  // Reusing a request id cannot make the parent fetch another URL.
   act(() =>
     window.dispatchEvent(
       new MessageEvent('message', {
@@ -492,6 +510,129 @@ it('answers image requests only from the ready artifact and its current run', as
     ),
   )
   expect(client.post).toHaveBeenCalledTimes(1)
+})
+
+it('settles image requests beyond the artifact budget with an unavailable response', async () => {
+  signIn()
+  client.post.mockResolvedValue({
+    image_bytes: 'AQID',
+    image_content_type: 'image/png',
+  })
+  const { getByTitle } = render(<ImageBridgeFrame />)
+  const frame = getByTitle('Images') as HTMLIFrameElement
+  const run = sandboxRun(frame)
+  const reply = vi.spyOn(frame.contentWindow!, 'postMessage')
+  await act(async () => {
+    for (let requestId = 1; requestId <= 65; requestId++) {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: frame.contentWindow,
+          data: {
+            type: 'tinfoil-sandbox-image-request',
+            instanceId: run.instanceId,
+            requestId: String(requestId),
+            url: 'https://images.example/photo.png',
+          },
+        }),
+      )
+    }
+  })
+  expect(reply).toHaveBeenCalledWith(
+    {
+      type: 'tinfoil-sandbox-image',
+      instanceId: run.instanceId,
+      requestId: '65',
+      dataURL: null,
+    },
+    '*',
+  )
+  expect(client.post).toHaveBeenCalledTimes(1)
+})
+
+it('does not deliver an old image result to a new artifact using the same request id', async () => {
+  signIn()
+  const answers = new Map<string, (value: unknown) => void>()
+  client.post.mockImplementation(
+    async (_path, input) =>
+      new Promise((resolve) => {
+        answers.set((input as { url: string }).url, resolve)
+      }),
+  )
+  const { getByTitle, rerender } = render(
+    <ArtifactPreviewPanel
+      source={{ type: 'html', html: '<p>First</p>' }}
+      title="Images"
+    />,
+  )
+  const frame = getByTitle('Images') as HTMLIFrameElement
+  const first = sandboxRun(frame)
+  act(() =>
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: frame.contentWindow,
+        data: {
+          type: 'tinfoil-sandbox-image-request',
+          instanceId: first.instanceId,
+          requestId: '1',
+          url: 'https://images.example/first.png',
+        },
+      }),
+    ),
+  )
+  await waitFor(() =>
+    expect(answers.has('https://images.example/first.png')).toBe(true),
+  )
+  const reply = vi.spyOn(frame.contentWindow!, 'postMessage')
+  rerender(
+    <ArtifactPreviewPanel
+      source={{ type: 'html', html: '<p>Second</p>' }}
+      title="Images"
+    />,
+  )
+  const second = reply.mock.calls.at(-1)![0] as SandboxRun
+  expect(second.instanceId).not.toBe(first.instanceId)
+  act(() =>
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: frame.contentWindow,
+        data: {
+          type: 'tinfoil-sandbox-image-request',
+          instanceId: second.instanceId,
+          requestId: '1',
+          url: 'https://images.example/second.png',
+        },
+      }),
+    ),
+  )
+  await act(async () =>
+    answers.get('https://images.example/first.png')!({
+      image_bytes: 'AQID',
+      image_content_type: 'image/png',
+    }),
+  )
+  await waitFor(() =>
+    expect(answers.has('https://images.example/second.png')).toBe(true),
+  )
+  expect(
+    reply.mock.calls.filter(
+      ([message]) => message.type === 'tinfoil-sandbox-image',
+    ),
+  ).toEqual([])
+  await act(async () =>
+    answers.get('https://images.example/second.png')!({
+      image_bytes: 'BAUG',
+      image_content_type: 'image/png',
+    }),
+  )
+  expect(reply).toHaveBeenCalledWith(
+    {
+      type: 'tinfoil-sandbox-image',
+      instanceId: second.instanceId,
+      requestId: '1',
+      dataURL: 'data:image/png;base64,BAUG',
+    },
+    '*',
+  )
 })
 
 it('automatically runs HTML artifacts in the sandbox when their preview opens', () => {

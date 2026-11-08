@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { GenUIToolCallRenderer } from '@/components/chat/genui/GenUIToolCallRenderer'
 import { MessageContent } from '@/components/chat/renderers/components/MessageContent'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -74,6 +75,7 @@ it('embeds fetched bytes when printing a recipe', async () => {
     focus: vi.fn(),
     print: vi.fn(),
     closed: false,
+    opener: window as Window | null,
   }
   vi.spyOn(window, 'open').mockReturnValue(printWindow as unknown as Window)
   render(
@@ -92,4 +94,5 @@ it('embeds fetched bytes when printing a recipe', async () => {
   expect(html).toContain(DATA_URL)
   expect(html).not.toContain(SOURCE)
   expect(printWindow.print).toHaveBeenCalledTimes(1)
+  expect(printWindow.opener).toBeNull()
 })

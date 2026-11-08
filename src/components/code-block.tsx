@@ -310,7 +310,9 @@ const MarkdownPreview = ({
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        img: ({ src, alt }) => <PrivateImage src={src} alt={alt} />,
+        img: ({ src, alt, title }) => (
+          <PrivateImage src={src} alt={alt} title={title} />
+        ),
         table: ({ node, children, ...props }: any) => (
           <div className="overflow-x-auto">
             <table {...props} className="w-full border-collapse">

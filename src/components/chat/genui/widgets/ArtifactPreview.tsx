@@ -18,6 +18,7 @@ import {
   useSandboxRunner,
   type SandboxRun,
 } from '@/components/preview/sandbox-frame'
+import { usePreviewInstanceId } from '@/components/preview/use-preview-messages'
 import {
   Card,
   CardContent,
@@ -254,7 +255,7 @@ function HtmlArtifactFrame({
   className: string
   shouldAutoFocus: boolean
 }) {
-  const instanceId = useId()
+  const instanceId = usePreviewInstanceId(html)
   const run = useMemo<SandboxRun>(
     () => ({ type: 'tinfoil-sandbox-run', kind: 'artifact', instanceId, html }),
     [html, instanceId],

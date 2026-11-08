@@ -97,10 +97,22 @@ export function useSandboxRunner(
           seen = new Set()
           imageRequests.set(current.instanceId, seen)
         }
-        if (seen.has(data.requestId) || seen.size >= MAX_IMAGE_REQUESTS) return
+        if (seen.has(data.requestId)) return
+        if (seen.size >= MAX_IMAGE_REQUESTS) {
+          target.postMessage(
+            {
+              type: 'tinfoil-sandbox-image',
+              instanceId: data.instanceId,
+              requestId: data.requestId,
+              dataURL: null,
+            },
+            '*',
+          )
+          return
+        }
         seen.add(data.requestId)
         const { instanceId, requestId, url: imageURL } = data
-        void loadRemoteImage(imageURL)
+        void loadRemoteImage(imageURL, 'artifact')
           .catch(() => null)
           .then((dataURL) => {
             if (

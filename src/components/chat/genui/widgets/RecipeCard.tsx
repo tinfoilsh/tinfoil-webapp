@@ -189,8 +189,9 @@ function Recipe({
 
   async function print(): Promise<void> {
     if (typeof window === 'undefined') return
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer')
+    const printWindow = window.open('', '_blank')
     if (!printWindow) return
+    printWindow.opener = null
     const printableImage = image
       ? await loadRemoteImage(image).catch(() => undefined)
       : undefined
@@ -563,6 +564,7 @@ function buildPrintableRecipeHtml(args: PrintableRecipeArgs): string {
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="referrer" content="no-referrer" />
 <title>${safeTitle}</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; }
