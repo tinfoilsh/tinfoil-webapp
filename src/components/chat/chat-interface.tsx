@@ -2028,7 +2028,7 @@ export function ChatInterface({
             e.preventDefault()
             createNewChat(currentChat.isLocalOnly, true)
           }}
-          className="flex items-center justify-center rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:hidden"
+          className="flex items-center justify-center rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:hidden max-md:hidden"
           aria-label="New chat"
         >
           <TfWriting2Animated className="h-4 w-4" aria-hidden="true" />
