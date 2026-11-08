@@ -553,6 +553,99 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(await stored(SEEDED_ID)).toEqual(returned)
   })
 
+  it('keeps a rename made while a reply streams through reloads before it ends', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const { returned } = heldReply()
+    const page = renderHook(() => useThread(SEEDED_ID, null, { local: true }))
+    await waitFor(() =>
+      expect(page.result.current.chat.messages).toHaveLength(4),
+    )
+    act(() => {
+      void page.result.current.send({ content: 'third' })
+    })
+    await waitFor(() => expect(page.result.current.status).toBe('streaming'))
+    applies({ title: 'Mine', titleState: 'manual' })
+    await act(() => page.result.current.update(SEEDED_ID, { title: 'Mine' }))
+    page.unmount()
+
+    // The page reloads twice while the run goes on; the last follows it to
+    // its end, with the thread the harness took before the rename.
+    client.events
+      .mockImplementationOnce(async function* () {
+        yield {
+          id: 0,
+          event: {
+            type: 'RUN_STARTED',
+            threadId: SEEDED_ID,
+            runId: 'run-1',
+            instance: 'instance-1',
+          },
+        }
+        await new Promise<void>(() => {})
+      })
+      .mockImplementationOnce(deviceRun(SEEDED_ID, returned))
+    const reloaded = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() =>
+      expect(reloaded.result.current.status).toBe('streaming'),
+    )
+    reloaded.unmount()
+    renderHook(() => useThread(SEEDED_ID, null, { local: true }))
+    await waitFor(() => expect(client.events).toHaveBeenCalledTimes(3))
+    expect(
+      client.events.mock.calls.slice(1).map((call) => call.slice(0, 2)),
+    ).toEqual([
+      ['/v1/threads/follow', { threadId: SEEDED_ID, runId: 'run-1' }],
+      ['/v1/threads/follow', { threadId: SEEDED_ID, runId: 'run-1' }],
+    ])
+    await waitFor(async () =>
+      expect(await stored(SEEDED_ID)).toEqual({
+        ...returned,
+        title: 'Mine',
+        titleState: 'manual',
+      }),
+    )
+  })
+
+  it('keeps a rename made after a reload, before the chat’s run is followed again', async () => {
+    signIn('alice')
+    await reloadDuringRun()
+    const returned = recorded(
+      seeded({
+        title: 'Generated',
+        titleState: 'generated',
+        lastRequestId: 'request-1',
+        messages: [
+          ...SEEDED_MESSAGES,
+          { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
+        ],
+      }),
+    )
+    client.events.mockImplementationOnce(
+      deviceRun(SEEDED_ID, returned, 'run-a3'),
+    )
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.chats).toHaveLength(1))
+    applies({ title: 'Mine', titleState: 'manual' })
+    await act(() => result.current.update(SEEDED_ID, { title: 'Mine' }))
+    expect(client.events).not.toHaveBeenCalled()
+
+    await act(() => result.current.open(SEEDED_ID, { local: true }))
+    await waitFor(async () =>
+      expect(await stored(SEEDED_ID)).toEqual({
+        ...returned,
+        title: 'Mine',
+        titleState: 'manual',
+      }),
+    )
+    expect(client.events.mock.calls[0].slice(0, 2)).toEqual([
+      '/v1/threads/follow',
+      { threadId: SEEDED_ID, runId: 'run-a3' },
+    ])
+  })
+
   const QUESTION = {
     id: 'msg_user',
     role: 'user' as const,

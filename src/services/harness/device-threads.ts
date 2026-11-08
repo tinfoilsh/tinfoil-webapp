@@ -404,7 +404,9 @@ export function deviceThreads({
             [...attachments.uploads.values()],
             heldImages((await transcript(threadId)).messages),
           ),
-          since: controller.tick(),
+          // A run this page did not start read the chat before any change
+          // the page made to it.
+          since: 0,
         },
       }
     },
