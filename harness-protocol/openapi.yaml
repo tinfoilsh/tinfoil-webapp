@@ -6,7 +6,7 @@ info:
   description: |
     The protocol between Tinfoil Chat clients and the harness enclave.
 
-    Every request is a POST through an attested, EHBP-sealed transport, so
+    Every chat request is a POST through an attested, EHBP-sealed transport, so
     bodies are private to the client and the enclave while headers are
     visible to the gateway. Headers carry only what is not private:
     `Authorization` carries the caller's identity (a Clerk session token, a
@@ -122,7 +122,7 @@ tags:
   - name: speech
     description: Transcription and read-aloud.
   - name: metadata
-    description: Favicons and link previews, fetched inside an enclave.
+    description: Images, favicons and link previews, fetched inside an enclave.
 
 paths:
 
@@ -141,6 +141,20 @@ paths:
                 required: [ok]
                 properties:
                   ok: {const: true}
+
+  /metrics:
+    get:
+      operationId: metrics
+      summary: Export aggregate service metrics
+      description: Prometheus HTTP, run lifecycle, and runtime metrics. The measured shim validates an admin key with metrics.read before forwarding this operational endpoint. No chat content, caller identifiers, or credentials are exported.
+      security:
+        - metricsAdmin: []
+      responses:
+        "200":
+          description: Prometheus text exposition.
+          content:
+            text/plain:
+              schema: {type: string}
 
   /v1/session:
     post:
@@ -1325,6 +1339,25 @@ paths:
                   favicon_content_type: {type: string}
         default: {$ref: "#/components/responses/Error"}
 
+  /v1/metadata/image:
+    post:
+      operationId: remoteImage
+      summary: Load a public image inside the enclave
+      tags: [metadata]
+      description: Fetches an HTTPS image without caller headers or cookies and returns a PNG copy. Private destinations, nonstandard ports, excessive redirects, oversized downloads and images over the pixel limit are refused. Animation is reduced to its first frame. Clients never fall back to downloading the URL directly.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PageRequest"}
+      responses:
+        "200":
+          description: Image bytes for local display.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RemoteImage"}
+        default: {$ref: "#/components/responses/Error"}
+
   /v1/metadata/link:
     post:
       operationId: linkMetadata
@@ -1358,6 +1391,10 @@ components:
       schema: {type: string}
 
   securitySchemes:
+    metricsAdmin:
+      type: http
+      scheme: bearer
+      description: An admin API key authorized for metrics.read, validated online by the shim.
     identity:
       type: http
       scheme: bearer
@@ -1491,6 +1528,13 @@ components:
       required: [url]
       properties:
         url: {type: string}
+
+    RemoteImage:
+      type: object
+      required: [image_bytes, image_content_type]
+      properties:
+        image_bytes: {type: string, description: "Base64-encoded PNG, no more than 8 MiB before base64 encoding."}
+        image_content_type: {type: string, const: "image/png"}
 
     # --- Errors ---------------------------------------------------------------
 

@@ -1,5 +1,6 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { Card } from '@/components/ui/card'
+import { loadRemoteImage } from '@/services/harness/remote-images'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
 import { Check, Clock, Flame, Printer, Users } from 'lucide-react'
@@ -186,12 +187,18 @@ function Recipe({
     setCompletedSteps(new Set())
   }
 
-  function print(): void {
+  async function print(): Promise<void> {
     if (typeof window === 'undefined') return
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer')
+    if (!printWindow) return
+    const printableImage = image
+      ? await loadRemoteImage(image).catch(() => undefined)
+      : undefined
+    if (printWindow.closed) return
     const html = buildPrintableRecipeHtml({
       title,
       description,
-      image,
+      image: printableImage,
       cuisine,
       difficultyText,
       metaItems: metaItems.map((m) => ({ label: m.label, value: m.value })),
@@ -207,8 +214,6 @@ function Recipe({
       sourceUrl,
       scale: recipeScale,
     })
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer')
-    if (!printWindow) return
     printWindow.document.open()
     printWindow.document.write(html)
     printWindow.document.close()

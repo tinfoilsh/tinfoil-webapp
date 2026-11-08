@@ -18,6 +18,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/metrics': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Export aggregate service metrics
+     * @description Prometheus HTTP, run lifecycle, and runtime metrics. The measured shim validates an admin key with metrics.read before forwarding this operational endpoint. No chat content, caller identifiers, or credentials are exported.
+     */
+    get: operations['metrics']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/v1/session': {
     parameters: {
       query?: never
@@ -954,6 +974,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/v1/metadata/image': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Load a public image inside the enclave
+     * @description Fetches an HTTPS image without caller headers or cookies and returns a PNG copy. Private destinations, nonstandard ports, excessive redirects, oversized downloads and images over the pixel limit are refused. Animation is reduced to its first frame. Clients never fall back to downloading the URL directly.
+     */
+    post: operations['remoteImage']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/v1/metadata/link': {
     parameters: {
       query?: never
@@ -999,6 +1039,12 @@ export interface components {
     }
     PageRequest: {
       url: string
+    }
+    RemoteImage: {
+      /** @description Base64-encoded PNG, no more than 8 MiB before base64 encoding. */
+      image_bytes: string
+      /** @constant */
+      image_content_type: 'image/png'
     }
     ErrorResponse: {
       error: components['schemas']['ErrorBody']
@@ -2372,6 +2418,26 @@ export interface operations {
       }
     }
   }
+  metrics: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Prometheus text exposition. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'text/plain': string
+        }
+      }
+    }
+  }
   session: {
     parameters: {
       query?: never
@@ -3722,6 +3788,31 @@ export interface operations {
             favicon_bytes?: string
             favicon_content_type?: string
           }
+        }
+      }
+      default: components['responses']['Error']
+    }
+  }
+  remoteImage: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PageRequest']
+      }
+    }
+    responses: {
+      /** @description Image bytes for local display. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RemoteImage']
         }
       }
       default: components['responses']['Error']

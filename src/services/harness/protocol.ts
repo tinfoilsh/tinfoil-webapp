@@ -53,6 +53,7 @@ export const ROUTES = {
   projectDocumentUpload: '/v1/projects/documents/upload',
   projectDocumentDelete: '/v1/projects/documents/delete',
   favicon: '/v1/metadata/favicon',
+  remoteImage: '/v1/metadata/image',
   linkMetadata: '/v1/metadata/link',
   speech: '/v1/speech',
   transcriptions: '/v1/transcriptions',

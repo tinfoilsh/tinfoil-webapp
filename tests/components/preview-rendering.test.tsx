@@ -15,6 +15,7 @@ import {
   waitFor,
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { client, signIn } from '../harness-fixture'
 
 beforeEach(() =>
   vi.stubGlobal(
@@ -420,6 +421,77 @@ describe('code previews', () => {
     previewMessage(frame, type, { height: -1 })
     expect(frame.style.height).toBe(language === 'html' ? '100px' : '150px')
   })
+})
+
+it('answers image requests only from the ready artifact and its current run', async () => {
+  signIn()
+  client.post.mockResolvedValue({
+    image_bytes: 'AQID',
+    image_content_type: 'image/png',
+  })
+  const { getByTitle } = render(
+    <ArtifactPreviewPanel
+      source={{
+        type: 'html',
+        html: '<img src="https://images.example/photo.png">',
+      }}
+      title="Images"
+    />,
+  )
+  const frame = getByTitle('Images') as HTMLIFrameElement
+  const run = sandboxRun(frame)
+  const reply = vi.spyOn(frame.contentWindow!, 'postMessage')
+  const request = {
+    type: 'tinfoil-sandbox-image-request',
+    instanceId: run.instanceId,
+    requestId: '1',
+    url: 'https://images.example/photo.png',
+  }
+  act(() => {
+    window.dispatchEvent(
+      new MessageEvent('message', { source: window, data: request }),
+    )
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: frame.contentWindow,
+        data: { ...request, instanceId: 'another-run' },
+      }),
+    )
+  })
+  expect(client.post).not.toHaveBeenCalled()
+  act(() =>
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: frame.contentWindow,
+        data: request,
+      }),
+    ),
+  )
+  await waitFor(() =>
+    expect(reply).toHaveBeenCalledWith(
+      {
+        type: 'tinfoil-sandbox-image',
+        instanceId: run.instanceId,
+        requestId: '1',
+        dataURL: 'data:image/png;base64,AQID',
+      },
+      '*',
+    ),
+  )
+  expect(client.post).toHaveBeenCalledExactlyOnceWith(
+    '/v1/metadata/image',
+    { url: request.url },
+    expect.any(AbortSignal),
+  )
+  act(() =>
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: frame.contentWindow,
+        data: { ...request, url: 'https://images.example/other.png' },
+      }),
+    ),
+  )
+  expect(client.post).toHaveBeenCalledTimes(1)
 })
 
 it('automatically runs HTML artifacts in the sandbox when their preview opens', () => {
