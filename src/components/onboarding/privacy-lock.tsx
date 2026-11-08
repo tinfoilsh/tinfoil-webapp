@@ -14,15 +14,18 @@ const LOCKED_FRAME = LOCK_FRAMES.length - 1
 const LOCK_SWING_S = 0.6
 
 // A lock that swings shut when `locked` turns on and open again when it turns
-// off, from wherever it is.
+// off, from wherever it is. With `startOpen`, a lock that appears locked
+// swings shut as it appears.
 export function PrivacyLock({
   locked,
+  startOpen = false,
   className,
 }: {
   locked: boolean
+  startOpen?: boolean
   className?: string
 }) {
-  const frame = useMotionValue(locked ? LOCKED_FRAME : 0)
+  const frame = useMotionValue(locked && !startOpen ? LOCKED_FRAME : 0)
   const path = useTransform(frame, (value) => LOCK_FRAMES[Math.round(value)])
   const prefersReducedMotion = useReducedMotion()
 

@@ -14,8 +14,6 @@ import { TfDocumentPlus, TfShare, TfTinSad } from '@tinfoilsh/tinfoil-icons'
 import {
   TfArrowDownAnimated,
   TfGhost2Animated,
-  TfLockLockedAnimated,
-  TfLockOpenedAnimated,
   TfSidebarOpenAnimated,
   TfWriting2Animated,
 } from '@tinfoilsh/tinfoil-icons/animated'
@@ -105,6 +103,10 @@ import type { SettingsTab } from './settings-modal'
 import { SIDEBAR_PANEL_ID } from './sidebar-layout'
 import type { Chat } from './types'
 import { uploadErrorMessage } from './upload-error'
+import {
+  VerificationStatusButton,
+  type VerificationStatus,
+} from './verification-status-button'
 // Lazy-load modals that aren't shown on initial load. The loaders are
 // hoisted so they can be pre-warmed (see preloadCloudSyncModals) before
 // the user clicks, keeping the chunk fetch off the click critical path.
@@ -467,9 +469,9 @@ export function ChatInterface({
   const [activeArtifactToolCallId, setActiveArtifactToolCallId] = useState<
     string | null
   >(null)
-  const [verificationStatus, setVerificationStatus] = useState<
-    'pending' | 'verified' | 'failed'
-  >('pending')
+  const [verificationStatus, setVerificationStatus] =
+    useState<VerificationStatus>('pending')
+  const [isVerificationAnnounced, setIsVerificationAnnounced] = useState(false)
   const [showAddToProjectModal, setShowAddToProjectModal] = useState(false)
   const [pendingProjectUpload, setPendingProjectUpload] = useState<{
     projectId: string
@@ -2091,75 +2093,14 @@ export function ChatInterface({
       )}
 
       {/* Verifier toggle button */}
-      <div className="group relative">
-        <button
-          id="verification-status"
-          className={cn(
-            'relative flex items-center justify-center gap-2 rounded-lg border p-2.5 transition-all duration-200',
-            'bg-surface-chat-background text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
-            isVerifierSidebarOpen
-              ? 'cursor-default border-border-subtle bg-surface-chat text-content-muted hover:text-content-muted'
-              : 'border-transparent',
-          )}
-          onClick={handleOpenVerifierSidebar}
-          aria-label={
-            isVerifierSidebarOpen
-              ? 'Close verification panel'
-              : 'Open verification panel'
-          }
-          aria-pressed={isVerifierSidebarOpen}
-        >
-          {verificationStatus === 'pending' ? (
-            <>
-              <PiSpinner className="h-4 w-4 animate-spin" />
-              <span
-                className={cn(
-                  'text-sm leading-none',
-                  hasVisibleChatHeader &&
-                    'sr-only @3xl/conversation:not-sr-only',
-                )}
-              >
-                Verifying...
-              </span>
-            </>
-          ) : verificationStatus === 'verified' ? (
-            <>
-              <TfLockLockedAnimated
-                className="h-4 w-4 !text-brand-accent-dark dark:!text-brand-accent-light"
-                aria-hidden="true"
-              />
-              <span
-                className={cn(
-                  'text-sm leading-none text-brand-accent-dark dark:text-brand-accent-light',
-                  hasVisibleChatHeader &&
-                    'sr-only @3xl/conversation:not-sr-only',
-                )}
-              >
-                Verified
-              </span>
-            </>
-          ) : (
-            <>
-              <TfLockOpenedAnimated
-                className="h-4 w-4 !text-red-500"
-                aria-hidden="true"
-              />
-              <span
-                className={cn(
-                  'text-sm leading-none text-red-500',
-                  hasVisibleChatHeader &&
-                    'sr-only @3xl/conversation:not-sr-only',
-                )}
-              >
-                Error
-              </span>
-            </>
-          )}
-        </button>
-        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-          {isVerifierSidebarOpen ? 'Close verification' : 'View details'}
-        </span>
-      </div>
+      <VerificationStatusButton
+        status={verificationStatus}
+        isPanelOpen={isVerifierSidebarOpen}
+        onTogglePanel={handleOpenVerifierSidebar}
+        compactLabel={hasVisibleChatHeader}
+        announceVerified={!isVerificationAnnounced}
+        onVerifiedAnnounced={() => setIsVerificationAnnounced(true)}
+      />
     </>
   )
 
