@@ -753,6 +753,38 @@ describe('DefaultMessageRenderer edit keyboard shortcuts', () => {
       expect(onSave).not.toHaveBeenCalled()
     })
 
+    it.each([
+      { marker: '- ', nextMarker: '- ' },
+      { marker: '9. ', nextMarker: '10. ' },
+    ])(
+      'keeps a $marker list when splitting immediately after its marker',
+      ({ marker, nextMarker }) => {
+        const { onSave, textbox } = openEditorWithRevision()
+        const textarea = textbox as HTMLTextAreaElement
+        const prefix = `Notes:\n${marker}`
+        fireEvent.change(textarea, {
+          target: { value: `${prefix}Item\nKeep this line` },
+        })
+        textarea.setSelectionRange(prefix.length, prefix.length)
+
+        fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
+
+        expect(textarea).toHaveValue(
+          `${prefix}\n${nextMarker}Item\nKeep this line`,
+        )
+        expect(textarea.selectionStart).toBe(`${prefix}\n${nextMarker}`.length)
+        expect(textarea.selectionEnd).toBe(textarea.selectionStart)
+
+        textarea.setSelectionRange(prefix.length, prefix.length)
+        fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
+        expect(textarea).toHaveValue(
+          `Notes:\n\n${nextMarker}Item\nKeep this line`,
+        )
+        expect(textarea.selectionStart).toBe('Notes:\n'.length)
+        expect(onSave).not.toHaveBeenCalled()
+      },
+    )
+
     it('leaves a list alone while confirming an IME composition', () => {
       const { onSave, textbox } = openEditorWithRevision()
       const content = '* blog post'

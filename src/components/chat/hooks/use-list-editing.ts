@@ -69,7 +69,11 @@ export function useListEditing(
     const match = line.match(LIST_PREFIX)
     if (!match) return false
     const [prefix, indent, marker, spacing] = match
-    const content = line.slice(prefix.length)
+    const lineEnd = value.indexOf('\n', cursor)
+    const content = value.slice(
+      lineStart + prefix.length,
+      lineEnd === -1 ? value.length : lineEnd,
+    )
 
     if (event.key === 'Tab') {
       if (/^\[[ x]\]/.test(content)) return false
