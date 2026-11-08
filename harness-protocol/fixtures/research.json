@@ -1,0 +1,427 @@
+{
+  "description": "A research that searches, is asked to check what it found and searches again, then writes its report.",
+  "frames": [
+    {
+      "id": 0,
+      "event": {
+        "type": "RUN_STARTED",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
+        "runId": "00000000000000000000000000000002",
+        "instance": "00000000000000000000000000000003"
+      }
+    },
+    {
+      "id": 1,
+      "event": {
+        "type": "MESSAGES_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:01Z",
+        "messages": [
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "role": "user",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "content": "test message"
+          }
+        ],
+        "hasOlder": false
+      }
+    },
+    {
+      "id": 2,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:02Z",
+        "snapshot": {
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "New Chat",
+            "titleState": "placeholder",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "activityAt": "2026-01-01T00:00:00Z",
+            "projectId": null,
+            "model": "kimi-k3",
+            "webSearchEnabled": false,
+            "pinned": false,
+            "contextUsage": {
+              "usedTokens": 321,
+              "limitTokens": 6553,
+              "percentage": 4.898519761941095
+            },
+            "activeRun": {
+              "runId": "00000000000000000000000000000002",
+              "expiresAt": "2026-01-01T00:00:00Z",
+              "instance": "00000000000000000000000000000003"
+            },
+            "messageCount": 1
+          },
+          "queue": [],
+          "rateLimit": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "event": {
+        "type": "TOOL_CALL_START",
+        "timestamp": "2026-01-01T00:00:03Z",
+        "toolCallId": "s1",
+        "toolCallName": "web_search",
+        "parentMessageId": "msg_00000000000000000000000000000005"
+      }
+    },
+    {
+      "id": 4,
+      "event": {
+        "type": "TOOL_CALL_ARGS",
+        "timestamp": "2026-01-01T00:00:04Z",
+        "toolCallId": "s1",
+        "delta": "{\"query\":\"maine\"}"
+      }
+    },
+    {
+      "id": 5,
+      "event": {
+        "type": "TOOL_CALL_END",
+        "timestamp": "2026-01-01T00:00:05Z",
+        "toolCallId": "s1"
+      }
+    },
+    {
+      "id": 6,
+      "event": {
+        "type": "ACTIVITY_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:06Z",
+        "messageId": "act_s1",
+        "activityType": "TOOL",
+        "content": {
+          "toolCallId": "s1",
+          "tool": "web_search",
+          "progress": 0,
+          "output": []
+        },
+        "display": {
+          "query": "maine",
+          "status": "running",
+          "sources": []
+        }
+      }
+    },
+    {
+      "id": 7,
+      "event": {
+        "type": "TOOL_CALL_RESULT",
+        "timestamp": "2026-01-01T00:00:07Z",
+        "messageId": "msg_00000000000000000000000000000006",
+        "toolCallId": "s1",
+        "role": "tool",
+        "content": {
+          "query": "maine",
+          "results": [
+            {
+              "snippet": "maine Maine has 65 lighthouses.",
+              "title": "Lighthouses of maine",
+              "url": "https://lights.test/maine"
+            }
+          ]
+        },
+        "display": {
+          "query": "maine",
+          "status": "completed",
+          "sources": [
+            {
+              "url": "https://lights.test/maine",
+              "title": "Lighthouses of maine",
+              "snippet": "maine Maine has 65 lighthouses."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 8,
+      "event": {
+        "type": "REASONING_MESSAGE_CHUNK",
+        "timestamp": "2026-01-01T00:00:08Z",
+        "messageId": "msg_00000000000000000000000000000005-reasoning",
+        "delta": "Found the count."
+      }
+    },
+    {
+      "id": 9,
+      "event": {
+        "type": "TOOL_CALL_START",
+        "timestamp": "2026-01-01T00:00:09Z",
+        "toolCallId": "s2",
+        "toolCallName": "web_search",
+        "parentMessageId": "msg_00000000000000000000000000000005"
+      }
+    },
+    {
+      "id": 10,
+      "event": {
+        "type": "TOOL_CALL_ARGS",
+        "timestamp": "2026-01-01T00:00:10Z",
+        "toolCallId": "s2",
+        "delta": "{\"query\":\"vermont\"}"
+      }
+    },
+    {
+      "id": 11,
+      "event": {
+        "type": "TOOL_CALL_END",
+        "timestamp": "2026-01-01T00:00:11Z",
+        "toolCallId": "s2"
+      }
+    },
+    {
+      "id": 12,
+      "event": {
+        "type": "ACTIVITY_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:12Z",
+        "messageId": "act_s2",
+        "activityType": "TOOL",
+        "content": {
+          "toolCallId": "s2",
+          "tool": "web_search",
+          "progress": 0,
+          "output": []
+        },
+        "display": {
+          "query": "vermont",
+          "status": "running",
+          "sources": []
+        }
+      }
+    },
+    {
+      "id": 13,
+      "event": {
+        "type": "TOOL_CALL_RESULT",
+        "timestamp": "2026-01-01T00:00:13Z",
+        "messageId": "msg_00000000000000000000000000000007",
+        "toolCallId": "s2",
+        "role": "tool",
+        "content": {
+          "query": "vermont",
+          "results": [
+            {
+              "snippet": "vermont Maine has 65 lighthouses.",
+              "title": "Lighthouses of vermont",
+              "url": "https://lights.test/vermont"
+            }
+          ]
+        },
+        "display": {
+          "query": "vermont",
+          "status": "completed",
+          "sources": [
+            {
+              "url": "https://lights.test/vermont",
+              "title": "Lighthouses of vermont",
+              "snippet": "vermont Maine has 65 lighthouses."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 14,
+      "event": {
+        "type": "REASONING_MESSAGE_CHUNK",
+        "timestamp": "2026-01-01T00:00:14Z",
+        "messageId": "msg_00000000000000000000000000000005-reasoning",
+        "delta": "Covered."
+      }
+    },
+    {
+      "id": 15,
+      "event": {
+        "type": "TEXT_MESSAGE_CHUNK",
+        "timestamp": "2026-01-01T00:00:15Z",
+        "messageId": "msg_00000000000000000000000000000005",
+        "role": "assistant",
+        "delta": "Maine has 65 lighthouses [Lighthouses of maine](https://lights.test/maine)."
+      }
+    },
+    {
+      "id": 16,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:16Z",
+        "snapshot": {
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "New Chat",
+            "titleState": "placeholder",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "activityAt": "2026-01-01T00:00:00Z",
+            "projectId": null,
+            "model": "kimi-k3",
+            "webSearchEnabled": false,
+            "pinned": false,
+            "contextUsage": {
+              "usedTokens": 321,
+              "limitTokens": 6553,
+              "percentage": 4.898519761941095
+            },
+            "activeRun": null,
+            "messageCount": 2
+          },
+          "queue": [],
+          "rateLimit": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "id": 17,
+      "event": {
+        "type": "RUN_FINISHED",
+        "timestamp": "2026-01-01T00:00:17Z",
+        "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
+        "runId": "00000000000000000000000000000002",
+        "metadata": {
+          "messages": [
+            {
+              "id": "msg_00000000000000000000000000000005",
+              "model": "kimi-k3",
+              "modelDisplayName": "Kimi K3",
+              "usage": {
+                "promptTokens": 0,
+                "completionTokens": 0
+              },
+              "isError": false,
+              "isInterrupted": false,
+              "annotations": [
+                {
+                  "type": "url_citation",
+                  "url_citation": {
+                    "url": "https://lights.test/maine",
+                    "title": "Lighthouses of maine",
+                    "start_index": 26,
+                    "end_index": 46
+                  }
+                }
+              ],
+              "research": {
+                "version": 1
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+          },
+          "rateLimit": {
+            "kind": null
+          },
+          "cancelled": false
+        }
+      }
+    }
+  ],
+  "expected": {
+    "messages": [
+      {
+        "content": "test message",
+        "id": "00000000-0000-4000-8000-000000000004",
+        "role": "user",
+        "timeline": []
+      },
+      {
+        "id": "msg_00000000000000000000000000000005",
+        "research": {
+          "version": 1
+        },
+        "role": "assistant",
+        "timeline": [
+          {
+            "arguments": "{\"query\":\"maine\"}",
+            "complete": true,
+            "display": {
+              "query": "maine",
+              "status": "completed",
+              "sources": [
+                {
+                  "url": "https://lights.test/maine",
+                  "title": "Lighthouses of maine",
+                  "snippet": "maine Maine has 65 lighthouses."
+                }
+              ]
+            },
+            "id": "s1",
+            "name": "web_search",
+            "progress": [],
+            "result": {
+              "query": "maine",
+              "results": [
+                {
+                  "snippet": "maine Maine has 65 lighthouses.",
+                  "title": "Lighthouses of maine",
+                  "url": "https://lights.test/maine"
+                }
+              ]
+            },
+            "toolCallId": "s1",
+            "type": "tool_call"
+          },
+          {
+            "content": "Found the count.",
+            "id": "msg_00000000000000000000000000000005_thinking_1",
+            "type": "thinking"
+          },
+          {
+            "arguments": "{\"query\":\"vermont\"}",
+            "complete": true,
+            "display": {
+              "query": "vermont",
+              "status": "completed",
+              "sources": [
+                {
+                  "url": "https://lights.test/vermont",
+                  "title": "Lighthouses of vermont",
+                  "snippet": "vermont Maine has 65 lighthouses."
+                }
+              ]
+            },
+            "id": "s2",
+            "name": "web_search",
+            "progress": [],
+            "result": {
+              "query": "vermont",
+              "results": [
+                {
+                  "snippet": "vermont Maine has 65 lighthouses.",
+                  "title": "Lighthouses of vermont",
+                  "url": "https://lights.test/vermont"
+                }
+              ]
+            },
+            "toolCallId": "s2",
+            "type": "tool_call"
+          },
+          {
+            "content": "Covered.",
+            "id": "msg_00000000000000000000000000000005_thinking_3",
+            "type": "thinking"
+          },
+          {
+            "content": "Maine has 65 lighthouses [Lighthouses of maine](https://lights.test/maine).",
+            "id": "msg_00000000000000000000000000000005_content_4",
+            "type": "content"
+          }
+        ]
+      }
+    ],
+    "title": "New Chat",
+    "titleState": "placeholder",
+    "status": "idle"
+  }
+}

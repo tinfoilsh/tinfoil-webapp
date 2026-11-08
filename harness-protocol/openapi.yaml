@@ -9,8 +9,10 @@ info:
     Every request is a POST through an attested, EHBP-sealed transport, so
     bodies are private to the client and the enclave while headers are
     visible to the gateway. Headers carry only what is not private:
-    `Authorization` carries the caller's identity (a Clerk session token, or
-    a `free_` key for a signed-out caller), `X-Tinfoil-Inference-Key` the
+    `Authorization` carries the caller's identity (a Clerk session token, a
+    `free_` key for a signed-out caller, or a `tk_` API key, whose holder is
+    served as a signed-out caller is and pays for the chat's web search as an
+    API request's caller does), `X-Tinfoil-Inference-Key` the
     chat access the client minted, and `Accept-Language` the caller's
     languages. A request about a run names the instance holding it and, when
     following it, the last event the client applied. Everything else,
@@ -59,7 +61,10 @@ info:
       version 2 adds compaction markers to chats and is otherwise version 1.
       A version 2 profile row may also hold readAloudSpeed, which a harness
       that does not name it keeps, as it keeps any profile member it does not
-      name; the next version names it.
+      name; the next version names it. A version 2 chat's reply may also hold
+      research, which a harness that does not name it leaves out when it
+      writes the chat back, reading the reply with its steps; the next
+      version names it.
       A harness reads a version before it writes it. A member of a stored row it
       does not name is read past, since other clients of the same rows write
       members of their own; the harness leaves such members out when it
@@ -83,7 +88,7 @@ info:
     expected names: each message's id and role, a question's or compaction
     marker's content, and a reply's timeline steps with their id, type, and whichever of content,
     toolCallId, name, arguments, complete, result, progress and display they
-    have; the chat's title and titleState; and whether the run ended idle, or
+    have, and its research when it has one; the chat's title and titleState; and whether the run ended idle, or
     with an error: every member of its RUN_ERROR but type, timestamp,
     threadId, runId and metadata.
 
@@ -1572,6 +1577,7 @@ components:
             - QUOTA_EXHAUSTED
             - RATE_LIMITED
             - RECORD_UNSUPPORTED
+            - RESEARCH_LIMIT_REACHED
             - REQUEST_TIMEOUT
             - REVISION_CONFLICT
             - RUN_IN_FLIGHT
@@ -1631,7 +1637,7 @@ components:
         composer: {$ref: "#/components/schemas/Composer"}
         presets: {type: array, items: {$ref: "#/components/schemas/Preset"}}
         features:
-          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request.
+          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. research is true while this caller may send a turn with options.research, which only a subscriber may.
           type: object
           additionalProperties: {type: boolean}
 
@@ -1770,6 +1776,30 @@ components:
         webSearch: {type: boolean}
         piiCheck: {type: boolean}
         genUI: {type: boolean}
+        research:
+          type: boolean
+          description: |
+            The turn researches its question on the web at length, for up to
+            about half an hour, before it answers with a report. A client
+            sends it only while the session's features.research is true, and
+            only on a send, edit, regenerate or retry.
+
+            The run searches the web whatever the chat's web search setting,
+            and is refused with TOOL_UNAVAILABLE when the settings turn web
+            search off. A caller may start one research an hour: a turn sent
+            within an hour of the last research's start is refused with
+            RESEARCH_LIMIT_REACHED and the resetsAt when the next may start.
+            A research's first model turn may instead ask the user what it
+            needs to know with the questions widget, when the turn's widgets
+            name it, and the run then ends; such a run does not count as the
+            hour's research, and the research starts with the turn that sends
+            the answers.
+
+            While it researches, what the model writes between its tool calls
+            streams as reasoning, beside its web_search and web_fetch calls,
+            and only its report streams as the reply's text. The reply is
+            committed with research, and later turns read it as its report
+            alone.
         cacheSecret:
           type: string
           pattern: "^[0-9a-f]{64}$"
@@ -2164,6 +2194,7 @@ components:
         isError: {type: boolean}
         isInterrupted: {type: boolean}
         annotations: {type: array, items: {$ref: "#/components/schemas/Annotation"}}
+        research: {$ref: "#/components/schemas/Research"}
 
     # --- Threads --------------------------------------------------------------
 
@@ -2274,6 +2305,19 @@ components:
         attachments: {type: array, items: {$ref: "#/components/schemas/AttachmentView"}}
         answers: {type: array, items: {$ref: "#/components/schemas/WidgetAnswers"}, description: "A question's answers to questions widgets, as it sent them to the model."}
         compaction: {$ref: "#/components/schemas/Compaction"}
+        research: {$ref: "#/components/schemas/Research"}
+
+    Research:
+      description: |
+        Set on a reply that researched its question, as TurnOptions.research
+        describes. Its timeline holds the research's reasoning and its
+        web_search and web_fetch calls, and its text is the report. A client
+        may show the research's steps apart from the report. The model reads
+        the reply back as its report alone.
+      type: object
+      required: [version]
+      properties:
+        version: {type: integer, description: "The version of the instructions it researched under."}
 
     Compaction:
       description: |
@@ -2499,6 +2543,7 @@ components:
         isInterrupted: {type: boolean}
         answers: {type: array, items: {$ref: "#/components/schemas/WidgetAnswers"}}
         compaction: {$ref: "#/components/schemas/Compaction"}
+        research: {$ref: "#/components/schemas/Research"}
 
     ThreadInput:
       description: "A device chat as its client sends it: a ThreadRecord the harness returned, sent back whole, or a record without a recordVersion that an older client kept or a client made for a new chat. The harness refuses a ThreadRecord with a member its version does not have."
