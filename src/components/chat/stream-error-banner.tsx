@@ -242,6 +242,14 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
       }
     case ERROR_CODES.quotaExhausted:
       return quotaClassification(error)
+    case ERROR_CODES.researchLimitReached: {
+      const resetLabel = formatResetTime(error)
+      return {
+        kind: 'rate-limit',
+        title: 'Deep research limit reached',
+        suggestion: `You can start one deep research an hour${resetLabel ? `, and the next at ${resetLabel}` : ''}. Turn off deep research to keep chatting.`,
+      }
+    }
     case ERROR_CODES.rateLimited:
       return CLASSIFICATIONS.busy
     case ERROR_CODES.queueFull:

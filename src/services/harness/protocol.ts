@@ -83,6 +83,9 @@ export const ERROR_CODES = {
   runNotFound: 'RUN_NOT_FOUND',
   runInFlight: 'RUN_IN_FLIGHT',
   quotaExhausted: 'QUOTA_EXHAUSTED',
+  // A deep research started within the hour of the last one. Only another
+  // research waits; the chat is not limited.
+  researchLimitReached: 'RESEARCH_LIMIT_REACHED',
   rateLimited: 'RATE_LIMITED',
   contextTooLarge: 'CONTEXT_TOO_LARGE',
   // The chat's earlier messages could not be summarized to make room for a
