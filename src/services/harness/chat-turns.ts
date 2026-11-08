@@ -161,7 +161,8 @@ export function chatTurns({
       delete left.webSearch
     return left
   }
-  // A turn the open chat researches says so, while the session offers it.
+  // A turn the open chat researches says so, while the session offers it
+  // and Settings leave web search on, which the harness refuses it without.
   const researched = (
     options: Turn['options'],
     research: boolean,
@@ -293,6 +294,7 @@ export function chatTurns({
     const research =
       current.research &&
       !!session?.features.research &&
+      (profile.webSearchAvailable ?? true) &&
       RESEARCH_KINDS.includes(fields.kind ?? 'send')
     const threadId = startChat(choice)
     const defaults = turnDefaults(threadId)

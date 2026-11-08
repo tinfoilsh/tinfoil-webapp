@@ -90,8 +90,11 @@ const options = { model: 'test-model', webSearch: true }
 // joins them.
 const sent = { ...options, cacheSecret: CACHE_SECRET }
 
-async function openCloud(session: Session) {
-  signIn({ cloud: true, session })
+async function openCloud(
+  session: Session,
+  profile: Record<string, unknown> = {},
+) {
+  signIn({ cloud: true, session, profile })
   client.post.mockImplementation(async (path: string) => {
     if (path === '/v1/session') return structuredClone(session)
     if (path === '/v1/threads/get') return structuredClone(stored)
@@ -146,8 +149,19 @@ describe('deep research', () => {
     expect(hook.result.current.research).toBe(true)
   })
 
-  it('researches nothing while the session does not offer it', async () => {
-    const hook = await openCloud(testSession)
+  it.each([
+    {
+      case: 'the session does not offer it',
+      session: testSession,
+      profile: {},
+    },
+    {
+      case: 'Settings turn web search off',
+      session: researching,
+      profile: { webSearchAvailable: false },
+    },
+  ])('researches nothing while $case', async ({ session, profile }) => {
+    const hook = await openCloud(session, profile)
     act(() => hook.result.current.setResearch(true))
 
     client.events.mockImplementationOnce(reply('msg_answer'))
