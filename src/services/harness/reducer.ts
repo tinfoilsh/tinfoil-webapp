@@ -560,7 +560,10 @@ function applyEvent(
         ),
       }
     case 'STATE_DELTA': {
-      const snapshot = applyStateDelta(next.snapshot, event.delta)
+      const snapshot = keepingTitle(
+        next.snapshot,
+        applyStateDelta(next.snapshot, event.delta),
+      )
       const sending = stillSending(
         next.sending,
         next.snapshot.queue,

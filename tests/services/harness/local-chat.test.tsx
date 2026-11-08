@@ -3658,7 +3658,7 @@ describe('cloud chats', () => {
         }
       throw new Error(`Unexpected ${path}`)
     })
-    // The run replays from its start, when the chat had another title.
+    // The run replays from its start, when the chat had other titles.
     const replayed = new Promise<void>(() => {})
     client.events.mockImplementationOnce(async function* () {
       yield {
@@ -3679,6 +3679,13 @@ describe('cloud chats', () => {
             queue: [],
             rateLimit: { kind: null },
           },
+        },
+      }
+      yield {
+        id: 2,
+        event: {
+          type: 'STATE_DELTA',
+          delta: [{ op: 'replace', path: '/thread/title', value: 'Generated' }],
         },
       }
       await replayed
