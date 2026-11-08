@@ -10,5 +10,5 @@ export const SPEECH = {
   // The stream is not read further while this much audio waits to play.
   MAX_BUFFERED_SECONDS: 30,
   // A response that sends nothing for this long has stalled.
-  IDLE_TIMEOUT_MS: 30_000,
+  IDLE_TIMEOUT_MS: 60_000,
 } as const
