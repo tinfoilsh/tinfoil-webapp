@@ -766,60 +766,64 @@ export const CodeBlock = memo(function CodeBlock({
           />
         </div>
       )}
-      <div className="pointer-events-none absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
-        {isMarkdown && viewMode === 'preview' && (
-          <>
-            <div className="group/md relative">
-              <button
-                onClick={downloadMarkdown}
-                aria-label="Download as Markdown"
-                className="rounded-lg bg-surface-input p-2 hover:bg-surface-input/80"
-              >
-                <BsFiletypeMd
-                  className="h-5 w-5 text-content-muted"
+      {/* Spans the block so the sticky actions stay in view while a tall
+          block scrolls, without leaving the block at either end. */}
+      <div className="pointer-events-none absolute inset-2 z-10 flex items-start justify-end">
+        <div className="pointer-events-none sticky top-2 flex gap-1 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+          {isMarkdown && viewMode === 'preview' && (
+            <>
+              <div className="group/md relative">
+                <button
+                  onClick={downloadMarkdown}
+                  aria-label="Download as Markdown"
+                  className="rounded-lg bg-surface-input p-2 hover:bg-surface-input/80"
+                >
+                  <BsFiletypeMd
+                    className="h-5 w-5 text-content-muted"
+                    aria-hidden="true"
+                  />
+                </button>
+                <span className="pointer-events-none absolute left-1/2 top-full mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary shadow-sm group-hover/md:block">
+                  .md
+                </span>
+              </div>
+              <div className="group/pdf relative">
+                <button
+                  onClick={downloadPdf}
+                  disabled={isGeneratingPdf}
+                  aria-label="Download as PDF"
+                  className="rounded-lg bg-surface-input p-2 hover:bg-surface-input/80 disabled:opacity-50"
+                >
+                  <BsFiletypePdf
+                    className={`h-5 w-5 ${isGeneratingPdf ? 'animate-pulse' : ''} text-content-muted`}
+                    aria-hidden="true"
+                  />
+                </button>
+                <span className="pointer-events-none absolute left-1/2 top-full mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary shadow-sm group-hover/pdf:block">
+                  {isGeneratingPdf ? 'Generating...' : 'PDF'}
+                </span>
+              </div>
+            </>
+          )}
+          <div className="group/copy relative">
+            <button
+              onClick={copyToClipboard}
+              aria-label={copied ? 'Copied' : 'Copy code'}
+              className="rounded-lg bg-surface-input p-2 text-content-muted hover:bg-surface-input/80"
+            >
+              {copied ? (
+                <TfBoxCheckmark
+                  className="h-5 w-5 text-green-400"
                   aria-hidden="true"
                 />
-              </button>
-              <span className="pointer-events-none absolute -top-8 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary shadow-sm group-hover/md:block">
-                .md
-              </span>
-            </div>
-            <div className="group/pdf relative">
-              <button
-                onClick={downloadPdf}
-                disabled={isGeneratingPdf}
-                aria-label="Download as PDF"
-                className="rounded-lg bg-surface-input p-2 hover:bg-surface-input/80 disabled:opacity-50"
-              >
-                <BsFiletypePdf
-                  className={`h-5 w-5 ${isGeneratingPdf ? 'animate-pulse' : ''} text-content-muted`}
-                  aria-hidden="true"
-                />
-              </button>
-              <span className="pointer-events-none absolute -top-8 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary shadow-sm group-hover/pdf:block">
-                {isGeneratingPdf ? 'Generating...' : 'PDF'}
-              </span>
-            </div>
-          </>
-        )}
-        <div className="group/copy relative">
-          <button
-            onClick={copyToClipboard}
-            aria-label={copied ? 'Copied' : 'Copy code'}
-            className="rounded-lg bg-surface-input p-2 text-content-muted hover:bg-surface-input/80"
-          >
-            {copied ? (
-              <TfBoxCheckmark
-                className="h-5 w-5 text-green-400"
-                aria-hidden="true"
-              />
-            ) : (
-              <TfCopyAnimated className="h-5 w-5" aria-hidden="true" />
-            )}
-          </button>
-          <span className="pointer-events-none absolute -top-8 right-0 hidden whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary shadow-sm group-hover/copy:block">
-            {copied ? 'Copied!' : 'Copy'}
-          </span>
+              ) : (
+                <TfCopyAnimated className="h-5 w-5" aria-hidden="true" />
+              )}
+            </button>
+            <span className="pointer-events-none absolute right-0 top-full mt-1 hidden whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary shadow-sm group-hover/copy:block">
+              {copied ? 'Copied!' : 'Copy'}
+            </span>
+          </div>
         </div>
       </div>
       {showPreview ? (
