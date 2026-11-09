@@ -1333,10 +1333,12 @@ export interface components {
        *     continue goes on with its report without researching.
        *
        *     While it researches, what the model writes between its tool calls
-       *     streams as reasoning, beside its web_search and web_fetch calls,
-       *     and only its report streams as the reply's text. The reply is
-       *     committed with research, and later turns read it as its report
-       *     alone.
+       *     streams as reasoning, beside its web_search and web_fetch calls.
+       *     When the turn's widgets name render_artifact_preview, the model
+       *     then writes its report in that widget as Markdown, and the reply's
+       *     text says what it found; otherwise only its report streams as the
+       *     reply's text. The reply is committed with research, and later turns
+       *     read it as its report alone.
        */
       research?: boolean
       /** @description 256 random bits the client keeps, hex encoded, which scope the model enclaves' prompt cache to the client. Turns without one share a cache only within their chat. */
@@ -1808,9 +1810,10 @@ export interface components {
      *     researched its question, as TurnOptions.research describes. A
      *     client may show that such a question asked for deep research. Such a
      *     reply's timeline holds the research's reasoning and its web_search
-     *     and web_fetch calls, and its text is the report. A client may show
-     *     the research's steps apart from the report. The model reads the reply
-     *     back as its report alone.
+     *     and web_fetch calls, then either the render_artifact_preview call that
+     *     holds the report and the text that says what it found, or the report
+     *     as its text. A client may show the research's steps apart from the
+     *     report. The model reads the reply back as its report alone.
      */
     Research: {
       /** @description The version of the instructions it researched under. */
