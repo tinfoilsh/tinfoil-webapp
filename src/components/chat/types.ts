@@ -146,6 +146,9 @@ export type Message = {
   webSearch?: WebSearchState
   webSearchBeforeThinking?: boolean // True if web search started before thinking
   annotations?: Annotation[] // URL citations from web search
+  // The reply researched its question: its steps are the research, and its
+  // text the report.
+  research?: boolean
   searchReasoning?: string // Search agent's reasoning for multi-turn context
   quote?: string // Highlighted text the user is replying to
   // The answers to questions widgets a user message sent the model.

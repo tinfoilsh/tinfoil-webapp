@@ -106,6 +106,7 @@ export function useThread(
         presetChosen: false,
         chosenPresetId: null,
         modelChosen: false,
+        research: false,
       }),
       controller: new RunController(
         api,
@@ -246,6 +247,7 @@ export function useThread(
       chosenPresetId: null,
       modelChosen: false,
       webSearch: undefined,
+      research: false,
     }))
   }, [controller, attachments, open])
   // What a new chat's saved prompt chooses and the user did not change,
@@ -909,6 +911,8 @@ export function useThread(
     presetId,
     selectPreset,
     setWebSearch: (next: boolean) => patch({ webSearch: next }),
+    research: openState.research,
+    setResearch: (next: boolean) => patch({ research: next }),
     temporary,
     setTemporary: (next: boolean) => patch({ temporary: next }),
     local: isLocalChat,

@@ -1336,7 +1336,7 @@ describe('DefaultMessageRenderer work traces', () => {
     ).toBeInTheDocument()
   })
 
-  it("lists the last search's results and the citations as the reply's sources", () => {
+  it("lists the last search's results and the citations as the reply's sources, and every page a research found", () => {
     const page = (name: string) => ({
       url: `https://${name}.example/`,
       title: `Page ${name}`,
@@ -1372,30 +1372,43 @@ describe('DefaultMessageRenderer work traces', () => {
       status: 'completed',
       sources: [page('read')],
     })
-    const { unmount } = renderReply(
-      reply([
-        call('s1', 'web_search', {
-          query: 'one',
-          status: 'completed',
-          sources: [page('first')],
-        }),
-        call('s2', 'web_search', {
-          query: 'two',
-          status: 'completed',
-          sources: [page('second')],
-        }),
-        read,
-      ]),
-      false,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show 2 sources' }))
-    expect(
+    const searched = reply([
+      call('s1', 'web_search', {
+        query: 'one',
+        status: 'completed',
+        sources: [page('first')],
+      }),
+      call('s2', 'web_search', {
+        query: 'two',
+        status: 'completed',
+        sources: [page('second')],
+      }),
+      read,
+    ])
+    const listed = () =>
       within(screen.getByRole('dialog'))
         .getAllByRole('link')
-        .map((link) => link.getAttribute('href')),
-    ).toEqual(['https://second.example/', 'https://first.example/'])
+        .map((link) => link.getAttribute('href'))
+    const { unmount } = renderReply(searched, false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 sources' }))
+    expect(listed()).toEqual([
+      'https://second.example/',
+      'https://first.example/',
+    ])
     unmount()
+
+    const { unmount: unmountResearch } = renderReply(
+      { ...searched, research: { version: 1 } },
+      false,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Show 3 sources' }))
+    expect(listed()).toEqual([
+      'https://first.example/',
+      'https://second.example/',
+      'https://read.example/',
+    ])
+    unmountResearch()
 
     renderReply(reply([read]), false)
     expect(

@@ -1087,6 +1087,7 @@ export interface components {
           | 'QUOTA_EXHAUSTED'
           | 'RATE_LIMITED'
           | 'RECORD_UNSUPPORTED'
+          | 'RESEARCH_LIMIT_REACHED'
           | 'REQUEST_TIMEOUT'
           | 'REVISION_CONFLICT'
           | 'RUN_IN_FLIGHT'
@@ -1134,7 +1135,7 @@ export interface components {
       profileDefaults: components['schemas']['Profile']
       composer: components['schemas']['Composer']
       presets: components['schemas']['Preset'][]
-      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. */
+      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. research is true while this caller may send a turn with options.research, which only a subscriber may. */
       features: {
         [key: string]: boolean
       }
@@ -1257,6 +1258,30 @@ export interface components {
       webSearch?: boolean
       piiCheck?: boolean
       genUI?: boolean
+      /**
+       * @description The turn researches its question on the web at length, for up to
+       *     about half an hour, before it answers with a report. A client
+       *     sends it only while the session's features.research is true, and
+       *     only on a send, edit, regenerate or retry.
+       *
+       *     The run searches the web whatever the chat's web search setting,
+       *     and is refused with TOOL_UNAVAILABLE when the settings turn web
+       *     search off. A caller may start one research an hour: a turn sent
+       *     within an hour of the last research's start is refused with
+       *     RESEARCH_LIMIT_REACHED and the resetsAt when the next may start.
+       *     A research's first model turn may instead ask the user what it
+       *     needs to know with the questions widget, when the turn's widgets
+       *     name it, and the run then ends; such a run does not count as the
+       *     hour's research, and the research starts with the turn that sends
+       *     the answers.
+       *
+       *     While it researches, what the model writes between its tool calls
+       *     streams as reasoning, beside its web_search and web_fetch calls,
+       *     and only its report streams as the reply's text. The reply is
+       *     committed with research, and later turns read it as its report
+       *     alone.
+       */
+      research?: boolean
       /** @description 256 random bits the client keeps, hex encoded, which scope the model enclaves' prompt cache to the client. Turns without one share a cache only within their chat. */
       cacheSecret?: string
     }
@@ -1625,6 +1650,7 @@ export interface components {
       isError?: boolean
       isInterrupted?: boolean
       annotations?: components['schemas']['Annotation'][]
+      research?: components['schemas']['Research']
     }
     /** @description How a chat came by its title. A client shows the title of a state it does not know as it is. */
     TitleState: ('placeholder' | 'generated' | 'manual') | string
@@ -1718,6 +1744,18 @@ export interface components {
       /** @description A question's answers to questions widgets, as it sent them to the model. */
       answers?: components['schemas']['WidgetAnswers'][]
       compaction?: components['schemas']['Compaction']
+      research?: components['schemas']['Research']
+    }
+    /**
+     * @description Set on a reply that researched its question, as TurnOptions.research
+     *     describes. Its timeline holds the research's reasoning and its
+     *     web_search and web_fetch calls, and its text is the report. A client
+     *     may show the research's steps apart from the report. The model reads
+     *     the reply back as its report alone.
+     */
+    Research: {
+      /** @description The version of the instructions it researched under. */
+      version: number
     }
     /**
      * @description What a compaction marker records of its summary. A compaction marker
@@ -1901,6 +1939,7 @@ export interface components {
       isInterrupted?: boolean
       answers?: components['schemas']['WidgetAnswers'][]
       compaction?: components['schemas']['Compaction']
+      research?: components['schemas']['Research']
     }
     /** @description A device chat as its client sends it: a ThreadRecord the harness returned, sent back whole, or a record without a recordVersion that an older client kept or a client made for a new chat. The harness refuses a ThreadRecord with a member its version does not have. */
     ThreadInput: {

@@ -77,6 +77,14 @@ export interface TurnContext {
   reopen(): Promise<OpenChatResult> | undefined
 }
 
+// The turns a research may answer: those that answer a question anew.
+const RESEARCH_KINDS: readonly Turn['kind'][] = [
+  'send',
+  'edit',
+  'regenerate',
+  'retry',
+]
+
 // The turns of the open chat: sending, regenerating, continuing, and what
 // retries them, through the open chat's store and the run controller.
 export function chatTurns({
@@ -153,6 +161,12 @@ export function chatTurns({
       delete left.webSearch
     return left
   }
+  // A turn the open chat researches says so, while the session offers it
+  // and Settings leave web search on, which the harness refuses it without.
+  const researched = (
+    options: Turn['options'],
+    research: boolean,
+  ): Turn['options'] => (research ? { ...options, research: true } : options)
   // The message a turn adds, under the id the harness stores it with. A
   // message queued behind a running reply shows in the queue instead.
   function sentMessage(input: Turn): ThreadMessage | null {
@@ -277,6 +291,11 @@ export function chatTurns({
     }
     const settings = turnSettings(current)
     const choice = presetChoice()
+    const research =
+      current.research &&
+      !!session?.features.research &&
+      (profile.webSearchAvailable ?? true) &&
+      RESEARCH_KINDS.includes(fields.kind ?? 'send')
     const threadId = startChat(choice)
     const defaults = turnDefaults(threadId)
     const shown = controller.track()
@@ -337,12 +356,20 @@ export function chatTurns({
           {
             defaults: {
               ...defaults,
-              options: leaveToPreset(defaults.options, choice),
+              options: researched(
+                leaveToPreset(defaults.options, choice),
+                research,
+              ),
             },
             fields: {
               ...fields,
               ...(fields.options
-                ? { options: leaveToPreset(fields.options, choice) }
+                ? {
+                    options: researched(
+                      leaveToPreset(fields.options, choice),
+                      research,
+                    ),
+                  }
                 : {}),
             },
             key,
@@ -373,6 +400,16 @@ export function chatTurns({
           submission,
         })
         if (controller.pending === pending) unapply()
+        // A research's report ends the open chat's research. A reply that
+        // only asked what it needs to know leaves it on for the answers, and
+        // one that failed for a retry.
+        if (
+          ran &&
+          research &&
+          shown() &&
+          controller.view.get().messages.at(-1)?.research
+        )
+          patch({ research: false })
         return ran
       })()
         .catch((cause) => {
