@@ -2,7 +2,7 @@ import { CONSTANTS } from '@/components/chat/constants'
 import { VerifierSidebar } from '@/components/verification-sidebar'
 import { act, render } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { client, signIn } from '../harness-fixture'
+import { client, signIn, VERIFICATION } from '../harness-fixture'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -51,28 +51,28 @@ async function waitForRetry(attempt: number) {
 }
 
 it('retries a verification that fails while the connection drops', async () => {
-  client.ready
+  client.verify
     .mockRejectedValueOnce(new TypeError('Network unavailable'))
-    .mockResolvedValue(undefined)
+    .mockResolvedValue(VERIFICATION)
   const onVerificationComplete = vi.fn()
   renderOpen(onVerificationComplete)
   await act(async () => {})
-  expect(client.ready).toHaveBeenCalledTimes(1)
+  expect(client.verify).toHaveBeenCalledTimes(1)
   expect(onVerificationComplete).not.toHaveBeenCalled()
 
   await waitForRetry(0)
-  expect(client.ready).toHaveBeenCalledTimes(2)
+  expect(client.verify).toHaveBeenCalledTimes(2)
   expect(onVerificationComplete.mock.calls).toEqual([[true]])
 })
 
 it('reports a failure once every retry has failed', async () => {
-  client.ready.mockRejectedValue(new TypeError('Network unavailable'))
+  client.verify.mockRejectedValue(new TypeError('Network unavailable'))
   const onVerificationComplete = vi.fn()
   renderOpen(onVerificationComplete)
   await act(async () => {})
   for (let attempt = 0; attempt < CONSTANTS.VERIFICATION_MAX_RETRIES; attempt++)
     await waitForRetry(attempt)
-  expect(client.ready).toHaveBeenCalledTimes(
+  expect(client.verify).toHaveBeenCalledTimes(
     CONSTANTS.VERIFICATION_MAX_RETRIES + 1,
   )
   expect(onVerificationComplete.mock.calls).toEqual([[false]])

@@ -19,7 +19,7 @@ import { storeEncryptedKeys } from '@/services/passkey/passkey-key-storage'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { stubChatAccess } from '../../harness-fixture'
 
-vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
+vi.mock('tinfoil', () => ({ EnclaveHTTPClient: { create: vi.fn() } }))
 
 const PRIMARY_KEY = `key_${'ar'.repeat(32)}`
 const PRIMARY_KEY_B64 = 'ERERERERERERERERERERERERERERERERERERERERERE='
@@ -57,13 +57,14 @@ beforeEach(async () => {
       new HarnessClient(
         'https://harness.example',
         async () => 'test-jwt',
-        () =>
+        async () =>
           ({
-            ready: async () => {},
             fetch: secureFetch,
-            getVerificationDocument: vi.fn(),
-          }) as unknown as ReturnType<
-            NonNullable<ConstructorParameters<typeof HarnessClient>[2]>
+            ensureVerified: vi.fn(),
+          }) as unknown as Awaited<
+            ReturnType<
+              NonNullable<ConstructorParameters<typeof HarnessClient>[2]>
+            >
           >,
       ),
       'user_1',

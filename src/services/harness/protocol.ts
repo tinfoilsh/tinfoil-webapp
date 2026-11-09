@@ -201,6 +201,15 @@ export const unanswered = (): HarnessErrorBody => ({
     'The chat service did not answer in time. Check your connection and try again.',
 })
 
+// Why a request failed when the chat service's enclave was not verified in
+// time, as over a connection that stalled. The request was not sent.
+export const unverified = (): HarnessErrorBody => ({
+  code: ERROR_CODES.connection,
+  action: ERROR_ACTIONS.retry,
+  message:
+    'The chat service could not be verified in time. Check your connection and try again.',
+})
+
 // Carries a signed-in account's chat access, which the harness checks before
 // it reads a request's body.
 export const INFERENCE_KEY_HEADER = 'X-Tinfoil-Inference-Key'

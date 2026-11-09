@@ -268,7 +268,7 @@ it('pins and unpins the open chat kept on this device from the header menu', asy
 
 it('marks the header menu when verifying fails, and opens the verification panel from it', async () => {
   signIn({ userId: null })
-  client.ready.mockRejectedValue(new Error('Attestation failed'))
+  client.verify.mockRejectedValue(new Error('Attestation failed'))
   client.post.mockImplementation(async (path) => {
     throw new Error(`Unexpected ${path}`)
   })
