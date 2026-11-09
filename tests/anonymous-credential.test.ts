@@ -4,7 +4,7 @@ import { HarnessClient } from '@/services/harness/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SEALED } from './harness-fixture'
 
-vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
+vi.mock('tinfoil', () => ({ EnclaveHTTPClient: { create: vi.fn() } }))
 
 // The key and its expiry, the only fields of an issuance the browser reads.
 const issuance = (key = 'free_first') =>
@@ -30,14 +30,13 @@ const rejected = () =>
 const controlplane = vi.fn<typeof fetch>()
 function setup(getToken = async (): Promise<string | null> => null) {
   const secure = {
-    ready: vi.fn().mockResolvedValue(undefined),
     fetch: vi.fn().mockImplementation(async () => Response.json({ ok: true })),
-    getVerificationDocument: vi.fn(),
+    ensureVerified: vi.fn().mockResolvedValue(undefined),
   }
   const client = new HarnessClient(
     'https://harness.example',
     getToken,
-    () => secure,
+    async () => secure,
   )
   return { client, secure }
 }

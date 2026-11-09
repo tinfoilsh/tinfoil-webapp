@@ -19,9 +19,8 @@ const { auth, secure, controlplane } = vi.hoisted(() => ({
     getToken: vi.fn<() => Promise<string | null>>(),
   },
   secure: {
-    ready: vi.fn<() => Promise<void>>(),
     fetch: vi.fn<(url: string, init: RequestInit) => Promise<Response>>(),
-    getVerificationDocument: vi.fn(),
+    ensureVerified: vi.fn(),
   },
   controlplane: vi.fn<typeof fetch>(),
 }))
@@ -41,9 +40,11 @@ vi.mock('@/services/harness/client', async (importOriginal) => {
         super(
           args[0],
           args[1],
-          () =>
-            secure as unknown as ReturnType<
-              NonNullable<ConstructorParameters<typeof HarnessClient>[2]>
+          async () =>
+            secure as unknown as Awaited<
+              ReturnType<
+                NonNullable<ConstructorParameters<typeof HarnessClient>[2]>
+              >
             >,
         )
       }
@@ -76,7 +77,7 @@ beforeEach(() => {
   auth.isLoaded = true
   auth.userId = null
   auth.getToken.mockReset().mockResolvedValue(null)
-  secure.ready.mockReset().mockResolvedValue(undefined)
+  secure.ensureVerified.mockReset().mockResolvedValue(undefined)
   secure.fetch.mockReset().mockImplementation(async (_url, init) => {
     if (new Headers(init.headers).get('Authorization') !== 'Bearer free_guest')
       return Response.json(

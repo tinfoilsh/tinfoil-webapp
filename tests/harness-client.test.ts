@@ -20,15 +20,15 @@ import type {
   TerminalEvent,
   TimelineBlock,
 } from '@/services/harness/types'
+import { EnclaveHTTPClient } from 'tinfoil'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeTimeouts, SEALED, stubChatAccess } from './harness-fixture'
 
-vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
+vi.mock('tinfoil', () => ({ EnclaveHTTPClient: { create: vi.fn() } }))
 
 const transport = () => ({
-  ready: vi.fn().mockResolvedValue(undefined),
   fetch: vi.fn(),
-  getVerificationDocument: vi.fn(),
+  ensureVerified: vi.fn().mockResolvedValue(undefined),
 })
 
 function stream(text: string, bytesPerChunk = 1): ReadableStream<Uint8Array> {
@@ -1152,7 +1152,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       getToken,
-      () => secure,
+      async () => secure,
     )
     const body = { key: 'cek', clientRequestId: 'nonce' }
     await expect(client.post('/v1/threads/turn', body)).resolves.toEqual({
@@ -1183,7 +1183,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       vi.fn().mockResolvedValueOnce('first').mockResolvedValueOnce('second'),
-      () => secure,
+      async () => secure,
     )
     await client.post('/v1/session', {})
     await client.post('/v1/session', {})
@@ -1199,7 +1199,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       vi.fn().mockResolvedValueOnce('old').mockResolvedValueOnce(null),
-      () => secure,
+      async () => secure,
     )
     await expect(client.post('/v1/session', {})).rejects.toMatchObject({
       status: 401,
@@ -1225,7 +1225,7 @@ describe('attested harness transport', () => {
       const client = new HarnessClient(
         'https://harness.example',
         getToken,
-        () => secure,
+        async () => secure,
       )
       await expect(client.post('/v1/threads/get', {})).rejects.toMatchObject({
         status: 401,
@@ -1260,7 +1260,7 @@ describe('attested harness transport', () => {
       const client = new HarnessClient(
         'https://harness.example',
         getToken,
-        () => secure,
+        async () => secure,
       )
       await expect(client.post('/v1/session', {})).rejects.toMatchObject({
         status: 401,
@@ -1290,7 +1290,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       getToken,
-      () => secure,
+      async () => secure,
     )
     const refusal = await client
       .post('/v1/threads/delete', { id: 't' })
@@ -1309,7 +1309,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     await expect(
       client.post('/v1/threads/search', { query: 'peroxide' }),
@@ -1335,7 +1335,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     await expect(client.post('/v1/threads/get', {})).rejects.toMatchObject({
       detail: {
@@ -1359,7 +1359,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     const ids: (number | undefined)[] = []
     for (const lastEventId of [2, undefined])
@@ -1385,7 +1385,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     const run = (instance: string) =>
       new Response(
@@ -1480,7 +1480,7 @@ describe('attested harness transport', () => {
       const client = new HarnessClient(
         'https://harness.example',
         async () => null,
-        () => secure,
+        async () => secure,
       )
       const turn = async (threadId: string) => {
         for await (const _ of client.events('/v1/threads/turn', {
@@ -1541,7 +1541,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     secure.fetch.mockResolvedValueOnce(new Response('{"id":"attachment"}'))
     await client.upload(
@@ -1572,38 +1572,109 @@ describe('attested harness transport', () => {
       runId: 'r',
     })
   })
-  it('abandons an attestation that stalls and verifies again with a new client', async () => {
-    vi.useFakeTimers()
-    try {
-      const stalled = transport()
-      stalled.ready.mockReturnValue(new Promise(() => {}))
-      const fresh = transport()
-      fresh.fetch.mockResolvedValue(new Response('{"ok":true}'))
-      const created = [stalled, fresh]
-      const client = new HarnessClient(
-        'https://harness.example',
-        async () => 'clerk',
-        () => created.shift()!,
-      )
+  it('verifies the enclave of the chat service against the release of the harness', async () => {
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => new Response('{"ok":true}'))
+    const create = vi.mocked(EnclaveHTTPClient.create)
+    create.mockReset().mockResolvedValue(secure as never)
+    const client = new HarnessClient(
+      'https://harness.example:8443',
+      async () => 'clerk',
+    )
 
-      const stuck = expect(
-        client.post('/v1/session', {}),
-      ).rejects.toMatchObject({ code: 'CONNECTION' })
-      await vi.advanceTimersByTimeAsync(20_000)
-      await stuck
+    await client.post('/v1/session', {})
+    await client.post('/v1/session', {})
 
-      await expect(client.post('/v1/session', {})).resolves.toEqual({
-        ok: true,
-      })
-      expect(created).toEqual([])
-      expect(stalled.fetch).not.toHaveBeenCalled()
-      expect(fresh.fetch).toHaveBeenCalledExactlyOnceWith(
-        'https://harness.example/v1/session',
-        expect.objectContaining({ method: 'POST', body: '{}' }),
-      )
-    } finally {
-      vi.useRealTimers()
-    }
+    expect(create).toHaveBeenCalledExactlyOnceWith(
+      'harness.example:8443',
+      'tinfoilsh/confidential-tinfoil-harness',
+      { signal: expect.any(AbortSignal) },
+    )
+    expect(secure.fetch.mock.calls.map(([url]) => url)).toEqual([
+      'https://harness.example:8443/v1/session',
+      'https://harness.example:8443/v1/session',
+    ])
+  })
+  it('abandons an attestation that stalls and verifies the enclave again', async () => {
+    fakeTimeouts()
+    const fresh = transport()
+    fresh.fetch.mockResolvedValue(new Response('{"ok":true}'))
+    const connect = vi
+      .fn<(signal: AbortSignal) => Promise<ReturnType<typeof transport>>>()
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValueOnce(fresh)
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      connect,
+    )
+
+    const stuck = expect(client.post('/v1/session', {})).rejects.toMatchObject({
+      code: 'CONNECTION',
+      message:
+        'The chat service could not be verified in time. Check your connection and try again.',
+    })
+    await vi.advanceTimersByTimeAsync(20_000)
+    await stuck
+    expect(connect.mock.calls[0][0].aborted).toBe(true)
+
+    await expect(client.post('/v1/session', {})).resolves.toEqual({
+      ok: true,
+    })
+    expect(connect).toHaveBeenCalledTimes(2)
+    expect(fresh.fetch).toHaveBeenCalledExactlyOnceWith(
+      'https://harness.example/v1/session',
+      expect.objectContaining({ method: 'POST', body: '{}' }),
+    )
+  })
+  it('verifies the enclave again after a verification that failed', async () => {
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => new Response('{"ok":true}'))
+    const rejected = new Error('Attestation failed')
+    const connect = vi
+      .fn<(signal: AbortSignal) => Promise<ReturnType<typeof transport>>>()
+      .mockRejectedValueOnce(rejected)
+      .mockResolvedValueOnce(secure)
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      connect,
+    )
+
+    await expect(client.post('/v1/session', {})).rejects.toBe(rejected)
+    expect(secure.fetch).not.toHaveBeenCalled()
+
+    await expect(client.post('/v1/session', {})).resolves.toEqual({
+      ok: true,
+    })
+    expect(connect).toHaveBeenCalledTimes(2)
+  })
+  it('does not send a request while an expired verification cannot be made again in time', async () => {
+    fakeTimeouts()
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => new Response('{"ok":true}'))
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      async () => secure,
+    )
+    await client.post('/v1/session', {})
+    secure.fetch.mockClear()
+    secure.ensureVerified.mockReturnValueOnce(new Promise(() => {}))
+
+    const stuck = expect(client.post('/v1/session', {})).rejects.toMatchObject({
+      code: 'CONNECTION',
+      message:
+        'The chat service could not be verified in time. Check your connection and try again.',
+    })
+    await vi.advanceTimersByTimeAsync(20_000)
+    await stuck
+    expect(secure.ensureVerified.mock.lastCall?.[0].signal.aborted).toBe(true)
+    expect(secure.fetch).not.toHaveBeenCalled()
+
+    await expect(client.post('/v1/session', {})).resolves.toEqual({
+      ok: true,
+    })
   })
   describe('a connection that stalls', () => {
     function deferred<T>() {
@@ -1628,7 +1699,7 @@ describe('attested harness transport', () => {
       const client = new HarnessClient(
         'https://harness.example',
         async () => 'clerk',
-        () => secure,
+        async () => secure,
       )
       const signalOf = (call: number): AbortSignal | undefined =>
         secure.fetch.mock.calls[call][1].signal
@@ -1681,7 +1752,7 @@ describe('attested harness transport', () => {
       const client = new HarnessClient(
         'https://harness.example',
         () => new Promise<string>(() => {}),
-        () => secure,
+        async () => secure,
       )
       const listing = track(client.post('/v1/threads/list', {}))
 
@@ -1768,7 +1839,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     for (const path of [
       'https://other.example/v1/session',
@@ -1785,7 +1856,7 @@ describe('attested harness transport', () => {
         new HarnessClient(
           'http://harness.example',
           async () => null,
-          () => secure,
+          async () => secure,
         ),
     ).toThrow(HarnessError)
   })
@@ -1803,7 +1874,7 @@ describe('chat access a signed-in client mints', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     const reported: RateLimit[] = []
     client.onRateLimit = (rateLimit) => reported.push(rateLimit)
@@ -2163,7 +2234,7 @@ describe('chat access a signed-in client mints', () => {
     const client = new HarnessClient(
       'https://harness.example',
       vi.fn().mockResolvedValueOnce('expired').mockResolvedValue('fresh'),
-      () => secure,
+      async () => secure,
     )
     await expect(client.post('/v1/threads/turn', {})).resolves.toEqual({
       ok: true,

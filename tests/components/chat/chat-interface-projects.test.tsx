@@ -668,7 +668,9 @@ it('says project mode ended when the page leaves a loading project with a file w
   await waitFor(() => expect(requested('/v1/projects/get')).toHaveLength(1))
   rerender(projectView(planning.id))
   await waitFor(() => expect(requested('/v1/projects/get')).toHaveLength(2))
-  expect(screen.getByRole('heading', { name: 'Loading...' })).toBeVisible()
+  await waitFor(() =>
+    expect(screen.getByRole('heading', { name: 'Loading...' })).toBeVisible(),
+  )
   dropFiles([droppedFile(notes, '# Notes')])
   await act(async () => {})
 
