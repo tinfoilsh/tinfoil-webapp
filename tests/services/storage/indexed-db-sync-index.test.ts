@@ -238,6 +238,7 @@ describe('IndexedDB pending sync index', () => {
       'attachmentPayloads',
       'chatSummaries',
       'chats',
+      'dictationSegments',
       'migrations',
     ])
     expect(

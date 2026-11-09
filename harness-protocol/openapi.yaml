@@ -1163,6 +1163,7 @@ paths:
       operationId: transcriptions
       summary: Transcribe a recording
       tags: [speech]
+      description: A recording not transcribed within two minutes fails with UPSTREAM_REFUSED.
       requestBody:
         required: true
         content:
@@ -1687,12 +1688,13 @@ components:
     Composer:
       description: What the composer takes.
       type: object
-      required: [attachments, projectDocuments, pasteAsFileChars, dictationMaxSeconds]
+      required: [attachments, projectDocuments, pasteAsFileChars, dictationMaxSeconds, dictationSegmentSeconds]
       properties:
         attachments: {type: array, items: {$ref: "#/components/schemas/FileGroup"}}
         projectDocuments: {type: array, items: {$ref: "#/components/schemas/FileGroup"}}
         pasteAsFileChars: {type: integer}
-        dictationMaxSeconds: {type: integer}
+        dictationMaxSeconds: {type: integer, description: "How long a client that sends dictation as one recording lets it run."}
+        dictationSegmentSeconds: {type: integer, description: "How long a client lets dictation run before it sends what it recorded to be transcribed and records on: it ends each recording at the first pause after this long. Short recordings transcribe in seconds, and one that fails loses no more than itself."}
 
     FileGroup:
       description: Files the composer takes by extension, and the largest each may be.

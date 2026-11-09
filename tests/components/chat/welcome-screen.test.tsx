@@ -21,6 +21,7 @@ vi.mock('@/components/chat/model-selector', () => ({
 function renderWelcome() {
   return render(
     <WelcomeScreen
+      chatId=""
       isDarkMode={false}
       autoIntelligence="high"
       setAutoIntelligence={vi.fn()}

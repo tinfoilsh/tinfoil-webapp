@@ -515,6 +515,7 @@ export function ChatMessages({
         <div className="flex-[2]" />
         <div className="relative z-10 w-full max-w-4xl px-8 pb-8 pt-16">
           <WelcomeScreen
+            chatId={chatId}
             isDarkMode={isDarkMode}
             isPremium={isPremium}
             models={models}

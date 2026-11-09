@@ -2893,6 +2893,7 @@ export function ChatInterface({
                       />
                       <ChatInput
                         key={isChatHydrating ? 'loading' : 'ready'}
+                        chatId={currentChat.id}
                         input={input}
                         setInput={setInput}
                         handleSubmit={composerActions.submit}

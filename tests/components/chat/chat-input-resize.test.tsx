@@ -127,6 +127,7 @@ function ChatInputInArea(
   return (
     <div data-chat-input-area>
       <ChatInput
+        chatId=""
         input={MESSAGE}
         setInput={vi.fn()}
         handleSubmit={vi.fn()}

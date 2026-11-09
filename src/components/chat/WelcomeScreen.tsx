@@ -185,6 +185,7 @@ function FadeInLines({ segments }: { segments: Segment[] }) {
 }
 
 interface WelcomeScreenProps {
+  chatId: string
   isDarkMode: boolean
   isPremium?: boolean
   models?: BaseModel[]
@@ -228,6 +229,7 @@ interface WelcomeScreenProps {
 // adopt the dashed border treatment when the parent is in temporary mode.
 
 export const WelcomeScreen = memo(function WelcomeScreen({
+  chatId,
   isDarkMode,
   isPremium,
   models,
@@ -398,6 +400,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
               >
                 {composerNotice}
                 <ChatInput
+                  chatId={chatId}
                   input={input}
                   setInput={setInput}
                   handleSubmit={onSubmit}
