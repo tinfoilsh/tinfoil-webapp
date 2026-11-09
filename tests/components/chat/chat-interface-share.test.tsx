@@ -157,3 +157,111 @@ it('lets a signed-out visitor copy a chat as markdown without creating a link', 
     '/v1/threads/share/status',
   )
 })
+
+// The menu of the chat header in a conversation too narrow for its labels,
+// as on a phone.
+async function openHeaderMenu() {
+  await act(async () =>
+    fireEvent.click(screen.getByRole('button', { name: 'More chat actions' })),
+  )
+  return screen.findByRole('menu')
+}
+
+it('keeps Share, and no favorites, in the header menu of a signed-out visitor’s chat', async () => {
+  signIn({ userId: null })
+  client.post.mockImplementation(async (path) => {
+    throw new Error(`Unexpected ${path}`)
+  })
+  const chat = storedThread('tab-chat', {
+    title: 'Visitor chat',
+    titleState: 'generated',
+    messages: [
+      {
+        id: 'question',
+        role: 'user',
+        content: 'What is a prime?',
+        createdAt: '2026-10-22T12:00:00Z',
+      },
+    ],
+  })
+  await localThreadStore('tab').add(chat)
+  render(
+    <ProjectProvider>
+      <ChatInterface
+        initialChatId={chat.id}
+        isLocalChatUrl
+        suppressIntroModals
+      />
+    </ProjectProvider>,
+  )
+  await screen.findByText('What is a prime?')
+
+  const menu = await openHeaderMenu()
+  expect(
+    within(menu)
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent),
+  ).toEqual(['Share'])
+  await act(async () =>
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Share' })),
+  )
+
+  expect(
+    await screen.findByRole('dialog', { name: 'Share Conversation' }),
+  ).toBeVisible()
+})
+
+it('pins and unpins the open chat kept on this device from the header menu', async () => {
+  chatPage.auth = { isLoaded: true, isSignedIn: true, userId: 'alice' }
+  signIn()
+  client.post.mockImplementation(async (path) => {
+    throw new Error(`Unexpected ${path}`)
+  })
+  const chat = storedThread(
+    '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00',
+    {
+      title: 'Garden plans',
+      titleState: 'generated',
+      messages: [
+        {
+          id: 'question',
+          role: 'user',
+          content: 'When do tulips go in?',
+          createdAt: '2026-10-22T12:00:00Z',
+        },
+      ],
+    },
+  )
+  await localThreadStore('device').add(chat)
+  render(
+    <ProjectProvider>
+      <ChatInterface
+        initialChatId={chat.id}
+        isLocalChatUrl
+        suppressIntroModals
+      />
+    </ProjectProvider>,
+  )
+  await screen.findByText('When do tulips go in?')
+  const pinned = async () =>
+    (await localThreadStore('device').get(chat.id))?.pinned
+
+  await act(async () =>
+    fireEvent.click(
+      within(await openHeaderMenu()).getByRole('menuitem', {
+        name: 'Pin to Favorites',
+      }),
+    ),
+  )
+  await waitFor(async () => expect(await pinned()).toBe(true))
+
+  await act(async () =>
+    fireEvent.click(
+      within(await openHeaderMenu()).getByRole('menuitem', {
+        name: 'Remove from Favorites',
+      }),
+    ),
+  )
+  await waitFor(async () => expect(await pinned()).toBe(false))
+  expect(client.post).not.toHaveBeenCalled()
+})
