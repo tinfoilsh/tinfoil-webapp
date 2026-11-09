@@ -424,6 +424,7 @@ export class IndexedDBStorage {
       request.onerror = (event) => {
         const error = (event.target as IDBOpenDBRequest).error
         if (error?.name === VERSION_ERROR) this.access.set('outdated')
+        else if (this.access.get() === 'blocked') this.access.set('ready')
         logError('IndexedDB open error', error, {
           component: 'IndexedDBStorage',
         })

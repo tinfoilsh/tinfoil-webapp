@@ -323,6 +323,35 @@ describe('IndexedDB pending sync index', () => {
     expect(storage.access.get()).toBe('ready')
   })
 
+  it('stops saying an upgrade is blocked once it fails', async () => {
+    const olderConnection = await openVersionThree([storedChat('cloud-chat')])
+    olderConnection.onversionchange = () => undefined
+    const open = indexedDB.open.bind(indexedDB)
+    // The upgrade fails once it runs, as when the browser's storage is full.
+    vi.spyOn(indexedDB, 'open').mockImplementationOnce((name, version) => {
+      const request = open(name, version)
+      // After the page's own upgrade handler, before the upgrade commits.
+      request.addEventListener('upgradeneeded', () =>
+        queueMicrotask(() => request.transaction!.abort()),
+      )
+      return request
+    })
+    const storage = new IndexedDBStorage()
+    const blocked = new Promise<void>((resolve) =>
+      storage.access.subscribe(() => {
+        if (storage.access.get() === 'blocked') resolve()
+      }),
+    )
+
+    const ids = storage.getAllChatIds()
+    await blocked
+    olderConnection.close()
+
+    await expect(ids).rejects.toThrow('Failed to open database')
+    expect(storage.access.get()).toBe('ready')
+    await expect(storage.getAllChatIds()).resolves.toEqual(['cloud-chat'])
+  })
+
   it('stops using the database once a newer version upgrades it, leaving its chats', async () => {
     const storage = new IndexedDBStorage()
     await storage.saveChat(storedChat('kept'))
