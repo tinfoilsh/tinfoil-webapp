@@ -7,8 +7,8 @@ const VERIFIED = { status: 'success' } as const
 
 // Verifies the chat service's enclave, which every request does before it
 // is sent; the first verification is shared.
-export async function verifyChatService(): Promise<void> {
-  await harnessAPI().client.verify()
+export function verifyChatService(): Promise<Verification> {
+  return harnessAPI().client.verify()
 }
 
 // The registers a measurement sets, by name, in the platform's order.
