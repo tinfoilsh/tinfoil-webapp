@@ -34,6 +34,8 @@ export class DictationUnsupportedError extends Error {
 
 interface Segment {
   id: string
+  // The chat it was dictated in, whose composer alone takes its text.
+  chatId: string
   dictationId: string
   index: number
   startedAt: number
@@ -115,14 +117,20 @@ const order = (a: Segment, b: Segment) =>
 const waiting = (segment: Segment) =>
   segment.text === undefined && !segment.failed
 
+interface Receiver {
+  chatId: string
+  receive: (text: string) => void
+}
+
 // Dictation, sent to be transcribed in short recordings while the user keeps
-// talking. Each recording's text reaches the composer listening, in order,
-// and a recording is kept on this device until its text has, so a failure,
-// a reload or a closed tab loses no more than the recording under way.
+// talking. Each recording's text reaches, in order, the composer of the chat
+// it was dictated in, and a recording is kept on this device until its text
+// has, so a failure, a reload or a closed tab loses no more than the
+// recording under way.
 export class Dictation {
   private snapshot: DictationSnapshot = IDLE
   private readonly listeners = new Set<() => void>()
-  private readonly receivers: Array<(text: string) => void> = []
+  private readonly receivers: Receiver[] = []
   private readonly segments = new Map<string, Segment>()
   private recorder: SegmentRecorder | null = null
   private stream: MediaStream | null = null
@@ -146,25 +154,29 @@ export class Dictation {
     }
   }
 
-  // The composer that dictated text goes to, until the function returned
-  // is called. Text that arrives while no composer listens waits for one,
-  // as does dictation a closed page left in storage.
-  listen(receive: (text: string) => void): () => void {
-    this.receivers.push(receive)
+  // The composer that the text dictated in a chat goes to, until the
+  // function returned is called. Text that arrives while no composer of its
+  // chat listens waits for one, as does dictation a closed page left in
+  // storage.
+  listen(chatId: string, receive: (text: string) => void): () => void {
+    const receiver: Receiver = { chatId, receive }
+    this.receivers.push(receiver)
     this.loaded ??= this.load()
     this.deliver()
     return () => {
-      const index = this.receivers.lastIndexOf(receive)
+      const index = this.receivers.lastIndexOf(receiver)
       if (index >= 0) this.receivers.splice(index, 1)
     }
   }
 
   async start({
     owner,
+    chatId,
     segmentSeconds,
     persist,
   }: {
     owner: symbol
+    chatId: string
     segmentSeconds: number
     persist: boolean
   }): Promise<void> {
@@ -213,6 +225,7 @@ export class Dictation {
           const id = segmentId(index)
           this.segments.set(id, {
             id,
+            chatId,
             dictationId,
             index,
             startedAt,
@@ -343,8 +356,8 @@ export class Dictation {
   }
 
   private stored(segment: Segment): StoredDictationSegment {
-    const { id, dictationId, index, startedAt, mimeType } = segment
-    return { id, dictationId, index, startedAt, mimeType }
+    const { id, chatId, dictationId, index, startedAt, mimeType } = segment
+    return { id, chatId, dictationId, index, startedAt, mimeType }
   }
 
   private save(segment: Segment, write: () => Promise<void>): void {
@@ -439,23 +452,24 @@ export class Dictation {
     this.work()
   }
 
-  // Hands the composer each dictation's text in order, up to the first
-  // recording still waiting for its own.
+  // Hands the composer of each dictation's chat its text in order, up to the
+  // first recording still waiting for its own.
   private deliver(): void {
-    const receive = this.receivers.at(-1)
-    if (receive) {
-      const dictations = new Map<string, Segment[]>()
-      for (const segment of [...this.segments.values()].sort(order)) {
-        const segments = dictations.get(segment.dictationId) ?? []
-        segments.push(segment)
-        dictations.set(segment.dictationId, segments)
-      }
-      for (const segments of dictations.values()) {
-        for (const segment of segments) {
-          if (segment.text === undefined) break
-          this.forget(segment)
-          if (segment.text) receive(segment.text)
-        }
+    const dictations = new Map<string, Segment[]>()
+    for (const segment of [...this.segments.values()].sort(order)) {
+      const segments = dictations.get(segment.dictationId) ?? []
+      segments.push(segment)
+      dictations.set(segment.dictationId, segments)
+    }
+    for (const segments of dictations.values()) {
+      const receiver = this.receivers.findLast(
+        ({ chatId }) => chatId === segments[0].chatId,
+      )
+      if (!receiver) continue
+      for (const segment of segments) {
+        if (segment.text === undefined) break
+        this.forget(segment)
+        if (segment.text) receiver.receive(segment.text)
       }
     }
     this.refresh()

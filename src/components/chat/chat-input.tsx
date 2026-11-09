@@ -70,6 +70,9 @@ function getSharedTextareaRegistry(ref: object): Set<HTMLTextAreaElement> {
 }
 
 type ChatInputProps = {
+  // The chat the composer writes in, which dictation started here belongs
+  // to; a new chat's is empty.
+  chatId: string
   input: string
   setInput: (value: string) => void
   handleSubmit: (e: FormEvent) => void
@@ -116,6 +119,7 @@ const isDocumentSubmittable = (doc: ProcessedDocument) =>
   !doc.isUploading && !doc.isGeneratingDescription && !doc.isUnsupported
 
 export const ChatInput = memo(function ChatInput({
+  chatId,
   input,
   setInput,
   handleSubmit,
@@ -327,11 +331,14 @@ export const ChatInput = memo(function ChatInput({
     draftRef.current = input
   }, [input])
 
-  // Leaving the composer closes the microphone if it opened it, as another
-  // composer can stay mounted while hidden; what was recorded is still
-  // transcribed and arrives in the composer shown then.
+  // Leaving the composer or its chat closes the microphone if it opened it,
+  // as another composer can stay mounted while hidden; what was recorded is
+  // still transcribed and waits for the chat it was dictated in.
   const [dictationOwner] = useState(() => Symbol('dictation'))
-  useEffect(() => () => dictation.stop(dictationOwner), [dictationOwner])
+  useEffect(
+    () => () => dictation.stop(dictationOwner),
+    [dictationOwner, chatId],
+  )
 
   // --- Input options menu state (the "+" button) ---
   const [isInputMenuOpen, setIsInputMenuOpen] = useState(false)
@@ -519,11 +526,11 @@ export const ChatInput = memo(function ChatInput({
 
   const stopRecording = useCallback(() => dictation.stop(), [])
 
-  // Dictated text joins the end of the draft as each recording is
+  // The chat's dictated text joins the end of the draft as each recording is
   // transcribed.
   useEffect(
     () =>
-      dictation.listen((text) => {
+      dictation.listen(chatId, (text) => {
         const draft = draftRef.current.trim()
         const next = draft ? `${draft} ${text}` : text
         draftRef.current = next
@@ -538,7 +545,7 @@ export const ChatInput = memo(function ChatInput({
           resizeTextarea(ownTextareaRef.current)
         })
       }),
-    [setInput, resizeTextarea],
+    [chatId, setInput, resizeTextarea],
   )
 
   const startRecording = useCallback(async () => {
@@ -546,6 +553,7 @@ export const ChatInput = memo(function ChatInput({
     try {
       await dictation.start({
         owner: dictationOwner,
+        chatId,
         segmentSeconds: session.composer.dictationSegmentSeconds,
         persist: !isTemporaryMode,
       })
@@ -560,7 +568,7 @@ export const ChatInput = memo(function ChatInput({
         position: 'top-right',
       })
     }
-  }, [session, isTemporaryMode, toast, dictationOwner])
+  }, [session, isTemporaryMode, toast, dictationOwner, chatId])
 
   // Handle paste event for images and long text detection
   const handlePaste = useCallback(

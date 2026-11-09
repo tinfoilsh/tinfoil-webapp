@@ -57,6 +57,7 @@ describe('ChatInput streaming action', () => {
     })
     const { unmount } = render(
       <ChatInput
+        chatId=""
         input=""
         setInput={vi.fn()}
         handleSubmit={vi.fn()}
@@ -87,22 +88,24 @@ describe('ChatInput streaming action', () => {
     // A temporary chat keeps dictation off the device, so no recording one
     // test leaves reaches the next; keeping it is the dictation tests' to
     // check.
+    const composer = (setInput: (value: string) => void, chatId = 'chat') => (
+      <ChatInput
+        chatId={chatId}
+        isTemporaryMode
+        input="Draft"
+        setInput={setInput}
+        handleSubmit={vi.fn()}
+        loadingState="idle"
+        cancelGeneration={vi.fn()}
+        inputRef={createRef<HTMLTextAreaElement>()}
+        handleInputFocus={vi.fn()}
+        inputMinHeight="40px"
+        isDarkMode
+        isPremium
+      />
+    )
     const renderComposer = (setInput: (value: string) => void) =>
-      render(
-        <ChatInput
-          isTemporaryMode
-          input="Draft"
-          setInput={setInput}
-          handleSubmit={vi.fn()}
-          loadingState="idle"
-          cancelGeneration={vi.fn()}
-          inputRef={createRef<HTMLTextAreaElement>()}
-          handleInputFocus={vi.fn()}
-          inputMinHeight="40px"
-          isDarkMode
-          isPremium
-        />,
-      )
+      render(composer(setInput))
     const segmentMs = testSession.composer.dictationSegmentSeconds * 1000
 
     beforeEach(() => {
@@ -169,6 +172,26 @@ describe('ChatInput streaming action', () => {
       expect(recording().state).toBe('recording')
     })
 
+    it('stops recording when the user moves to another chat, and keeps its text for the chat it was dictated in', async () => {
+      client.upload.mockResolvedValueOnce({ text: 'Mine.' })
+      const setInput = vi.fn()
+      const { rerender } = render(composer(setInput))
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Start recording' }))
+      })
+      const recorder = recording()
+      recorder.hear('mine')
+      rerender(composer(setInput, 'another chat'))
+      expect(recorder.state).toBe('inactive')
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(client.upload).toHaveBeenCalledOnce()
+      expect(setInput).not.toHaveBeenCalled()
+
+      rerender(composer(setInput))
+      expect(setInput).toHaveBeenLastCalledWith('Draft Mine.')
+    })
+
     it('keeps a recording that could not be transcribed for the user to try again', async () => {
       client.upload.mockRejectedValueOnce(
         new HarnessError(
@@ -211,6 +234,7 @@ describe('ChatInput streaming action', () => {
   it('shows Stop while a recovered response is streaming', () => {
     const cancelGeneration = vi.fn()
     const props = {
+      chatId: '',
       input: '',
       setInput: vi.fn(),
       handleSubmit: vi.fn(),

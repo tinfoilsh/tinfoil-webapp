@@ -278,6 +278,7 @@ describe('ChatInput recording UI', () => {
       })
       render(
         <ChatInput
+          chatId=""
           input=""
           setInput={vi.fn()}
           handleSubmit={vi.fn()}
@@ -324,6 +325,7 @@ describe('ChatInput recording UI', () => {
         const [input, setInput] = useState(draft)
         return (
           <ChatInput
+            chatId=""
             input={input}
             setInput={setInput}
             handleSubmit={handleSubmit}
@@ -427,6 +429,7 @@ describe('ChatInput recording UI', () => {
     const setInput = vi.fn()
     render(
       <ChatInput
+        chatId=""
         input=""
         setInput={setInput}
         handleSubmit={vi.fn()}
@@ -465,6 +468,7 @@ describe('ChatInput recording UI', () => {
 
       render(
         <ChatInput
+          chatId=""
           input={input}
           setInput={setInput}
           handleSubmit={vi.fn()}

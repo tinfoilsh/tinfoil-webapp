@@ -13,6 +13,7 @@ const SEGMENT_SECONDS = 10
 // recording ends at its length.
 const SEGMENT_MS = SEGMENT_SECONDS * 1000
 const COMPOSER = Symbol('composer')
+const CHAT = 'chat'
 
 const refused = (code: string, action: string) =>
   new HarnessError({ code, action, message: code } as never, 502)
@@ -48,9 +49,9 @@ const saved = async () =>
 // Lets what the recorders and the harness hand over arrive.
 const settle = () => vi.advanceTimersByTimeAsync(0)
 
-function listening(dictation: Dictation) {
+function listening(dictation: Dictation, chatId = CHAT) {
   const received: string[] = []
-  dictation.listen((text) => received.push(text))
+  dictation.listen(chatId, (text) => received.push(text))
   return received
 }
 
@@ -81,6 +82,7 @@ describe('Dictation', () => {
 
     await dictation.start({
       owner: COMPOSER,
+      chatId: CHAT,
       segmentSeconds: SEGMENT_SECONDS,
       persist: true,
     })
@@ -126,6 +128,7 @@ describe('Dictation', () => {
 
     await dictation.start({
       owner: COMPOSER,
+      chatId: CHAT,
       segmentSeconds: SEGMENT_SECONDS,
       persist: true,
     })
@@ -164,6 +167,7 @@ describe('Dictation', () => {
 
     await dictation.start({
       owner: COMPOSER,
+      chatId: CHAT,
       segmentSeconds: SEGMENT_SECONDS,
       persist: true,
     })
@@ -202,6 +206,7 @@ describe('Dictation', () => {
 
     await dictation.start({
       owner: COMPOSER,
+      chatId: CHAT,
       segmentSeconds: SEGMENT_SECONDS,
       persist: true,
     })
@@ -225,6 +230,42 @@ describe('Dictation', () => {
     await vi.waitFor(async () => expect(await saved()).toEqual([]))
   })
 
+  it('keeps a chat’s dictated text for that chat’s composer, also after a reload', async () => {
+    grantMicrophone()
+    transcriptions(() => 'Mine.')
+    const dictation = new Dictation(new IndexedDBStorage())
+    const inChat: string[] = []
+    const leaveChat = dictation.listen(CHAT, (text) => inChat.push(text))
+
+    await dictation.start({
+      owner: COMPOSER,
+      chatId: CHAT,
+      segmentSeconds: SEGMENT_SECONDS,
+      persist: true,
+    })
+    recording().hear('mine')
+    dictation.stop()
+    // The user moves to another chat before the text arrives.
+    leaveChat()
+    const inAnotherChat = listening(dictation, 'another chat')
+    await settle()
+    expect(dictation.getSnapshot()).toMatchObject({ status: 'idle' })
+    expect(inChat).toEqual([])
+    expect(inAnotherChat).toEqual([])
+    await vi.waitFor(async () =>
+      expect(await saved()).toEqual([
+        { index: 0, audio: undefined, text: 'Mine.' },
+      ]),
+    )
+
+    const reloaded = new Dictation(new IndexedDBStorage())
+    const elsewhereAfterReload = listening(reloaded, 'another chat')
+    const backInChat = listening(reloaded)
+    await vi.waitFor(() => expect(backInChat).toEqual(['Mine.']))
+    expect(elsewhereAfterReload).toEqual([])
+    await vi.waitFor(async () => expect(await saved()).toEqual([]))
+  })
+
   it('never writes a temporary chat’s dictation to the device', async () => {
     grantMicrophone()
     transcriptions(() => {
@@ -235,6 +276,7 @@ describe('Dictation', () => {
 
     await dictation.start({
       owner: COMPOSER,
+      chatId: CHAT,
       segmentSeconds: SEGMENT_SECONDS,
       persist: false,
     })
@@ -245,6 +287,7 @@ describe('Dictation', () => {
     // A dictation in a saved chat after it is kept, and it alone.
     await dictation.start({
       owner: COMPOSER,
+      chatId: CHAT,
       segmentSeconds: SEGMENT_SECONDS,
       persist: true,
     })

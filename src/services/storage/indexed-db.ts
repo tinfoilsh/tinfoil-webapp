@@ -28,10 +28,12 @@ export interface SaveChatResult {
   isLocalOnly: boolean
 }
 
-// A stretch of dictation kept until its text reaches the composer: its
-// recording until it is transcribed, then its text.
+// A stretch of dictation kept until its text reaches the composer of the
+// chat it was dictated in: its recording until it is transcribed, then its
+// text.
 export interface StoredDictationSegment {
   id: string
+  chatId: string
   dictationId: string
   index: number
   startedAt: number

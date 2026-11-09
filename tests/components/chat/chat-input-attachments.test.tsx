@@ -27,6 +27,7 @@ function renderChatInput(
 ) {
   return render(
     <ChatInput
+      chatId=""
       input=""
       setInput={vi.fn()}
       handleSubmit={vi.fn()}

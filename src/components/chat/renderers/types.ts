@@ -55,6 +55,7 @@ export interface MessageRenderProps {
 }
 
 export interface InputRenderProps {
+  chatId: string
   onSubmit: (content: Message['content'], attachments?: Attachment[]) => void
   isDarkMode: boolean
   isPremium: boolean
