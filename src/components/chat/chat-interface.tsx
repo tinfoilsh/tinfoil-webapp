@@ -10,7 +10,13 @@ import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { toast } from '@/hooks/use-toast'
 import { logError } from '@/utils/error-handling'
 import { useAuth, useUser } from '@clerk/react'
-import { TfDocumentPlus, TfShare, TfTinSad } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfApplicationWindow,
+  TfDocumentPlus,
+  TfRefresh,
+  TfShare,
+  TfTinSad,
+} from '@tinfoilsh/tinfoil-icons'
 import {
   TfArrowDownAnimated,
   TfGhost2Animated,
@@ -97,6 +103,7 @@ import { useStableHandlers } from './hooks/use-stable-handlers'
 import { MessageQueue } from './message-queue'
 import { ModelSelector } from './model-selector'
 import { ModelSelectorTriggerLabel } from './model-selector-trigger-label'
+import { PageNotice } from './page-notice'
 import { openProjectChat } from './project-navigation'
 import { QuoteSelectionPopover } from './quote-selection-popover'
 import { initializeRenderers } from './renderers/client'
@@ -160,6 +167,7 @@ import { verifyChatService } from '@/services/harness/attestation'
 import { ERROR_CODES } from '@/services/harness/protocol'
 import { reportProfileError, useHarness } from '@/services/harness/provider'
 import { HarnessError } from '@/services/harness/sse'
+import { useStore } from '@/services/harness/store'
 import { isAttachmentsUnavailable } from '@/services/harness/transfer'
 import type { Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
@@ -169,6 +177,7 @@ import {
   registerStartFreshKeyIfNeeded,
 } from '@/services/keys/cloud-key-authorization'
 import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { hasPasskeyBackup } from '@/utils/signout-cleanup'
 import { useUIState } from './hooks/use-ui-state'
 
@@ -209,6 +218,7 @@ export function ChatInterface({
   } = useHarness()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const { user } = useUser()
+  const databaseAccess = useStore(indexedDBStorage.access)
   const router = useRouter()
   const {
     isClient,
@@ -1912,31 +1922,44 @@ export function ChatInterface({
     [projects],
   )
 
+  // Chats kept in this browser can be neither read nor saved until the
+  // database opens.
+  if (databaseAccess === 'outdated') {
+    return (
+      <PageNotice
+        icon={TfRefresh}
+        title="Tinfoil Chat was updated"
+        action={{ label: 'Reload', onClick: () => window.location.reload() }}
+      >
+        A newer version of Tinfoil Chat was opened in another tab. Reload this
+        page to keep using your chats.
+      </PageNotice>
+    )
+  }
+
+  if (databaseAccess === 'blocked') {
+    return (
+      <PageNotice
+        icon={TfApplicationWindow}
+        title="Close your other Tinfoil Chat tabs"
+      >
+        Tinfoil Chat is updating the chats saved in this browser. Close Tinfoil
+        Chat in your other tabs and windows, and this page will continue on its
+        own.
+      </PageNotice>
+    )
+  }
+
   if (!session && sessionError) {
     return (
-      <div className="flex h-screen items-center justify-center bg-surface-chat-background px-4 font-aeonik">
-        <div className="max-w-md text-center">
-          <div className="mb-6 flex justify-center">
-            <TfTinSad
-              className="h-24 w-24 !text-content-secondary"
-              aria-hidden="true"
-            />
-          </div>
-          <h2 className="mb-3 text-xl font-semibold text-content-primary">
-            Something went wrong
-          </h2>
-          <p role="alert" className="mb-6 text-content-secondary">
-            Tinfoil Chat is experiencing some technical difficulties. We&apos;re
-            working on resolving it. Please try again later.
-          </p>
-          <button
-            onClick={() => window.location.reload()}
-            className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
-          >
-            Try Now
-          </button>
-        </div>
-      </div>
+      <PageNotice
+        icon={TfTinSad}
+        title="Something went wrong"
+        action={{ label: 'Try Now', onClick: () => window.location.reload() }}
+      >
+        Tinfoil Chat is experiencing some technical difficulties. We&apos;re
+        working on resolving it. Please try again later.
+      </PageNotice>
     )
   }
 
