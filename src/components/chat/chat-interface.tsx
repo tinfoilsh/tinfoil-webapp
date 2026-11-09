@@ -2099,9 +2099,11 @@ export function ChatInterface({
         </button>
       )}
 
-      {(canShare || canTogglePinOpenChat) && (
+      {hasVisibleChatHeader && (
         <ChatHeaderMenu
           className="@3xl/conversation:hidden"
+          verificationStatus={verificationStatus}
+          onOpenVerification={handleOpenVerifierSidebar}
           onShare={canShare ? handleOpenShareModal : undefined}
           isPinned={isOpenChatPinned}
           onTogglePin={
@@ -2112,12 +2114,15 @@ export function ChatInterface({
         />
       )}
 
-      {/* Verifier toggle button */}
+      {/* Verifier toggle button - a compact conversation's header keeps it
+          in the menu above */}
       <VerificationStatusButton
+        className={
+          hasVisibleChatHeader ? 'hidden @3xl/conversation:block' : undefined
+        }
         status={verificationStatus}
         isPanelOpen={isVerifierSidebarOpen}
         onTogglePanel={handleOpenVerifierSidebar}
-        compactLabel={hasVisibleChatHeader}
         announceVerified={!isVerificationAnnounced}
         onVerifiedAnnounced={() => setIsVerificationAnnounced(true)}
       />
