@@ -1,4 +1,3 @@
-import { logError } from '@/utils/error-handling'
 import { EnclaveHTTPClient } from 'tinfoil'
 import { AnonymousCredentialCache } from './anonymous-credential'
 import { ChatCredentialCache } from './chat-credential'
@@ -31,9 +30,6 @@ const harnessRepo = 'tinfoilsh/confidential-tinfoil-harness'
 // An attestation that has not finished by then is abandoned: the request
 // fails, and the next one verifies the enclave again.
 const ATTESTATION_TIMEOUT_MS = 20_000
-// A live run's chat token that could not be minted again, for a reason that
-// names no time to ask again, is asked for again after this long.
-const RUN_RENEWAL_RETRY_MS = 30_000
 // A request a chat route answers at once is abandoned when no answer has
 // arrived by then, so a connection that stalled fails it rather than
 // holding it. It also has the time its body takes to send at this many
@@ -131,10 +127,6 @@ export class HarnessClient {
   )
   private secure?: Promise<Transport>
   private readonly lifetime = new AbortController()
-  // The run streams this page reads, and the renewal of the chat token their
-  // model calls use.
-  private openRuns = 0
-  private runRenewal?: ReturnType<typeof setTimeout>
   // Told the quota the control plane reports as this account's chat access
   // is minted or refused.
   onRateLimit?: (rateLimit: RateLimit) => void
@@ -149,7 +141,6 @@ export class HarnessClient {
 
   dispose() {
     this.lifetime.abort()
-    clearTimeout(this.runRenewal)
     this.anonymous.dispose()
     this.chat.dispose()
   }
@@ -220,45 +211,6 @@ export class HarnessClient {
     const token = await this.getToken()
     if (!token) return
     await this.chat.renew(token, signal)
-  }
-
-  // A run's model calls can outlast the chat token it started with. While a
-  // run stream is open, the token is minted again as it enters its renewal
-  // window and presented to the harness, which gives a run whose token
-  // expired the newest one the account presented.
-  private scheduleRunRenewal() {
-    clearTimeout(this.runRenewal)
-    this.runRenewal = undefined
-    const at = this.openRuns > 0 ? this.chat.renewsAt() : undefined
-    if (at === undefined || this.lifetime.signal.aborted) return
-    const delay = at - Date.now()
-    this.runRenewal = setTimeout(
-      () => void this.renewForRuns(),
-      delay > 0 ? delay : RUN_RENEWAL_RETRY_MS,
-    )
-  }
-
-  private async renewForRuns() {
-    this.runRenewal = undefined
-    try {
-      // Another request may have renewed and presented it since.
-      if ((this.chat.renewsAt() ?? Infinity) <= Date.now()) {
-        const response = await this.request(
-          ROUTES.session,
-          '{}',
-          this.lifetime.signal,
-        )
-        await response.body?.cancel()
-      }
-    } catch (cause) {
-      if (!this.lifetime.signal.aborted)
-        logError('Failed to renew chat access for a running reply', cause, {
-          component: 'HarnessClient',
-          action: 'renewForRuns',
-        })
-    } finally {
-      this.scheduleRunRenewal()
-    }
   }
 
   private async request(
@@ -508,15 +460,10 @@ export class HarnessClient {
         message: 'The chat service did not return an event stream.',
       })
     }
-    if (++this.openRuns === 1) this.scheduleRunRenewal()
-    try {
-      for await (const frame of readEvents(response.body)) {
-        if (frame.event.type === 'RUN_STARTED')
-          this.instances.set(frame.event.threadId, frame.event.instance)
-        yield frame
-      }
-    } finally {
-      if (--this.openRuns === 0) this.scheduleRunRenewal()
+    for await (const frame of readEvents(response.body)) {
+      if (frame.event.type === 'RUN_STARTED')
+        this.instances.set(frame.event.threadId, frame.event.instance)
+      yield frame
     }
   }
 }
