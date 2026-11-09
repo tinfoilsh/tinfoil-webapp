@@ -1,5 +1,5 @@
 const { radius } = require('./src/lib/radius')
-const TINFOIL_ACCENT_BLUE_RGB = '16 52 125'
+const TINFOIL_TWILIGHT_RGB = '107 91 149'
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -98,18 +98,19 @@ module.exports = {
           'accent-light': 'hsl(var(--color-accent-light) / <alpha-value>)',
           'accent-light-darker':
             'hsl(var(--color-accent-light-darker) / <alpha-value>)',
-          twilight: 'hsl(var(--color-twilight) / <alpha-value>)',
           brass: 'hsl(var(--color-brass) / <alpha-value>)',
         },
-        // Mirrors tinfoil-accent-blue from @tinfoil/tailwind-preset.
-        'tinfoil-accent-blue': {
-          DEFAULT: `rgb(${TINFOIL_ACCENT_BLUE_RGB})`,
-          hover: '#1F458F',
-          darker: '#01236B',
-          subtle: `rgb(${TINFOIL_ACCENT_BLUE_RGB} / 0.10)`,
-          soft: `rgb(${TINFOIL_ACCENT_BLUE_RGB} / 0.30)`,
-          medium: `rgb(${TINFOIL_ACCENT_BLUE_RGB} / 0.60)`,
-          bold: `rgb(${TINFOIL_ACCENT_BLUE_RGB} / 0.90)`,
+        // Mirrors tinfoil-twilight from @tinfoil/tailwind-preset; `light` is
+        // for text on dark surfaces.
+        'tinfoil-twilight': {
+          DEFAULT: `rgb(${TINFOIL_TWILIGHT_RGB})`,
+          hover: '#605185',
+          darker: '#524573',
+          light: '#A89ACB',
+          subtle: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.10)`,
+          soft: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.30)`,
+          medium: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.60)`,
+          bold: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.90)`,
         },
         surface: {
           background: 'hsl(var(--surface-background) / <alpha-value>)',

@@ -106,7 +106,7 @@ describe('SteppedSlider', () => {
             }
             browserWindow.document.body.innerHTML = container.innerHTML
             const fill = browserWindow.document.querySelector(
-              '.bg-tinfoil-accent-blue',
+              '.bg-tinfoil-twilight',
             )!
             const computed = browserWindow.getComputedStyle(fill)
 

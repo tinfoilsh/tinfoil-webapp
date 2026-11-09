@@ -6,7 +6,7 @@
  * - tinfoil-light: #F2F1EC Bone (light background)
  * - tinfoil-accent-dark: #004444 Deep Teal (primary brand color)
  * - tinfoil-accent-light: #A8C7D1 Steel Mist (accent/success color)
- * - tinfoil-twilight: #6B5B95 Twilight (secondary: cards, hovers, charts)
+ * - tinfoil-twilight: #6B5B95 Twilight (primary actions, hovers, charts)
  * - tinfoil-brass: #C9934F Brass (warm accent, used sparingly)
  */
 
@@ -37,7 +37,7 @@ export const colors = {
     darker: '#97B6C0',
   },
 
-  // Tinfoil twilight - secondary color for cards, hovers, charts
+  // Tinfoil twilight - used for primary actions, hovers, charts
   'tinfoil-twilight': {
     DEFAULT: '#6B5B95',
   },

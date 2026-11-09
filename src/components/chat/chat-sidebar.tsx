@@ -89,11 +89,11 @@ const ENCRYPTION_NOTE_ID = 'sidebar-encryption-note'
 const STORAGE_TAB_CLASS_NAME =
   'flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors'
 const STORAGE_TAB_ACTIVE_CLASS_NAME =
-  'border-tinfoil-accent-blue bg-tinfoil-accent-blue text-white hover:bg-tinfoil-accent-blue-hover'
+  'border-tinfoil-twilight bg-tinfoil-twilight text-white hover:bg-tinfoil-twilight-hover'
 const STORAGE_TAB_INACTIVE_CLASS_NAME =
   'border-border-subtle bg-surface-chat-background text-content-secondary hover:border-border-strong hover:text-content-primary'
 const STORAGE_TAB_DROP_TARGET_CLASS_NAME =
-  'border-tinfoil-accent-blue ring-2 ring-tinfoil-accent-blue-soft'
+  'border-tinfoil-twilight ring-2 ring-tinfoil-twilight-soft'
 const SIDEBAR_CTA_CLASS_NAME =
   'block w-full rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90'
 
@@ -1102,7 +1102,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                   <button
                     type="button"
                     onClick={onCloudSyncSetupClick}
-                    className="mt-2 w-full rounded-md bg-tinfoil-accent-blue px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-tinfoil-accent-blue-hover"
+                    className="mt-2 w-full rounded-md bg-tinfoil-twilight px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover"
                   >
                     {backupWarningNeedsRecovery
                       ? 'Set Up Cloud Sync'
@@ -2202,7 +2202,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                               <button
                                 type="button"
                                 onClick={onUnlockChats}
-                                className="mt-3 rounded-md bg-tinfoil-accent-blue px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-tinfoil-accent-blue-hover"
+                                className="mt-3 rounded-md bg-tinfoil-twilight px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover"
                               >
                                 Unlock
                               </button>
