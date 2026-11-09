@@ -1289,7 +1289,7 @@ export const ChatInput = memo(function ChatInput({
                     >
                       {showStopAction ? (
                         <TfStopAnimated
-                          className="h-6 w-6 text-white/80 transition-colors md:h-5 md:w-5"
+                          className="h-6 w-6 text-current transition-colors md:h-5 md:w-5"
                           aria-hidden="true"
                         />
                       ) : (
