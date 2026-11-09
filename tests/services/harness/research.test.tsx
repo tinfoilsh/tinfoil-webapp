@@ -54,8 +54,8 @@ const stored: Thread = {
   ],
 }
 
-// A run that replies, and commits the reply as a research's when it is one.
-function reply(id: string, research = false) {
+// A run that replies.
+function reply(id: string) {
   return async function* (): AsyncGenerator<Frame> {
     const events: Frame['event'][] = [
       {
@@ -75,9 +75,7 @@ function reply(id: string, research = false) {
         type: 'RUN_FINISHED',
         threadId: THREAD_ID,
         runId: `run-${id}`,
-        metadata: {
-          messages: [{ id, ...(research ? { research: { version: 1 } } : {}) }],
-        },
+        metadata: { messages: [{ id }] },
       },
     ]
     for (const [index, event] of events.entries()) yield { id: index, event }
@@ -109,31 +107,28 @@ async function openCloud(
 resetChatStoresAroundEachTest()
 
 describe('deep research', () => {
-  it('researches the open chat’s questions until a research answers one', async () => {
+  it('asks for deep research once, with the question it was turned on for', async () => {
     const hook = await openCloud(researching)
     act(() => hook.result.current.setResearch(true))
 
-    // A reply that only asks what the research needs to know leaves it on
-    // for the answers.
-    client.events.mockImplementationOnce(reply('msg_asked'))
+    // Deep research turns off as the question is sent, while its research
+    // still runs.
+    let sending!: Promise<boolean> | undefined
+    client.events.mockImplementationOnce(reply('msg_report'))
+    act(() => {
+      sending = hook.result.current.send({ content: 'Which coast?', options })
+    })
+    expect(hook.result.current.research).toBe(false)
     await act(async () => {
-      await hook.result.current.send({ content: 'Which coast?', options })
+      await sending
     })
     expect(turn(0).options).toEqual({ ...sent, research: true })
-    expect(hook.result.current.research).toBe(true)
-
-    client.events.mockImplementationOnce(reply('msg_report', true))
-    await act(async () => {
-      await hook.result.current.send({ content: 'Maine.', options })
-    })
-    expect(turn(1).options).toEqual({ ...sent, research: true })
-    expect(hook.result.current.research).toBe(false)
 
     client.events.mockImplementationOnce(reply('msg_thanks'))
     await act(async () => {
       await hook.result.current.send({ content: 'Thanks.', options })
     })
-    expect(turn(2).options).toEqual(sent)
+    expect(turn(1).options).toEqual(sent)
   })
 
   it('never has a turn research that does not answer a question anew', async () => {

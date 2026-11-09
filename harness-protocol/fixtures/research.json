@@ -1,5 +1,5 @@
 {
-  "description": "A research that searches, is asked to check what it found and searches again, then writes its report.",
+  "description": "A research that searches, is asked to check what it found and searches again, then writes its report in an artifact and says what it found.",
   "frames": [
     {
       "id": 0,
@@ -21,7 +21,10 @@
             "id": "00000000-0000-4000-8000-000000000004",
             "role": "user",
             "createdAt": "2026-01-01T00:00:00Z",
-            "content": "test message"
+            "content": "test message",
+            "research": {
+              "version": 2
+            }
           }
         ],
         "hasOlder": false
@@ -45,9 +48,9 @@
             "webSearchEnabled": false,
             "pinned": false,
             "contextUsage": {
-              "usedTokens": 321,
+              "usedTokens": 743,
               "limitTokens": 6553,
-              "percentage": 4.898519761941095
+              "percentage": 11.338318327483595
             },
             "activeRun": {
               "runId": "00000000000000000000000000000002",
@@ -240,18 +243,56 @@
     {
       "id": 15,
       "event": {
-        "type": "TEXT_MESSAGE_CHUNK",
+        "type": "TOOL_CALL_START",
         "timestamp": "2026-01-01T00:00:15Z",
-        "messageId": "msg_00000000000000000000000000000005",
-        "role": "assistant",
-        "delta": "Maine has 65 lighthouses [Lighthouses of maine](https://lights.test/maine)."
+        "toolCallId": "a1",
+        "toolCallName": "render_artifact_preview",
+        "parentMessageId": "msg_00000000000000000000000000000005"
       }
     },
     {
       "id": 16,
       "event": {
-        "type": "STATE_SNAPSHOT",
+        "type": "TOOL_CALL_ARGS",
         "timestamp": "2026-01-01T00:00:16Z",
+        "toolCallId": "a1",
+        "delta": "{\"title\":\"Maine lighthouses\",\"source\":{\"type\":\"markdown\",\"markdown\":\"# Maine lighthouses\\nMaine has 65 [Lighthouses of maine](https://lights.test/maine).\"}}"
+      }
+    },
+    {
+      "id": 17,
+      "event": {
+        "type": "TOOL_CALL_END",
+        "timestamp": "2026-01-01T00:00:17Z",
+        "toolCallId": "a1"
+      }
+    },
+    {
+      "id": 18,
+      "event": {
+        "type": "TOOL_CALL_RESULT",
+        "timestamp": "2026-01-01T00:00:18Z",
+        "messageId": "msg_00000000000000000000000000000008",
+        "toolCallId": "a1",
+        "role": "tool",
+        "content": "[rendered for the user]"
+      }
+    },
+    {
+      "id": 19,
+      "event": {
+        "type": "TEXT_MESSAGE_CHUNK",
+        "timestamp": "2026-01-01T00:00:19Z",
+        "messageId": "msg_00000000000000000000000000000005",
+        "role": "assistant",
+        "delta": "Maine has 65 lighthouses [Lighthouses of maine](https://lights.test/maine). The full report is above."
+      }
+    },
+    {
+      "id": 20,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:20Z",
         "snapshot": {
           "thread": {
             "id": "0000000000001_00000000-0000-4000-8000-000000000001",
@@ -265,9 +306,9 @@
             "webSearchEnabled": false,
             "pinned": false,
             "contextUsage": {
-              "usedTokens": 321,
+              "usedTokens": 743,
               "limitTokens": 6553,
-              "percentage": 4.898519761941095
+              "percentage": 11.338318327483595
             },
             "activeRun": null,
             "messageCount": 2
@@ -280,10 +321,10 @@
       }
     },
     {
-      "id": 17,
+      "id": 21,
       "event": {
         "type": "RUN_FINISHED",
-        "timestamp": "2026-01-01T00:00:17Z",
+        "timestamp": "2026-01-01T00:00:21Z",
         "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
         "runId": "00000000000000000000000000000002",
         "metadata": {
@@ -310,7 +351,7 @@
                 }
               ],
               "research": {
-                "version": 1
+                "version": 2
               }
             }
           ],
@@ -332,13 +373,16 @@
       {
         "content": "test message",
         "id": "00000000-0000-4000-8000-000000000004",
+        "research": {
+          "version": 2
+        },
         "role": "user",
         "timeline": []
       },
       {
         "id": "msg_00000000000000000000000000000005",
         "research": {
-          "version": 1
+          "version": 2
         },
         "role": "assistant",
         "timeline": [
@@ -413,8 +457,18 @@
             "type": "thinking"
           },
           {
-            "content": "Maine has 65 lighthouses [Lighthouses of maine](https://lights.test/maine).",
-            "id": "msg_00000000000000000000000000000005_content_4",
+            "arguments": "{\"title\":\"Maine lighthouses\",\"source\":{\"type\":\"markdown\",\"markdown\":\"# Maine lighthouses\\nMaine has 65 [Lighthouses of maine](https://lights.test/maine).\"}}",
+            "complete": true,
+            "id": "a1",
+            "name": "render_artifact_preview",
+            "progress": [],
+            "result": "[rendered for the user]",
+            "toolCallId": "a1",
+            "type": "tool_call"
+          },
+          {
+            "content": "Maine has 65 lighthouses [Lighthouses of maine](https://lights.test/maine). The full report is above.",
+            "id": "msg_00000000000000000000000000000005_content_5",
             "type": "content"
           }
         ]
