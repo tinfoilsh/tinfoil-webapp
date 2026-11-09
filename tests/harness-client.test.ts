@@ -1669,6 +1669,7 @@ describe('attested harness transport', () => {
     })
     await vi.advanceTimersByTimeAsync(20_000)
     await stuck
+    expect(secure.ensureVerified.mock.lastCall?.[0].signal.aborted).toBe(true)
     expect(secure.fetch).not.toHaveBeenCalled()
 
     await expect(client.post('/v1/session', {})).resolves.toEqual({
