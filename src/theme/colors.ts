@@ -40,15 +40,11 @@ export const colors = {
   // Tinfoil twilight - used for selection, hovers, charts
   'tinfoil-twilight': {
     DEFAULT: '#6B5B95',
-    hover: '#605185',
-    darker: '#524573',
   },
 
   // Tinfoil brass - used for buttons and calls to action, with dark text
   'tinfoil-brass': {
     DEFAULT: '#C9934F',
-    hover: '#BF8640',
-    darker: '#B37E3D',
   },
 
   // Legacy gray colors for general use
