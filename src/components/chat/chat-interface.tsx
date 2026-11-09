@@ -543,9 +543,6 @@ export function ChatInterface({
   const canFork =
     !!currentChat.id && !currentChat.isTemporary && !currentChat.isBlankChat
   const canShare = !currentChat.isTemporary && currentChat.messages.length > 0
-  // Favorites are an account's; a signed-out visitor's chats last only as
-  // long as the browser tab.
-  const canPinOpenChat = canRequestChatPin(currentChat, !!isSignedIn)
   const canChat = thread.canSend && !historyProblem
   const reloadChats = () => thread.refresh()
   const loadEarlierMessages = () =>
@@ -2020,6 +2017,11 @@ export function ChatInterface({
       </div>
     )
 
+  const isOpenChatPinned = pinnedChatIds.includes(currentChat.id)
+  // Favorites are an account's; a signed-out visitor's chats last only as
+  // long as the browser tab. A favorite stays removable.
+  const canTogglePinOpenChat =
+    isOpenChatPinned || canRequestChatPin(currentChat, !!isSignedIn)
   const topControls = (
     <>
       {/* New chat button - only show in compact conversations with messages */}
@@ -2097,13 +2099,13 @@ export function ChatInterface({
         </button>
       )}
 
-      {(canShare || canPinOpenChat) && (
+      {(canShare || canTogglePinOpenChat) && (
         <ChatHeaderMenu
           className="@3xl/conversation:hidden"
           onShare={canShare ? handleOpenShareModal : undefined}
-          isPinned={pinnedChatIds.includes(currentChat.id)}
+          isPinned={isOpenChatPinned}
           onTogglePin={
-            canPinOpenChat
+            canTogglePinOpenChat
               ? () => void handleToggleFavorite(currentChat)
               : undefined
           }
