@@ -852,9 +852,9 @@ export const ProjectSidebar = memo(function ProjectSidebar({
                 clearDragState()
               }}
               className={cn(
-                'inline-flex items-center gap-2 rounded-lg bg-tinfoil-twilight px-3 py-1.5 text-sm text-white transition-colors hover:bg-tinfoil-twilight-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-surface-sidebar',
+                'inline-flex items-center gap-2 rounded-lg bg-tinfoil-brass px-3 py-1.5 text-sm text-brand-dark transition-colors hover:bg-tinfoil-brass-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-surface-sidebar',
                 isExitButtonDragHover &&
-                  'bg-tinfoil-twilight-darker ring-2 ring-tinfoil-twilight-soft',
+                  'bg-tinfoil-brass-darker ring-2 ring-tinfoil-brass-soft',
               )}
             >
               <TfArrowLeftAnimated className="h-4 w-4" aria-hidden="true" />

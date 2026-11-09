@@ -1,5 +1,6 @@
 const { radius } = require('./src/lib/radius')
 const TINFOIL_TWILIGHT_RGB = '107 91 149'
+const TINFOIL_BRASS_RGB = '201 147 79'
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -98,7 +99,17 @@ module.exports = {
           'accent-light': 'hsl(var(--color-accent-light) / <alpha-value>)',
           'accent-light-darker':
             'hsl(var(--color-accent-light-darker) / <alpha-value>)',
-          brass: 'hsl(var(--color-brass) / <alpha-value>)',
+        },
+        // Mirrors tinfoil-brass from @tinfoil/tailwind-preset. Buttons on it
+        // use brand-dark text; white text is not legible on Brass.
+        'tinfoil-brass': {
+          DEFAULT: `rgb(${TINFOIL_BRASS_RGB})`,
+          hover: '#BF8640',
+          darker: '#B37E3D',
+          subtle: `rgb(${TINFOIL_BRASS_RGB} / 0.10)`,
+          soft: `rgb(${TINFOIL_BRASS_RGB} / 0.30)`,
+          medium: `rgb(${TINFOIL_BRASS_RGB} / 0.60)`,
+          bold: `rgb(${TINFOIL_BRASS_RGB} / 0.90)`,
         },
         // Mirrors tinfoil-twilight from @tinfoil/tailwind-preset; `light` is
         // for text on dark surfaces.

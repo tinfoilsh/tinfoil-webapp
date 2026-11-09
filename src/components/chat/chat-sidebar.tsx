@@ -1102,7 +1102,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                   <button
                     type="button"
                     onClick={onCloudSyncSetupClick}
-                    className="mt-2 w-full rounded-md bg-tinfoil-twilight px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover"
+                    className="mt-2 w-full rounded-md bg-tinfoil-brass px-2.5 py-1.5 font-aeonik text-xs font-medium text-brand-dark transition-colors hover:bg-tinfoil-brass-hover"
                   >
                     {backupWarningNeedsRecovery
                       ? 'Set Up Cloud Sync'
@@ -2202,7 +2202,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                               <button
                                 type="button"
                                 onClick={onUnlockChats}
-                                className="mt-3 rounded-md bg-tinfoil-twilight px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover"
+                                className="mt-3 rounded-md bg-tinfoil-brass px-2.5 py-1.5 font-aeonik text-xs font-medium text-brand-dark transition-colors hover:bg-tinfoil-brass-hover"
                               >
                                 Unlock
                               </button>

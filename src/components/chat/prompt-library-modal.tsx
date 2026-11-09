@@ -597,7 +597,7 @@ function PresetDetail({
                 <button
                   type="button"
                   onClick={onUseThis}
-                  className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-tinfoil-twilight px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-tinfoil-twilight-hover"
+                  className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-tinfoil-brass px-3 py-2 text-sm font-semibold text-brand-dark transition-colors hover:bg-tinfoil-brass-hover"
                 >
                   <TfStars className="h-4 w-4" aria-hidden="true" />
                   Use for this chat
@@ -622,7 +622,7 @@ function PresetDetail({
             <button
               type="button"
               onClick={onUseThis}
-              className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-tinfoil-twilight px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-tinfoil-twilight-hover md:w-auto"
+              className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-tinfoil-brass px-3 py-2 text-sm font-semibold text-brand-dark transition-colors hover:bg-tinfoil-brass-hover md:w-auto"
             >
               <TfStars className="h-4 w-4" aria-hidden="true" />
               Use for this chat
