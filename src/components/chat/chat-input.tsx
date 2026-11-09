@@ -1147,7 +1147,7 @@ export const ChatInput = memo(function ChatInput({
                             <span className="flex-1">Web search</span>
                             {webSearchEnabled && (
                               <TfBoxCheckmark
-                                className="h-4 w-4 text-brand-accent-light"
+                                className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
                                 aria-hidden="true"
                               />
                             )}

@@ -372,7 +372,7 @@ export function ChatListItem({
             />
             <button
               type="submit"
-              className="ml-auto flex-shrink-0 rounded p-1 text-tinfoil-twilight transition-colors hover:bg-tinfoil-twilight-subtle"
+              className="ml-auto flex-shrink-0 rounded p-1 text-tinfoil-twilight transition-colors hover:bg-tinfoil-twilight-subtle dark:text-tinfoil-twilight-light"
               title="Save"
               aria-label="Save chat title"
             >

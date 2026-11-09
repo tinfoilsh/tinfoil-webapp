@@ -578,7 +578,7 @@ export function ModelSelector({
               </div>
               <span
                 aria-hidden="true"
-                className={`relative h-5 w-9 flex-none rounded-full border border-border-subtle transition-colors after:absolute after:left-[1px] after:top-[1px] after:h-4 after:w-4 after:rounded-full after:shadow-sm after:transition-all after:content-[''] ${thinkingEnabled ? 'bg-brand-accent-light after:translate-x-full after:bg-white' : 'bg-content-muted/40 after:bg-content-muted/70'}`}
+                className={`relative h-5 w-9 flex-none rounded-full border border-border-subtle transition-colors after:absolute after:left-[1px] after:top-[1px] after:h-4 after:w-4 after:rounded-full after:shadow-sm after:transition-all after:content-[''] ${thinkingEnabled ? 'bg-brand-accent-dark after:translate-x-full after:bg-white dark:bg-brand-accent-light' : 'bg-content-muted/40 after:bg-content-muted/70'}`}
               />
             </button>
           </>
