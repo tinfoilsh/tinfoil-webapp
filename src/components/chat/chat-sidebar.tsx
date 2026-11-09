@@ -942,7 +942,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                 <TfWriting2Animated className="h-4 w-4" aria-hidden="true" />
                 <span className="font-aeonik font-medium">New chat</span>
               </span>
-              <span className="text-xs text-content-muted">
+              <span className="hidden text-xs text-content-muted pointer-fine:inline">
                 {modKey}
                 {isMac ? '⇧' : 'Shift+'}O
               </span>
