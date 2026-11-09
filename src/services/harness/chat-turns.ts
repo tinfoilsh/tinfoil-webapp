@@ -296,6 +296,10 @@ export function chatTurns({
       !!session?.features.research &&
       (profile.webSearchAvailable ?? true) &&
       RESEARCH_KINDS.includes(fields.kind ?? 'send')
+    // Deep research is asked for once: the harness marks the question, and
+    // carries the research through the answers to the questions it asks
+    // first and through an edit or regeneration of the question.
+    if (research) patch({ research: false })
     const threadId = startChat(choice)
     const defaults = turnDefaults(threadId)
     const shown = controller.track()
@@ -400,16 +404,6 @@ export function chatTurns({
           submission,
         })
         if (controller.pending === pending) unapply()
-        // A research's report ends the open chat's research. A reply that
-        // only asked what it needs to know leaves it on for the answers, and
-        // one that failed for a retry.
-        if (
-          ran &&
-          research &&
-          shown() &&
-          controller.view.get().messages.at(-1)?.research
-        )
-          patch({ research: false })
         return ran
       })()
         .catch((cause) => {
