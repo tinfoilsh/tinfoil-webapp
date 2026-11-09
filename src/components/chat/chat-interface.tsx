@@ -939,6 +939,14 @@ export function ChatInterface({
       unpinChat(favorite.id)
       return
     }
+    if (pinnedChatIds.length >= CONSTANTS.MAX_FAVORITE_CHATS) {
+      toast({
+        title: 'Favorites are full',
+        description: `You can pin up to ${CONSTANTS.MAX_FAVORITE_CHATS} chats. Remove one to pin another.`,
+        variant: 'destructive',
+      })
+      return
+    }
     await thread
       .update(favorite.id, { pinned: true })
       .catch(reportChatChange('Failed to pin chat', favorite.id))
