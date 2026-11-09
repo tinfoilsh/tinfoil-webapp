@@ -553,6 +553,99 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(await stored(SEEDED_ID)).toEqual(returned)
   })
 
+  it('keeps a rename made while a reply streams through reloads before it ends', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => seeded())
+    const { returned } = heldReply()
+    const page = renderHook(() => useThread(SEEDED_ID, null, { local: true }))
+    await waitFor(() =>
+      expect(page.result.current.chat.messages).toHaveLength(4),
+    )
+    act(() => {
+      void page.result.current.send({ content: 'third' })
+    })
+    await waitFor(() => expect(page.result.current.status).toBe('streaming'))
+    applies({ title: 'Mine', titleState: 'manual' })
+    await act(() => page.result.current.update(SEEDED_ID, { title: 'Mine' }))
+    page.unmount()
+
+    // The page reloads twice while the run goes on; the last follows it to
+    // its end, with the thread the harness took before the rename.
+    client.events
+      .mockImplementationOnce(async function* () {
+        yield {
+          id: 0,
+          event: {
+            type: 'RUN_STARTED',
+            threadId: SEEDED_ID,
+            runId: 'run-1',
+            instance: 'instance-1',
+          },
+        }
+        await new Promise<void>(() => {})
+      })
+      .mockImplementationOnce(deviceRun(SEEDED_ID, returned))
+    const reloaded = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() =>
+      expect(reloaded.result.current.status).toBe('streaming'),
+    )
+    reloaded.unmount()
+    renderHook(() => useThread(SEEDED_ID, null, { local: true }))
+    await waitFor(() => expect(client.events).toHaveBeenCalledTimes(3))
+    expect(
+      client.events.mock.calls.slice(1).map((call) => call.slice(0, 2)),
+    ).toEqual([
+      ['/v1/threads/follow', { threadId: SEEDED_ID, runId: 'run-1' }],
+      ['/v1/threads/follow', { threadId: SEEDED_ID, runId: 'run-1' }],
+    ])
+    await waitFor(async () =>
+      expect(await stored(SEEDED_ID)).toEqual({
+        ...returned,
+        title: 'Mine',
+        titleState: 'manual',
+      }),
+    )
+  })
+
+  it('keeps a rename made after a reload, before the chat’s run is followed again', async () => {
+    signIn('alice')
+    await reloadDuringRun()
+    const returned = recorded(
+      seeded({
+        title: 'Generated',
+        titleState: 'generated',
+        lastRequestId: 'request-1',
+        messages: [
+          ...SEEDED_MESSAGES,
+          { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
+        ],
+      }),
+    )
+    client.events.mockImplementationOnce(
+      deviceRun(SEEDED_ID, returned, 'run-a3'),
+    )
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.chats).toHaveLength(1))
+    applies({ title: 'Mine', titleState: 'manual' })
+    await act(() => result.current.update(SEEDED_ID, { title: 'Mine' }))
+    expect(client.events).not.toHaveBeenCalled()
+
+    await act(() => result.current.open(SEEDED_ID, { local: true }))
+    await waitFor(async () =>
+      expect(await stored(SEEDED_ID)).toEqual({
+        ...returned,
+        title: 'Mine',
+        titleState: 'manual',
+      }),
+    )
+    expect(client.events.mock.calls[0].slice(0, 2)).toEqual([
+      '/v1/threads/follow',
+      { threadId: SEEDED_ID, runId: 'run-a3' },
+    ])
+  })
+
   const QUESTION = {
     id: 'msg_user',
     role: 'user' as const,
@@ -2598,6 +2691,70 @@ describe('a chat on this device whose runs end out of order', () => {
 
     expect(await stored(threadId)).toEqual(behind)
   })
+
+  it('keeps a rename made while a reply streams over the turn queued behind it', async () => {
+    signIn('alice')
+    const firstEnds = gate()
+    const behindStarts = gate()
+    let first!: ReturnedThread
+    let behind!: ReturnedThread
+    client.events
+      .mockImplementationOnce((_path: string, input: Turn) => {
+        first = after(input, [], 'first answer')
+        return answering(
+          input,
+          'run-first',
+          first,
+          finishedIn(input),
+          firstEnds.promise,
+        )
+      })
+      .mockImplementationOnce(async function* (_path: string, input: Turn) {
+        yield { id: 0, event: queued(input, 'run-behind') }
+        await behindStarts.promise
+        // The harness goes on from the reply's thread, which the rename
+        // never reached.
+        behind = after(input, first.messages, 'second answer')
+        yield* answering(input, 'run-behind', behind, finishedIn(input))
+      })
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+    const sending: (Promise<boolean> | undefined)[] = []
+    act(() => {
+      sending.push(result.current.send({ content: 'first' }))
+    })
+    await waitFor(() => expect(result.current.status).toBe('streaming'))
+    const threadId = turn(0).threadId!
+    client.post.mockImplementationOnce(
+      async (_path: string, input: { thread: StoredThread }) => ({
+        thread: { ...input.thread, title: 'Mine', titleState: 'manual' },
+      }),
+    )
+    await act(() => result.current.update(threadId, { title: 'Mine' }))
+    act(() => {
+      sending.push(result.current.send({ content: 'second' }))
+    })
+    await waitFor(() =>
+      expect(
+        result.current.queue.filter(({ sending }) => !sending),
+      ).toHaveLength(1),
+    )
+
+    await act(async () => {
+      firstEnds.release()
+      await sending[0]
+    })
+    await act(async () => {
+      behindStarts.release()
+      await sending[1]
+    })
+
+    expect(await stored(threadId)).toEqual({
+      ...behind,
+      title: 'Mine',
+      titleState: 'manual',
+    })
+  })
 })
 
 describe('a chat on this device whose stream drops once another chat is open', () => {
@@ -3475,6 +3632,76 @@ describe('cloud chats', () => {
     )
     expect(result.current.error).toBe('')
     expect(result.current.status).toBe('idle')
+  })
+
+  it('keep the title the user gave a chat over its run followed again from the start', async () => {
+    signIn('alice', true)
+    const renamed = {
+      ...summary('cloud-thread', 'Mine'),
+      titleState: 'manual' as const,
+    }
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list')
+        return { threads: [renamed], nextCursor: null }
+      if (path === '/v1/threads/get')
+        return {
+          ...renamed,
+          activeRun: {
+            runId: 'run-1',
+            expiresAt: '2026-05-01T10:10:00Z',
+            instance: 'instance-1',
+          },
+          messages: [
+            { id: 'u1', role: 'user', createdAt: 't1', content: 'Question' },
+          ],
+          hasOlder: false,
+        }
+      throw new Error(`Unexpected ${path}`)
+    })
+    // The run replays from its start, when the chat had other titles.
+    const replayed = new Promise<void>(() => {})
+    client.events.mockImplementationOnce(async function* () {
+      yield {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          threadId: 'cloud-thread',
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+      }
+      yield {
+        id: 1,
+        event: {
+          type: 'STATE_SNAPSHOT',
+          snapshot: {
+            thread: summary('cloud-thread', 'Before'),
+            queue: [],
+            rateLimit: { kind: null },
+          },
+        },
+      }
+      yield {
+        id: 2,
+        event: {
+          type: 'STATE_DELTA',
+          delta: [{ op: 'replace', path: '/thread/title', value: 'Generated' }],
+        },
+      }
+      await replayed
+    })
+
+    const { result } = renderHook(() => useThread('cloud-thread'))
+
+    await waitFor(() => expect(result.current.status).toBe('streaming'))
+    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+    expect(result.current.chat).toMatchObject({
+      title: 'Mine',
+      titleState: 'manual',
+    })
+    expect(
+      result.current.chats.map(({ id, title }) => ({ id, title })),
+    ).toEqual([{ id: 'cloud-thread', title: 'Mine' }])
   })
 
   it('keep the chat list when a chat opens from its link', async () => {
