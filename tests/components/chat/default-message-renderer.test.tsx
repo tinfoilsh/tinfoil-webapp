@@ -1416,6 +1416,22 @@ describe('DefaultMessageRenderer work traces', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('labels a question that asks for deep research', () => {
+    const question = (research?: { version: number }): WireMessage => ({
+      id: 'u1',
+      role: 'user',
+      createdAt: '2026-08-07T00:00:00.000Z',
+      content: 'Compare the enforcement timelines.',
+      ...(research ? { research } : {}),
+    })
+    const { unmount } = renderReply(question({ version: 1 }), false)
+    expect(screen.getByText('Deep research')).toBeInTheDocument()
+    unmount()
+
+    renderReply(question(), false)
+    expect(screen.queryByText('Deep research')).not.toBeInTheDocument()
+  })
+
   it('shows each page back-to-back reads asked for, and which failed', () => {
     const fetch = (
       id: string,

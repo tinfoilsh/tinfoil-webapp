@@ -5,7 +5,12 @@ import {
   ForwardIcon,
   InformationCircleIcon,
 } from '@heroicons/react/24/outline'
-import { TfBoxCheckmark, TfFork, TfTrash } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfBoxCheckmark,
+  TfFork,
+  TfTrash,
+  TfWebSearch,
+} from '@tinfoilsh/tinfoil-icons'
 import {
   TfChevronDownAnimated,
   TfCopyAnimated,
@@ -813,6 +818,12 @@ const DefaultMessageComponent = ({
                   message.content ? 'h-0' : 'min-h-8',
                 )}
               >
+                {message.research && (
+                  <span className="flex items-center gap-1.5 px-2 py-1 text-sm text-content-muted">
+                    <TfWebSearch className="h-4 w-4" aria-hidden="true" />
+                    Deep research
+                  </span>
+                )}
                 {formattedDate && (
                   <div className="group/date relative">
                     <span className="px-2 py-1 text-sm text-content-muted">
