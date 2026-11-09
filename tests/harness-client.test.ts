@@ -1653,6 +1653,7 @@ describe('attested harness transport', () => {
     it.each([
       { path: '/v1/threads/delete', input: { id: 't' } },
       { path: '/v1/threads/search', input: { query: 'peroxide', limit: 20 } },
+      { path: '/v1/metadata/image', input: { url: 'https://a.example/p' } },
     ] as const)(
       'fails a request to $path it does not answer in time as a lost connection',
       async ({ path, input }) => {

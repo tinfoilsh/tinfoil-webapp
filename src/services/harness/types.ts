@@ -91,6 +91,7 @@ export type TokenBudget = Schemas['TokenBudget']
 export type RateLimit = Schemas['RateLimit']
 export type SessionModel = Schemas['SessionModel']
 export type Session = Schemas['Session']
+export type RemoteImage = Schemas['RemoteImage']
 export type FileGroup = Schemas['FileGroup']
 export type KeyOrigin = Schemas['KeyOrigin']
 

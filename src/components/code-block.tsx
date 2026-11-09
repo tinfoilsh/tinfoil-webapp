@@ -9,6 +9,7 @@ import {
   usePreviewInstanceId,
   usePreviewMessages,
 } from '@/components/preview/use-preview-messages'
+import { PrivateImage } from '@/components/ui/private-image'
 import { cn } from '@/components/ui/utils'
 import { toast } from '@/hooks/use-toast'
 import { downloadMarkdownAsPdf } from '@/utils/markdown-pdf-export'
@@ -309,6 +310,9 @@ const MarkdownPreview = ({
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
+        img: ({ src, alt, title }) => (
+          <PrivateImage src={src} alt={alt} title={title} />
+        ),
         table: ({ node, children, ...props }: any) => (
           <div className="overflow-x-auto">
             <table {...props} className="w-full border-collapse">
