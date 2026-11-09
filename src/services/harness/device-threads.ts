@@ -45,15 +45,15 @@ const changedMeanwhile = () =>
       'The chat changed before your change was saved. It now shows as saved.',
   })
 
-// The settings of a chat the user changes through the harness. A setting
-// changed while a run goes keeps the user's value when the run's thread is
-// stored.
+// The settings of a chat the user changes. A setting changed while a run
+// goes keeps the user's value when the run's thread is stored.
 const USER_SETTINGS = [
   'title',
   'titleState',
   'model',
   'presetId',
   'webSearchEnabled',
+  'pinned',
 ] as const
 type UserSetting = (typeof USER_SETTINGS)[number]
 
@@ -225,13 +225,26 @@ export function deviceThreads({
         hasOlder: false,
       }
     },
-    // An update may apply a saved prompt, which the profile holds.
-    async update(threadId, { pinned: _pinned, projectId: _project, ...patch }) {
-      const changed = await change(threadId, ROUTES.update, {
-        id: threadId,
-        ...patch,
-        profile: getView().profile,
-      })
+    // An update may apply a saved prompt, which the profile holds. Whether
+    // the chat is a favorite is kept here alone: the harness refuses to pin
+    // a chat it does not store, and takes the pin from the chat it is sent,
+    // as when the chat moves to the cloud.
+    async update(threadId, { pinned, projectId: _project, ...patch }) {
+      let changed: StoredThread | null = null
+      if (pinned !== undefined) {
+        controller.settingsChanged(threadId, ['pinned'])
+        changed = await store.update(
+          threadId,
+          (current) => current && { ...current, pinned },
+        )
+        if (!changed) return null
+      }
+      if (Object.keys(patch).length)
+        changed = await change(threadId, ROUTES.update, {
+          id: threadId,
+          ...patch,
+          profile: getView().profile,
+        })
       if (!changed) return null
       const summary = localSummary(changed)
       list.replace(summary)

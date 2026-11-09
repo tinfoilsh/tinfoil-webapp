@@ -830,10 +830,16 @@ export function useThread(
     unsaved,
     projectId,
   ])
-  // The favorites, the most recently pinned first.
+  // The favorites the harness stores, the most recently pinned first, then
+  // those this device keeps, as it lists them.
   const favoriteIds = useMemo(
-    () => (listsCloud ? pinnedListed.map((thread) => thread.id).reverse() : []),
-    [listsCloud, pinnedListed],
+    () => [
+      ...(listsCloud ? pinnedListed.map((thread) => thread.id).reverse() : []),
+      ...deviceListed
+        .filter((thread) => thread.pinned)
+        .map((thread) => thread.id),
+    ],
+    [listsCloud, pinnedListed, deviceListed],
   )
   const summary =
     state.snapshot.thread ??

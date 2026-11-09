@@ -473,6 +473,8 @@ describe('local chats of a signed-in account without cloud sync', () => {
       webSearchEnabled: false,
     })
     await act(() => result.current.selectPreset('user:research'))
+    // A favorite is kept on the device alone.
+    await act(() => result.current.update(SEEDED_ID, { pinned: true }))
     await act(async () => {
       release()
       await sending
@@ -522,8 +524,10 @@ describe('local chats of a signed-in account without cloud sync', () => {
       presetId: 'user:research',
       model: 'deep-model',
       webSearchEnabled: false,
+      pinned: true,
     })
     expect(result.current.chat.title).toBe('Mine')
+    expect(result.current.favoriteIds).toEqual([SEEDED_ID])
   })
 
   it('lets a run keep its values over a change made before it started', async () => {

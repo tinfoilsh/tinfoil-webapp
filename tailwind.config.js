@@ -211,4 +211,9 @@ module.exports.plugins.push(
       },
     })
   }),
+  // A mouse or trackpad, where a keyboard is likely at hand too; touch
+  // screens have neither, so their keyboard shortcut hints are hidden.
+  plugin(function ({ addVariant }) {
+    addVariant('pointer-fine', '@media (hover: hover) and (pointer: fine)')
+  }),
 )

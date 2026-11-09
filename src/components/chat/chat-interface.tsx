@@ -60,6 +60,7 @@ import { ArtifactSidebar } from './artifact-sidebar'
 import { AskSidebar } from './ask-sidebar'
 import { ChatAnnouncer } from './chat-announcer'
 import { ChatHeader } from './chat-header'
+import { ChatHeaderMenu } from './chat-header-menu'
 import {
   ChatHistoryStatus,
   type ChatHistoryProblem,
@@ -75,6 +76,7 @@ import { CompactedNotice, CompactionStatus } from './compaction-status'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { DragProvider } from './drag-context'
+import { canRequestChatPin } from './favorite-view'
 import { ForkOverlay } from './fork-overlay'
 import { type QuestionAnswering } from './genui/questions-context'
 import { ArtifactRetryError } from './genui/retry'
@@ -932,20 +934,11 @@ export function ChatInterface({
       })
     }
   }
-  // Pinning a chat kept on this device moves it to the cloud first, where
-  // favorites are stored.
-  const handleToggleFavorite = async (favorite: {
-    id: string
-    isLocalOnly?: boolean
-  }) => {
+  // A chat kept on this device stays there as a favorite.
+  const handleToggleFavorite = async (favorite: { id: string }) => {
     if (pinnedChatIds.includes(favorite.id)) {
       unpinChat(favorite.id)
       return
-    }
-    const chat = chats.find((candidate) => candidate.id === favorite.id)
-    if (chat?.isLocalOnly ?? favorite.isLocalOnly) {
-      if (!canMoveChats) return
-      if (!(await handleConvertChatToCloud(favorite.id))) return
     }
     await thread
       .update(favorite.id, { pinned: true })
@@ -2024,6 +2017,11 @@ export function ChatInterface({
       </div>
     )
 
+  const isOpenChatPinned = pinnedChatIds.includes(currentChat.id)
+  // Favorites are an account's; a signed-out visitor's chats last only as
+  // long as the browser tab. A favorite stays removable.
+  const canTogglePinOpenChat =
+    isOpenChatPinned || canRequestChatPin(currentChat, !!isSignedIn)
   const topControls = (
     <>
       {/* New chat button - only show in compact conversations with messages */}
@@ -2038,7 +2036,7 @@ export function ChatInterface({
             e.preventDefault()
             createNewChat(currentChat.isLocalOnly, true)
           }}
-          className="flex items-center justify-center rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:hidden max-md:hidden"
+          className="flex items-center justify-center rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:hidden"
           aria-label="New chat"
         >
           <TfWriting2Animated className="h-4 w-4" aria-hidden="true" />
@@ -2087,17 +2085,31 @@ export function ChatInterface({
 
       {/* Share button - a signed-in user shares a chat the harness stores,
           or one kept on this device when the harness seals local shares. A
-          signed-out visitor can copy the chat's markdown. */}
+          signed-out visitor can copy the chat's markdown. A compact
+          conversation keeps it in the menu below. */}
       {canShare && (
         <button
           type="button"
           onClick={handleOpenShareModal}
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:px-3 @3xl/conversation:py-2"
+          className="hidden items-center justify-center gap-1.5 rounded-lg border border-transparent bg-surface-chat-background px-3 py-2 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:flex"
           aria-label="Share"
         >
           <TfShare className="h-4 w-4" aria-hidden="true" />
-          <span className="hidden text-sm @3xl/conversation:inline">Share</span>
+          <span className="text-sm">Share</span>
         </button>
+      )}
+
+      {(canShare || canTogglePinOpenChat) && (
+        <ChatHeaderMenu
+          className="@3xl/conversation:hidden"
+          onShare={canShare ? handleOpenShareModal : undefined}
+          isPinned={isOpenChatPinned}
+          onTogglePin={
+            canTogglePinOpenChat
+              ? () => void handleToggleFavorite(currentChat)
+              : undefined
+          }
+        />
       )}
 
       {/* Verifier toggle button */}
