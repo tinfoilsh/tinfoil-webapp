@@ -1,7 +1,7 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProjectProvider } from '@/components/project/project-provider'
 import { DB_NAME, DB_VERSION } from '@/services/storage/indexed-db'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { signIn } from '../../harness-fixture'
@@ -41,6 +41,7 @@ beforeEach(() => {
   vi.stubGlobal('indexedDB', new IDBFactory())
   vi.stubGlobal('IDBKeyRange', FakeIDBKeyRange)
   vi.stubGlobal('innerWidth', 1440)
+  vi.spyOn(window.location, 'reload').mockImplementation(() => {})
   chatPage.auth = { isLoaded: true, isSignedIn: true, userId: 'alice' }
   chatPage.router.pathname = '/'
   chatPage.router.query = {}
@@ -56,7 +57,9 @@ function openDatabase(version: number): Promise<IDBDatabase> {
   })
 }
 
-it('asks to close other tabs while the chats wait to update, and goes on once they close', async () => {
+// The page shares one database for the whole file, which a newer version
+// leaves unusable, so one test follows it from waiting through to outdated.
+it('asks to close other tabs while the chats wait to update, then to reload once a newer version updates them', async () => {
   // A tab of an earlier version that cannot answer, as one the browser froze.
   const earlierTab = await openDatabase(DB_VERSION - 1)
   earlierTab.onversionchange = () => undefined
@@ -80,4 +83,16 @@ it('asks to close other tabs while the chats wait to update, and goes on once th
       name: 'Close your other Tinfoil Chat tabs',
     }),
   ).toBeNull()
+
+  // A tab of a newer version opens only once this page lets go.
+  const newerTab = await openDatabase(DB_VERSION + 1)
+  newerTab.close()
+
+  await screen.findByRole('heading', { name: 'Tinfoil Chat was updated' })
+  expect(screen.queryByRole('button', { name: 'Temporary chat' })).toBeNull()
+  expect(window.location.reload).not.toHaveBeenCalled()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
+
+  expect(window.location.reload).toHaveBeenCalledOnce()
 })

@@ -13,6 +13,7 @@ import { useAuth, useUser } from '@clerk/react'
 import {
   TfApplicationWindow,
   TfDocumentPlus,
+  TfRefresh,
   TfShare,
   TfTinSad,
 } from '@tinfoilsh/tinfoil-icons'
@@ -1915,6 +1916,19 @@ export function ChatInterface({
 
   // Chats kept in this browser can be neither read nor saved until the
   // database opens.
+  if (databaseAccess === 'outdated') {
+    return (
+      <PageNotice
+        icon={TfRefresh}
+        title="Tinfoil Chat was updated"
+        action={{ label: 'Reload', onClick: () => window.location.reload() }}
+      >
+        A newer version of Tinfoil Chat was opened in another tab. Reload this
+        page to keep using your chats.
+      </PageNotice>
+    )
+  }
+
   if (databaseAccess === 'blocked') {
     return (
       <PageNotice

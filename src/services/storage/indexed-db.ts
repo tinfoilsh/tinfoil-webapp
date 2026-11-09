@@ -118,6 +118,11 @@ const REMOVED_CHAT_INDEXES = [
   'pendingUpload',
   'locallyModified',
 ] as const
+// The name of the DOMException opening a database at an earlier version than
+// the browser holds throws.
+const VERSION_ERROR = 'VersionError'
+const DATABASE_OUTDATED_ERROR =
+  'The database was upgraded by a newer version of Tinfoil Chat'
 const ACCOUNT_CHANGE_RESET_TIMEOUT_MS = 10_000
 const ACCOUNT_CHANGE_READ_ERROR = 'IndexedDB read superseded by account change'
 const ACCOUNT_CHANGE_WRITE_ERROR =
@@ -375,8 +380,9 @@ function deleteAttachmentsForChat(store: IDBObjectStore, chatId: string): void {
 
 // Whether this page can use the database. An upgrade waits while another
 // tab holds the database at an earlier version, and finishes once that tab
-// closes it.
-export type DatabaseAccess = 'ready' | 'blocked'
+// closes it. A page whose database a newer version of the app upgraded can
+// only open it again by reloading.
+export type DatabaseAccess = 'ready' | 'blocked' | 'outdated'
 
 export class IndexedDBStorage {
   readonly access = createStore<DatabaseAccess>('ready')
@@ -407,6 +413,9 @@ export class IndexedDBStorage {
     if (typeof window === 'undefined' || !window.indexedDB) {
       throw new Error('IndexedDB not available')
     }
+    if (this.access.get() === 'outdated') {
+      throw new Error(DATABASE_OUTDATED_ERROR)
+    }
 
     const saveGeneration = this.saveGeneration
     const initializationPromise = new Promise<void>((resolve, reject) => {
@@ -414,6 +423,7 @@ export class IndexedDBStorage {
 
       request.onerror = (event) => {
         const error = (event.target as IDBOpenDBRequest).error
+        if (error?.name === VERSION_ERROR) this.access.set('outdated')
         logError('IndexedDB open error', error, {
           component: 'IndexedDBStorage',
         })
@@ -426,11 +436,14 @@ export class IndexedDBStorage {
 
       request.onsuccess = () => {
         const db = request.result
-        db.onversionchange = () => {
+        db.onversionchange = (event) => {
           db.close()
           if (this.db === db) {
             this.db = null
           }
+          // A newer version of the app is upgrading the database, which
+          // this page's code can no longer open. A deletion names no version.
+          if (event.newVersion !== null) this.access.set('outdated')
         }
         if (this.access.get() === 'blocked') this.access.set('ready')
 
