@@ -616,8 +616,6 @@ export const ChatSidebar = memo(function ChatSidebar({
     )
   }, [chats, cloudSyncEnabled, keyLocked, showLocalTab])
 
-  // The favorites the section lists. Every favorite, listed or not, shows
-  // as pinned wherever it can be unpinned.
   const favoriteChats = useMemo(() => {
     const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
     return pinnedChatIds
@@ -629,7 +627,6 @@ export const ChatSidebar = memo(function ChatSidebar({
           (isPremium || !chat.projectId),
         ),
       )
-      .slice(0, CONSTANTS.MAX_FAVORITE_CHATS)
   }, [chats, isPremium, pinnedChatIds])
 
   const { isFavoriteDropTarget, favoriteDropTargetProps } =

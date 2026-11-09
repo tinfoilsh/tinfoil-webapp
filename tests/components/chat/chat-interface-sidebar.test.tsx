@@ -970,16 +970,16 @@ it('lists every favorite newest first, and refuses to pin past 50', async () => 
   expect(favorites()).toEqual(expected.map((n) => `/chat/${name(n)}`))
 })
 
-it('keeps a favorite past those the sidebar lists pinned, and unpins it', async () => {
+it('lists the favorites pinned past the limit, so each can be removed', async () => {
   signIn({ cloud: true })
-  const name = (n: number) => String(n).padStart(2, '0')
-  // Pinned from 01 to 51 before favorites were limited, so the sidebar
-  // lists 51 down to 02, while 01 was active last.
+  const padded = (n: number) => String(n).padStart(2, '0')
+  const name = (n: number) => `chat-${padded(n)}`
+  // Pinned from 1 to 51 before favorites were limited.
   const pinned = Array.from({ length: 51 }, (_, index) =>
     summaryOf(
       cloudChat(
-        `chat-${name(index + 1)}`,
-        `Favorite ${name(index + 1)}`,
+        name(index + 1),
+        `Favorite ${padded(index + 1)}`,
         new Date(Date.UTC(2026, 9, 21, 12, 0, 51 - index)).toISOString(),
         { pinned: true },
       ),
@@ -997,24 +997,33 @@ it('keeps a favorite past those the sidebar lists pinned, and unpins it', async 
     throw new Error(`Unexpected request: ${path}`)
   })
   render(<ChatInterface suppressIntroModals />)
-  const listed = (await row('Favorite 01')).closest(
-    '[role="listitem"]',
-  ) as HTMLElement
-
+  await row('Favorite 01')
   fireEvent.click(
-    within(listed).getByRole('button', { name: 'Remove from Favorites' }),
+    screen.getByRole('button', { name: 'Favorites', expanded: false }),
+  )
+  const panel = () =>
+    within(document.getElementById('sidebar-favorites-panel')!)
+  const favorites = () =>
+    panel()
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'))
+  const newestFirst = Array.from({ length: 51 }, (_, index) => 51 - index)
+  await waitFor(() =>
+    expect(favorites()).toEqual(newestFirst.map((n) => `/chat/${name(n)}`)),
   )
 
-  await waitFor(() =>
-    expect(updates).toEqual([{ key: KEY, id: 'chat-01', pinned: false }]),
+  const oldest = panel()
+    .getByRole('link', { name: /^Favorite 01/ })
+    .closest('[role="listitem"]') as HTMLElement
+  fireEvent.click(
+    within(oldest).getByRole('button', { name: 'Remove from Favorites' }),
   )
+
+  expect(updates).toEqual([{ key: KEY, id: name(1), pinned: false }])
   await act(async () => unpin.resolve({ ...pinned[0], pinned: false }))
-  const listedAfter = (await row('Favorite 01')).closest(
-    '[role="listitem"]',
-  ) as HTMLElement
-  expect(
-    within(listedAfter).getByRole('button', { name: 'Pin to Favorites' }),
-  ).toHaveAttribute('aria-pressed', 'false')
+  expect(favorites()).toEqual(
+    newestFirst.slice(0, -1).map((n) => `/chat/${name(n)}`),
+  )
 })
 
 it('renames a chat on this device at once, before the harness answers', async () => {
