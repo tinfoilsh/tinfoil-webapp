@@ -302,17 +302,25 @@ describe('IndexedDB pending sync index', () => {
     })
   })
 
-  it('fails a blocked upgrade promptly and allows a retry', async () => {
+  it('waits for an upgrade another tab blocks, and finishes it once that tab closes', async () => {
     const olderConnection = await openVersionThree([storedChat('cloud-chat')])
+    // A tab that cannot answer, as one the browser froze.
     olderConnection.onversionchange = () => undefined
     const storage = new IndexedDBStorage()
-
-    await expect(storage.getAllChatIds()).rejects.toThrow(
-      'Database upgrade blocked',
+    const blocked = new Promise<void>((resolve) =>
+      storage.access.subscribe(() => {
+        if (storage.access.get() === 'blocked') resolve()
+      }),
     )
+
+    const ids = storage.getAllChatIds()
+    await blocked
+    const summaries = storage.getChatSummaries()
     olderConnection.close()
 
-    await expect(storage.getAllChatIds()).resolves.toEqual(['cloud-chat'])
+    await expect(ids).resolves.toEqual(['cloud-chat'])
+    expect((await summaries).map((chat) => chat.id)).toEqual(['cloud-chat'])
+    expect(storage.access.get()).toBe('ready')
   })
 
   it('stores attachment payloads separately and hydrates them on read', async () => {

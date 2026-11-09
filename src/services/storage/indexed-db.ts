@@ -8,6 +8,7 @@ import {
   AUTH_ACCOUNT_RESET_FAILED,
   AUTH_ACCOUNT_RESET_SIGNAL,
 } from '@/constants/storage-keys'
+import { createStore } from '@/services/harness/store'
 import { logError, logWarning } from '@/utils/error-handling'
 import { bytesToHex } from '@noble/hashes/utils.js'
 import { deletedChatsTracker } from './deleted-chats-tracker'
@@ -372,7 +373,13 @@ function deleteAttachmentsForChat(store: IDBObjectStore, chatId: string): void {
   }
 }
 
+// Whether this page can use the database. An upgrade waits while another
+// tab holds the database at an earlier version, and finishes once that tab
+// closes it.
+export type DatabaseAccess = 'ready' | 'blocked'
+
 export class IndexedDBStorage {
+  readonly access = createStore<DatabaseAccess>('ready')
   private db: IDBDatabase | null = null
   private initializationPromise: Promise<void> | null = null
   private saveQueue: Promise<unknown> = Promise.resolve()
@@ -404,7 +411,6 @@ export class IndexedDBStorage {
     const saveGeneration = this.saveGeneration
     const initializationPromise = new Promise<void>((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION)
-      let abandoned = false
 
       request.onerror = (event) => {
         const error = (event.target as IDBOpenDBRequest).error
@@ -419,10 +425,6 @@ export class IndexedDBStorage {
       }
 
       request.onsuccess = () => {
-        if (abandoned) {
-          request.result.close()
-          return
-        }
         const db = request.result
         db.onversionchange = () => {
           db.close()
@@ -430,6 +432,7 @@ export class IndexedDBStorage {
             this.db = null
           }
         }
+        if (this.access.get() === 'blocked') this.access.set('ready')
 
         if (saveGeneration !== this.saveGeneration) {
           db.close()
@@ -497,12 +500,13 @@ export class IndexedDBStorage {
         }
       }
 
+      // Every read and write waits for the upgrade, which finishes on its
+      // own once the other tab closes the database.
       request.onblocked = () => {
-        abandoned = true
         logWarning('IndexedDB upgrade blocked - close other tabs', {
           component: 'IndexedDBStorage',
         })
-        reject(new Error('Database upgrade blocked'))
+        this.access.set('blocked')
       }
     })
 

@@ -10,7 +10,12 @@ import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { toast } from '@/hooks/use-toast'
 import { logError } from '@/utils/error-handling'
 import { useAuth, useUser } from '@clerk/react'
-import { TfDocumentPlus, TfShare, TfTinSad } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfApplicationWindow,
+  TfDocumentPlus,
+  TfShare,
+  TfTinSad,
+} from '@tinfoilsh/tinfoil-icons'
 import {
   TfArrowDownAnimated,
   TfGhost2Animated,
@@ -161,6 +166,7 @@ import { verifyChatService } from '@/services/harness/attestation'
 import { ERROR_CODES } from '@/services/harness/protocol'
 import { reportProfileError, useHarness } from '@/services/harness/provider'
 import { HarnessError } from '@/services/harness/sse'
+import { useStore } from '@/services/harness/store'
 import { isAttachmentsUnavailable } from '@/services/harness/transfer'
 import type { Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
@@ -170,6 +176,7 @@ import {
   registerStartFreshKeyIfNeeded,
 } from '@/services/keys/cloud-key-authorization'
 import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { hasPasskeyBackup } from '@/utils/signout-cleanup'
 import { useUIState } from './hooks/use-ui-state'
 
@@ -210,6 +217,7 @@ export function ChatInterface({
   } = useHarness()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const { user } = useUser()
+  const databaseAccess = useStore(indexedDBStorage.access)
   const router = useRouter()
   const {
     isClient,
@@ -1904,6 +1912,21 @@ export function ChatInterface({
     () => projects.map((p) => ({ id: p.id, name: p.name })),
     [projects],
   )
+
+  // Chats kept in this browser can be neither read nor saved until the
+  // database opens.
+  if (databaseAccess === 'blocked') {
+    return (
+      <PageNotice
+        icon={TfApplicationWindow}
+        title="Close your other Tinfoil Chat tabs"
+      >
+        Tinfoil Chat is updating the chats saved in this browser. Close Tinfoil
+        Chat in your other tabs and windows, and this page will continue on its
+        own.
+      </PageNotice>
+    )
+  }
 
   if (!session && sessionError) {
     return (
