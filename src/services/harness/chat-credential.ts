@@ -3,8 +3,9 @@ import { ERROR_ACTIONS, ERROR_CODES } from './protocol'
 import { HarnessError } from './sse'
 import type { RateLimit, TokenBudget } from './types'
 
-// Chat access is minted again once it has less than this left, so a reply
-// started with it can finish first.
+// Chat access is minted again once it has less than this left, so no request
+// carries access about to expire. The chat service keeps a running reply's
+// access current itself.
 const RENEW_BEFORE_EXPIRY_MS = 5 * 60_000
 const MINT_TIMEOUT_MS = 15_000
 // A busy, unavailable or suspended answer that names no time to ask again
@@ -130,16 +131,6 @@ export class ChatCredentialCache {
     } finally {
       if (onAbort) signal?.removeEventListener('abort', onAbort)
     }
-  }
-
-  // When the chat token is minted again: as it enters its renewal window, or
-  // once a refusal lifts. A free key, or no access, has no such time.
-  renewsAt(): number | undefined {
-    if (this.cached?.kind !== 'hourly') return undefined
-    return Math.max(
-      this.cached.expiresAt - RENEW_BEFORE_EXPIRY_MS,
-      this.refused?.until ?? 0,
-    )
   }
 
   private usableAfterFailure(cause: unknown): string | undefined {
