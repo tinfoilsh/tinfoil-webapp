@@ -281,7 +281,7 @@ export class RunController {
     return ++this.clock
   }
 
-  // The user changed settings of a device chat through the harness.
+  // The user changed settings of a device chat.
   settingsChanged(threadId: string, settings: readonly string[]) {
     const at = this.tick()
     const changes = this.settingChanges.get(threadId) ?? new Map()

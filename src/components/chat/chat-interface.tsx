@@ -932,20 +932,11 @@ export function ChatInterface({
       })
     }
   }
-  // Pinning a chat kept on this device moves it to the cloud first, where
-  // favorites are stored.
-  const handleToggleFavorite = async (favorite: {
-    id: string
-    isLocalOnly?: boolean
-  }) => {
+  // A chat kept on this device stays there as a favorite.
+  const handleToggleFavorite = async (favorite: { id: string }) => {
     if (pinnedChatIds.includes(favorite.id)) {
       unpinChat(favorite.id)
       return
-    }
-    const chat = chats.find((candidate) => candidate.id === favorite.id)
-    if (chat?.isLocalOnly ?? favorite.isLocalOnly) {
-      if (!canMoveChats) return
-      if (!(await handleConvertChatToCloud(favorite.id))) return
     }
     await thread
       .update(favorite.id, { pinned: true })

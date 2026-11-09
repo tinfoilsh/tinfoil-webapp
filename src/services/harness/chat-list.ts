@@ -58,8 +58,7 @@ interface PendingChange {
 
 type Listing = 'stored' | 'favorites' | 'device'
 
-// A list with a change that is still saving shown in it. A chat on this
-// device takes only its new title, as only a stored chat is a favorite.
+// A list with a change that is still saving shown in it.
 function withChange(
   listed: ThreadSummary[],
   { threadId, removed, title, pinned, favorite }: PendingChange,
@@ -70,7 +69,7 @@ function withChange(
     return at < 0 ? listed : listed.filter((thread) => thread.id !== threadId)
   const fields: Partial<ThreadSummary> = {
     ...(title !== undefined ? { title, titleState: 'manual' as const } : {}),
-    ...(pinned !== undefined && listing !== 'device' ? { pinned } : {}),
+    ...(pinned !== undefined ? { pinned } : {}),
   }
   if (at < 0)
     return listing === 'favorites' && pinned && favorite
@@ -277,7 +276,7 @@ export function useChatList({
       device: editsOf(deviceThreads),
       // Shows a new title or favorite state of a chat until its store
       // answers, and returns what settles it with whether the store saved
-      // it. Only a stored chat is a favorite.
+      // it.
       preview(threadId: string, { title, pinned }: ThreadPatch) {
         if (title === undefined && pinned === undefined) return () => {}
         return showPending({

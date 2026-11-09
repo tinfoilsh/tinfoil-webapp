@@ -114,8 +114,8 @@ export function newThread(id: string): StoredThread {
   }
 }
 
-// A chat on this device belongs to no project, is no favorite, and has no
-// run the harness could report.
+// A chat on this device belongs to no project and has no run the harness
+// could report.
 export function localSummary(thread: StoredThread): ThreadSummary {
   return summaryOf(
     { ...thread, activityAt: activityAt(thread.createdAt, thread.messages) },
@@ -148,7 +148,7 @@ function summaryOf(
     activityAt: thread.activityAt ?? thread.createdAt ?? '',
     model: thread.model ?? '',
     projectId: null,
-    pinned: false,
+    pinned: thread.pinned === true,
     webSearchEnabled: thread.webSearchEnabled ?? true,
     messageCount,
     activeRun: null,

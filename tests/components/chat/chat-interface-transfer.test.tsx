@@ -3,7 +3,7 @@ import type { ChatSidebar } from '@/components/chat/chat-sidebar'
 import { authTokenManager } from '@/services/auth'
 import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
-import type { ThreadSummary } from '@/services/harness/types'
+import type { StoredThread, ThreadSummary } from '@/services/harness/types'
 import { resetSafeguards } from '@/services/safeguards'
 import { act, render, waitFor } from '@testing-library/react'
 import type { ComponentProps } from 'react'
@@ -143,45 +143,78 @@ afterEach(() => {
 })
 
 describe('moving chats from the chat page', () => {
-  it('pins a device chat by moving it to the cloud first', async () => {
+  it('pins a device chat where it is kept, and keeps it a favorite in the cloud', async () => {
     connect()
     client.post.mockImplementation(async (path: string, input) => {
       if (path === '/v1/threads/list')
-        return { threads: cloud, nextCursor: null }
+        return {
+          threads: cloud,
+          pinned: cloud.filter((chat) => chat.pinned),
+          nextCursor: null,
+        }
       if (path === '/v1/threads/import') {
-        cloud = [imported]
-        return imported
+        // The harness pins a chat it imports as the device kept it.
+        const { thread } = input as { thread: StoredThread }
+        cloud = [{ ...imported, pinned: thread.pinned }]
+        return cloud[0]
       }
-      if (path === '/v1/threads/update')
-        return { ...imported, pinned: (input as { pinned: boolean }).pinned }
       throw new Error(`Unexpected ${path}`)
     })
     await renderPage()
 
     await act(async () => {
-      await sidebar().onToggleFavorite?.({
-        id: CHAT_ID,
-        title: '',
-        isLocalOnly: true,
-      })
+      await sidebar().onToggleFavorite?.({ id: CHAT_ID, title: '' })
+    })
+
+    expect(calls()).toEqual([])
+    expect(await stored()).toEqual({ ...deviceChat, pinned: true })
+    await waitFor(() => expect(sidebar().pinnedChatIds).toEqual([CHAT_ID]))
+
+    await act(async () => {
+      await sidebar().onConvertChatToCloud?.(CHAT_ID)
     })
 
     expect(calls()).toEqual([
       [
         '/v1/threads/import',
-        expect.objectContaining({ key: KEY, threadId: CHAT_ID }),
+        expect.objectContaining({
+          key: KEY,
+          threadId: CHAT_ID,
+          thread: expect.objectContaining({ pinned: true }),
+        }),
       ],
-      ['/v1/threads/update', { key: KEY, id: CHAT_ID, pinned: true }],
     ])
     expect(await stored()).toBeNull()
-    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
-      title: 'Chat moved to cloud',
-      description: 'The chat will now sync across your devices.',
-    })
-    await waitFor(() => expect(sidebar().pinnedChatIds).toEqual([CHAT_ID]))
+    await waitFor(() =>
+      expect(
+        sidebar().chats.map((chat) => [chat.id, !!chat.isLocalOnly]),
+      ).toEqual([[CHAT_ID, false]]),
+    )
+    expect(sidebar().pinnedChatIds).toEqual([CHAT_ID])
   })
 
-  it('leaves a device chat unpinned on the device when its move fails', async () => {
+  it('unpins a device chat without the harness', async () => {
+    await localThreadStore('device').update(CHAT_ID, () => ({
+      ...deviceChat,
+      pinned: true,
+    }))
+    signIn()
+    client.post.mockImplementation(async (path: string) => {
+      throw new Error(`Unexpected ${path}`)
+    })
+    await renderPage()
+    await waitFor(() => expect(sidebar().pinnedChatIds).toEqual([CHAT_ID]))
+
+    await act(async () => {
+      await sidebar().onToggleFavorite?.({ id: CHAT_ID, title: '' })
+    })
+
+    await waitFor(async () => expect(await stored()).toEqual(deviceChat))
+    await waitFor(() => expect(sidebar().pinnedChatIds).toEqual([]))
+    expect(calls()).toEqual([])
+  })
+
+  it('keeps a device chat on the device when its move to the cloud fails', async () => {
     connect()
     client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
@@ -196,11 +229,7 @@ describe('moving chats from the chat page', () => {
     await renderPage()
 
     await act(async () => {
-      await sidebar().onToggleFavorite?.({
-        id: CHAT_ID,
-        title: '',
-        isLocalOnly: true,
-      })
+      await sidebar().onConvertChatToCloud?.(CHAT_ID)
     })
 
     expect(calls().map(([path]) => path)).toEqual(['/v1/threads/import'])

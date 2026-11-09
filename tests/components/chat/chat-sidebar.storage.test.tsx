@@ -126,12 +126,14 @@ describe('chat sidebar storage modes', () => {
     sidebarProjects.list = []
   })
 
-  it('lists only local chats and offers cloud sync to an account without it', async () => {
+  it('lists only local chats, which pin to favorites, and offers cloud sync to an account without it', async () => {
     const onCloudSyncSetupClick = vi.fn()
+    const onToggleFavorite = vi.fn()
     render(
       <Sidebar
         {...blankChat(true)}
         onCloudSyncSetupClick={onCloudSyncSetupClick}
+        onToggleFavorite={onToggleFavorite}
       />,
     )
 
@@ -141,11 +143,12 @@ describe('chat sidebar storage modes', () => {
     ).toBeInTheDocument()
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('heading', { name: 'Favorites' }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Pin to Favorites' }),
-    ).not.toBeInTheDocument()
+      screen.getByRole('heading', { name: 'Favorites' }),
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Pin to Favorites' }))
+    expect(onToggleFavorite).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: localChat.id, isLocalOnly: true }),
+    )
     expect(listItem(localChat.title)).toHaveAttribute('draggable', 'false')
     expect(screen.getByRole('link', { name: localChat.title })).toHaveAttribute(
       'href',
@@ -227,7 +230,7 @@ describe('chat sidebar storage modes', () => {
     ).toBeInTheDocument()
   })
 
-  it('offers no way to move or pin a device chat without the transfer routes', () => {
+  it('offers no way to move a device chat without the transfer routes', () => {
     signIn({ cloud: true })
     localStorage.setItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED, 'true')
     sessionStorage.setItem(UI_SIDEBAR_ACTIVE_TAB, 'local')
@@ -236,9 +239,6 @@ describe('chat sidebar storage modes', () => {
 
     expect(chatTitles()).toEqual([localChat.title])
     expect(listItem(localChat.title)).toHaveAttribute('draggable', 'false')
-    expect(
-      screen.queryByRole('button', { name: 'Pin to Favorites' }),
-    ).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'More chat options' }))
     expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument()
     expect(
@@ -394,6 +394,12 @@ describe('chat sidebar storage modes', () => {
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Enable Cloud Sync' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Favorites' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Pin to Favorites' }),
     ).not.toBeInTheDocument()
   })
 })

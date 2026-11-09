@@ -958,7 +958,10 @@ export const ProjectSidebar = memo(function ProjectSidebar({
                         isDarkMode={isDarkMode}
                         pixelateSidebarChatTitles={pixelateSidebarChatTitles}
                         getChatHref={(chat) =>
-                          getChatPath(chat.id, { projectId: chat.projectId })
+                          getChatPath(chat.id, {
+                            isLocalOnly: chat.isLocalOnly,
+                            projectId: chat.projectId,
+                          })
                         }
                         onSelectChat={(chatId) => {
                           const favorite = resolvedFavoriteChats.find(

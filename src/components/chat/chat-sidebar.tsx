@@ -319,7 +319,9 @@ export const ChatSidebar = memo(function ChatSidebar({
     isSubscriptionLoading,
     isPremium,
   })
-  const favoritesAvailable = Boolean(isSignedIn && cloudSyncEnabled)
+  // Favorites are an account's, kept with its chats: in the cloud, and on
+  // this device for the chats it keeps.
+  const favoritesAvailable = Boolean(isSignedIn)
   const { user } = useUser()
 
   const {
@@ -635,7 +637,7 @@ export const ChatSidebar = memo(function ChatSidebar({
       onToggleFavorite,
       onActivate: expandFavoritesSection,
       clearDragState,
-      canPinLocalChats: !!onConvertChatToCloud,
+      canPinLocalChats: favoritesAvailable,
     })
 
   const paginatesCloudChats = cloudSyncEnabled && !showLocalTab
@@ -763,7 +765,7 @@ export const ChatSidebar = memo(function ChatSidebar({
               </span>
             </div>
 
-            {isSignedIn && cloudSyncEnabled && (
+            {favoritesAvailable && (
               <div className="group relative" {...favoriteDropTargetProps}>
                 <button
                   onClick={() => {
@@ -1113,7 +1115,7 @@ export const ChatSidebar = memo(function ChatSidebar({
             </div>
           )}
 
-          {isSignedIn && cloudSyncEnabled && (
+          {favoritesAvailable && (
             <section
               ref={favoritesSectionRef}
               {...favoriteDropTargetProps}
@@ -1185,7 +1187,10 @@ export const ChatSidebar = memo(function ChatSidebar({
                         isDarkMode={isDarkMode}
                         pixelateSidebarChatTitles={pixelateSidebarChatTitles}
                         getChatHref={(chat) =>
-                          getChatPath(chat.id, { projectId: chat.projectId })
+                          getChatPath(chat.id, {
+                            isLocalOnly: chat.isLocalOnly,
+                            projectId: chat.projectId,
+                          })
                         }
                         onSelectChat={(chatId) => {
                           const favorite = favoriteChats.find(
@@ -2176,9 +2181,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                         onConvertToLocal={onConvertChatToLocal}
                         pinnedChatIds={pinnedChatIds}
                         onTogglePin={onToggleFavorite}
-                        // Pinning a chat kept on this device moves it to
-                        // the cloud, where favorites are stored.
-                        canPinLocalChats={!!onConvertChatToCloud}
+                        canPinLocalChats={favoritesAvailable}
                         emptyState={
                           showLocalTab ? (
                             <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
