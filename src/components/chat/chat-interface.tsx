@@ -867,11 +867,10 @@ export function ChatInterface({
   const removeQueuedMessage = (id: string) => {
     void thread.removeQueued(id).catch(thread.report)
   }
+  // Every favorite listed, the most recently pinned first.
   const favoriteChats = useMemo(() => {
     const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
-    return thread.favoriteIds
-      .flatMap((id) => chatsById.get(id) ?? [])
-      .slice(0, CONSTANTS.MAX_FAVORITE_CHATS)
+    return thread.favoriteIds.flatMap((id) => chatsById.get(id) ?? [])
   }, [chats, thread.favoriteIds])
   const pinnedChatIds = useMemo(
     () => favoriteChats.map((c) => c.id),

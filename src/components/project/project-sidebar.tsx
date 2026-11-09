@@ -6,6 +6,7 @@ import {
   FilePreview,
   imageDataUrl,
 } from '@/components/chat/components/file-preview'
+import { CONSTANTS } from '@/components/chat/constants'
 import { useDrag } from '@/components/chat/drag-context'
 import { consumeFavoriteDrop } from '@/components/chat/favorite-drag'
 import { isResolvedFavoriteChat } from '@/components/chat/favorite-view'
@@ -573,7 +574,9 @@ export const ProjectSidebar = memo(function ProjectSidebar({
       flagged: c.flagged,
     }))
 
-  const resolvedFavoriteChats = favoriteChats.filter(isResolvedFavoriteChat)
+  const resolvedFavoriteChats = favoriteChats
+    .filter(isResolvedFavoriteChat)
+    .slice(0, CONSTANTS.MAX_FAVORITE_CHATS)
 
   const favoriteDropChats = [...projectChats, ...resolvedFavoriteChats]
   const { isFavoriteDropTarget, favoriteDropTargetProps } =
