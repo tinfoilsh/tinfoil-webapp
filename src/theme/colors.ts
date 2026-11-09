@@ -2,23 +2,25 @@
  * Global color definitions for consistent theming across the application
  *
  * Tinfoil Brand Colors:
- * - tinfoil-dark: #061820 (primary dark background)
- * - tinfoil-light: #EEF3F3 (light background)
- * - tinfoil-accent-dark: #004444 (primary brand color)
- * - tinfoil-accent-light: #68C7AC (accent/success color)
+ * - tinfoil-dark: #05252E Midnight Petrol (primary dark background)
+ * - tinfoil-light: #F2F1EC Bone (light background)
+ * - tinfoil-accent-dark: #004444 Deep Teal (primary brand color)
+ * - tinfoil-accent-light: #A8C7D1 Steel Mist (accent/success color)
+ * - tinfoil-twilight: #6B5B95 Twilight (secondary: cards, hovers, charts)
+ * - tinfoil-brass: #C9934F Brass (warm accent, used sparingly)
  */
 
 export const colors = {
   // Tinfoil dark - used for dark backgrounds, headers, text
   'tinfoil-dark': {
-    DEFAULT: '#061820',
-    hover: '#0A2230',
+    DEFAULT: '#05252E',
+    hover: '#08333F',
   },
 
   // Tinfoil light - used for light backgrounds, cards
   'tinfoil-light': {
-    DEFAULT: '#EEF3F3',
-    hover: '#E5EFEF',
+    DEFAULT: '#F2F1EC',
+    hover: '#EEECE3',
   },
 
   // Tinfoil accent dark - used for buttons, links, primary actions
@@ -30,14 +32,24 @@ export const colors = {
 
   // Tinfoil accent light - used for success states, checkmarks, accents
   'tinfoil-accent-light': {
-    DEFAULT: '#68C7AC',
-    hover: '#7FD4BB',
-    darker: '#5AB39A',
+    DEFAULT: '#A8C7D1',
+    hover: '#BED7DF',
+    darker: '#97B6C0',
+  },
+
+  // Tinfoil twilight - secondary color for cards, hovers, charts
+  'tinfoil-twilight': {
+    DEFAULT: '#6B5B95',
+  },
+
+  // Tinfoil brass - warm accent, used sparingly
+  'tinfoil-brass': {
+    DEFAULT: '#C9934F',
   },
 
   // Legacy gray colors for general use
   gray: {
-    light: '#EEF3F3',
+    light: '#F2F1EC',
     DEFAULT: '#D1D5DB',
     hover: '#9CA3AF',
   },

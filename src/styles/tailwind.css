@@ -16,12 +16,14 @@
     color-scheme: light;
 
     /* Brand palette */
-    --color-brand-dark: 198 68.4% 7.5%;
-    --color-brand-light: 180 17.2% 94.3%;
+    --color-brand-dark: 193 80.4% 10%;
+    --color-brand-light: 50 18.7% 93.7%;
     --color-accent-dark: 180 100% 13.3%;
     --color-accent-dark-darker: 180 100% 10%;
-    --color-accent-light: 163 45.9% 59.4%;
-    --color-accent-light-darker: 163 37% 53%;
+    --color-accent-light: 195 30.8% 73.9%;
+    --color-accent-light-darker: 195 24.8% 67.3%;
+    --color-twilight: 257 24.2% 47.1%;
+    --color-brass: 33 53% 54.9%;
 
     /* Surface tokens */
     --surface-background: 40 20% 97%;
@@ -86,7 +88,7 @@
     --border: var(--border-subtle);
     --input: var(--border-subtle);
     --ring: var(--color-accent-light);
-    --chart-1: 163 45.9% 59.4%;
+    --chart-1: 195 30.8% 73.9%;
     --chart-2: 180 100% 28%;
     --chart-3: 198 68.4% 40%;
     --chart-4: 210 34% 18%;
@@ -124,7 +126,7 @@
     --button-send-background: 0 0% 100%;
     --button-send-foreground: var(--color-brand-dark);
 
-    --color-accent-light-darker: 163 37% 53%;
+    --color-accent-light-darker: 195 24.8% 67.3%;
 
     --gray-950: var(--color-brand-dark);
     --gray-900: 0 0% 7.1%;

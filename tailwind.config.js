@@ -98,6 +98,8 @@ module.exports = {
           'accent-light': 'hsl(var(--color-accent-light) / <alpha-value>)',
           'accent-light-darker':
             'hsl(var(--color-accent-light-darker) / <alpha-value>)',
+          twilight: 'hsl(var(--color-twilight) / <alpha-value>)',
+          brass: 'hsl(var(--color-brass) / <alpha-value>)',
         },
         // Mirrors tinfoil-accent-blue from @tinfoil/tailwind-preset.
         'tinfoil-accent-blue': {

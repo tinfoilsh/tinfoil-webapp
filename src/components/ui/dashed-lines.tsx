@@ -1,6 +1,6 @@
 import { cn } from '@/components/ui/utils'
 
-const DASHED_LINE_COLOR = 'rgba(6, 24, 32, 0.18)'
+const DASHED_LINE_COLOR = 'rgba(5, 37, 46, 0.18)'
 
 function createDashedLineStyle(direction: 'to right' | 'to bottom') {
   const mask = `linear-gradient(${direction}, transparent, black 30%, black 70%, transparent)`
