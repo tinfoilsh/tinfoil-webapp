@@ -17,7 +17,6 @@ function renderButton(status: VerificationStatus, announceVerified = true) {
   const props = {
     isPanelOpen: false,
     onTogglePanel: vi.fn(),
-    compactLabel: false,
     onVerifiedAnnounced,
   }
   const view = render(

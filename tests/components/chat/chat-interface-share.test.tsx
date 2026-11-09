@@ -201,7 +201,7 @@ it('keeps Share, and no favorites, in the header menu of a signed-out visitor’
     within(menu)
       .getAllByRole('menuitem')
       .map((item) => item.textContent),
-  ).toEqual(['Share'])
+  ).toEqual(['Privacy verified', 'Share'])
   await act(async () =>
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Share' })),
   )
@@ -264,4 +264,52 @@ it('pins and unpins the open chat kept on this device from the header menu', asy
   )
   await waitFor(async () => expect(await pinned()).toBe(false))
   expect(client.post).not.toHaveBeenCalled()
+})
+
+it('marks the header menu when verifying fails, and opens the verification panel from it', async () => {
+  signIn({ userId: null })
+  client.ready.mockRejectedValue(new Error('Attestation failed'))
+  client.post.mockImplementation(async (path) => {
+    throw new Error(`Unexpected ${path}`)
+  })
+  const chat = storedThread('tab-chat', {
+    title: 'Visitor chat',
+    titleState: 'generated',
+    messages: [
+      {
+        id: 'question',
+        role: 'user',
+        content: 'What is a prime?',
+        createdAt: '2026-10-22T12:00:00Z',
+      },
+    ],
+  })
+  await localThreadStore('tab').add(chat)
+  render(
+    <ProjectProvider>
+      <ChatInterface
+        initialChatId={chat.id}
+        isLocalChatUrl
+        suppressIntroModals
+      />
+    </ProjectProvider>,
+  )
+  await screen.findByText('What is a prime?')
+
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'More chat actions' }),
+    ).toHaveAccessibleDescription('Verification failed'),
+  )
+  await act(async () =>
+    fireEvent.click(
+      within(await openHeaderMenu()).getByRole('menuitem', {
+        name: 'Verification failed',
+      }),
+    ),
+  )
+
+  const panel = (await screen.findByTitle('Tinfoil Verification Center'))
+    .parentElement!
+  await waitFor(() => expect(panel).not.toHaveAttribute('inert'))
 })
