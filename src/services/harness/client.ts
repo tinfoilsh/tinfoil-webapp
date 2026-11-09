@@ -1,5 +1,5 @@
 import { logError } from '@/utils/error-handling'
-import { SecureClient } from 'tinfoil'
+import { EnclaveHTTPClient } from 'tinfoil'
 import { AnonymousCredentialCache } from './anonymous-credential'
 import { ChatCredentialCache } from './chat-credential'
 import {
@@ -14,6 +14,7 @@ import {
   ROUTES,
   unanswered,
   unsealedRefusal,
+  unverified,
   type HarnessRoute,
   type RunRoute,
 } from './protocol'
@@ -28,7 +29,7 @@ import type {
 
 const harnessRepo = 'tinfoilsh/confidential-tinfoil-harness'
 // An attestation that has not finished by then is abandoned: the request
-// fails, and the next one verifies the enclave again with a new client.
+// fails, and the next one verifies the enclave again.
 const ATTESTATION_TIMEOUT_MS = 20_000
 // A live run's chat token that could not be minted again, for a reason that
 // names no time to ask again, is asked for again after this long.
@@ -40,10 +41,11 @@ const RUN_RENEWAL_RETRY_MS = 30_000
 export const REQUEST_TIMEOUT_MS = 30_000
 const SLOW_UPLOAD_BYTES_PER_MS = 32
 type GetToken = (options?: { skipCache?: boolean }) => Promise<string | null>
-type Transport = Pick<
-  SecureClient,
-  'ready' | 'fetch' | 'getVerificationDocument'
->
+type Transport = Pick<EnclaveHTTPClient, 'fetch' | 'ensureVerified'>
+// Verifies the chat service's enclave and connects to it. The signal ends a
+// verification that was abandoned.
+type Connect = (signal: AbortSignal) => Promise<Transport>
+export type Verification = Awaited<ReturnType<Transport['ensureVerified']>>
 
 // A follow as this client makes it: the body the protocol names, and the
 // last event of the run it applied, which it sends as Last-Event-ID.
@@ -93,13 +95,14 @@ async function withDeadline<T>(
   ms: number,
   signal: AbortSignal | undefined,
   send: (signal: AbortSignal) => Promise<T>,
+  failure: () => HarnessErrorBody = unanswered,
 ): Promise<T> {
   const deadline = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
   const expired = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       deadline.abort()
-      reject(new HarnessError(unanswered()))
+      reject(new HarnessError(failure()))
     }, ms)
   })
   try {
@@ -111,7 +114,7 @@ async function withDeadline<T>(
     ])
   } catch (cause) {
     if (deadline.signal.aborted && !signal?.aborted)
-      throw new HarnessError(unanswered())
+      throw new HarnessError(failure())
     throw cause
   } finally {
     clearTimeout(timer)
@@ -120,11 +123,13 @@ async function withDeadline<T>(
 
 export class HarnessClient {
   private readonly origin: string
+  // The host of the chat service's enclave.
+  readonly enclave: string
   private readonly anonymous = new AnonymousCredentialCache()
   private readonly chat = new ChatCredentialCache((rateLimit) =>
     this.onRateLimit?.(rateLimit),
   )
-  private secure: Transport
+  private secure?: Promise<Transport>
   private readonly lifetime = new AbortController()
   // The run streams this page reads, and the renewal of the chat token their
   // model calls use.
@@ -152,8 +157,8 @@ export class HarnessClient {
   constructor(
     url: string,
     private readonly getToken: GetToken,
-    private readonly createTransport: () => Transport = () =>
-      new SecureClient({ enclaveURL: url, configRepo: harnessRepo }),
+    private readonly connect: Connect = (signal) =>
+      EnclaveHTTPClient.create(new URL(url).host, harnessRepo, { signal }),
   ) {
     const parsed = new URL(url)
     if (
@@ -171,35 +176,42 @@ export class HarnessClient {
       })
     }
     this.origin = parsed.origin
-    this.secure = createTransport()
+    this.enclave = parsed.host
   }
 
-  async ready() {
-    const secure = this.secure
-    let timer: ReturnType<typeof setTimeout> | undefined
-    try {
-      await Promise.race([
-        secure.ready(),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            if (this.secure === secure) this.secure = this.createTransport()
-            reject(
-              new HarnessError({
-                code: ERROR_CODES.connection,
-                action: ERROR_ACTIONS.retry,
-                message:
-                  'The chat service could not be verified in time. Check your connection and try again.',
-              }),
-            )
-          }, ATTESTATION_TIMEOUT_MS)
-        }),
-      ])
-    } finally {
-      clearTimeout(timer)
-    }
+  // The attested connection to the chat service, which exists once its
+  // enclave is verified. One that could not be made is forgotten, so the
+  // next request verifies the enclave again.
+  private connection(): Promise<Transport> {
+    if (this.secure) return this.secure
+    const secure = withDeadline(
+      ATTESTATION_TIMEOUT_MS,
+      undefined,
+      this.connect,
+      unverified,
+    )
+    this.secure = secure
+    secure.catch(() => {
+      if (this.secure === secure) this.secure = undefined
+    })
+    return secure
   }
-  get verification() {
-    return this.secure.getVerificationDocument()
+
+  // The connection once the verification of its enclave is valid, and what
+  // that verification proved. One that has expired is made again.
+  private async attested() {
+    const secure = await this.connection()
+    const verification = await withDeadline(
+      ATTESTATION_TIMEOUT_MS,
+      undefined,
+      (signal) => secure.ensureVerified({ signal }),
+      unverified,
+    )
+    return { secure, verification }
+  }
+
+  async verify(): Promise<Verification> {
+    return (await this.attested()).verification
   }
 
   // Mints the account's chat access again, as when its subscription changed
@@ -263,7 +275,7 @@ export class HarnessClient {
       })
     }
     signal?.throwIfAborted()
-    await this.ready()
+    const { secure } = await this.attested()
     let token = await this.getToken()
     const anonymous = !token
     if (anonymous) {
@@ -305,7 +317,7 @@ export class HarnessClient {
       if (instance) headers.set(HARNESS_INSTANCE_HEADER, instance)
       if (lastEventId !== undefined)
         headers.set(LAST_EVENT_ID_HEADER, String(lastEventId))
-      const response = await this.secure.fetch(this.origin + path, {
+      const response = await secure.fetch(this.origin + path, {
         method: 'POST',
         headers,
         body,

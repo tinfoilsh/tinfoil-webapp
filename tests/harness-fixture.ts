@@ -78,6 +78,21 @@ export const testSession: Session = {
   },
 }
 
+// What verifying the fake harness's enclave proves, as the SDK reports it:
+// an AMD enclave whose launch measurement is the one its release fixes.
+const LAUNCH = 'ab'.repeat(48)
+export const VERIFICATION = {
+  tlsPublicKeyFP: '11'.repeat(32),
+  hpkePublicKey: '22'.repeat(32),
+  toJSON: () => ({
+    codeDigest: '33'.repeat(32),
+    codeTag: 'v1.0.0',
+    configRepo: 'tinfoilsh/confidential-tinfoil-harness',
+    codeMeasurement: { platform: 'sev-snp', launch: LAUNCH },
+    enclaveMeasurement: { platform: 'sev-snp', launch: LAUNCH },
+  }),
+}
+
 // The harness's answer to /v1/keys/migrate-all: the sync service's newly
 // started migration job.
 export const MIGRATION_STARTED = {
@@ -93,7 +108,8 @@ export const MIGRATION_STARTED = {
 }
 
 export interface FakeClient {
-  ready: Mock
+  enclave: string
+  verify: Mock
   events: Mock
   post: Mock
   upload: Mock
@@ -171,7 +187,8 @@ export function signIn({
     CACHE_SECRET,
   )
   client = {
-    ready: vi.fn(async () => {}),
+    enclave: 'harness.example',
+    verify: vi.fn(async () => VERIFICATION),
     events: vi.fn(async function* (path: string): AsyncGenerator<never> {
       unexpected(path)
     }),

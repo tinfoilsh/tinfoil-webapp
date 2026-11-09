@@ -637,6 +637,27 @@ it('explains an old chat on this device that could not be opened, and keeps it l
   )
 })
 
+it('says a chat on this device could not be read, not that the network failed, and opens it on retry', async () => {
+  signIn()
+  await localThreadStore('device').add(TRIP)
+  vi.spyOn(indexedDBStorage, 'getChat').mockRejectedValueOnce(
+    new DOMException('Internal error', 'UnknownError'),
+  )
+  render(view({ initialChatId: TRIP.id, isLocalChatUrl: true }))
+
+  await screen.findByRole('heading', { name: "Couldn't load chat" })
+  const status = within(
+    screen.getByRole('region', { name: 'Chat history unavailable' }),
+  )
+  expect(status.getByRole('alert')).toHaveTextContent(
+    "This chat couldn't be opened from this browser. Please try again.",
+  )
+
+  fireEvent.click(status.getByRole('button', { name: 'Try again' }))
+
+  expect(await screen.findByText('Where should we go?')).toBeInTheDocument()
+})
+
 it('explains a chat that failed to load once and offers a new chat', async () => {
   signIn({ cloud: true })
   answerChatPage({
