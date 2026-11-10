@@ -122,8 +122,8 @@ export function useThread(
   // The answers picked in questions widgets that are not saved yet.
   const [answers] = useState(() => new AnswerSaves())
   // The view of each message, kept until the message, whether it streams,
-  // the reasoning summaries or why its reply stopped change, so a message
-  // that did not change keeps its view.
+  // the reasoning summaries, why its reply stopped or whether it researches
+  // change, so a message that did not change keeps its view.
   const [views] = useState(
     () =>
       new WeakMap<
@@ -133,6 +133,7 @@ export function useThread(
           summaries: ChatState['summaries']
           canceled: boolean
           truncated: boolean
+          research: boolean
           view: Message
         }
       >(),
@@ -689,6 +690,18 @@ export function useThread(
   // ends it: the reply, or the message it had not begun answering.
   const stopped =
     isStopping(state) && !compacting ? shownList.at(-1) : undefined
+  // The reply a research streams is one before its run commits it as one:
+  // while a turn runs, the chat's last message is a reply to a question that
+  // asks for deep research.
+  const [question, reply] = shownList.slice(-2)
+  const researching =
+    running &&
+    !compacting &&
+    question?.role === 'user' &&
+    !!question.research &&
+    reply?.role === 'assistant'
+      ? reply
+      : undefined
   const viewOf = (message: ShownMessage, streaming: boolean) => {
     // A stopped reply continued since is no longer one.
     const canceled =
@@ -697,15 +710,18 @@ export function useThread(
         (message.role === 'user' || !!message.isInterrupted))
     const truncated =
       !canceled && truncatedMessages.has(message.id) && !!message.isInterrupted
+    const research = message === researching
     const kept = views.get(message)
     if (
       kept?.streaming === streaming &&
       kept.summaries === state.summaries &&
       kept.canceled === canceled &&
-      kept.truncated === truncated
+      kept.truncated === truncated &&
+      kept.research === research
     )
       return kept.view
-    const shown = messageView(message, streaming, state.summaries)
+    const viewed = messageView(message, streaming, state.summaries)
+    const shown = research ? { ...viewed, research: true } : viewed
     const view = canceled
       ? { ...shown, canceledByUser: true }
       : truncated
@@ -716,6 +732,7 @@ export function useThread(
       summaries: state.summaries,
       canceled,
       truncated,
+      research,
       view,
     })
     return view
