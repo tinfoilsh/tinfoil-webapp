@@ -90,15 +90,19 @@ export function isRunningStep(block: TimelineBlock): boolean {
 /**
  * Groups consecutive trace blocks (thinking, web search, URL fetches) into
  * a single "work" segment so the renderer can collapse them behind one row. Runs of a single block are left as plain blocks; answer
- * text and GenUI widgets end a run.
+ * text and GenUI widgets end a run. A research's steps always show as a run,
+ * even a single one, as its first is while the research starts.
  */
-export function segmentTimeline(timeline: TimelineBlock[]): TimelineSegment[] {
+export function segmentTimeline(
+  timeline: TimelineBlock[],
+  research = false,
+): TimelineSegment[] {
   const segments: TimelineSegment[] = []
   let run: WorkBlock[] = []
   let runStartIndex = -1
 
   const flush = () => {
-    if (run.length > 1) {
+    if (run.length > 1 || (research && run.length === 1)) {
       segments.push({ kind: 'work', key: `work-${run[0].id}`, blocks: run })
     } else if (run.length === 1) {
       segments.push({

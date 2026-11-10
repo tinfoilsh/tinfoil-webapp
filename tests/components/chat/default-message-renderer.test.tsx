@@ -1417,16 +1417,48 @@ describe('DefaultMessageRenderer work traces', () => {
   })
 
   it('labels a question that asks for deep research', () => {
-    const question = (research?: { version: number }): WireMessage => ({
+    const question = (
+      research?: { version: number },
+      fields: Partial<WireMessage> = {
+        content: 'Compare the enforcement timelines.',
+      },
+    ): WireMessage => ({
       id: 'u1',
       role: 'user',
       createdAt: '2026-08-07T00:00:00.000Z',
-      content: 'Compare the enforcement timelines.',
+      ...fields,
       ...(research ? { research } : {}),
     })
     const { unmount } = renderReply(question({ version: 1 }), false)
     expect(screen.getByText('Deep research')).toBeInTheDocument()
     unmount()
+
+    // Answering the questions a research asks first starts it, with no text
+    // of its own to show.
+    const answered = renderReply(
+      question(
+        { version: 1 },
+        {
+          answers: [
+            {
+              toolCallId: 'call_questions',
+              questions: [
+                {
+                  id: 'scope',
+                  prompt: 'Which regions?',
+                  answered: true,
+                  selected: [{ id: 'eu', label: 'The EU' }],
+                },
+              ],
+            },
+          ],
+        },
+      ),
+      false,
+    )
+    expect(screen.getByText('Answered 1 of 1 question')).toBeInTheDocument()
+    expect(screen.getByText('Deep research')).toBeInTheDocument()
+    answered.unmount()
 
     renderReply(question(), false)
     expect(screen.queryByText('Deep research')).not.toBeInTheDocument()

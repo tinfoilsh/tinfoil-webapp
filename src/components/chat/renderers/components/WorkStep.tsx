@@ -45,6 +45,8 @@ interface StepHeaderProps {
   // A running step leads with a progress indicator and counts how long it
   // has run.
   isRunning: boolean
+  // What a running step leads with in place of the progress indicator.
+  runningIcon?: ReactNode
   // When the step started, in epoch milliseconds.
   startedAt?: number
   isExpanded: boolean
@@ -62,6 +64,7 @@ export function StepHeader({
   label,
   extra,
   isRunning,
+  runningIcon,
   startedAt,
   isExpanded,
   onToggle,
@@ -86,7 +89,7 @@ export function StepHeader({
     >
       {isRunning && (
         <span className="flex h-6 shrink-0 items-center" aria-hidden="true">
-          <LoadingDots size="small" />
+          {runningIcon ?? <LoadingDots size="small" />}
         </span>
       )}
       <span className={cn('min-w-0', truncate && 'truncate', labelClassName)}>

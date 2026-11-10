@@ -131,6 +131,94 @@ describe('deep research', () => {
     expect(turn(1).options).toEqual(sent)
   })
 
+  it('shows the reply a research streams as a research before it is committed', async () => {
+    const hook = await openCloud(researching)
+    // A run that streams a reply to the question, until it is let finish.
+    const streams = (question: Thread['messages'][number]) => {
+      let finish!: () => void
+      const finished = new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      client.events.mockImplementationOnce(async function* () {
+        const runId = `run-${question.id}`
+        const events: Frame['event'][] = [
+          {
+            type: 'RUN_STARTED',
+            threadId: THREAD_ID,
+            runId,
+            instance: 'instance-1',
+          },
+          {
+            type: 'MESSAGES_SNAPSHOT',
+            messages: [...stored.messages, question],
+            hasOlder: false,
+          },
+          {
+            type: 'TEXT_MESSAGE_CHUNK',
+            messageId: `msg_${question.id}`,
+            role: 'assistant',
+            delta: 'Looking.',
+          },
+        ]
+        for (const [index, event] of events.entries())
+          yield { id: index, event }
+        await finished
+        yield {
+          id: events.length,
+          event: {
+            type: 'RUN_FINISHED',
+            threadId: THREAD_ID,
+            runId,
+            metadata: { messages: [{ id: `msg_${question.id}` }] },
+          },
+        }
+      })
+      return finish
+    }
+    const lastShown = () => hook.result.current.chat.messages.at(-1)
+
+    const finishResearch = streams({
+      id: 'u2',
+      role: 'user',
+      createdAt: '2026-04-01T09:01:00Z',
+      content: 'Which coast?',
+      research: { version: 2 },
+    })
+    let sending!: Promise<boolean> | undefined
+    act(() => {
+      sending = hook.result.current.send({ content: 'Which coast?', options })
+    })
+    await waitFor(() =>
+      expect(lastShown()).toMatchObject({
+        id: 'msg_u2',
+        content: 'Looking.',
+        research: true,
+      }),
+    )
+    await act(async () => {
+      finishResearch()
+      await sending
+    })
+
+    const finishPlain = streams({
+      id: 'u3',
+      role: 'user',
+      createdAt: '2026-04-01T09:02:00Z',
+      content: 'And the other?',
+    })
+    act(() => {
+      sending = hook.result.current.send({ content: 'And the other?', options })
+    })
+    await waitFor(() =>
+      expect(lastShown()).toMatchObject({ id: 'msg_u3', content: 'Looking.' }),
+    )
+    expect(lastShown()).not.toHaveProperty('research')
+    await act(async () => {
+      finishPlain()
+      await sending
+    })
+  })
+
   it('never has a turn research that does not answer a question anew', async () => {
     const hook = await openCloud(researching)
     act(() => hook.result.current.setResearch(true))
