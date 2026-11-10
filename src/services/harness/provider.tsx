@@ -20,6 +20,8 @@ import {
   type ReactNode,
 } from 'react'
 import { HarnessClient } from './client'
+import { ERROR_ACTIONS } from './protocol'
+import { pause } from './run-controller'
 import {
   activateAPI,
   getServerView,
@@ -29,6 +31,50 @@ import {
   reportHarnessError,
   subscribe,
 } from './runtime'
+import { HarnessError } from './sse'
+
+// The waits before each attempt to load a session again, the last repeating
+// for as long as the chat service cannot be reached.
+export const SESSION_RETRY_DELAYS_MS = [
+  1_000, 2_000, 4_000, 8_000, 15_000, 30_000,
+]
+const MS_PER_SECOND = 1000
+
+// Whether loading the session again may cure what failed it: the chat
+// service was not reached or verified, or said to try again. A refusal that
+// names another remedy stays, as does an account whose sign-in gave no token.
+function worthRetrying(cause: unknown): boolean {
+  if (cause instanceof HarnessError)
+    return cause.detail.action === ERROR_ACTIONS.retry
+  if (cause instanceof AuthTokenUnavailableError) return false
+  return !(cause instanceof DOMException && cause.name === 'AbortError')
+}
+
+// Loads the session and settings, again for as long as the chat service
+// cannot be reached and `current` holds. The page shows the failure
+// meanwhile, and opens on its own once the session loads.
+async function loadSession(api: HarnessAPI, current: () => boolean) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await api.refresh({ credentials: true })
+      return
+    } catch (cause) {
+      if (!current()) return
+      if (!worthRetrying(cause)) throw cause
+      reportHarnessError(cause)
+      const asked =
+        cause instanceof HarnessError
+          ? (cause.detail.retryAfter ?? 0) * MS_PER_SECOND
+          : 0
+      const wait =
+        SESSION_RETRY_DELAYS_MS[
+          Math.min(attempt, SESSION_RETRY_DELAYS_MS.length - 1)
+        ]
+      await pause(Math.max(asked, wait), api.lifetime.signal)
+      if (!current()) return
+    }
+  }
+}
 
 const HarnessContext = createContext<HarnessAPI | null>(null)
 // Whose session the harness serves: an account, a signed-out account, or a
@@ -80,12 +126,20 @@ export function HarnessProvider({
       const api = new HarnessAPI(new HarnessClient(url, getter), userId ?? null)
       release = activateAPI(api)
       setSessionAPI(api)
+      // A load that starts while another still tries takes its place.
+      let loads = 0
       const refresh = () => {
         const initialization = userId
           ? encryptionService.initialize().then(enableCloudSyncForExistingKey)
           : Promise.resolve()
         void initialization
-          .then(() => api.refresh({ credentials: true }))
+          .then(() => {
+            const load = ++loads
+            return loadSession(
+              api,
+              () => load === loads && !api.lifetime.signal.aborted,
+            )
+          })
           .catch(reportHarnessError)
       }
       const unlock = () => {

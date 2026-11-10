@@ -1,3 +1,4 @@
+import { AUTH_ACTIVE_USER_CHANGED_EVENT } from '@/constants/auth-events'
 import {
   SETTINGS_CLOUD_SYNC_ENABLED,
   SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
@@ -7,10 +8,14 @@ import {
 } from '@/constants/storage-keys'
 import { authTokenManager } from '@/services/auth'
 import { encryptionService } from '@/services/encryption/encryption-service'
-import { HarnessProvider, useHarness } from '@/services/harness/provider'
+import {
+  HarnessProvider,
+  SESSION_RETRY_DELAYS_MS,
+  useHarness,
+} from '@/services/harness/provider'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from './harness-fixture'
+import { fakeTimeouts, SEALED, testSession } from './harness-fixture'
 
 const { auth, secure, controlplane } = vi.hoisted(() => ({
   auth: {
@@ -258,6 +263,177 @@ it('opens a shared chat as a visitor before Clerk loads, and keeps that session 
   await waitFor(() =>
     expect(screen.getByText('Connecting')).toBeInTheDocument(),
   )
+})
+
+// A refusal the enclave sealed, as the harness gives one.
+function refusal(error: Record<string, unknown>, status: number) {
+  return Response.json({ error }, { status, headers: SEALED })
+}
+
+// Lets a load do what it does between two waits, without passing a wait.
+const settle = () => act(() => vi.advanceTimersByTimeAsync(0))
+
+describe('a session that fails to load', () => {
+  it.each([
+    {
+      failure: 'cannot be reached',
+      fail: () =>
+        secure.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch')),
+      shown: 'Failed to fetch',
+      wait: SESSION_RETRY_DELAYS_MS[0],
+    },
+    {
+      failure: 'names a longer wait',
+      fail: () =>
+        secure.fetch.mockResolvedValueOnce(
+          refusal(
+            {
+              code: 'UPSTREAM_REFUSED',
+              message: 'The chat service is starting',
+              action: 'retry',
+              retryAfter: 5,
+            },
+            503,
+          ),
+        ),
+      shown: 'The chat service is starting',
+      wait: 5_000,
+    },
+  ])(
+    'loads on its own once a chat service that $failure answers',
+    async ({ fail, shown, wait }) => {
+      fakeTimeouts()
+      fail()
+      render(
+        <HarnessProvider>
+          <SessionStatus />
+        </HarnessProvider>,
+      )
+      await settle()
+      expect(screen.getByRole('alert')).toHaveTextContent(shown)
+
+      await act(() => vi.advanceTimersByTimeAsync(wait - 1))
+      expect(secure.fetch).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('alert')).toHaveTextContent(shown)
+
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(secure.fetch).toHaveBeenCalledTimes(2)
+      expect(
+        screen.getByText('Anonymous chat ready with 9 requests'),
+      ).toBeInTheDocument()
+    },
+  )
+
+  it.each([
+    {
+      failure: 'the chat service refuses for good',
+      fail: () =>
+        secure.fetch.mockResolvedValue(
+          refusal(
+            {
+              code: 'BAD_REQUEST',
+              message: 'This client is too old',
+              action: 'stop',
+            },
+            400,
+          ),
+        ),
+      shown: 'This client is too old',
+    },
+    {
+      failure: 'a signed-in account has no JWT',
+      fail: () => {
+        auth.userId = 'signed-in-account'
+      },
+      shown: 'Authentication token is unavailable',
+    },
+  ])('is not asked for again when $failure', async ({ fail, shown }) => {
+    fakeTimeouts()
+    fail()
+    render(
+      <HarnessProvider>
+        <SessionStatus />
+      </HarnessProvider>,
+    )
+    await settle()
+    expect(screen.getByRole('alert')).toHaveTextContent(shown)
+    const requests = secure.fetch.mock.calls.length
+    const tokens = auth.getToken.mock.calls.length
+
+    await act(() =>
+      vi.advanceTimersByTimeAsync(
+        SESSION_RETRY_DELAYS_MS.reduce((sum, ms) => sum + ms, 0),
+      ),
+    )
+
+    expect(secure.fetch).toHaveBeenCalledTimes(requests)
+    expect(auth.getToken).toHaveBeenCalledTimes(tokens)
+    expect(screen.getByRole('alert')).toHaveTextContent(shown)
+  })
+
+  it('leaves a load that waits to the one asked for after it', async () => {
+    fakeTimeouts()
+    secure.fetch.mockRejectedValue(new TypeError('Failed to fetch'))
+    render(
+      <HarnessProvider>
+        <SessionStatus />
+      </HarnessProvider>,
+    )
+    await settle()
+    expect(secure.fetch).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      window.dispatchEvent(new Event(AUTH_ACTIVE_USER_CHANGED_EVENT))
+    })
+    await settle()
+    expect(secure.fetch).toHaveBeenCalledTimes(2)
+
+    await act(() => vi.advanceTimersByTimeAsync(SESSION_RETRY_DELAYS_MS[0]))
+    expect(secure.fetch).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps trying a load when the one asked for after it never starts', async () => {
+    fakeTimeouts()
+    auth.userId = 'signed-in-account'
+    auth.getToken.mockResolvedValue('signed-in-jwt')
+    let initialize!: () => void
+    vi.mocked(encryptionService.initialize)
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          initialize = () => done(null)
+        }),
+      )
+      .mockRejectedValueOnce(new Error('invalid saved key'))
+    secure.fetch
+      .mockReset()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockImplementation(async () =>
+        Response.json({
+          ...testSession,
+          user: { id: 'signed-in-account', anonymous: false },
+        }),
+      )
+    render(
+      <HarnessProvider>
+        <SessionStatus />
+      </HarnessProvider>,
+    )
+    await settle()
+    act(() => {
+      window.dispatchEvent(new Event(AUTH_ACTIVE_USER_CHANGED_EVENT))
+    })
+    await settle()
+    expect(screen.getByRole('alert')).toHaveTextContent('invalid saved key')
+    expect(secure.fetch).not.toHaveBeenCalled()
+
+    await act(async () => initialize())
+    await settle()
+    expect(secure.fetch).toHaveBeenCalledTimes(1)
+
+    await act(() => vi.advanceTimersByTimeAsync(SESSION_RETRY_DELAYS_MS[0]))
+    expect(secure.fetch).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('Connecting')).toBeInTheDocument()
+  })
 })
 
 function StorageMode() {
