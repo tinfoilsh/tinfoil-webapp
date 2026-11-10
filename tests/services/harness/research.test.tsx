@@ -232,6 +232,29 @@ describe('deep research', () => {
     expect(hook.result.current.research).toBe(true)
   })
 
+  it('turns off once web search is turned off, and on in a chat that searches nothing else', async () => {
+    const hook = await openCloud(researching)
+    act(() => hook.result.current.setResearch(true))
+    act(() => hook.result.current.setWebSearch(false))
+    expect(hook.result.current.research).toBe(false)
+
+    client.events.mockImplementationOnce(reply('msg_answer'))
+    await act(async () => {
+      await hook.result.current.send({
+        content: 'Lighthouses?',
+        options: { ...options, webSearch: false },
+      })
+    })
+    expect(turn(0).options).toEqual({ ...sent, webSearch: false })
+
+    // The chat still searches nothing, and its next question is researched.
+    act(() => hook.result.current.setResearch(true))
+    expect(hook.result.current.research).toBe(true)
+    expect(hook.result.current.chat.webSearchEnabled).toBe(false)
+    act(() => hook.result.current.setWebSearch(true))
+    expect(hook.result.current.research).toBe(true)
+  })
+
   it.each([
     {
       case: 'the session does not offer it',

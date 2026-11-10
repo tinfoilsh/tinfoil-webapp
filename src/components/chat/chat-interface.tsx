@@ -505,13 +505,16 @@ export function ChatInterface({
     (session?.features.webSearch ?? false) &&
     (profile.webSearchAvailable ?? true)
   const chatWebSearchEnabled = currentChat.webSearchEnabled ?? true
-  const effectiveWebSearchEnabled = webSearchAvailable && chatWebSearchEnabled
   // Deep research, which a subscriber's session offers, searches the web, so
   // Settings turning web search off turns it off too.
   const researchAvailable =
     (session?.features.research ?? false) &&
     (profile.webSearchAvailable ?? true)
   const researchEnabled = researchAvailable && thread.research
+  // A researched question searches the web whatever its chat's setting, so
+  // web search shows on while deep research is.
+  const effectiveWebSearchEnabled =
+    webSearchAvailable && (chatWebSearchEnabled || researchEnabled)
   const contextUsage = thread.contextUsage
   const modKey =
     typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)

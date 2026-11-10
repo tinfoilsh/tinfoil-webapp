@@ -933,7 +933,9 @@ export function useThread(
     setModel: (next: string) => patch({ model: next, modelChosen: true }),
     presetId,
     selectPreset,
-    setWebSearch: (next: boolean) => patch({ webSearch: next }),
+    // Deep research searches the web, so turning web search off turns it off.
+    setWebSearch: (next: boolean) =>
+      patch({ webSearch: next, ...(next ? {} : { research: false }) }),
     research: openState.research,
     setResearch: (next: boolean) => patch({ research: next }),
     temporary,
