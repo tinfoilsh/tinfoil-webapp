@@ -3,6 +3,7 @@ import type {
   TimelineURLFetchBlock,
   TimelineWebSearchBlock,
 } from '@/components/chat/types'
+import { TfWebSearch } from '@tinfoilsh/tinfoil-icons'
 import { memo, useId, useMemo, useState, type ReactNode } from 'react'
 import { ThinkingLabel, ThoughtProcess } from './ThoughtProcess'
 import {
@@ -141,12 +142,19 @@ export const WorkProcess = memo(function WorkProcess({
           ) : activity?.kind === 'action' ? (
             activity.label
           ) : activity?.kind === 'idle' ? (
-            <span className="font-medium">Working</span>
+            <span className="font-medium">
+              {research ? 'Researching' : 'Working'}
+            </span>
           ) : (
             <span className="font-medium">{description}</span>
           )
         }
         isRunning={isActive}
+        runningIcon={
+          research ? (
+            <TfWebSearch className="h-4 w-4 animate-pulse text-content-muted motion-reduce:animate-none" />
+          ) : undefined
+        }
         startedAt={startedAt}
         isExpanded={isExpanded}
         onToggle={() => setIsExpanded((v) => !v)}
