@@ -1184,7 +1184,7 @@ export interface components {
       profileDefaults: components['schemas']['Profile']
       composer: components['schemas']['Composer']
       presets: components['schemas']['Preset'][]
-      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. research is true while this caller may send a turn with options.research, which only a subscriber may. */
+      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes. */
       features: {
         [key: string]: boolean
       }
@@ -1686,7 +1686,7 @@ export interface components {
       rateLimit?: components['schemas']['RateLimit']
       metadata?: components['schemas']['RunMetadata']
     }
-    /** @description What a run's last event reports. A device chat's run returns the whole chat. */
+    /** @description What a run's last event reports. A device chat's run returns the whole chat, or the chat from the compaction marker its client sent it from, as ThreadInput describes. */
     RunMetadata: {
       messages?: components['schemas']['CommittedReply'][]
       thread?: components['schemas']['ThreadRecord']
@@ -1830,7 +1830,7 @@ export interface components {
      *     no action on it.
      */
     Compaction: {
-      /** @description How many messages the summary covers, those an earlier marker covered included. */
+      /** @description How many messages the summary covers, those an earlier marker covered included, whether or not a device sent the harness the messages before that marker. */
       messages: number
       /** @description When the summary was started, in epoch milliseconds. */
       startedAt: number
@@ -2003,7 +2003,29 @@ export interface components {
       compaction?: components['schemas']['Compaction']
       research?: components['schemas']['Research']
     }
-    /** @description A device chat as its client sends it: a ThreadRecord the harness returned, sent back whole, or a record without a recordVersion that an older client kept or a client made for a new chat. The harness refuses a ThreadRecord with a member its version does not have. */
+    /**
+     * @description A device chat as its client sends it: a ThreadRecord the harness
+     *     returned, sent back whole, or a record without a recordVersion that an
+     *     older client kept or a client made for a new chat. The harness refuses
+     *     a ThreadRecord with a member its version does not have.
+     *
+     *     While the session's features.partialThread is true, a client may send
+     *     a ThreadRecord from its latest compaction marker on, leaving out the
+     *     messages before that marker, which its summary covers. It may do so
+     *     in a turn, in a change of the chat's settings, in an answer to a
+     *     questions widget and in a request to read a message aloud, unless the
+     *     request names a message, a tool call or an attachment among the
+     *     messages left out, which sends the record whole. A turn also sends
+     *     the record whole unless a question after the marker comes before the
+     *     one it answers: the harness reads the exchange before the question a
+     *     turn answers, which the marker otherwise covers. The harness reads
+     *     the chat as it reads the whole record, except that a question sends
+     *     no answers to a questions widget among the messages left out. What it
+     *     returns of the chat starts at that marker too, a run's thread and
+     *     window among them, and its messageCount counts the messages sent: the
+     *     client keeps the messages it left out before the messages returned.
+     *     Every other request sends the record whole.
+     */
     ThreadInput: {
       /** @description The version of the ThreadRecord the harness returned. Absent from a record an older client kept or a client made. */
       recordVersion?: number
