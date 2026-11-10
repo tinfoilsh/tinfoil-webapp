@@ -539,7 +539,7 @@ function ShareModalContent({
                             <button
                               onClick={handleShareLink}
                               disabled={!canChangeSharing || !chatId}
-                              className="flex items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="flex items-center justify-center gap-2 rounded-lg bg-tinfoil-twilight px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-tinfoil-twilight-hover disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               {isUploading ? (
                                 <>
@@ -578,7 +578,7 @@ function ShareModalContent({
                             <button
                               onClick={handleCopyShareUrl}
                               disabled={!canChangeSharing}
-                              className="flex items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90"
+                              className="flex items-center justify-center gap-2 rounded-lg bg-tinfoil-twilight px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-tinfoil-twilight-hover"
                             >
                               {isLinkCopied ? (
                                 <>

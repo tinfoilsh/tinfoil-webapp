@@ -1,3 +1,12 @@
+# Colors
+
+Use Twilight (`#6B5B95`) with white text for primary actions and CTAs. Keep
+Brass (`#D3A569`) for decorative accents and Deep Teal for branding. Match the
+websites' surface roles: Bone (`#F2F1EC`) for `surface-canvas`, white for
+`surface-raised`, and `#F9F8F6` for `surface-muted`. Dark mode maps these to
+`#121212`, `#1C1C1E`, and `#2C2C2E`. Use the semantic surface tokens for chat,
+sidebar, input, and dialog backgrounds.
+
 # Logging in this project
 
 Never use console.log/error/warn in production code. Use the logging utilities from `@/utils/error-handling`.

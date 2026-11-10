@@ -2056,7 +2056,7 @@ ${encryptionKey.replace('key_', '')}
                     type="button"
                     onClick={handleSavePersonalization}
                     disabled={profileLocked}
-                    className="rounded-lg bg-brand-accent-dark px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-tinfoil-twilight px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -2163,7 +2163,7 @@ ${encryptionKey.replace('key_', '')}
                   <button
                     onClick={handleSavePersonalization}
                     disabled={profileLocked}
-                    className="rounded-lg bg-brand-accent-dark px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-tinfoil-twilight px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -4378,7 +4378,7 @@ ${encryptionKey.replace('key_', '')}
                               }}
                               disabled={upgradeLoading}
                               className={cn(
-                                'mt-4 w-full rounded-md bg-brand-accent-dark px-4 py-3 text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90',
+                                'mt-4 w-full rounded-md bg-tinfoil-twilight px-4 py-3 text-sm font-medium text-white transition-all hover:bg-tinfoil-twilight-hover',
                                 upgradeLoading &&
                                   'cursor-not-allowed opacity-70',
                               )}
@@ -4494,7 +4494,7 @@ ${encryptionKey.replace('key_', '')}
                         </p>
                         <Link
                           href="/signin"
-                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90"
+                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-tinfoil-twilight px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-tinfoil-twilight-hover"
                         >
                           <TfSignIn className="h-4 w-4" aria-hidden="true" />
                           Sign in or sign up

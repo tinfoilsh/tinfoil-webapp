@@ -95,7 +95,7 @@ const STORAGE_TAB_INACTIVE_CLASS_NAME =
 const STORAGE_TAB_DROP_TARGET_CLASS_NAME =
   'border-tinfoil-twilight ring-2 ring-tinfoil-twilight-soft'
 const SIDEBAR_CTA_CLASS_NAME =
-  'block w-full rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90'
+  'block w-full rounded-md bg-tinfoil-twilight px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-tinfoil-twilight-hover'
 
 // Utility function to detect iOS devices
 function isIOSDevice() {
@@ -1102,7 +1102,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                   <button
                     type="button"
                     onClick={onCloudSyncSetupClick}
-                    className="mt-2 w-full rounded-md bg-tinfoil-brass px-2.5 py-1.5 font-aeonik text-xs font-medium text-brand-dark transition-colors hover:bg-tinfoil-brass-hover"
+                    className="mt-2 w-full rounded-md bg-tinfoil-twilight px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover"
                   >
                     {backupWarningNeedsRecovery
                       ? 'Set Up Cloud Sync'
@@ -2202,7 +2202,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                               <button
                                 type="button"
                                 onClick={onUnlockChats}
-                                className="mt-3 rounded-md bg-tinfoil-brass px-2.5 py-1.5 font-aeonik text-xs font-medium text-brand-dark transition-colors hover:bg-tinfoil-brass-hover"
+                                className="mt-3 rounded-md bg-tinfoil-twilight px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover"
                               >
                                 Unlock
                               </button>

@@ -1923,7 +1923,7 @@ export function ChatInterface({
           </p>
           <button
             onClick={() => window.location.reload()}
-            className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
+            className="rounded-lg bg-tinfoil-twilight px-6 py-2.5 text-white transition-colors hover:bg-tinfoil-twilight-hover"
           >
             Try Now
           </button>

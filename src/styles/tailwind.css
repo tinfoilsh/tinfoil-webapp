@@ -24,19 +24,22 @@
     --color-accent-light-darker: 195 24.8% 67.3%;
 
     /* Surface tokens */
-    --surface-background: 40 20% 97%;
-    --surface-chat-background: 40 20% 97%;
-    --surface-chat: 40 15% 92%;
-    --surface-card: 40 15% 92%;
-    --surface-sidebar: 40 20% 97%;
-    --surface-sidebar-panel: 40 15% 92%;
-    --surface-sidebar-button: 40 20% 97%;
-    --surface-sidebar-button-hover: 40 15% 90%;
-    --surface-settings: 40 15% 92%;
-    --surface-input: 40 15% 92%;
-    --surface-thinking: 40 15% 92%;
-    --surface-message-user: 40 15% 92%;
-    --surface-message-assistant: 40 20% 97%;
+    --surface-canvas: 50 18.7% 93.7%;
+    --surface-raised: 0 0% 100%;
+    --surface-muted: 40 20% 97%;
+    --surface-background: var(--surface-canvas);
+    --surface-chat-background: var(--surface-canvas);
+    --surface-chat: var(--surface-muted);
+    --surface-card: var(--surface-raised);
+    --surface-sidebar: var(--surface-canvas);
+    --surface-sidebar-panel: var(--surface-raised);
+    --surface-sidebar-button: var(--surface-canvas);
+    --surface-sidebar-button-hover: var(--surface-muted);
+    --surface-settings: var(--surface-raised);
+    --surface-input: var(--surface-raised);
+    --surface-thinking: var(--surface-muted);
+    --surface-message-user: var(--surface-muted);
+    --surface-message-assistant: var(--surface-canvas);
     --redaction-block: 0 0% 6%;
 
     /* Borders */
@@ -50,7 +53,7 @@
     --content-inverse: 0 0% 100%;
 
     /* Buttons */
-    --button-send-background: var(--color-brand-dark);
+    --button-send-background: var(--primary);
     --button-send-foreground: 0 0% 100%;
 
     /* Neutral scale */
@@ -73,7 +76,7 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
-    --primary: var(--color-brand-dark);
+    --primary: 257 24.2% 47.1%;
     --primary-foreground: 0 0% 100%;
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
@@ -85,7 +88,7 @@
     --destructive-foreground: 0 0% 98%;
     --border: var(--border-subtle);
     --input: var(--border-subtle);
-    --ring: var(--color-accent-light);
+    --ring: var(--primary);
     --chart-1: 195 30.8% 73.9%;
     --chart-2: 180 100% 28%;
     --chart-3: 198 68.4% 40%;
@@ -98,19 +101,9 @@
   .dark {
     color-scheme: dark;
 
-    --surface-background: var(--color-brand-dark);
-    --surface-chat-background: 0 0% 7.1%;
-    --surface-chat: 240 2.2% 17.6%;
-    --surface-card: 240 3.4% 11.4%;
-    --surface-sidebar: 0 0% 7.1%;
-    --surface-sidebar-panel: 0 0% 11.7%;
-    --surface-sidebar-button: 240 2.2% 17.6%;
-    --surface-sidebar-button-hover: 240 2.2% 22%;
-    --surface-settings: 0 0% 7.1%;
-    --surface-input: 240 2.2% 17.6%;
-    --surface-thinking: 240 2.2% 17.6%;
-    --surface-message-user: 240 2.2% 17.6%;
-    --surface-message-assistant: 0 0% 7.1%;
+    --surface-canvas: 0 0% 7.1%;
+    --surface-raised: 240 3.4% 11.4%;
+    --surface-muted: 240 2.2% 17.6%;
     --redaction-block: 0 0% 4%;
 
     --border-subtle: 240 3.7% 26%;
@@ -121,8 +114,8 @@
     --content-muted: 218 10.6% 72%;
     --content-inverse: var(--color-brand-dark);
 
-    --button-send-background: 0 0% 100%;
-    --button-send-foreground: var(--color-brand-dark);
+    --button-send-background: var(--primary);
+    --button-send-foreground: 0 0% 100%;
 
     --color-accent-light-darker: 195 24.8% 67.3%;
 
@@ -144,8 +137,8 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
-    --primary: var(--color-accent-light);
-    --primary-foreground: var(--color-brand-dark);
+    --primary: 257 24.2% 47.1%;
+    --primary-foreground: 0 0% 100%;
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
     --muted: var(--surface-chat);
@@ -156,7 +149,7 @@
     --destructive-foreground: 0 0% 98%;
     --border: var(--border-subtle);
     --input: var(--border-subtle);
-    --ring: var(--color-accent-light);
+    --ring: 257 32% 70%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;

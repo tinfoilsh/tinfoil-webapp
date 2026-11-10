@@ -48,7 +48,7 @@ const icons = {
 } as const
 
 const ACTION_CLASS_NAME =
-  'rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white hover:bg-brand-accent-dark/90'
+  'rounded-lg bg-tinfoil-twilight px-6 py-2.5 text-white hover:bg-tinfoil-twilight-hover'
 const SECONDARY_ACTION_CLASS_NAME =
   'rounded-lg border border-border-subtle px-6 py-2.5 text-content-primary transition-colors hover:bg-surface-chat'
 

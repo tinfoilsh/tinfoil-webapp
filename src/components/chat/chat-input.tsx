@@ -1274,7 +1274,7 @@ export const ChatInput = memo(function ChatInput({
                         }
                       }}
                       className={cn(
-                        'group flex h-10 w-10 items-center justify-center rounded-site-control bg-tinfoil-brass text-brand-dark transition-colors hover:bg-tinfoil-brass-hover disabled:opacity-50 md:h-8 md:w-8',
+                        'group flex h-10 w-10 items-center justify-center rounded-site-control bg-tinfoil-twilight text-white transition-colors hover:bg-tinfoil-twilight-hover disabled:opacity-50 md:h-8 md:w-8',
                         !isCompact && 'ml-2',
                       )}
                       style={{ WebkitTapHighlightColor: 'transparent' }}

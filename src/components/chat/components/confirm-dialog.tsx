@@ -65,7 +65,7 @@ export function ConfirmDialog({
                   'rounded-lg px-3 py-2 text-sm font-semibold text-white transition-colors',
                   isDestructive
                     ? 'bg-red-600 hover:bg-red-700'
-                    : 'bg-brand-accent-dark hover:bg-brand-accent-dark/90',
+                    : 'bg-tinfoil-twilight hover:bg-tinfoil-twilight-hover',
                 )}
               >
                 {confirmLabel}

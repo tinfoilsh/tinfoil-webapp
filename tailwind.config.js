@@ -1,6 +1,6 @@
 const { radius } = require('./src/lib/radius')
 const TINFOIL_TWILIGHT_RGB = '107 91 149'
-const TINFOIL_BRASS_RGB = '201 147 79'
+const TINFOIL_BRASS_RGB = '211 165 105'
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -100,12 +100,11 @@ module.exports = {
           'accent-light-darker':
             'hsl(var(--color-accent-light-darker) / <alpha-value>)',
         },
-        // Mirrors tinfoil-brass from @tinfoil/tailwind-preset. Buttons on it
-        // use brand-dark text; white text is not legible on Brass.
+        // Mirrors the decorative Brass accent in @tinfoil/tailwind-preset.
         'tinfoil-brass': {
           DEFAULT: `rgb(${TINFOIL_BRASS_RGB})`,
-          hover: '#BF8640',
-          darker: '#B37E3D',
+          hover: '#C9934F',
+          darker: '#BF8640',
           subtle: `rgb(${TINFOIL_BRASS_RGB} / 0.10)`,
           soft: `rgb(${TINFOIL_BRASS_RGB} / 0.30)`,
           medium: `rgb(${TINFOIL_BRASS_RGB} / 0.60)`,
@@ -124,6 +123,9 @@ module.exports = {
           bold: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.90)`,
         },
         surface: {
+          canvas: 'hsl(var(--surface-canvas) / <alpha-value>)',
+          raised: 'hsl(var(--surface-raised) / <alpha-value>)',
+          muted: 'hsl(var(--surface-muted) / <alpha-value>)',
           background: 'hsl(var(--surface-background) / <alpha-value>)',
           chat: 'hsl(var(--surface-chat) / <alpha-value>)',
           'chat-background':

@@ -6,8 +6,8 @@
  * - tinfoil-light: #F2F1EC Bone (light background)
  * - tinfoil-accent-dark: #004444 Deep Teal (primary brand color)
  * - tinfoil-accent-light: #A8C7D1 Steel Mist (accent/success color)
- * - tinfoil-twilight: #6B5B95 Twilight (selection, hovers, charts)
- * - tinfoil-brass: #C9934F Brass (buttons and calls to action, with dark text)
+ * - tinfoil-twilight: #6B5B95 Twilight (actions, selection, hovers, charts)
+ * - tinfoil-brass: #D3A569 Brass (decorative accents)
  */
 
 export const colors = {
@@ -37,14 +37,14 @@ export const colors = {
     darker: '#97B6C0',
   },
 
-  // Tinfoil twilight - used for selection, hovers, charts
+  // Tinfoil twilight - used for actions, selection, hovers, charts
   'tinfoil-twilight': {
     DEFAULT: '#6B5B95',
   },
 
-  // Tinfoil brass - used for buttons and calls to action, with dark text
+  // Tinfoil brass - used for decorative accents
   'tinfoil-brass': {
-    DEFAULT: '#C9934F',
+    DEFAULT: '#D3A569',
   },
 
   // Legacy gray colors for general use
@@ -128,7 +128,7 @@ export const TINFOIL_COLORS = {
     accentLight: colors['tinfoil-accent-light'].DEFAULT,
   },
   surface: {
-    cardLight: colors['tinfoil-light'].DEFAULT,
+    cardLight: '#FFFFFF',
     cardDark: '#1C1C1E',
   },
   content: {

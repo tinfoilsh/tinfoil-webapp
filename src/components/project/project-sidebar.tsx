@@ -852,9 +852,9 @@ export const ProjectSidebar = memo(function ProjectSidebar({
                 clearDragState()
               }}
               className={cn(
-                'inline-flex items-center gap-2 rounded-lg bg-tinfoil-brass px-3 py-1.5 text-sm text-brand-dark transition-colors hover:bg-tinfoil-brass-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-surface-sidebar',
+                'inline-flex items-center gap-2 rounded-lg bg-tinfoil-twilight px-3 py-1.5 text-sm text-white transition-colors hover:bg-tinfoil-twilight-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-surface-sidebar',
                 isExitButtonDragHover &&
-                  'bg-tinfoil-brass-darker ring-2 ring-tinfoil-brass-soft',
+                  'bg-tinfoil-twilight-darker ring-2 ring-tinfoil-twilight-soft',
               )}
             >
               <TfArrowLeftAnimated className="h-4 w-4" aria-hidden="true" />
@@ -1145,7 +1145,7 @@ export const ProjectSidebar = memo(function ProjectSidebar({
                           disabled={isSaving}
                           className={cn(
                             'w-full rounded-lg px-3 py-2 font-aeonik text-sm font-medium transition-colors',
-                            'bg-brand-accent-dark text-white hover:bg-brand-accent-dark/90',
+                            'bg-tinfoil-twilight text-white hover:bg-tinfoil-twilight-hover',
                             isSaving && 'cursor-not-allowed opacity-50',
                           )}
                         >
