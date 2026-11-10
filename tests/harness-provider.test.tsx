@@ -391,6 +391,49 @@ describe('a session that fails to load', () => {
     await act(() => vi.advanceTimersByTimeAsync(SESSION_RETRY_DELAYS_MS[0]))
     expect(secure.fetch).toHaveBeenCalledTimes(3)
   })
+
+  it('keeps trying a load when the one asked for after it never starts', async () => {
+    fakeTimeouts()
+    auth.userId = 'signed-in-account'
+    auth.getToken.mockResolvedValue('signed-in-jwt')
+    let initialize!: () => void
+    vi.mocked(encryptionService.initialize)
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          initialize = () => done(null)
+        }),
+      )
+      .mockRejectedValueOnce(new Error('invalid saved key'))
+    secure.fetch
+      .mockReset()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockImplementation(async () =>
+        Response.json({
+          ...testSession,
+          user: { id: 'signed-in-account', anonymous: false },
+        }),
+      )
+    render(
+      <HarnessProvider>
+        <SessionStatus />
+      </HarnessProvider>,
+    )
+    await settle()
+    act(() => {
+      window.dispatchEvent(new Event(AUTH_ACTIVE_USER_CHANGED_EVENT))
+    })
+    await settle()
+    expect(screen.getByRole('alert')).toHaveTextContent('invalid saved key')
+    expect(secure.fetch).not.toHaveBeenCalled()
+
+    await act(async () => initialize())
+    await settle()
+    expect(secure.fetch).toHaveBeenCalledTimes(1)
+
+    await act(() => vi.advanceTimersByTimeAsync(SESSION_RETRY_DELAYS_MS[0]))
+    expect(secure.fetch).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('Connecting')).toBeInTheDocument()
+  })
 })
 
 function StorageMode() {

@@ -126,16 +126,20 @@ export function HarnessProvider({
       const api = new HarnessAPI(new HarnessClient(url, getter), userId ?? null)
       release = activateAPI(api)
       setSessionAPI(api)
-      // A load asked for while another still tries takes its place.
+      // A load that starts while another still tries takes its place.
       let loads = 0
       const refresh = () => {
-        const load = ++loads
-        const current = () => load === loads && !api.lifetime.signal.aborted
         const initialization = userId
           ? encryptionService.initialize().then(enableCloudSyncForExistingKey)
           : Promise.resolve()
         void initialization
-          .then(() => loadSession(api, current))
+          .then(() => {
+            const load = ++loads
+            return loadSession(
+              api,
+              () => load === loads && !api.lifetime.signal.aborted,
+            )
+          })
           .catch(reportHarnessError)
       }
       const unlock = () => {
