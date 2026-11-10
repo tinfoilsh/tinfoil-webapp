@@ -2189,8 +2189,8 @@ export const ChatSidebar = memo(function ChatSidebar({
                                 No local chats yet
                               </p>
                               <p className="mt-1 text-xs text-content-muted">
-                                Disable cloud sync in settings to create
-                                local-only chats
+                                Start a chat from this tab to keep it only on
+                                this device
                               </p>
                             </div>
                           ) : onUnlockChats ? (
