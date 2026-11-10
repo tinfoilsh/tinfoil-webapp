@@ -38,6 +38,26 @@ describe('StreamErrorBanner', () => {
     expect(screen.getByText('Authentication is not initialized')).toBeVisible()
   })
 
+  it('offers a signed-in account whose sign-in arrived too late to resend, not to sign in again', () => {
+    const onRetry = vi.fn()
+    render(
+      <StreamErrorBanner
+        error={{
+          code: 'SIGN_IN_UNCONFIRMED',
+          action: 'retry',
+          message: 'The chat service could not confirm your sign-in in time.',
+        }}
+        isDarkMode={false}
+        onRetry={onRetry}
+        onDismiss={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Sign in again')
+    fireEvent.click(screen.getByRole('button', { name: 'Resend message' }))
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
   it('supports resend, details, and dismissal', () => {
     const onRetry = vi.fn()
     const onDismiss = vi.fn()

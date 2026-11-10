@@ -26,6 +26,7 @@ export type ClientErrorCode =
   | 'LOCAL_SAVE_FAILED'
   | 'LOCAL_CHAT_UNREADABLE'
   | 'PROFILE_LOADING'
+  | 'SIGN_IN_UNCONFIRMED'
 
 // Why a request or run failed: as the harness reports it, or as this client
 // met it on its own.

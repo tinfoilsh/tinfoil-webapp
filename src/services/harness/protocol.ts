@@ -151,6 +151,9 @@ export const ERROR_CODES = {
   // Set by this client, not the harness: a change that needs the account's
   // settings before they have loaded.
   profileLoading: 'PROFILE_LOADING',
+  // Set by this client, not the harness: the harness refused a sign-in or
+  // chat access the account had just renewed.
+  signInUnconfirmed: 'SIGN_IN_UNCONFIRMED',
 } as const satisfies Record<string, ErrorCode | ClientErrorCode>
 
 // What this client does about an error it has no handling of its own for.
@@ -211,6 +214,17 @@ export const unverified = (): HarnessErrorBody => ({
   action: ERROR_ACTIONS.retry,
   message:
     'The chat service could not be verified in time. Check your connection and try again.',
+})
+
+// Why a request failed when the harness refused a sign-in or chat access the
+// account had just renewed, as when the request took too long to arrive. The
+// account is signed in, so signing in again would change nothing, and the
+// request was not carried out.
+export const unconfirmed = (): HarnessErrorBody => ({
+  code: ERROR_CODES.signInUnconfirmed,
+  action: ERROR_ACTIONS.retry,
+  message:
+    'The chat service could not confirm your sign-in in time. Check your connection and try again.',
 })
 
 // Carries a signed-in account's chat access, which the harness checks before

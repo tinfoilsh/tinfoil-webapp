@@ -12,6 +12,7 @@ import {
   RESPONSE_NONCE_HEADER,
   ROUTES,
   unanswered,
+  unconfirmed,
   unsealedRefusal,
   unverified,
   type HarnessRoute,
@@ -338,6 +339,9 @@ export class HarnessClient {
         continue
       }
       if (needsCredential && refusal) throw refusal
+      // Refused again with what the account just renewed: it is signed in.
+      if (detail.action === ERROR_ACTIONS.reauthenticate && !anonymous)
+        throw new HarnessError(unconfirmed())
       throw new HarnessError(detail, response.status)
     }
     throw new HarnessError(
