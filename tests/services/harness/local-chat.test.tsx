@@ -154,6 +154,20 @@ const seeded = (fields: Partial<StoredThread> = {}) =>
     messages: SEEDED_MESSAGES,
     ...fields,
   })
+// The marker of a compaction that summarized the seeded messages.
+const COMPACTION_MARKER: ThreadMessage = {
+  id: 'msg_marker',
+  role: 'compaction',
+  createdAt: 't5',
+  content: '## Goals and context\nTwo questions so far.',
+  compaction: {
+    messages: 4,
+    startedAt: 1767225600000,
+    endedAt: 1767225601000,
+    model: 'long-summary',
+    version: 1,
+  },
+}
 
 resetChatStoresAroundEachTest()
 
@@ -1083,19 +1097,6 @@ describe('local chats of a signed-in account without cloud sync', () => {
   it('stores the compaction marker a run returns and sends it back unchanged', async () => {
     signIn('alice')
     await localThreadStore('device').update(SEEDED_ID, () => seeded())
-    const marker: ThreadMessage = {
-      id: 'msg_marker',
-      role: 'compaction',
-      createdAt: 't5',
-      content: '## Goals and context\nTwo questions so far.',
-      compaction: {
-        messages: 4,
-        startedAt: 1767225600000,
-        endedAt: 1767225601000,
-        model: 'long-summary',
-        version: 1,
-      },
-    }
     let returned!: ReturnedThread
     client.events.mockImplementationOnce((_path: string, input: Turn) => {
       returned = {
@@ -1103,7 +1104,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
           lastRequestId: input.clientRequestId,
           messages: [
             ...SEEDED_MESSAGES,
-            marker,
+            COMPACTION_MARKER,
             {
               id: input.clientRequestId,
               role: 'user',
@@ -1936,19 +1937,6 @@ describe('stored local chat changes', () => {
 })
 
 describe('a compacted chat the harness takes from its latest compaction marker', () => {
-  const MARKER: ThreadMessage = {
-    id: 'msg_marker',
-    role: 'compaction',
-    createdAt: 't5',
-    content: '## Goals and context\nTwo questions so far.',
-    compaction: {
-      messages: 4,
-      startedAt: 1767225600000,
-      endedAt: 1767225601000,
-      model: 'long-summary',
-      version: 1,
-    },
-  }
   const question = (id: string, createdAt: string, content: string) =>
     ({ id, role: 'user', createdAt, content }) satisfies ThreadMessage
   const reply = (id: string, createdAt: string, content: string) =>
@@ -1967,7 +1955,7 @@ describe('a compacted chat the harness takes from its latest compaction marker',
   const A5 = reply('a5', 't11', 'fifth answer')
   // The messages the marker's summary covers, and the chat from it on.
   const EARLIER = SEEDED_MESSAGES
-  const LATER = [MARKER, U3, A3, U4, A4]
+  const LATER = [COMPACTION_MARKER, U3, A3, U4, A4]
   // The record version that holds compaction markers.
   const compacted = (messages: ThreadMessage[] = [...EARLIER, ...LATER]) => ({
     ...seeded({ messages }),
@@ -2126,7 +2114,7 @@ describe('a compacted chat the harness takes from its latest compaction marker',
           thread && {
             ...thread,
             messages: thread.messages.filter(
-              ({ id }) => id !== 'a1' && id !== MARKER.id,
+              ({ id }) => id !== 'a1' && id !== COMPACTION_MARKER.id,
             ),
           },
       )
@@ -2182,8 +2170,8 @@ describe('a compacted chat the harness takes from its latest compaction marker',
       turn: 'a retry of the first reply after the marker',
       send: (thread: ReturnType<typeof useThread>) =>
         thread.send({ kind: 'retry' }),
-      later: [MARKER, U3, A3],
-      sent: [...EARLIER, MARKER, U3, A3],
+      later: [COMPACTION_MARKER, U3, A3],
+      sent: [...EARLIER, COMPACTION_MARKER, U3, A3],
     },
   ])('sends $turn the messages the harness reads', async (row) => {
     const { result } = await openCompacted(row.later)
