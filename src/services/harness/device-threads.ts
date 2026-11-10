@@ -2,6 +2,8 @@ import type { Attachment as UIAttachment } from '@/components/chat/types'
 import { speechSpeed } from '@/services/speech/speed'
 import { logError } from '@/utils/error-handling'
 import {
+  afterEarlier,
+  fromLatestCompaction,
   heldImages,
   holdImages,
   isThread,
@@ -14,7 +16,12 @@ import {
   type LocalThreadStore,
 } from './local-threads'
 import { imageBlob, uploaded, type OpenAttachments } from './open-attachments'
-import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
+import {
+  ERROR_ACTIONS,
+  ERROR_CODES,
+  PARTIAL_THREAD_FEATURE,
+  ROUTES,
+} from './protocol'
 import { cutOffReplies, withReplies, type ChatState } from './reducer'
 import type { DeviceRun, RunController } from './run-controller'
 import { getView, type HarnessAPI } from './runtime'
@@ -73,11 +80,13 @@ type ChangeRoute =
   | typeof ROUTES.messageAnswer
   | typeof ROUTES.fork
 
-// A device run's final event carries the whole thread, which this device
-// stores with the images it holds where the harness left them out, and the
-// originals of the images the turn sent. The settings the user changed
-// after the run's turn read the chat keep the user's values. A thread a run
-// of the chat that started later stored is kept, and holds this run's.
+// A device run's final event carries the thread as its turn sent it, with
+// what the run added: this device stores it after the messages it left out
+// of the turn, with the images it holds where the harness left them out,
+// and the originals of the images the turn sent. The settings the user
+// changed after the run's turn read the chat keep the user's values. A
+// thread a run of the chat that started later stored is kept, and holds
+// this run's.
 export async function storeRun(
   run: DeviceRun,
   event: TerminalEvent,
@@ -98,7 +107,7 @@ export async function storeRun(
         ...thread,
         id: run.threadId,
         messages: withHeldImages(
-          thread.messages,
+          afterEarlier(stored?.messages ?? [], thread.messages),
           new Map([...heldImages(stored?.messages ?? []), ...run.images]),
         ),
         ...(stored ? pick(stored, changedSince) : {}),
@@ -136,6 +145,17 @@ export function storeCutOff(
   })
 }
 
+// The chat a request sends: from its latest compaction marker on while the
+// harness takes it so, unless the request is about a message before that
+// marker, and otherwise whole.
+const sendable = (
+  thread: StoredThread,
+  about?: readonly (string | undefined)[],
+): StoredThread =>
+  getView().session?.features[PARTIAL_THREAD_FEATURE]
+    ? fromLatestCompaction(thread, about)
+    : thread
+
 // The chats a browser keeps: in IndexedDB for an account, in the tab for a
 // signed-out visitor, or in memory for a temporary chat. Each turn carries
 // the chat, and a run's final event returns it.
@@ -158,13 +178,15 @@ export function deviceThreads({
   // The chat as this device stores it, or an empty one.
   const transcript = async (threadId: string): Promise<StoredThread> =>
     (await store.get(threadId)) ?? newThread(threadId)
-  // The harness applies an operation to the chat this device sends it. The
-  // chat it answers with keeps the images this device holds where the
-  // harness left them out.
+  // The harness applies an operation to the chat this device sends it,
+  // whole unless the operation says what it sends. The chat it answers with
+  // follows the messages this device left out, and keeps the images this
+  // device holds where the harness left them out.
   const request = async (
     path: ChangeRoute,
-    sent: StoredThread,
+    stored: StoredThread,
     fields: Record<string, unknown>,
+    sent: StoredThread = stored,
   ): Promise<StoredThread> => {
     const { thread } = await api.post<{ thread?: unknown }>(
       path,
@@ -179,20 +201,31 @@ export function deviceThreads({
       })
     return {
       ...thread,
-      messages: withHeldImages(thread.messages, heldImages(sent.messages)),
+      messages: withHeldImages(
+        afterEarlier(stored.messages, thread.messages),
+        heldImages(stored.messages),
+      ),
     }
   }
   // Stores the changed chat in place of the copy it was made from. When a
   // run stored its thread meanwhile, the run's thread keeps its messages and
-  // takes the settings the change made; a change of messages fails.
+  // takes the settings the change made; a change of messages fails. A change
+  // that says which messages it is about sends the chat from its latest
+  // compaction marker on.
   const change = async (
     threadId: string,
     path: ChangeRoute,
     fields: Record<string, unknown>,
+    about?: readonly string[],
   ): Promise<StoredThread | null> => {
     const sent = await store.get(threadId)
     if (!sent) return null
-    const changed = await request(path, sent, fields)
+    const changed = await request(
+      path,
+      sent,
+      fields,
+      about ? sendable(sent, about) : sent,
+    )
     const settings = USER_SETTINGS.filter(
       (setting) => changed[setting] !== sent[setting],
     )
@@ -240,11 +273,12 @@ export function deviceThreads({
         if (!changed) return null
       }
       if (Object.keys(patch).length)
-        changed = await change(threadId, ROUTES.update, {
-          id: threadId,
-          ...patch,
-          profile: getView().profile,
-        })
+        changed = await change(
+          threadId,
+          ROUTES.update,
+          { id: threadId, ...patch, profile: getView().profile },
+          [],
+        )
       if (!changed) return null
       const summary = localSummary(changed)
       list.replace(summary)
@@ -302,12 +336,12 @@ export function deviceThreads({
       return changed && localThreadView(changed)
     },
     async answerQuestions(threadId, messageId, toolCallId, answers) {
-      const changed = await change(threadId, ROUTES.messageAnswer, {
+      const changed = await change(
         threadId,
-        messageId,
-        toolCallId,
-        answers,
-      })
+        ROUTES.messageAnswer,
+        { threadId, messageId, toolCallId, answers },
+        [messageId],
+      )
       return changed && localThreadView(changed)
     },
     // A chat kept on this device is shared from its own copy, which the
@@ -329,14 +363,20 @@ export function deviceThreads({
       if (!thread) throw notOnDevice('chat')
       return api.stream(
         ROUTES.speech,
-        { local: true, threadId, thread, messageId, ...speechSpeed() },
+        {
+          local: true,
+          threadId,
+          thread: sendable(thread, [messageId]),
+          messageId,
+          ...speechSpeed(),
+        },
         { signal, keyless: true },
       )
     },
     runKey: () => ({}),
-    // A turn carries the thread as stored and the profile instead of the
-    // content key, which it never uses. The harness makes a new chat from
-    // its first turn, as it does a stored one.
+    // A turn carries the thread and the profile instead of the content key,
+    // which it never uses. The harness makes a new chat from its first turn,
+    // as it does a stored one.
     async prepareTurn(threadId, { defaults, fields }, settings) {
       const run: DeviceRun = {
         threadId,
@@ -360,7 +400,7 @@ export function deviceThreads({
       const { first, presetChosen, presetId, profile } = settings
       const input: Turn = {
         ...defaults,
-        ...(stored ? { thread: stored } : {}),
+        ...(stored ? { thread: sendable(stored, [fields.messageId]) } : {}),
         presetId: first && presetChosen ? presetId : undefined,
         ...fields,
         threadId,
@@ -428,7 +468,7 @@ export function deviceThreads({
       return {
         threadId,
         local: true,
-        ...(thread ? { thread } : {}),
+        ...(thread ? { thread: sendable(thread) } : {}),
         profile,
       }
     },

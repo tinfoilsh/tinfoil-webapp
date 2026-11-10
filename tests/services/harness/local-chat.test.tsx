@@ -1935,6 +1935,369 @@ describe('stored local chat changes', () => {
   })
 })
 
+describe('a compacted chat the harness takes from its latest compaction marker', () => {
+  const MARKER: ThreadMessage = {
+    id: 'msg_marker',
+    role: 'compaction',
+    createdAt: 't5',
+    content: '## Goals and context\nTwo questions so far.',
+    compaction: {
+      messages: 4,
+      startedAt: 1767225600000,
+      endedAt: 1767225601000,
+      model: 'long-summary',
+      version: 1,
+    },
+  }
+  const reply = (id: string, createdAt: string, content: string) =>
+    ({
+      id,
+      role: 'assistant',
+      createdAt,
+      content,
+      timeline: [{ id: `${id}_content_0`, type: 'content', content }],
+    }) satisfies ThreadMessage
+  const U3: ThreadMessage = {
+    id: 'u3',
+    role: 'user',
+    createdAt: 't6',
+    content: 'third',
+  }
+  const A3 = reply('a3', 't7', 'third answer')
+  const U4: ThreadMessage = {
+    id: 'u4',
+    role: 'user',
+    createdAt: 't8',
+    content: 'fourth',
+  }
+  const A4 = reply('a4', 't9', 'fourth answer')
+  // The messages the marker's summary covers, and the chat from it on.
+  const EARLIER = SEEDED_MESSAGES
+  const LATER = [MARKER, U3, A3]
+  // The record version that holds compaction markers.
+  const compacted = (messages: ThreadMessage[] = [...EARLIER, ...LATER]) => ({
+    ...seeded({ messages }),
+    recordVersion: 2,
+  })
+  const ids = (messages: readonly { id?: string }[] = []) =>
+    messages.map(({ id }) => id)
+
+  async function storeCompacted() {
+    signInTo({
+      userId: 'alice',
+      locked: true,
+      session: {
+        ...testSession,
+        features: { ...testSession.features, partialThread: true },
+      },
+      profile: PROFILE,
+    })
+    await localThreadStore('device').update(SEEDED_ID, () => compacted())
+  }
+  async function openCompacted() {
+    await storeCompacted()
+    const hook = renderHook(() => useThread(SEEDED_ID, null, { local: true }))
+    await waitFor(() =>
+      expect(hook.result.current.chat.messages).toHaveLength(6),
+    )
+    return hook
+  }
+
+  it('sends a turn the chat from that marker on, and stores what its run returns after the earlier messages', async () => {
+    const { result } = await openCompacted()
+    let returned!: ReturnedThread
+    client.events.mockImplementationOnce((_path: string, input: Turn) => {
+      returned = {
+        ...compacted([
+          ...LATER,
+          { ...U4, id: input.clientRequestId },
+          reply('a4', 't9', 'fourth answer'),
+        ]),
+        lastRequestId: input.clientRequestId,
+      }
+      return deviceRun(SEEDED_ID, returned)()
+    })
+
+    await act(() => result.current.send({ content: 'fourth' }))
+
+    expect(turn().thread).toEqual(compacted(LATER))
+    expect(await stored(SEEDED_ID)).toEqual({
+      ...returned,
+      messages: [...EARLIER, ...returned.messages],
+    })
+    expect(ids(result.current.chat.messages)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+      'u3',
+      'a3',
+      turn().clientRequestId,
+      'a4',
+    ])
+  })
+
+  it('stores a run it rejoins after a reload after the earlier messages', async () => {
+    await storeCompacted()
+    sessionStorage.setItem(
+      'harness-run:alice',
+      JSON.stringify({
+        threadId: SEEDED_ID,
+        runId: 'run-a4',
+        instance: 'instance-1',
+        temporary: false,
+        local: true,
+      }),
+    )
+    const returned = compacted([...LATER, U4, A4])
+    client.events.mockImplementationOnce(
+      frames(
+        {
+          type: 'RUN_STARTED',
+          threadId: SEEDED_ID,
+          runId: 'run-a4',
+          instance: 'instance-1',
+        },
+        {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [...LATER, U4] as Message[],
+          hasOlder: false,
+        },
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'a4',
+          role: 'assistant',
+          delta: 'fourth answer',
+          timestamp: 't9',
+        },
+        { ...finished(SEEDED_ID, returned), runId: 'run-a4' },
+      ),
+    )
+
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+
+    await waitFor(async () =>
+      expect(await stored(SEEDED_ID)).toEqual({
+        ...returned,
+        messages: [...EARLIER, ...returned.messages],
+      }),
+    )
+    expect(client.events.mock.calls[0].slice(0, 2)).toEqual([
+      '/v1/threads/follow',
+      { threadId: SEEDED_ID, runId: 'run-a4' },
+    ])
+    await waitFor(() =>
+      expect(ids(result.current.chat.messages)).toEqual([
+        'u1',
+        'a1',
+        'u2',
+        'a2',
+        'u3',
+        'a3',
+        'u4',
+        'a4',
+      ]),
+    )
+  })
+
+  it('keeps the earlier messages when its copy lost the marker while the run went', async () => {
+    const { result } = await openCompacted()
+    let returned!: ReturnedThread
+    client.events.mockImplementationOnce(async function* (
+      _path: string,
+      input: Turn,
+    ) {
+      const question = { ...U4, id: input.clientRequestId }
+      returned = compacted([...LATER, question, A4])
+      yield {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          threadId: SEEDED_ID,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+      }
+      yield {
+        id: 1,
+        event: {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [...LATER, question] as Message[],
+          hasOlder: false,
+        },
+      }
+      // As when a reply the marker covers was deleted, which drops the
+      // marker with it.
+      await localThreadStore('device').update(
+        SEEDED_ID,
+        (thread) =>
+          thread && {
+            ...thread,
+            messages: thread.messages.filter(
+              ({ id }) => id !== 'a1' && id !== MARKER.id,
+            ),
+          },
+      )
+      yield { id: 2, event: finished(SEEDED_ID, returned) }
+    })
+
+    await act(() => result.current.send({ content: 'fourth' }))
+
+    expect(ids((await stored(SEEDED_ID))!.messages)).toEqual([
+      'u1',
+      'u2',
+      'a2',
+      MARKER.id,
+      'u3',
+      'a3',
+      turn().clientRequestId,
+      'a4',
+    ])
+  })
+
+  it.each([
+    {
+      turn: 'an edit of a question before the marker',
+      send: (thread: ReturnType<typeof useThread>) =>
+        thread.send({ kind: 'edit', messageId: 'u2', content: 'edited' }),
+      sent: [...EARLIER, ...LATER],
+    },
+    {
+      turn: 'a regeneration of a reply after the marker',
+      send: (thread: ReturnType<typeof useThread>) => thread.regenerate(5),
+      sent: LATER,
+    },
+  ])('sends $turn the messages it is about', async ({ send, sent }) => {
+    const { result } = await openCompacted()
+    client.events.mockImplementationOnce(deviceRun(SEEDED_ID, compacted()))
+
+    await act(async () => {
+      await send(result.current)
+    })
+
+    expect(ids(turn().thread?.messages)).toEqual(ids(sent))
+  })
+
+  it('changes its settings from that marker on, and stores the answer after the earlier messages', async () => {
+    const { result } = await openCompacted()
+    const renamed = {
+      ...compacted(LATER),
+      title: 'Front doors',
+      titleState: 'manual' as const,
+    }
+    client.post.mockResolvedValueOnce({ thread: renamed })
+
+    await act(() => result.current.update(SEEDED_ID, { title: 'Front doors' }))
+
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/update',
+      {
+        id: SEEDED_ID,
+        title: 'Front doors',
+        profile: PROFILE,
+        local: true,
+        thread: compacted(LATER),
+      },
+      expect.any(AbortSignal),
+    )
+    expect(await stored(SEEDED_ID)).toEqual({
+      ...renamed,
+      messages: [...EARLIER, ...LATER],
+    })
+  })
+
+  it('sends a change of its messages the whole chat', async () => {
+    const { result } = await openCompacted()
+    client.post.mockResolvedValueOnce({
+      thread: compacted([...EARLIER, MARKER, U3]),
+    })
+
+    await act(() => result.current.deleteMessage(5))
+
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/messages/delete',
+      {
+        threadId: SEEDED_ID,
+        messageId: 'a3',
+        local: true,
+        thread: compacted(),
+      },
+      expect.any(AbortSignal),
+    )
+    expect(ids((await stored(SEEDED_ID))!.messages)).toEqual(
+      ids([...EARLIER, MARKER, U3]),
+    )
+  })
+
+  it.each([
+    { widget: 'a reply after the marker', messageId: 'a3', sent: LATER },
+    {
+      widget: 'a reply the marker covers',
+      messageId: 'a1',
+      sent: [...EARLIER, ...LATER],
+    },
+  ])(
+    'saves the answers to a widget of $widget with the messages that hold it',
+    async ({ messageId, sent }) => {
+      const { result } = await openCompacted()
+      client.post.mockResolvedValueOnce({ thread: compacted(sent) })
+
+      await act(() =>
+        result.current.answerQuestions(messageId, 'quiz', { q1: ['a'] }),
+      )
+
+      expect(client.post).toHaveBeenCalledExactlyOnceWith(
+        '/v1/threads/messages/answer',
+        {
+          threadId: SEEDED_ID,
+          messageId,
+          toolCallId: 'quiz',
+          answers: { q1: ['a'] },
+          local: true,
+          thread: compacted(sent),
+        },
+        expect.any(AbortSignal),
+      )
+      expect(await stored(SEEDED_ID)).toEqual(compacted())
+    },
+  )
+
+  it.each([
+    { message: 'a reply after the marker', messageId: 'a3', sent: LATER },
+    {
+      message: 'a reply the marker covers',
+      messageId: 'a1',
+      sent: [...EARLIER, ...LATER],
+    },
+  ])(
+    'reads $message aloud from the messages that hold it, and asks about the chat from the marker on',
+    async ({ messageId, sent }) => {
+      const { result } = await openCompacted()
+      client.stream.mockResolvedValueOnce(new Response('audio'))
+
+      await result.current.speak(messageId, new AbortController().signal)
+
+      expect(client.stream).toHaveBeenCalledExactlyOnceWith(
+        '/v1/speech',
+        expect.objectContaining({
+          threadId: SEEDED_ID,
+          messageId,
+          thread: compacted(sent),
+        }),
+        expect.any(AbortSignal),
+      )
+      expect(await result.current.askContext()).toEqual({
+        threadId: SEEDED_ID,
+        local: true,
+        thread: compacted(LATER),
+        profile: PROFILE,
+      })
+    },
+  )
+})
+
 describe('signed-out chats', () => {
   it('stay in session storage and never open IndexedDB', async () => {
     const shared = globalThis.indexedDB

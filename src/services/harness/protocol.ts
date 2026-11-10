@@ -73,6 +73,9 @@ export const COMPACTION_ROLE = 'compaction'
 // The outcome of a compaction that wrote its marker. A client treats any
 // other as failed.
 export const COMPACTION_COMPLETED = 'completed'
+// The session feature under which the harness takes a chat kept on this
+// device from its latest compaction marker on.
+export const PARTIAL_THREAD_FEATURE = 'partialThread'
 
 // A run's stream: a turn starts one, and following one replays it.
 export type RunRoute = typeof ROUTES.turn | typeof ROUTES.follow
