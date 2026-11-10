@@ -1241,7 +1241,7 @@ describe('attested harness transport', () => {
       expect(failure).toBeInstanceOf(HarnessError)
       expect(failure).toMatchObject({
         status: undefined,
-        detail: { code: 'CONNECTION', action: 'retry' },
+        detail: { code: 'SIGN_IN_UNCONFIRMED', action: 'retry' },
       })
       expect(
         secure.fetch.mock.calls.map((call) =>

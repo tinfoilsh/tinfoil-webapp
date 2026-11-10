@@ -230,6 +230,13 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
   switch (error.code) {
     case ERROR_CODES.unauthenticated:
       return CLASSIFICATIONS.auth
+    // The account is signed in: its request arrived too late to be accepted,
+    // which sending it again answers as a lost connection is answered.
+    case ERROR_CODES.signInUnconfirmed:
+      return {
+        ...CLASSIFICATIONS.connection,
+        title: 'Your sign-in could not be confirmed in time',
+      }
     case ERROR_CODES.keyRequired:
       return CLASSIFICATIONS.key
     // The chats are sealed with another key than this device holds.
