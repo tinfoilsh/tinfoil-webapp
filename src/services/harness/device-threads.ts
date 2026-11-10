@@ -147,10 +147,14 @@ export function storeCutOff(
 
 // The chat a request sends: from its latest compaction marker on while the
 // harness takes it so and reads no more of it for the message the request
-// is about, and otherwise whole.
-const sendable = (thread: StoredThread, about?: string): StoredThread =>
+// is about, or the question a turn answers, and otherwise whole.
+const sendable = (
+  thread: StoredThread,
+  about?: string,
+  answering?: boolean,
+): StoredThread =>
   getView().session?.features[PARTIAL_THREAD_FEATURE]
-    ? fromLatestCompaction(thread, about)
+    ? fromLatestCompaction(thread, about, answering)
     : thread
 
 // The chats a browser keeps: in IndexedDB for an account, in the tab for a
@@ -268,7 +272,7 @@ export function deviceThreads({
           threadId,
           ROUTES.update,
           { id: threadId, ...patch, profile: getView().profile },
-          sendable,
+          (thread) => sendable(thread),
         )
       if (!changed) return null
       const summary = localSummary(changed)
@@ -400,6 +404,7 @@ export function deviceThreads({
                   (fields.kind === 'retry'
                     ? stored.messages.at(-1)?.id
                     : undefined),
+                true,
               ),
             }
           : {}),

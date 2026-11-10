@@ -2136,10 +2136,17 @@ describe('a compacted chat the harness takes from its latest compaction marker',
     ])
   })
 
-  // The harness reads the exchange before a question it answers again, so
-  // such a turn leaves out the earlier messages only when an earlier
-  // question follows the marker too.
+  // The harness reads the exchange before the question a turn answers, so
+  // a turn leaves out the earlier messages only when an earlier question
+  // follows the marker too.
   it.each([
+    {
+      turn: 'the first question after a compaction',
+      send: (thread: ReturnType<typeof useThread>) =>
+        thread.send({ content: 'fourth' }),
+      later: [COMPACTION_MARKER, U3, A3],
+      sent: [COMPACTION_MARKER, U3, A3],
+    },
     {
       turn: 'an edit of a question the marker covers',
       send: (thread: ReturnType<typeof useThread>) =>
@@ -2235,7 +2242,11 @@ describe('a compacted chat the harness takes from its latest compaction marker',
   })
 
   it.each([
-    { widget: 'a reply after the marker', messageId: 'a4', sent: LATER },
+    {
+      widget: 'the first reply after the marker',
+      messageId: 'a3',
+      sent: LATER,
+    },
     {
       widget: 'a reply the marker covers',
       messageId: 'a1',
@@ -2268,7 +2279,11 @@ describe('a compacted chat the harness takes from its latest compaction marker',
   )
 
   it.each([
-    { message: 'a reply after the marker', messageId: 'a4', sent: LATER },
+    {
+      message: 'the first reply after the marker',
+      messageId: 'a3',
+      sent: LATER,
+    },
     {
       message: 'a reply the marker covers',
       messageId: 'a1',
