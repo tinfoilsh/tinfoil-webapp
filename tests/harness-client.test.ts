@@ -1206,6 +1206,74 @@ describe('attested harness transport', () => {
     })
     expect(secure.fetch).toHaveBeenCalledTimes(1)
   })
+  // An account whose renewed session or chat access the harness refuses too
+  // is signed in: its request was not answered in time, and signing in again
+  // would change nothing.
+  it.each([
+    { renewed: 'session', refusal: expiredSession },
+    {
+      renewed: 'chat access',
+      refusal: () =>
+        Response.json(
+          {
+            error: {
+              code: 'CREDENTIAL_REQUIRED',
+              message: 'Chat access expired',
+              action: 'reauthenticate',
+            },
+          },
+          { status: 401, headers: SEALED },
+        ),
+    },
+  ])(
+    'fails a signed-in request whose renewed $renewed is refused too as one to send again',
+    async ({ refusal }) => {
+      const secure = transport()
+      secure.fetch.mockImplementation(async () => refusal())
+      const client = new HarnessClient(
+        'https://harness.example',
+        vi.fn().mockResolvedValueOnce('old').mockResolvedValue('fresh'),
+        async () => secure,
+      )
+      const failure = await client
+        .post('/v1/threads/turn', {})
+        .catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(HarnessError)
+      expect(failure).toMatchObject({
+        status: undefined,
+        detail: { code: 'CONNECTION', action: 'retry' },
+      })
+      expect(
+        secure.fetch.mock.calls.map((call) =>
+          new Headers(call[1].headers).get('Authorization'),
+        ),
+      ).toEqual(['Bearer old', 'Bearer fresh'])
+    },
+  )
+  it("keeps the harness's refusal of a signed-out caller whose new key is refused too", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        Response.json({
+          key: 'free_key',
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+          is_free_tier: true,
+        }),
+      ),
+    )
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => expiredSession())
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => null,
+      async () => secure,
+    )
+    await expect(client.post('/v1/session', {})).rejects.toMatchObject({
+      status: 401,
+      detail: { code: 'UNAUTHENTICATED', action: 'reauthenticate' },
+    })
+    expect(secure.fetch).toHaveBeenCalledTimes(2)
+  })
   // A refusal signing in again cannot change: a key this device must unlock,
   // or a stored chat a signed-out caller asked for.
   it.each([
