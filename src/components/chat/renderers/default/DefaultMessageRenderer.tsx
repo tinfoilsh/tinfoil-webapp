@@ -114,8 +114,8 @@ const DefaultMessageComponent = ({
     [isUser, message.timeline],
   )
   const timelineSegments = React.useMemo(
-    () => segmentTimeline(displayTimeline),
-    [displayTimeline],
+    () => segmentTimeline(displayTimeline, message.research),
+    [displayTimeline, message.research],
   )
   // A reply that searched lists its last search's results and what it
   // cites; earlier searches and read pages list theirs in their own rows. A

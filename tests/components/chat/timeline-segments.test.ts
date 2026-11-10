@@ -55,6 +55,14 @@ describe('segmentTimeline', () => {
     ])
   })
 
+  it("shows a research's lone step as a run", () => {
+    const timeline = [thinking('t0'), content('c1', 'Report')]
+    expect(segmentTimeline(timeline, true)).toEqual([
+      { kind: 'work', key: 'work-t0', blocks: [timeline[0]] },
+      { kind: 'block', block: timeline[1], blockIndex: 1 },
+    ])
+  })
+
   it('ends a run at answer text and GenUI widgets', () => {
     const widget: TimelineBlock = {
       type: 'tool_call',
