@@ -329,6 +329,55 @@ it('turns web search off for the open chat only, so a new chat searches again', 
   expect(sentTurns()[1].threadId).not.toBe(sentTurns()[0].threadId)
 })
 
+it('shows web search on while deep research is, and turns deep research off with it', async () => {
+  signIn({
+    session: {
+      ...testSession,
+      features: { ...testSession.features, research: true },
+    },
+  })
+  answerTurns()
+  render(view())
+  await screen.findByRole('textbox', { name: 'Message' })
+  const toggle = (name: string) =>
+    fireEvent.click(
+      within(openInputOptions()).getByRole('menuitemcheckbox', { name }),
+    )
+  // Whether the menu shows web search and deep research on.
+  const shown = () => {
+    const menu = openInputOptions()
+    const checked = ['Web search', 'Deep research'].map((name) =>
+      within(menu)
+        .getByRole('menuitemcheckbox', { name })
+        .getAttribute('aria-checked'),
+    )
+    fireEvent.keyDown(menu, { key: 'Escape' })
+    return checked
+  }
+
+  toggle('Deep research')
+  expect(shown()).toEqual(['true', 'true'])
+  toggle('Web search')
+  expect(shown()).toEqual(['false', 'false'])
+  expect(
+    screen.queryByRole('button', { name: 'Turn off deep research' }),
+  ).not.toBeInTheDocument()
+
+  // A chat that searches nothing else still has a question researched, which
+  // searches the web.
+  toggle('Deep research')
+  expect(shown()).toEqual(['true', 'true'])
+  await send('Compare the lighthouses')
+  expect(
+    await screen.findByRole('article', { name: 'Al said' }),
+  ).toHaveTextContent('The answer is here.')
+  expect(sentTurns()[0].options).toEqual({
+    ...turnOptions(false),
+    research: true,
+  })
+  expect(shown()).toEqual(['false', 'false'])
+})
+
 it('stops a streaming reply when Escape is pressed in the composer', async () => {
   signIn({ cloud: true })
   answerCloudRequests()
