@@ -1599,10 +1599,7 @@ export function SettingsModal({
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={isUploading ? undefined : Math.round(percent)}
-            className={cn(
-              'mt-3 flex h-2 overflow-hidden rounded-full',
-              isDarkMode ? 'bg-surface-sidebar' : 'bg-surface-chat',
-            )}
+            className="mt-3 flex h-2 overflow-hidden rounded-full bg-border-subtle"
           >
             <div
               className="h-full bg-brand-accent-dark transition-all dark:bg-brand-accent-light"
