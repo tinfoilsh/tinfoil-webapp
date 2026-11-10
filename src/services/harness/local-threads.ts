@@ -10,7 +10,7 @@ import {
 } from '@/services/storage/indexed-db'
 import { sessionChatStorage } from '@/services/storage/session-storage'
 import { logError } from '@/utils/error-handling'
-import { ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
+import { COMPACTION_ROLE, ERROR_ACTIONS, ERROR_CODES, ROUTES } from './protocol'
 import { harnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import type {
@@ -308,6 +308,55 @@ export function shareThread(thread: StoredThread): StoredThread {
         : message,
     ),
   }
+}
+
+// A chat from its latest compaction marker on: the marker, whose summary
+// covers every message before it, and the messages after it. The harness
+// reads no more of the chat, unless a request is about a message the marker
+// covers, which sends the chat whole. To answer a question it also reads the
+// exchange before that question, so a turn sends the chat whole unless an
+// earlier question follows the marker too.
+export function fromLatestCompaction(
+  thread: StoredThread,
+  about?: string,
+  answering = false,
+): StoredThread {
+  const { messages } = thread
+  const marker = messages.findLastIndex(({ role }) => role === COMPACTION_ROLE)
+  if (marker <= 0) return thread
+  const subject =
+    about === undefined
+      ? messages.length
+      : messages.findIndex(({ id }) => id === about)
+  // The question a turn answers: the message itself, or the one its reply
+  // answers.
+  const question =
+    messages[subject]?.role === 'assistant'
+      ? messages.findLastIndex(
+          ({ role }, index) => index < subject && role === 'user',
+        )
+      : subject
+  const sent = answering
+    ? messages.some(
+        ({ role }, index) =>
+          index > marker && index < question && role === 'user',
+      )
+    : subject > marker
+  return sent ? { ...thread, messages: messages.slice(marker) } : thread
+}
+
+// The messages of a chat once the harness answered with it. An answer that
+// starts at a compaction marker is the chat from that marker on, as it was
+// sent: it follows the messages this device holds before the first one the
+// answer holds too.
+export function afterEarlier(
+  stored: readonly ThreadMessage[],
+  returned: ThreadMessage[],
+): ThreadMessage[] {
+  if (returned[0]?.role !== COMPACTION_ROLE) return returned
+  const held = new Set(returned.map(({ id }) => id))
+  const from = stored.findIndex(({ id }) => held.has(id))
+  return [...(from < 0 ? stored : stored.slice(0, from)), ...returned]
 }
 
 export function isThread(value: unknown): value is StoredThread {

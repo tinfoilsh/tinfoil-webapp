@@ -154,6 +154,20 @@ const seeded = (fields: Partial<StoredThread> = {}) =>
     messages: SEEDED_MESSAGES,
     ...fields,
   })
+// The marker of a compaction that summarized the seeded messages.
+const COMPACTION_MARKER: ThreadMessage = {
+  id: 'msg_marker',
+  role: 'compaction',
+  createdAt: 't5',
+  content: '## Goals and context\nTwo questions so far.',
+  compaction: {
+    messages: 4,
+    startedAt: 1767225600000,
+    endedAt: 1767225601000,
+    model: 'long-summary',
+    version: 1,
+  },
+}
 
 resetChatStoresAroundEachTest()
 
@@ -1083,19 +1097,6 @@ describe('local chats of a signed-in account without cloud sync', () => {
   it('stores the compaction marker a run returns and sends it back unchanged', async () => {
     signIn('alice')
     await localThreadStore('device').update(SEEDED_ID, () => seeded())
-    const marker: ThreadMessage = {
-      id: 'msg_marker',
-      role: 'compaction',
-      createdAt: 't5',
-      content: '## Goals and context\nTwo questions so far.',
-      compaction: {
-        messages: 4,
-        startedAt: 1767225600000,
-        endedAt: 1767225601000,
-        model: 'long-summary',
-        version: 1,
-      },
-    }
     let returned!: ReturnedThread
     client.events.mockImplementationOnce((_path: string, input: Turn) => {
       returned = {
@@ -1103,7 +1104,7 @@ describe('local chats of a signed-in account without cloud sync', () => {
           lastRequestId: input.clientRequestId,
           messages: [
             ...SEEDED_MESSAGES,
-            marker,
+            COMPACTION_MARKER,
             {
               id: input.clientRequestId,
               role: 'user',
@@ -1933,6 +1934,386 @@ describe('stored local chat changes', () => {
       },
     ])
   })
+})
+
+describe('a compacted chat the harness takes from its latest compaction marker', () => {
+  const question = (id: string, createdAt: string, content: string) =>
+    ({ id, role: 'user', createdAt, content }) satisfies ThreadMessage
+  const reply = (id: string, createdAt: string, content: string) =>
+    ({
+      id,
+      role: 'assistant',
+      createdAt,
+      content,
+      timeline: [{ id: `${id}_content_0`, type: 'content', content }],
+    }) satisfies ThreadMessage
+  const U3 = question('u3', 't6', 'third')
+  const A3 = reply('a3', 't7', 'third answer')
+  const U4 = question('u4', 't8', 'fourth')
+  const A4 = reply('a4', 't9', 'fourth answer')
+  const U5 = question('u5', 't10', 'fifth')
+  const A5 = reply('a5', 't11', 'fifth answer')
+  // The messages the marker's summary covers, and the chat from it on.
+  const EARLIER = SEEDED_MESSAGES
+  const LATER = [COMPACTION_MARKER, U3, A3, U4, A4]
+  // The record version that holds compaction markers.
+  const compacted = (messages: ThreadMessage[] = [...EARLIER, ...LATER]) => ({
+    ...seeded({ messages }),
+    recordVersion: 2,
+  })
+  const ids = (messages: readonly { id?: string }[] = []) =>
+    messages.map(({ id }) => id)
+
+  async function storeCompacted(later = LATER) {
+    signInTo({
+      userId: 'alice',
+      locked: true,
+      session: {
+        ...testSession,
+        features: { ...testSession.features, partialThread: true },
+      },
+      profile: PROFILE,
+    })
+    await localThreadStore('device').update(SEEDED_ID, () =>
+      compacted([...EARLIER, ...later]),
+    )
+  }
+  async function openCompacted(later = LATER) {
+    await storeCompacted(later)
+    const hook = renderHook(() => useThread(SEEDED_ID, null, { local: true }))
+    await waitFor(() =>
+      expect(hook.result.current.chat.messages).toHaveLength(
+        EARLIER.length + later.length - 1,
+      ),
+    )
+    return hook
+  }
+
+  it('sends a turn the chat from that marker on, and stores what its run returns after the earlier messages', async () => {
+    const { result } = await openCompacted()
+    let returned!: ReturnedThread
+    client.events.mockImplementationOnce((_path: string, input: Turn) => {
+      returned = {
+        ...compacted([...LATER, { ...U5, id: input.clientRequestId }, A5]),
+        lastRequestId: input.clientRequestId,
+      }
+      return deviceRun(SEEDED_ID, returned)()
+    })
+
+    await act(() => result.current.send({ content: 'fifth' }))
+
+    expect(turn().thread).toEqual(compacted(LATER))
+    expect(await stored(SEEDED_ID)).toEqual({
+      ...returned,
+      messages: [...EARLIER, ...returned.messages],
+    })
+    expect(ids(result.current.chat.messages)).toEqual([
+      ...ids(EARLIER),
+      'u3',
+      'a3',
+      'u4',
+      'a4',
+      turn().clientRequestId,
+      'a5',
+    ])
+  })
+
+  it('stores a run it rejoins after a reload after the earlier messages', async () => {
+    await storeCompacted()
+    sessionStorage.setItem(
+      'harness-run:alice',
+      JSON.stringify({
+        threadId: SEEDED_ID,
+        runId: 'run-a5',
+        instance: 'instance-1',
+        temporary: false,
+        local: true,
+      }),
+    )
+    const returned = compacted([...LATER, U5, A5])
+    client.events.mockImplementationOnce(
+      frames(
+        {
+          type: 'RUN_STARTED',
+          threadId: SEEDED_ID,
+          runId: 'run-a5',
+          instance: 'instance-1',
+        },
+        {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [...LATER, U5] as Message[],
+          hasOlder: false,
+        },
+        {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'a5',
+          role: 'assistant',
+          delta: 'fifth answer',
+          timestamp: 't11',
+        },
+        { ...finished(SEEDED_ID, returned), runId: 'run-a5' },
+      ),
+    )
+
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+
+    await waitFor(async () =>
+      expect(await stored(SEEDED_ID)).toEqual({
+        ...returned,
+        messages: [...EARLIER, ...returned.messages],
+      }),
+    )
+    expect(client.events.mock.calls[0].slice(0, 2)).toEqual([
+      '/v1/threads/follow',
+      { threadId: SEEDED_ID, runId: 'run-a5' },
+    ])
+    await waitFor(() =>
+      expect(ids(result.current.chat.messages)).toEqual([
+        ...ids(EARLIER),
+        'u3',
+        'a3',
+        'u4',
+        'a4',
+        'u5',
+        'a5',
+      ]),
+    )
+  })
+
+  it('keeps the earlier messages when its copy lost the marker while the run went', async () => {
+    const { result } = await openCompacted()
+    client.events.mockImplementationOnce(async function* (
+      _path: string,
+      input: Turn,
+    ) {
+      const asked = { ...U5, id: input.clientRequestId }
+      yield {
+        id: 0,
+        event: {
+          type: 'RUN_STARTED',
+          threadId: SEEDED_ID,
+          runId: 'run-1',
+          instance: 'instance-1',
+        },
+      }
+      yield {
+        id: 1,
+        event: {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [...LATER, asked] as Message[],
+          hasOlder: false,
+        },
+      }
+      // As when a reply the marker covers was deleted, which drops the
+      // marker with it.
+      await localThreadStore('device').update(
+        SEEDED_ID,
+        (thread) =>
+          thread && {
+            ...thread,
+            messages: thread.messages.filter(
+              ({ id }) => id !== 'a1' && id !== COMPACTION_MARKER.id,
+            ),
+          },
+      )
+      yield {
+        id: 2,
+        event: finished(SEEDED_ID, compacted([...LATER, asked, A5])),
+      }
+    })
+
+    await act(() => result.current.send({ content: 'fifth' }))
+
+    expect(ids((await stored(SEEDED_ID))?.messages)).toEqual([
+      'u1',
+      'u2',
+      'a2',
+      ...ids(LATER),
+      turn().clientRequestId,
+      'a5',
+    ])
+  })
+
+  // The harness reads the exchange before the question a turn answers, so
+  // a turn leaves out the earlier messages only when an earlier question
+  // follows the marker too.
+  it.each([
+    {
+      turn: 'the first question after a compaction',
+      send: (thread: ReturnType<typeof useThread>) =>
+        thread.send({ content: 'fourth' }),
+      later: [COMPACTION_MARKER, U3, A3],
+      sent: [COMPACTION_MARKER, U3, A3],
+    },
+    {
+      turn: 'an edit of a question the marker covers',
+      send: (thread: ReturnType<typeof useThread>) =>
+        thread.send({ kind: 'edit', messageId: 'u2', content: 'edited' }),
+      later: LATER,
+      sent: [...EARLIER, ...LATER],
+    },
+    {
+      turn: 'a regeneration of the first reply after the marker',
+      send: (thread: ReturnType<typeof useThread>) => thread.regenerate(5),
+      later: LATER,
+      sent: [...EARLIER, ...LATER],
+    },
+    {
+      turn: 'a regeneration of a later reply',
+      send: (thread: ReturnType<typeof useThread>) => thread.regenerate(7),
+      later: LATER,
+      sent: LATER,
+    },
+    {
+      turn: 'a retry of a later reply',
+      send: (thread: ReturnType<typeof useThread>) =>
+        thread.send({ kind: 'retry' }),
+      later: LATER,
+      sent: LATER,
+    },
+    {
+      turn: 'a retry of the first reply after the marker',
+      send: (thread: ReturnType<typeof useThread>) =>
+        thread.send({ kind: 'retry' }),
+      later: [COMPACTION_MARKER, U3, A3],
+      sent: [...EARLIER, COMPACTION_MARKER, U3, A3],
+    },
+  ])('sends $turn the messages the harness reads', async (row) => {
+    const { result } = await openCompacted(row.later)
+    client.events.mockImplementationOnce(
+      deviceRun(SEEDED_ID, compacted([...EARLIER, ...row.later])),
+    )
+
+    await act(async () => {
+      await row.send(result.current)
+    })
+
+    expect(ids(turn().thread?.messages)).toEqual(ids(row.sent))
+  })
+
+  it('changes its settings from that marker on, and stores the answer after the earlier messages', async () => {
+    const { result } = await openCompacted()
+    const renamed = {
+      ...compacted(LATER),
+      title: 'Front doors',
+      titleState: 'manual' as const,
+    }
+    client.post.mockResolvedValueOnce({ thread: renamed })
+
+    await act(() => result.current.update(SEEDED_ID, { title: 'Front doors' }))
+
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/update',
+      {
+        id: SEEDED_ID,
+        title: 'Front doors',
+        profile: PROFILE,
+        local: true,
+        thread: compacted(LATER),
+      },
+      expect.any(AbortSignal),
+    )
+    expect(await stored(SEEDED_ID)).toEqual({
+      ...renamed,
+      messages: [...EARLIER, ...LATER],
+    })
+  })
+
+  it('sends a change of its messages the whole chat', async () => {
+    const { result } = await openCompacted()
+    const left = [...EARLIER, ...LATER.filter(({ id }) => id !== 'a4')]
+    client.post.mockResolvedValueOnce({ thread: compacted(left) })
+
+    await act(() => result.current.deleteMessage(7))
+
+    expect(client.post).toHaveBeenCalledExactlyOnceWith(
+      '/v1/threads/messages/delete',
+      {
+        threadId: SEEDED_ID,
+        messageId: 'a4',
+        local: true,
+        thread: compacted(),
+      },
+      expect.any(AbortSignal),
+    )
+    expect(await stored(SEEDED_ID)).toEqual(compacted(left))
+  })
+
+  it.each([
+    {
+      widget: 'the first reply after the marker',
+      messageId: 'a3',
+      sent: LATER,
+    },
+    {
+      widget: 'a reply the marker covers',
+      messageId: 'a1',
+      sent: [...EARLIER, ...LATER],
+    },
+  ])(
+    'saves the answers to a widget of $widget with the messages that hold it',
+    async ({ messageId, sent }) => {
+      const { result } = await openCompacted()
+      client.post.mockResolvedValueOnce({ thread: compacted(sent) })
+
+      await act(() =>
+        result.current.answerQuestions(messageId, 'quiz', { q1: ['a'] }),
+      )
+
+      expect(client.post).toHaveBeenCalledExactlyOnceWith(
+        '/v1/threads/messages/answer',
+        {
+          threadId: SEEDED_ID,
+          messageId,
+          toolCallId: 'quiz',
+          answers: { q1: ['a'] },
+          local: true,
+          thread: compacted(sent),
+        },
+        expect.any(AbortSignal),
+      )
+      expect(await stored(SEEDED_ID)).toEqual(compacted())
+    },
+  )
+
+  it.each([
+    {
+      message: 'the first reply after the marker',
+      messageId: 'a3',
+      sent: LATER,
+    },
+    {
+      message: 'a reply the marker covers',
+      messageId: 'a1',
+      sent: [...EARLIER, ...LATER],
+    },
+  ])(
+    'reads $message aloud from the messages that hold it, and asks about the chat from the marker on',
+    async ({ messageId, sent }) => {
+      const { result } = await openCompacted()
+      client.stream.mockResolvedValueOnce(new Response('audio'))
+
+      await result.current.speak(messageId, new AbortController().signal)
+
+      expect(client.stream).toHaveBeenCalledExactlyOnceWith(
+        '/v1/speech',
+        expect.objectContaining({
+          threadId: SEEDED_ID,
+          messageId,
+          thread: compacted(sent),
+        }),
+        expect.any(AbortSignal),
+      )
+      expect(await result.current.askContext()).toEqual({
+        threadId: SEEDED_ID,
+        local: true,
+        thread: compacted(LATER),
+        profile: PROFILE,
+      })
+    },
+  )
 })
 
 describe('signed-out chats', () => {
