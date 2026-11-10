@@ -47,7 +47,7 @@ export const REJOIN_DELAYS_MS = [
 ]
 
 // Resolves after ms, or as soon as signal aborts.
-function pause(ms: number, signal: AbortSignal): Promise<void> {
+export function pause(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (ms <= 0 || signal.aborted) return resolve()
     const done = () => {
