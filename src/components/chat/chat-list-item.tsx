@@ -363,7 +363,7 @@ export function ChatListItem({
           >
             <input
               aria-label="Chat title"
-              className="min-w-0 flex-1 rounded bg-surface-sidebar px-2 py-1 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-tinfoil-twilight"
+              className="min-w-0 flex-1 rounded bg-surface-sidebar px-2 py-1 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-ring"
               value={editingTitle}
               onChange={(e) => onTitleChange(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -372,7 +372,7 @@ export function ChatListItem({
             />
             <button
               type="submit"
-              className="ml-auto flex-shrink-0 rounded p-1 text-tinfoil-twilight transition-colors hover:bg-tinfoil-twilight-subtle dark:text-tinfoil-twilight-light"
+              className="ml-auto flex-shrink-0 rounded p-1 text-link transition-colors hover:bg-tinfoil-rose-subtle"
               title="Save"
               aria-label="Save chat title"
             >

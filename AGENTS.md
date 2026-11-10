@@ -1,7 +1,9 @@
 # Colors
 
-Use Twilight (`#6B5B95`) with white text for primary actions and CTAs. Keep
-Brass (`#D3A569`) for decorative accents and Deep Teal for branding. Match the
+Use Pastel Rose (`#E6B5C4`) with Midnight Petrol (`#05252E`) text for primary
+actions and CTAs. Keep Champagne (`#E6CCA8`) for decorative accents and Deep Teal
+(`#004444`) for branding. Links and focus indicators use the theme-aware `link`
+and `ring` tokens so they remain readable on light surfaces. Match the
 websites' surface roles: Bone (`#F2F1EC`) for `surface-canvas`, white for
 `surface-raised`, and `#F9F8F6` for `surface-muted`. Dark mode maps these to
 `#121212`, `#1C1C1E`, and `#2C2C2E`. Use the semantic surface tokens for chat,

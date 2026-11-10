@@ -122,7 +122,7 @@ export function ReportBugModal({
         type="button"
         onClick={handleOpenEmail}
         disabled={!canSend}
-        className="mt-4 flex w-full items-center justify-center rounded-lg bg-tinfoil-twilight px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-4 flex w-full items-center justify-center rounded-lg bg-tinfoil-rose px-4 py-2.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-rose-hover disabled:cursor-not-allowed disabled:opacity-60"
       >
         Open email client
       </button>

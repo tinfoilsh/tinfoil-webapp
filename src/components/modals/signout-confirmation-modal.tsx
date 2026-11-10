@@ -69,7 +69,7 @@ ${encryptionKey.replace('key_', '')}
               className={`flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium transition-all ${
                 hasDownloadedKey
                   ? 'cursor-not-allowed border-brand-accent-dark/40 bg-brand-accent-dark/10 text-brand-accent-dark dark:border-brand-accent-light/40 dark:bg-brand-accent-light/10 dark:text-brand-accent-light'
-                  : 'border-tinfoil-twilight/40 bg-tinfoil-twilight text-white hover:bg-tinfoil-twilight-hover'
+                  : 'border-tinfoil-rose/40 bg-tinfoil-rose text-brand-dark hover:bg-tinfoil-rose-hover'
               }`}
             >
               {hasDownloadedKey ? (
@@ -92,7 +92,7 @@ ${encryptionKey.replace('key_', '')}
           onClick={onDone}
           className={`w-full rounded-lg border px-4 py-3 text-sm font-medium transition-all ${
             hasDownloadedKey
-              ? 'border-tinfoil-twilight/40 bg-tinfoil-twilight text-white hover:bg-tinfoil-twilight-hover'
+              ? 'border-tinfoil-rose/40 bg-tinfoil-rose text-brand-dark hover:bg-tinfoil-rose-hover'
               : 'border-border-subtle bg-surface-chat text-content-muted hover:bg-surface-chat/80'
           }`}
         >

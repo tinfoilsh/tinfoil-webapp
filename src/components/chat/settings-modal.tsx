@@ -2053,7 +2053,7 @@ ${encryptionKey.replace('key_', '')}
                     type="button"
                     onClick={handleSavePersonalization}
                     disabled={profileLocked}
-                    className="rounded-lg bg-tinfoil-twilight px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-tinfoil-rose px-3 py-1 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-rose-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -2160,7 +2160,7 @@ ${encryptionKey.replace('key_', '')}
                   <button
                     onClick={handleSavePersonalization}
                     disabled={profileLocked}
-                    className="rounded-lg bg-tinfoil-twilight px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-tinfoil-rose px-4 py-1.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-rose-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -3308,7 +3308,7 @@ ${encryptionKey.replace('key_', '')}
                           >
                             <div className="flex items-start gap-2">
                               <TfPersonKey
-                                className="mt-0.5 h-4 w-4 shrink-0 text-tinfoil-twilight dark:text-tinfoil-twilight-light"
+                                className="mt-0.5 h-4 w-4 shrink-0 text-link"
                                 aria-hidden="true"
                               />
                               <div>
@@ -3323,10 +3323,10 @@ ${encryptionKey.replace('key_', '')}
                             </div>
                             <div className="ml-6 mt-2 flex items-center gap-1.5">
                               <TfShieldCheckAnimated
-                                className="h-3.5 w-3.5 text-tinfoil-twilight dark:text-tinfoil-twilight-light"
+                                className="h-3.5 w-3.5 text-link"
                                 aria-hidden="true"
                               />
-                              <span className="text-xs font-medium text-tinfoil-twilight dark:text-tinfoil-twilight-light">
+                              <span className="text-xs font-medium text-link">
                                 Passkey active
                               </span>
                             </div>
@@ -4375,7 +4375,7 @@ ${encryptionKey.replace('key_', '')}
                               }}
                               disabled={upgradeLoading}
                               className={cn(
-                                'mt-4 w-full rounded-md bg-tinfoil-twilight px-4 py-3 text-sm font-medium text-white transition-all hover:bg-tinfoil-twilight-hover',
+                                'mt-4 w-full rounded-md bg-tinfoil-rose px-4 py-3 text-sm font-medium text-brand-dark transition-all hover:bg-tinfoil-rose-hover',
                                 upgradeLoading &&
                                   'cursor-not-allowed opacity-70',
                               )}
@@ -4491,7 +4491,7 @@ ${encryptionKey.replace('key_', '')}
                         </p>
                         <Link
                           href="/signin"
-                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-tinfoil-twilight px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-tinfoil-twilight-hover"
+                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-tinfoil-rose px-4 py-2.5 text-sm font-medium text-brand-dark transition-all hover:bg-tinfoil-rose-hover"
                         >
                           <TfSignIn className="h-4 w-4" aria-hidden="true" />
                           Sign in or sign up

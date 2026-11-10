@@ -96,7 +96,7 @@ export function AddToProjectContextModal({
           </button>
           <button
             onClick={handleAddToProject}
-            className="flex-1 rounded-lg bg-tinfoil-twilight px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover sm:text-base"
+            className="flex-1 rounded-lg bg-tinfoil-rose px-4 py-2 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-rose-hover sm:text-base"
           >
             Yes, add to project
           </button>

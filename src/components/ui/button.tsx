@@ -12,7 +12,7 @@ const BUTTON_VARIANTS = cva(
         default:
           'bg-primary text-primary-foreground shadow hover:bg-primary/90',
         solid:
-          'border border-tinfoil-twilight bg-tinfoil-twilight text-white shadow-none hover:border-tinfoil-twilight-hover hover:bg-tinfoil-twilight-hover',
+          'border border-tinfoil-rose bg-tinfoil-rose text-brand-dark shadow-none hover:border-tinfoil-rose-hover hover:bg-tinfoil-rose-hover',
         destructive:
           'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90',
         outline:
@@ -22,7 +22,7 @@ const BUTTON_VARIANTS = cva(
         secondary:
           'bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80',
         ghost: 'hover:bg-accent hover:text-accent-foreground',
-        link: 'text-primary underline-offset-4 hover:underline',
+        link: 'text-link underline-offset-4 hover:underline',
       },
       size: {
         default: 'h-9 px-4 py-2',

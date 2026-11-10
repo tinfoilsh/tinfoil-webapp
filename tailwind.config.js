@@ -1,6 +1,6 @@
 const { radius } = require('./src/lib/radius')
-const TINFOIL_TWILIGHT_RGB = '107 91 149'
-const TINFOIL_BRASS_RGB = '211 165 105'
+const TINFOIL_ROSE_RGB = '230 181 196'
+const TINFOIL_CHAMPAGNE_RGB = '230 204 168'
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -90,6 +90,7 @@ module.exports = {
         border: 'hsl(var(--border) / <alpha-value>)',
         input: 'hsl(var(--input) / <alpha-value>)',
         ring: 'hsl(var(--ring) / <alpha-value>)',
+        link: 'hsl(var(--link) / <alpha-value>)',
         brand: {
           dark: 'hsl(var(--color-brand-dark) / <alpha-value>)',
           light: 'hsl(var(--color-brand-light) / <alpha-value>)',
@@ -100,27 +101,26 @@ module.exports = {
           'accent-light-darker':
             'hsl(var(--color-accent-light-darker) / <alpha-value>)',
         },
-        // Mirrors the decorative Brass accent in @tinfoil/tailwind-preset.
-        'tinfoil-brass': {
-          DEFAULT: `rgb(${TINFOIL_BRASS_RGB})`,
-          hover: '#C9934F',
-          darker: '#BF8640',
-          subtle: `rgb(${TINFOIL_BRASS_RGB} / 0.10)`,
-          soft: `rgb(${TINFOIL_BRASS_RGB} / 0.30)`,
-          medium: `rgb(${TINFOIL_BRASS_RGB} / 0.60)`,
-          bold: `rgb(${TINFOIL_BRASS_RGB} / 0.90)`,
+        // Mirrors the decorative Champagne accent in @tinfoil/tailwind-preset.
+        'tinfoil-champagne': {
+          DEFAULT: `rgb(${TINFOIL_CHAMPAGNE_RGB})`,
+          hover: '#DDBB8C',
+          darker: '#D2AA75',
+          subtle: `rgb(${TINFOIL_CHAMPAGNE_RGB} / 0.10)`,
+          soft: `rgb(${TINFOIL_CHAMPAGNE_RGB} / 0.30)`,
+          medium: `rgb(${TINFOIL_CHAMPAGNE_RGB} / 0.60)`,
+          bold: `rgb(${TINFOIL_CHAMPAGNE_RGB} / 0.90)`,
         },
-        // Mirrors tinfoil-twilight from @tinfoil/tailwind-preset; `light` is
-        // for text on dark surfaces.
-        'tinfoil-twilight': {
-          DEFAULT: `rgb(${TINFOIL_TWILIGHT_RGB})`,
-          hover: '#605185',
-          darker: '#524573',
-          light: '#A89ACB',
-          subtle: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.10)`,
-          soft: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.30)`,
-          medium: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.60)`,
-          bold: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.90)`,
+        // Mirrors tinfoil-rose from @tinfoil/tailwind-preset.
+        'tinfoil-rose': {
+          DEFAULT: `rgb(${TINFOIL_ROSE_RGB})`,
+          hover: '#DDA3B5',
+          darker: '#D18DA3',
+          tint: '#F4E3E8',
+          subtle: `rgb(${TINFOIL_ROSE_RGB} / 0.10)`,
+          soft: `rgb(${TINFOIL_ROSE_RGB} / 0.30)`,
+          medium: `rgb(${TINFOIL_ROSE_RGB} / 0.60)`,
+          bold: `rgb(${TINFOIL_ROSE_RGB} / 0.90)`,
         },
         surface: {
           canvas: 'hsl(var(--surface-canvas) / <alpha-value>)',

@@ -54,7 +54,7 @@
 
     /* Buttons */
     --button-send-background: var(--primary);
-    --button-send-foreground: 0 0% 100%;
+    --button-send-foreground: var(--color-brand-dark);
 
     /* Neutral scale */
     --gray-950: var(--color-brand-dark);
@@ -76,8 +76,9 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
-    --primary: 257 24.2% 47.1%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 341.63 49.49% 80.59%;
+    --primary-foreground: var(--color-brand-dark);
+    --link: var(--color-accent-dark);
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
     --muted: var(--surface-chat);
@@ -88,7 +89,7 @@
     --destructive-foreground: 0 0% 98%;
     --border: var(--border-subtle);
     --input: var(--border-subtle);
-    --ring: var(--primary);
+    --ring: var(--color-accent-dark);
     --chart-1: 195 30.8% 73.9%;
     --chart-2: 180 100% 28%;
     --chart-3: 198 68.4% 40%;
@@ -115,7 +116,7 @@
     --content-inverse: var(--color-brand-dark);
 
     --button-send-background: var(--primary);
-    --button-send-foreground: 0 0% 100%;
+    --button-send-foreground: var(--color-brand-dark);
 
     --color-accent-light-darker: 195 24.8% 67.3%;
 
@@ -137,8 +138,7 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
-    --primary: 257 24.2% 47.1%;
-    --primary-foreground: 0 0% 100%;
+    --link: var(--primary);
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
     --muted: var(--surface-chat);
@@ -149,7 +149,7 @@
     --destructive-foreground: 0 0% 98%;
     --border: var(--border-subtle);
     --input: var(--border-subtle);
-    --ring: 257 32% 70%;
+    --ring: var(--primary);
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;

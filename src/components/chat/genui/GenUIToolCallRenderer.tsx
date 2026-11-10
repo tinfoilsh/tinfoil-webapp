@@ -370,7 +370,7 @@ function ParseFailureCard({
             type="button"
             onClick={() => void handleRetryToolCall()}
             disabled={isRetrying}
-            className="inline-flex w-full flex-shrink-0 items-center justify-center gap-1.5 rounded-md border border-tinfoil-twilight bg-tinfoil-twilight px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-tinfoil-twilight-hover disabled:cursor-default disabled:opacity-60 md:w-auto"
+            className="inline-flex w-full flex-shrink-0 items-center justify-center gap-1.5 rounded-md border border-tinfoil-rose bg-tinfoil-rose px-3 py-1.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-rose-hover disabled:cursor-default disabled:opacity-60 md:w-auto"
           >
             {isRetrying ? (
               <PiSpinner
