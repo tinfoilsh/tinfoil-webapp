@@ -312,21 +312,33 @@ export function shareThread(thread: StoredThread): StoredThread {
 
 // A chat from its latest compaction marker on: the marker, whose summary
 // covers every message before it, and the messages after it, which is all
-// the harness reads of the chat. A request about a message the marker covers
-// sends the chat whole.
+// the harness reads of the chat to answer a new question. To answer a
+// question again it also reads the exchange before that question, so a
+// request about a message sends the chat whole unless an earlier question
+// follows the marker too.
 export function fromLatestCompaction(
   thread: StoredThread,
-  about: readonly (string | undefined)[] = [],
+  about?: string,
 ): StoredThread {
-  const marker = thread.messages.findLastIndex(
-    ({ role }) => role === COMPACTION_ROLE,
-  )
+  const { messages } = thread
+  const marker = messages.findLastIndex(({ role }) => role === COMPACTION_ROLE)
   if (marker <= 0) return thread
-  const messages = thread.messages.slice(marker)
-  return about.every(
-    (named) => named === undefined || messages.some(({ id }) => id === named),
+  const subject =
+    about === undefined
+      ? messages.length
+      : messages.findIndex(({ id }) => id === about)
+  // The question the request is about: the message itself, or the one its
+  // reply answers.
+  const question =
+    messages[subject]?.role === 'assistant'
+      ? messages.findLastIndex(
+          ({ role }, index) => index < subject && role === 'user',
+        )
+      : subject
+  return messages.some(
+    ({ role }, index) => index > marker && index < question && role === 'user',
   )
-    ? { ...thread, messages }
+    ? { ...thread, messages: messages.slice(marker) }
     : thread
 }
 

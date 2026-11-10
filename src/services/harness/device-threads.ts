@@ -146,12 +146,9 @@ export function storeCutOff(
 }
 
 // The chat a request sends: from its latest compaction marker on while the
-// harness takes it so, unless the request is about a message before that
-// marker, and otherwise whole.
-const sendable = (
-  thread: StoredThread,
-  about?: readonly (string | undefined)[],
-): StoredThread =>
+// harness takes it so and reads no more of it for the message the request
+// is about, and otherwise whole.
+const sendable = (thread: StoredThread, about?: string): StoredThread =>
   getView().session?.features[PARTIAL_THREAD_FEATURE]
     ? fromLatestCompaction(thread, about)
     : thread
@@ -210,22 +207,16 @@ export function deviceThreads({
   // Stores the changed chat in place of the copy it was made from. When a
   // run stored its thread meanwhile, the run's thread keeps its messages and
   // takes the settings the change made; a change of messages fails. A change
-  // that says which messages it is about sends the chat from its latest
-  // compaction marker on.
+  // sends the chat whole unless it says what it sends of it.
   const change = async (
     threadId: string,
     path: ChangeRoute,
     fields: Record<string, unknown>,
-    about?: readonly string[],
+    sending: (thread: StoredThread) => StoredThread = (thread) => thread,
   ): Promise<StoredThread | null> => {
     const sent = await store.get(threadId)
     if (!sent) return null
-    const changed = await request(
-      path,
-      sent,
-      fields,
-      about ? sendable(sent, about) : sent,
-    )
+    const changed = await request(path, sent, fields, sending(sent))
     const settings = USER_SETTINGS.filter(
       (setting) => changed[setting] !== sent[setting],
     )
@@ -277,7 +268,7 @@ export function deviceThreads({
           threadId,
           ROUTES.update,
           { id: threadId, ...patch, profile: getView().profile },
-          [],
+          sendable,
         )
       if (!changed) return null
       const summary = localSummary(changed)
@@ -340,7 +331,7 @@ export function deviceThreads({
         threadId,
         ROUTES.messageAnswer,
         { threadId, messageId, toolCallId, answers },
-        [messageId],
+        (thread) => sendable(thread, messageId),
       )
       return changed && localThreadView(changed)
     },
@@ -366,7 +357,7 @@ export function deviceThreads({
         {
           local: true,
           threadId,
-          thread: sendable(thread, [messageId]),
+          thread: sendable(thread, messageId),
           messageId,
           ...speechSpeed(),
         },
@@ -400,7 +391,18 @@ export function deviceThreads({
       const { first, presetChosen, presetId, profile } = settings
       const input: Turn = {
         ...defaults,
-        ...(stored ? { thread: sendable(stored, [fields.messageId]) } : {}),
+        ...(stored
+          ? {
+              // A retry answers the chat's last question again.
+              thread: sendable(
+                stored,
+                fields.messageId ??
+                  (fields.kind === 'retry'
+                    ? stored.messages.at(-1)?.id
+                    : undefined),
+              ),
+            }
+          : {}),
         presetId: first && presetChosen ? presetId : undefined,
         ...fields,
         threadId,
