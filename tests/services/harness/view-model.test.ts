@@ -1,5 +1,7 @@
+import { CHAT_END } from '@/services/harness/protocol'
 import type { Message } from '@/services/harness/types'
 import {
+  compactable,
   compactionViews,
   messageView,
   shownMessages,
@@ -183,5 +185,26 @@ describe('the compaction markers of a chat', () => {
 
   it('shows no summary being written once the run writing it is over', () => {
     expect(compactionViews(messages, false)).toEqual({ u2: summarized })
+  })
+
+  // A compaction of the latest exchange too leaves its marker after the last
+  // reply, until a question follows it.
+  const endsChat: Message[] = [
+    question('u1'),
+    answer('a1'),
+    { ...messages[2], id: 'c3' },
+  ]
+
+  it('shows one that ends the chat after its last message', () => {
+    expect(compactionViews(endsChat, false)).toEqual({
+      [CHAT_END]: { ...summarized, id: 'c3' },
+    })
+  })
+
+  it('offers to compact a chat only while a reply follows its latest marker', () => {
+    expect(compactable(endsChat.slice(0, 2))).toBe(true)
+    expect(compactable(endsChat)).toBe(false)
+    expect(compactable([...endsChat, question('u2')])).toBe(false)
+    expect(compactable([...endsChat, question('u2'), answer('a2')])).toBe(true)
   })
 })

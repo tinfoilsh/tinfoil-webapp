@@ -104,7 +104,8 @@ export function chatTurns({
   claim,
   reopen,
 }: TurnContext) {
-  // The fields every turn of the open chat has.
+  // The fields every turn of the open chat has. A compaction on request
+  // summarizes the latest exchange too, as the chat shows a marker at its end.
   const turnDefaults = (threadId: string): Turn => ({
     clientRequestId: crypto.randomUUID(),
     threadId,
@@ -112,6 +113,7 @@ export function chatTurns({
     widgets: GENUI_WIDGETS.map((widget) => widget.name).filter((name) =>
       session?.widgets.includes(name),
     ),
+    compactLatest: true,
     options: {
       model: open.get().model,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -531,8 +533,9 @@ export function chatTurns({
     if (!failedRun || status !== 'error') return reconnect()
     return send({ ...fields, kind: compactTurn ? 'compact' : 'retry' })
   }
-  // Compacts the open chat on request: the harness summarizes its earlier
-  // messages without asking the model. It does so only while no reply runs.
+  // Compacts the open chat on request: the harness summarizes its messages,
+  // the latest exchange included, without asking the model. It does so only
+  // while no reply runs.
   function compact(fields: Partial<Turn> = {}) {
     if (!open.get().id || isRunning(controller.view.get())) return
     return send({ ...fields, kind: 'compact' })

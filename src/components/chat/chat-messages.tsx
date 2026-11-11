@@ -4,6 +4,7 @@ import {
   type BaseModel,
 } from '@/config/models'
 import { useChatPrint } from '@/hooks/use-chat-print'
+import { CHAT_END } from '@/services/harness/protocol'
 import 'katex/dist/katex.min.css'
 import React, {
   memo,
@@ -44,7 +45,8 @@ import { WelcomeScreen } from './WelcomeScreen'
 
 type ChatMessagesProps = {
   messages: Message[]
-  // The compaction markers the chat shows, by the message each shows before.
+  // The compaction markers the chat shows, by the message each shows before,
+  // or by CHAT_END for one after the last message.
   compactions?: Readonly<Record<string, Compaction>>
   isDarkMode: boolean
   chatId: string
@@ -567,9 +569,13 @@ export function ChatMessages({
   // The messages before the chat's latest written compaction marker, which
   // the model reads only as the marker's summary. A marker still being
   // written may fail, so the messages before it stay as they are until then.
-  const contextStart = messages.findLastIndex(
-    ({ id }) => !!id && compactions[id]?.isRunning === false,
-  )
+  const endCompaction = compactions[CHAT_END]
+  const contextStart =
+    endCompaction?.isRunning === false
+      ? messages.length
+      : messages.findLastIndex(
+          ({ id }) => !!id && compactions[id]?.isRunning === false,
+        )
   return (
     <ImageGalleryProvider
       key={chatId}
@@ -642,6 +648,15 @@ export function ChatMessages({
                 })}
               </QuestionsContext.Provider>
             </UnsavedImagesProvider>
+            {endCompaction && (
+              <CompactionMarker
+                id={endCompaction.id}
+                isRunning={endCompaction.isRunning}
+                summary={endCompaction.summary}
+                messageCount={endCompaction.messageCount}
+                startedAt={endCompaction.startedAt}
+              />
+            )}
             {showLoadingPlaceholder && (
               <LoadingMessage
                 isDarkMode={isDarkMode}

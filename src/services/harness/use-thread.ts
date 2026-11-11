@@ -980,8 +980,8 @@ export function useThread(
       profileReady &&
       (onDevice(openState) || keyReady),
     canChangeMessages: !loading && !openState.failedId && !!chat.id,
-    // The open chat can be compacted while no reply runs and it holds
-    // earlier messages to summarize.
+    // The open chat can be compacted while no reply runs and it holds a
+    // reply its latest compaction did not summarize.
     canCompact:
       !loading &&
       !openState.failedId &&

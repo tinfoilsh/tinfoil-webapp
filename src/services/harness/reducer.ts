@@ -1,5 +1,6 @@
 import {
   actionOf,
+  CHAT_END,
   COMPACTION_COMPLETED,
   COMPACTION_ROLE,
   ERROR_ACTIONS,
@@ -258,14 +259,15 @@ function withToolCall(
   return null
 }
 
-// Puts a compaction marker before the message `before` names. A marker whose
-// message is not loaded sits among earlier messages the view has not loaded,
-// so the view leaves it out.
+// Puts a compaction marker before the message `before` names, or at the end
+// of the chat when it names none. A marker whose message is not loaded sits
+// among earlier messages the view has not loaded, so the view leaves it out.
 function withMarker(
   messages: Message[],
   marker: Message,
   before: string,
 ): Message[] {
+  if (before === CHAT_END) return [...messages, marker]
   const at = messages.findIndex(({ id }) => id === before)
   return at < 0
     ? messages
@@ -733,9 +735,10 @@ function applyEvent(
       }
     }
     // A compaction marker shows before the first message the model goes on
-    // reading while its summary is written, and holds the summary once a
-    // completed compaction closes it; a compaction that did not complete
-    // leaves no marker.
+    // reading, or after the last message when the model reads none of them,
+    // while its summary is written, and holds the summary once a completed
+    // compaction closes it; a compaction that did not complete leaves no
+    // marker.
     case 'COMPACTION_START':
       return next.messages.some(({ id }) => id === event.messageId)
         ? next

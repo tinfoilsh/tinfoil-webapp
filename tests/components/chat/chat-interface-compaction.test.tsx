@@ -1,5 +1,6 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
+import { CHAT_END } from '@/services/harness/protocol'
 import { publish } from '@/services/harness/runtime'
 import type {
   Frame,
@@ -213,10 +214,16 @@ const composerStatus = (name: string) =>
 const compactingStatus = () => composerStatus('Compacting conversation')
 const compactedNotice = () => composerStatus('Conversation compacted')
 
-const started = (runId: string, shown = messages): HarnessEvent[] => [
+// A run that compacts the chat: at its end, as a compaction the user asks
+// for does, or before the message `before` names.
+const started = (
+  runId: string,
+  shown = messages,
+  before = CHAT_END,
+): HarnessEvent[] => [
   { type: 'RUN_STARTED', threadId: THREAD_ID, runId, instance: 'instance-1' },
   { type: 'MESSAGES_SNAPSHOT', messages: shown, hasOlder: false },
-  { type: 'COMPACTION_START', messageId: 'c1', beforeMessageId: 'u2' },
+  { type: 'COMPACTION_START', messageId: 'c1', beforeMessageId: before },
 ]
 
 // The chat, whose last reply the service stopped as it thought again.
@@ -246,6 +253,15 @@ const marker: Message = {
   },
 }
 
+// The marker of a compaction the user asked for, which summarizes both
+// exchanges.
+const endMarker: Message = {
+  ...marker,
+  content:
+    '## Goals and context\nThe user asked two questions and got answers.',
+  compaction: { ...marker.compaction!, messages: 4 },
+}
+
 it('compacts a chat from its context indicator, leaving its last reply as it was while the summary is written', async () => {
   signIn({ cloud: true, session: compacting })
   const run = scriptRuns()
@@ -259,6 +275,7 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
     kind: 'compact',
     threadId: THREAD_ID,
     key: KEY,
+    compactLatest: true,
     options: { model: 'test-model' },
   })
   expect(run.turns[0]).not.toHaveProperty('content')
@@ -287,9 +304,9 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
     {
       type: 'COMPACTION_END',
       messageId: 'c1',
-      beforeMessageId: 'u2',
+      beforeMessageId: CHAT_END,
       outcome: 'completed',
-      marker,
+      marker: endMarker,
     },
     {
       type: 'STATE_SNAPSHOT',
@@ -320,22 +337,29 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
       name: 'Context window 10% used (~21k of 210k tokens)',
     }),
   ).toBeInTheDocument()
+  // The marker sits under the last reply, which the model no longer reads
+  // either.
+  const summarizedNote = screen.getByRole('note', {
+    name: 'Earlier messages above were summarized and are no longer read by the assistant',
+  })
+  const lastReply = screen.getByText('Second answer')
   expect(
-    screen.getByRole('button', { name: 'Compacted 2 earlier messages' }),
+    lastReply.compareDocumentPosition(summarizedNote) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
+  expect(lastReply.closest('[data-out-of-context]')).not.toBeNull()
+  expect(
+    screen.getByRole('button', { name: 'Compacted 4 earlier messages' }),
   ).toBeInTheDocument()
   expect(compactingStatus()).not.toBeInTheDocument()
 
   // The chat says it was compacted, also once the revision the compaction
   // saved has the chat read again.
-  expect(compactedNotice()).toHaveTextContent('Summarized 2 earlier messages.')
+  expect(compactedNotice()).toHaveTextContent('Summarized 4 earlier messages.')
   client.post.mockImplementation(async (path: string) => {
     if (path === '/v1/threads/get')
       return structuredClone({
-        ...threadOf([
-          ...stoppedThinking.slice(0, 2),
-          marker,
-          ...stoppedThinking.slice(2),
-        ]),
+        ...threadOf([...stoppedThinking, endMarker]),
         contextUsage: {
           usedTokens: 23_000,
           limitTokens: 210_000,
@@ -356,9 +380,9 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
     }),
   ).toBeInTheDocument()
 
-  // It shows where, as its marker sits above the exchange it kept.
+  // It shows where, as its marker sits under the reply it summarized last.
   const notice = compactedNotice()
-  expect(notice).toHaveTextContent('Summarized 2 earlier messages.')
+  expect(notice).toHaveTextContent('Summarized 4 earlier messages.')
   const scrolled = vi.fn()
   const hadScroll = Object.hasOwn(Element.prototype, 'scrollIntoView')
   const scroll = Element.prototype.scrollIntoView
@@ -425,9 +449,9 @@ it('queues a message sent while the chat compacts, and streams its reply once th
     {
       type: 'COMPACTION_END',
       messageId: 'c1',
-      beforeMessageId: 'u2',
+      beforeMessageId: CHAT_END,
       outcome: 'completed',
-      marker,
+      marker: endMarker,
     },
     {
       type: 'RUN_FINISHED',
@@ -448,9 +472,8 @@ it('queues a message sent while the chat compacts, and streams its reply once th
     {
       type: 'MESSAGES_SNAPSHOT',
       messages: [
-        ...messages.slice(0, 2),
-        marker,
-        ...messages.slice(2),
+        ...messages,
+        endMarker,
         {
           id: 'u3',
           role: 'user',
@@ -513,7 +536,7 @@ it('says the chat is compacting while a turn compacts it before the reply', asyn
   }
   expect(compactingStatus()).not.toBeInTheDocument()
 
-  run.emit(0, ...started('run-turn', [...messages, question]))
+  run.emit(0, ...started('run-turn', [...messages, question], 'u2'))
 
   await waitFor(() => expect(compactingStatus()).toBeInTheDocument())
   run.emit(
@@ -597,7 +620,7 @@ it('stops a compaction without saying the user stopped the reply before it', asy
       {
         type: 'COMPACTION_END',
         messageId: 'c1',
-        beforeMessageId: 'u2',
+        beforeMessageId: CHAT_END,
         outcome: 'failed',
       },
       {
@@ -634,7 +657,7 @@ it('compacts again when the user retries a compaction that failed', async () => 
     {
       type: 'COMPACTION_END',
       messageId: 'c1',
-      beforeMessageId: 'u2',
+      beforeMessageId: CHAT_END,
       outcome: 'failed',
     },
     {
@@ -663,10 +686,10 @@ it('compacts again when the user retries a compaction that failed', async () => 
   run.end(1)
 })
 
-it('offers no compaction of a chat whose only exchange is its latest', async () => {
+it('offers no compaction of a chat compacted since its last reply', async () => {
   signIn({ cloud: true, session: compacting })
   scriptRuns()
-  await openChat(messages.slice(2))
+  await openChat([...messages, endMarker])
 
   fireEvent.click(screen.getByRole('button', { name: USAGE_LABEL }))
 

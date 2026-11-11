@@ -73,6 +73,9 @@ export const COMPACTION_ROLE = 'compaction'
 // The outcome of a compaction that wrote its marker. A client treats any
 // other as failed.
 export const COMPACTION_COMPLETED = 'completed'
+// What a compaction marker at the end of the chat, after its last message,
+// sits before: COMPACTION_START names no message for it.
+export const CHAT_END = ''
 // The session feature under which the harness takes a chat kept on this
 // device from its latest compaction marker on.
 export const PARTIAL_THREAD_FEATURE = 'partialThread'
@@ -95,7 +98,7 @@ export const ERROR_CODES = {
   // The chat's earlier messages could not be summarized to make room for a
   // turn.
   compactionFailed: 'COMPACTION_FAILED',
-  // A chat compacted on request holds nothing before its latest exchange to
+  // A chat compacted on request holds nothing its latest compaction did not
   // summarize.
   nothingToCompact: 'NOTHING_TO_COMPACT',
   // A text read aloud holds nothing to read once its code, images and bare

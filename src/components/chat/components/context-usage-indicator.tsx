@@ -26,7 +26,7 @@ const WARNING_THRESHOLD_PERCENT = 80
 const COMPACTION_FEATURE = 'compaction'
 const COMPACTION_NOTE = 'Earlier messages will be summarized to make room.'
 const COMPACT_EXPLANATION =
-  'Compacting summarizes earlier messages so the chat uses less of the context window. The latest exchange is kept as it is.'
+  'Compacting summarizes the conversation so far, including the latest exchange, so the chat uses less of the context window.'
 const NOTHING_TO_COMPACT_NOTE = 'Nothing to compact right now.'
 export const COMPACT_LABEL = 'Compact chat'
 export const COMPACTING_LABEL = 'Compacting…'

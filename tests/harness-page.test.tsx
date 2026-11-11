@@ -99,6 +99,7 @@ it('runs a signed-out first turn as a new device chat with its preset and keeps 
     threadId: expect.stringMatching(/^\d{13}_[0-9a-f-]{36}$/),
     kind: 'send',
     widgets: ['render_chart'],
+    compactLatest: true,
     options: {
       model: 'test-model',
       timezone: expect.any(String),

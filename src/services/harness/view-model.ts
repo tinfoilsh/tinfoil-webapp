@@ -8,7 +8,7 @@ import type {
   Annotation as UIAnnotation,
 } from '@/components/chat/types'
 import { DEFAULT_CHAT_TITLE, PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
-import { COMPACTION_ROLE, WIDGET_PREFIX } from './protocol'
+import { CHAT_END, COMPACTION_ROLE, WIDGET_PREFIX } from './protocol'
 import type {
   QueueItem,
   ThreadSummary,
@@ -223,8 +223,9 @@ export const shownMessages = <M extends Pick<WireMessage, 'role'>>(
   messages: readonly M[],
 ) => messages.filter((message): message is Known<M> => ROLES.has(message.role))
 // The compaction markers a chat shows, by the id of the shown message each
-// shows before. A marker whose summary is being written shows only while
-// the chat's run goes on to write it.
+// shows before, or by CHAT_END for one after the last message. A marker
+// whose summary is being written shows only while the chat's run goes on to
+// write it.
 export function compactionViews(
   messages: readonly WireMessage[],
   running: boolean,
@@ -255,6 +256,7 @@ export function compactionViews(
       pending = undefined
     }
   }
+  if (pending) views[CHAT_END] = pending
   return views
 }
 // The compaction marker a run of the chat just completed, with the number of
@@ -271,12 +273,12 @@ export function compactedView(state: {
     : undefined
 }
 // Whether compacting the chat on request has anything to summarize, as the
-// harness decides it: a message after the latest compaction marker that
-// comes before the last question, which the harness keeps with its reply.
+// harness decides it for a turn that compacts the latest exchange too: a
+// reply after the latest compaction marker.
 export function compactable(messages: readonly WireMessage[]): boolean {
-  const question = messages.findLastIndex(({ role }) => role === 'user')
+  const reply = messages.findLastIndex(({ role }) => role === 'assistant')
   const marker = messages.findLastIndex(({ role }) => role === COMPACTION_ROLE)
-  return question > marker + 1
+  return reply > marker
 }
 // A message as the view shows it, with the latest summary of each thinking
 // block's reasoning.
