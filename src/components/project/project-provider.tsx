@@ -3,6 +3,7 @@ import { PROJECTS_CHANGED } from '@/hooks/use-projects'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import * as projects from '@/services/harness/projects'
 import { useHarness } from '@/services/harness/provider'
+import { useReloadHold } from '@/services/reload-when-updated'
 import type { Project, ProjectDocument } from '@/types/project'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
@@ -39,6 +40,8 @@ export function ProjectProvider({
   )
   const [error, setError] = useState<string | null>(null)
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
+  // A reload ends the uploads of project documents under way.
+  useReloadHold(uploadingFiles.length > 0)
   const generation = useRef(0)
   // The project the user opened last. A change to another project that
   // finishes later must not reopen that one.

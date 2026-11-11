@@ -177,6 +177,7 @@ import {
   registerStartFreshKeyIfNeeded,
 } from '@/services/keys/cloud-key-authorization'
 import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
+import { useReloadHold } from '@/services/reload-when-updated'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { hasPasskeyBackup } from '@/utils/signout-cleanup'
 import { useUIState } from './hooks/use-ui-state'
@@ -435,6 +436,8 @@ export function ChatInterface({
     ProcessedDocument[]
   >([])
   const [quote, setQuote] = useState<string | null>(null)
+  // A reload loses the message being written: its text, quote and files.
+  useReloadHold(!!input.trim() || !!quote || processedDocuments.length > 0)
   // Onboarding is shown to signed-in users once their profile has loaded,
   // unless the account completed it on any device. A refused key keeps the
   // profile from loading, so the account and this device decide then.
@@ -1257,6 +1260,9 @@ export function ChatInterface({
     }
   }
   const sidebarChat = useSidebarChat({ context: thread.askContext, options })
+  // An ask and its answer live only in this page, and only while the
+  // sidebar shows them: the next ask replaces one it closed on.
+  useReloadHold(isAskSidebarOpen && sidebarChat.messages.length > 0)
   // A flag stops the chat: its reply in progress, which takes the turns
   // queued behind it with it, and an ask about it.
   const runningRef = useRef(isStreaming)

@@ -3,6 +3,7 @@ import { cn } from '@/components/ui/utils'
 import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
 import { useHarness } from '@/services/harness/provider'
+import { useReloadHold } from '@/services/reload-when-updated'
 import { dictation } from '@/services/speech/dictation'
 import { logError } from '@/utils/error-handling'
 import {
@@ -323,6 +324,9 @@ export const ChatInput = memo(function ChatInput({
   )
   const isRecording = dictationState.status === 'recording'
   const isTranscribing = dictationState.status === 'transcribing'
+  // A reload cuts off the recording under way, and the text of one being
+  // transcribed has yet to reach the composer.
+  useReloadHold(isRecording || isTranscribing)
   const recordingStream = dictationState.stream
   // The draft as dictated text is added to it, which can happen more than
   // once before the composer renders again.

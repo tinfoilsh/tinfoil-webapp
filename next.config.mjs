@@ -15,6 +15,9 @@ const nextConfig = {
   outputFileTracingRoot: projectRoot,
   env: {
     NEXT_PUBLIC_APP_VERSION: appVersion,
+    // The Vercel deployment being built, which scripts/write-deployment.mjs
+    // also publishes for pages left open to compare with their own.
+    NEXT_PUBLIC_DEPLOYMENT_ID: process.env.VERCEL_DEPLOYMENT_ID ?? '',
   },
 
   // Disable image optimization for static export
