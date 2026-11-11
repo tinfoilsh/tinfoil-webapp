@@ -43,6 +43,7 @@ describe('section rewrites', () => {
     '/.well-known/webcat/manifest.json',
     '/.well-known/webcat/missing',
     '/js/boot.js',
+    '/deployment.json',
     '/favicon.ico',
     '/preview/mermaid.html',
   ])('leaves %s to the filesystem', (path) => {
