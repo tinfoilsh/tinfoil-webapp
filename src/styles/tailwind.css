@@ -76,7 +76,7 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
-    --primary: 341.63 49.49% 80.59%;
+    --primary: 34.84 55.36% 78.04%;
     --primary-foreground: var(--color-brand-dark);
     --link: var(--color-accent-dark);
     --secondary: var(--surface-sidebar-button);
@@ -138,7 +138,7 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
-    --link: var(--primary);
+    --link: 257 32% 70%;
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
     --muted: var(--surface-chat);

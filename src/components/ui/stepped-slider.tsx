@@ -52,7 +52,7 @@ export function SteppedSlider<T extends string>({
       <SliderPrimitive.Track className="relative h-full w-full grow overflow-hidden rounded-full bg-content-muted/20">
         <SliderPrimitive.Range
           className={cn(
-            'absolute h-full rounded-full bg-tinfoil-rose',
+            'absolute h-full rounded-full bg-tinfoil-oak',
             index === lastIndex && 'stepped-slider-max-fill',
           )}
           style={{

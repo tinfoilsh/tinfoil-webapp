@@ -368,7 +368,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
                 disabled={
                   isVerifying || verificationCode.length !== TOTP_CODE_LENGTH
                 }
-                className="flex flex-1 items-center justify-center gap-2 rounded-md bg-tinfoil-rose px-3 py-2 text-xs font-medium text-brand-dark transition-colors hover:bg-tinfoil-rose-hover disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex flex-1 items-center justify-center gap-2 rounded-md bg-tinfoil-oak px-3 py-2 text-xs font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isVerifying && (
                   <PiSpinner
@@ -467,7 +467,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
             <DialogPrimitive.Close asChild>
               <button
                 type="button"
-                className="mt-4 w-full rounded-md bg-tinfoil-rose px-4 py-2.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-rose-hover"
+                className="mt-4 w-full rounded-md bg-tinfoil-oak px-4 py-2.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover"
               >
                 Done
               </button>

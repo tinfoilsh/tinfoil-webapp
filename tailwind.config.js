@@ -1,6 +1,6 @@
 const { radius } = require('./src/lib/radius')
-const TINFOIL_ROSE_RGB = '230 181 196'
-const TINFOIL_CHAMPAGNE_RGB = '230 204 168'
+const TINFOIL_OAK_RGB = '230 204 168'
+const TINFOIL_TWILIGHT_RGB = '107 91 149'
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -101,26 +101,27 @@ module.exports = {
           'accent-light-darker':
             'hsl(var(--color-accent-light-darker) / <alpha-value>)',
         },
-        // Mirrors the decorative Champagne accent in @tinfoil/tailwind-preset.
-        'tinfoil-champagne': {
-          DEFAULT: `rgb(${TINFOIL_CHAMPAGNE_RGB})`,
+        // Mirrors the secondary Twilight accent in @tinfoil/tailwind-preset.
+        'tinfoil-twilight': {
+          DEFAULT: `rgb(${TINFOIL_TWILIGHT_RGB})`,
+          hover: '#605185',
+          darker: '#524573',
+          light: '#A89ACB',
+          subtle: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.10)`,
+          soft: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.30)`,
+          medium: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.60)`,
+          bold: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.90)`,
+        },
+        // Mirrors tinfoil-oak from @tinfoil/tailwind-preset.
+        'tinfoil-oak': {
+          DEFAULT: `rgb(${TINFOIL_OAK_RGB})`,
           hover: '#DDBB8C',
           darker: '#D2AA75',
-          subtle: `rgb(${TINFOIL_CHAMPAGNE_RGB} / 0.10)`,
-          soft: `rgb(${TINFOIL_CHAMPAGNE_RGB} / 0.30)`,
-          medium: `rgb(${TINFOIL_CHAMPAGNE_RGB} / 0.60)`,
-          bold: `rgb(${TINFOIL_CHAMPAGNE_RGB} / 0.90)`,
-        },
-        // Mirrors tinfoil-rose from @tinfoil/tailwind-preset.
-        'tinfoil-rose': {
-          DEFAULT: `rgb(${TINFOIL_ROSE_RGB})`,
-          hover: '#DDA3B5',
-          darker: '#D18DA3',
-          tint: '#F4E3E8',
-          subtle: `rgb(${TINFOIL_ROSE_RGB} / 0.10)`,
-          soft: `rgb(${TINFOIL_ROSE_RGB} / 0.30)`,
-          medium: `rgb(${TINFOIL_ROSE_RGB} / 0.60)`,
-          bold: `rgb(${TINFOIL_ROSE_RGB} / 0.90)`,
+          tint: '#F5ECDD',
+          subtle: `rgb(${TINFOIL_OAK_RGB} / 0.10)`,
+          soft: `rgb(${TINFOIL_OAK_RGB} / 0.30)`,
+          medium: `rgb(${TINFOIL_OAK_RGB} / 0.60)`,
+          bold: `rgb(${TINFOIL_OAK_RGB} / 0.90)`,
         },
         surface: {
           canvas: 'hsl(var(--surface-canvas) / <alpha-value>)',

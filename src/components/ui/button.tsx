@@ -12,7 +12,7 @@ const BUTTON_VARIANTS = cva(
         default:
           'bg-primary text-primary-foreground shadow hover:bg-primary/90',
         solid:
-          'border border-tinfoil-rose bg-tinfoil-rose text-brand-dark shadow-none hover:border-tinfoil-rose-hover hover:bg-tinfoil-rose-hover',
+          'border border-tinfoil-oak bg-tinfoil-oak text-brand-dark shadow-none hover:border-tinfoil-oak-hover hover:bg-tinfoil-oak-hover',
         destructive:
           'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90',
         outline:

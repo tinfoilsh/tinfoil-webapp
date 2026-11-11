@@ -2053,7 +2053,7 @@ ${encryptionKey.replace('key_', '')}
                     type="button"
                     onClick={handleSavePersonalization}
                     disabled={profileLocked}
-                    className="rounded-lg bg-tinfoil-rose px-3 py-1 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-rose-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-tinfoil-oak px-3 py-1 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -2160,7 +2160,7 @@ ${encryptionKey.replace('key_', '')}
                   <button
                     onClick={handleSavePersonalization}
                     disabled={profileLocked}
-                    className="rounded-lg bg-tinfoil-rose px-4 py-1.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-rose-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-tinfoil-oak px-4 py-1.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -4375,7 +4375,7 @@ ${encryptionKey.replace('key_', '')}
                               }}
                               disabled={upgradeLoading}
                               className={cn(
-                                'mt-4 w-full rounded-md bg-tinfoil-rose px-4 py-3 text-sm font-medium text-brand-dark transition-all hover:bg-tinfoil-rose-hover',
+                                'mt-4 w-full rounded-md bg-tinfoil-oak px-4 py-3 text-sm font-medium text-brand-dark transition-all hover:bg-tinfoil-oak-hover',
                                 upgradeLoading &&
                                   'cursor-not-allowed opacity-70',
                               )}
@@ -4491,7 +4491,7 @@ ${encryptionKey.replace('key_', '')}
                         </p>
                         <Link
                           href="/signin"
-                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-tinfoil-rose px-4 py-2.5 text-sm font-medium text-brand-dark transition-all hover:bg-tinfoil-rose-hover"
+                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-tinfoil-oak px-4 py-2.5 text-sm font-medium text-brand-dark transition-all hover:bg-tinfoil-oak-hover"
                         >
                           <TfSignIn className="h-4 w-4" aria-hidden="true" />
                           Sign in or sign up

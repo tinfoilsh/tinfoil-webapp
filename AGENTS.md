@@ -1,7 +1,7 @@
 # Colors
 
-Use Pastel Rose (`#E6B5C4`) with Midnight Petrol (`#05252E`) text for primary
-actions and CTAs. Keep Champagne (`#E6CCA8`) for decorative accents and Deep Teal
+Use Pale Oak (`#E6CCA8`) with Midnight Petrol (`#05252E`) text for primary
+actions and CTAs. Keep Twilight purple (`#6B5B95`) for secondary accents and Deep Teal
 (`#004444`) for branding. Links and focus indicators use the theme-aware `link`
 and `ring` tokens so they remain readable on light surfaces. Match the
 websites' surface roles: Bone (`#F2F1EC`) for `surface-canvas`, white for

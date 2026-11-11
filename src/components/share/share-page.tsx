@@ -256,7 +256,7 @@ export default function SharePage({ chatId }: { chatId?: string }) {
             </div>
             <Link
               href="/"
-              className="w-fit rounded-lg bg-tinfoil-rose px-4 py-2 text-sm font-medium text-brand-dark transition-opacity hover:opacity-90"
+              className="w-fit rounded-lg bg-tinfoil-oak px-4 py-2 text-sm font-medium text-brand-dark transition-opacity hover:opacity-90"
             >
               Start your own chat
             </Link>
