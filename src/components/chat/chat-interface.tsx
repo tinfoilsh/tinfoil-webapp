@@ -1260,8 +1260,9 @@ export function ChatInterface({
     }
   }
   const sidebarChat = useSidebarChat({ context: thread.askContext, options })
-  // An ask and its answer live only in this page.
-  useReloadHold(sidebarChat.messages.length > 0)
+  // An ask and its answer live only in this page, and only while the
+  // sidebar shows them: the next ask replaces one it closed on.
+  useReloadHold(isAskSidebarOpen && sidebarChat.messages.length > 0)
   // A flag stops the chat: its reply in progress, which takes the turns
   // queued behind it with it, and an ask about it.
   const runningRef = useRef(isStreaming)
