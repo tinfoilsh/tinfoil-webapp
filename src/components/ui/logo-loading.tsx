@@ -1,69 +1,48 @@
 'use client'
 
-import type { AnimationItem } from 'lottie-web'
-import { useEffect, useRef } from 'react'
+import { PrivacyLock } from '@/components/onboarding/privacy-lock'
+import { motion, useReducedMotion } from 'framer-motion'
+import { useState } from 'react'
 
-// Fetch the animation JSON once, when the first loader mounts. The session
-// provider renders the loader on first paint, so importing this module must
-// not start network work. Resolve to null on failure: the loader then shows
-// no animation.
-let animationDataPromise: Promise<unknown> | undefined
-function loadAnimationData(): Promise<unknown> {
-  animationDataPromise ??= fetch('/logo-loading-loop.json')
-    .then((res) => res.json())
-    .catch(() => null)
-  return animationDataPromise
-}
+const OPEN_HOLD_S = 0.5
+const ZOOM_OUT_DURATION_S = 0.35
+const ZOOM_OUT_SCALE = 0.25
 
-function LogoAnimation({
-  isLoading = true,
+function LockAnimation({
+  isLoading,
   onFinished,
 }: {
-  isLoading?: boolean
+  isLoading: boolean
   onFinished?: () => void
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const animationRef = useRef<AnimationItem | null>(null)
-  const onFinishedRef = useRef(onFinished)
+  const [closed, setClosed] = useState(false)
+  const reducedMotion = useReducedMotion()
 
-  useEffect(() => {
-    onFinishedRef.current = onFinished
-  }, [onFinished])
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    let unmounted = false
-
-    Promise.all([import('lottie-web'), loadAnimationData()])
-      .then(([{ default: lottie }, animationData]) => {
-        if (!animationData || unmounted) return
-        const anim = lottie.loadAnimation({
-          container,
-          renderer: 'svg',
-          loop: true,
-          autoplay: true,
-          animationData,
-        })
-        animationRef.current = anim
-      })
-      .catch(() => {})
-
-    return () => {
-      unmounted = true
-      animationRef.current?.destroy()
-      animationRef.current = null
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!isLoading) {
-      onFinishedRef.current?.()
-    }
-  }, [isLoading])
-
-  return <div ref={containerRef} className="h-20 w-20" />
+  return (
+    <motion.div
+      initial="waiting"
+      animate={!isLoading && closed ? 'finished' : 'waiting'}
+      variants={{
+        waiting: { scale: 1, opacity: 1 },
+        finished: { scale: reducedMotion ? 1 : ZOOM_OUT_SCALE, opacity: 0 },
+      }}
+      transition={{
+        duration: reducedMotion ? 0 : ZOOM_OUT_DURATION_S,
+        ease: 'easeIn',
+      }}
+      onAnimationComplete={(definition) => {
+        if (definition === 'finished' && !isLoading) onFinished?.()
+      }}
+    >
+      <PrivacyLock
+        locked={!isLoading}
+        startOpen={!reducedMotion}
+        delay={OPEN_HOLD_S}
+        onSettled={setClosed}
+        className="h-32 w-32 text-content-primary"
+      />
+    </motion.div>
+  )
 }
 
 export function LogoLoading({
@@ -76,7 +55,11 @@ export function LogoLoading({
   return (
     <div className="app-shell flex overflow-hidden bg-surface-chat-background">
       <div className="flex flex-1 items-center justify-center">
-        <LogoAnimation isLoading={isLoading} onFinished={onFinished} />
+        <LockAnimation
+          key={isLoading ? 'loading' : 'ready'}
+          isLoading={isLoading}
+          onFinished={onFinished}
+        />
       </div>
     </div>
   )

@@ -19,10 +19,14 @@ const LOCK_SWING_S = 0.6
 export function PrivacyLock({
   locked,
   startOpen = false,
+  delay = 0,
+  onSettled,
   className,
 }: {
   locked: boolean
   startOpen?: boolean
+  delay?: number
+  onSettled?: (locked: boolean) => void
   className?: string
 }) {
   const frame = useMotionValue(locked && !startOpen ? LOCKED_FRAME : 0)
@@ -33,15 +37,18 @@ export function PrivacyLock({
     const target = locked ? LOCKED_FRAME : 0
     if (prefersReducedMotion) {
       frame.set(target)
+      onSettled?.(locked)
       return
     }
     const remaining = Math.abs(target - frame.get()) / LOCKED_FRAME
     const controls = animate(frame, target, {
       duration: LOCK_SWING_S * remaining,
+      delay: locked ? delay : 0,
       ease: 'linear',
+      onComplete: () => onSettled?.(locked),
     })
     return () => controls.stop()
-  }, [frame, locked, prefersReducedMotion])
+  }, [frame, locked, prefersReducedMotion, delay, onSettled])
 
   return (
     <svg
