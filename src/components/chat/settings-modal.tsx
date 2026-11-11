@@ -45,6 +45,7 @@ import {
   PrfNotSupportedError,
   type PasskeyCredentialEntry,
 } from '@/services/passkey'
+import { useReloadHold } from '@/services/reload-when-updated'
 import { READ_ALOUD_SPEEDS, useReadAloudSpeed } from '@/services/speech/speed'
 import { TINFOIL_COLORS } from '@/theme/colors'
 import {
@@ -1008,6 +1009,9 @@ export function SettingsModal({
   // the user leaves the Data tab, which shows it again on return.
   const [chatExport, setChatExport] = useState<ChatExportState | null>(null)
   const chatExportAbortControllerRef = useRef<AbortController | null>(null)
+  // Imports and exports go on after the dialog closes, until a reload ends
+  // them.
+  useReloadHold(isImporting || isExporting || chatExport?.status === 'running')
   // What the last projects export did, shown under its button.
   const [projectExportResult, setProjectExportResult] = useState<{
     message: string

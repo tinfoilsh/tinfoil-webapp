@@ -170,6 +170,12 @@ export const UI_SIDEBAR_EXPAND_SECTION = 'tinfoil-ui-sidebar-expand-section'
 export const UI_EXPAND_PROJECTS_ON_MOUNT = 'tinfoil-ui-expand-projects-on-mount'
 export const UI_EXPAND_PROJECT_DOCUMENTS = 'tinfoil-ui-expand-project-documents'
 
+// --- sessionStorage: App updates -------------------------------------------
+// The deployment this tab last reloaded to reach, so a tab the reload left on
+// an older one does not reload for it again.
+export const UPDATE_RELOADED_FOR_DEPLOYMENT =
+  'tinfoil-update-reloaded-for-deployment'
+
 // --- sessionStorage: Sync --------------------------------------------------
 export const SYNC_SESSION_CHATS = 'tinfoil-sync-session-chats'
 export const SYNC_DELETED_CHATS = 'tinfoil-sync-deleted-chats'

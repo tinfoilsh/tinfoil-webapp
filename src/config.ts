@@ -5,6 +5,10 @@ export const API_BASE_URL =
 // Injected from package.json at build time (see next.config.mjs).
 export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
 
+// The Vercel deployment this page was built in, injected at build time (see
+// next.config.mjs). Empty for a build outside Vercel.
+export const DEPLOYMENT_ID = process.env.NEXT_PUBLIC_DEPLOYMENT_ID || ''
+
 export const PAGINATION = { CHATS_PER_PAGE: 20 } as const
 
 // Origin of the unverified sandbox that runs model-authored HTML and JavaScript

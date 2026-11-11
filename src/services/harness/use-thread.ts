@@ -10,6 +10,7 @@ import {
   ENCRYPTION_KEY_CHANGED_EVENT,
   encryptionService,
 } from '@/services/encryption/encryption-service'
+import { useReloadHold } from '@/services/reload-when-updated'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -490,7 +491,8 @@ export function useThread(
   const refreshedChat = useRef<{ id: string; revision: string } | null>(null)
   // The open chat has changes its store has not answered. A copy read
   // meanwhile would take them back, so the chat is read again once they are.
-  const changingOpen = useStore(controller.changes).has(openState.id ?? '')
+  const changes = useStore(controller.changes)
+  const changingOpen = changes.has(openState.id ?? '')
   useEffect(() => {
     if (
       !chatRevision ||
@@ -778,6 +780,15 @@ export function useThread(
     ? undefined
     : state.messages[0]?.createdAt
   const messageCount = state.messages.length
+  // A reload would cut off a reply this page streams, in this chat or one it
+  // left, lose a change the chat's store has not answered, and lose a
+  // temporary chat, which only page memory keeps.
+  useReloadHold(
+    running ||
+      deviceRuns.size > 0 ||
+      changes.size > 0 ||
+      (temporary && messageCount > 0),
+  )
   // The same list while nothing it shows changes, so a title the user just
   // typed is not animated in again.
   const chats = useMemo(() => {

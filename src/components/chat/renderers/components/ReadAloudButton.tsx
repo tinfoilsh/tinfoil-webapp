@@ -1,5 +1,6 @@
 import { useSessionFeature } from '@/services/harness/provider'
 import { speakText } from '@/services/harness/speech'
+import { useReloadHold } from '@/services/reload-when-updated'
 import { speechPlayer } from '@/services/speech/player'
 import { speechSource } from '@/services/speech/stream'
 import { TfPlay } from '@tinfoilsh/tinfoil-icons'
@@ -51,6 +52,8 @@ export function ReadAloudButton({
     status === 'loading' ? 'Buffering audio — click to cancel' : label
 
   useEffect(() => () => speechPlayer.stop(owner), [owner, messageId, content])
+  // Reading aloud goes on while the page is out of sight.
+  useReloadHold(active)
 
   const open = messageId
     ? speak && ((signal: AbortSignal) => speak(messageId, signal))
