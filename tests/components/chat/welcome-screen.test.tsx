@@ -1,7 +1,14 @@
 import { WelcomeScreen } from '@/components/chat/WelcomeScreen'
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
 import { publish } from '@/services/harness/runtime'
-import { act, render, screen } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { signIn } from '../../harness-fixture'
 
@@ -50,6 +57,30 @@ describe('anonymous welcome legal notice', () => {
     expect(
       screen.getByRole('link', { name: 'Privacy Policy' }),
     ).toHaveAttribute('href', PRIVACY_POLICY_URL)
+  })
+
+  it('opens the privacy explanation with three linked points and restores focus when closed', async () => {
+    renderWelcome()
+    const trigger = screen.getByRole('button', {
+      name: 'Your chats are private',
+    })
+    trigger.focus()
+    fireEvent.click(trigger)
+    const dialog = await screen.findByRole('dialog')
+    const points = within(dialog).getAllByRole('listitem')
+    expect(points).toHaveLength(3)
+    expect(
+      within(points[0]).getByRole('link', { name: 'tinfoil.sh' }),
+    ).toHaveAttribute('href', 'https://tinfoil.sh/technology')
+    expect(within(points[1]).queryByRole('link')).not.toBeInTheDocument()
+    expect(
+      within(points[2]).getByRole('link', { name: 'github.com' }),
+    ).toHaveAttribute('href', 'https://github.com/tinfoilsh')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    )
+    expect(trigger).toHaveFocus()
   })
 
   it('does not show the notice to signed-in users', () => {

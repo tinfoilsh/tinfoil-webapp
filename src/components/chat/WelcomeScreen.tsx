@@ -8,7 +8,7 @@ import {
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
 import { useHarness } from '@/services/harness/provider'
 import { useUser } from '@clerk/react'
-import { TfLockLockedAnimated } from '@tinfoilsh/tinfoil-icons/animated'
+import { TfChevronRight } from '@tinfoilsh/tinfoil-icons'
 import { motion } from 'framer-motion'
 import React, { memo, useRef, useState } from 'react'
 import { ChatInput } from './chat-input'
@@ -21,6 +21,10 @@ import { ModelSelectorTriggerLabel } from './model-selector-trigger-label'
 import type { PromptPreset } from './prompts/types'
 import type { ProcessedDocument } from './renderers/types'
 import type { LabelType, LoadingState } from './types'
+import {
+  WELCOME_PRIVACY_LABEL,
+  WelcomePrivacyButton,
+} from './welcome-privacy-button'
 
 const LINE_FADE_DURATION_S = 0.5
 const LINE_FADE_STAGGER_S = 0.15
@@ -44,6 +48,40 @@ type Segment =
       href?: string
       onClick?: () => void
     }
+
+const PRIVACY_POINTS: Segment[][] = [
+  [
+    {
+      type: 'text',
+      content:
+        'Your messages are encrypted directly to the AI models running inside secure hardware enclaves.',
+    },
+    {
+      type: 'citation',
+      content: 'Technology',
+      href: 'https://tinfoil.sh/technology',
+    },
+  ],
+  [
+    {
+      type: 'text',
+      content:
+        'Not even Tinfoil can access your data. This applies to all chats, images, documents, and voice input.',
+    },
+  ],
+  [
+    {
+      type: 'text',
+      content:
+        'Our open-source stack lets you verify this yourself by inspecting the hardware attestation.',
+    },
+    {
+      type: 'citation',
+      content: 'Source',
+      href: 'https://github.com/tinfoilsh',
+    },
+  ],
+]
 
 function renderSegment(seg: Segment, key: React.Key) {
   if (seg.type === 'citation') {
@@ -291,7 +329,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
 
   return (
     <motion.div
-      className="flex w-full items-start justify-center"
+      className="relative flex min-h-full w-full flex-col items-center overflow-y-auto"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{
@@ -300,7 +338,12 @@ export const WelcomeScreen = memo(function WelcomeScreen({
         delay: 0.1,
       }}
     >
-      <div className="flex w-full justify-center">
+      {/* Asymmetric spacers bias the panel above center so the model menu,
+          which opens below the input, has room on tall screens. */}
+      <div className="flex min-h-40 w-full flex-[2] items-center justify-center px-8">
+        <WelcomePrivacyButton onClick={() => setIsPrivacyOpen(true)} />
+      </div>
+      <div className="relative z-10 flex w-full max-w-4xl justify-center px-8 pb-8">
         <div className="w-full max-w-2xl">
           <motion.h1
             className="flex items-center justify-center gap-3 text-2xl font-medium tracking-tight text-content-primary md:text-3xl"
@@ -316,68 +359,29 @@ export const WelcomeScreen = memo(function WelcomeScreen({
           </motion.h1>
 
           {/* Privacy explainer */}
-          <motion.div
-            className="mt-4 flex justify-center"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{
-              duration: 0.5,
-              ease: 'easeOut',
-              delay: 0.3,
-            }}
+          <Modal
+            isOpen={isPrivacyOpen}
+            onClose={() => setIsPrivacyOpen(false)}
+            className="max-w-2xl"
           >
-            <button
-              type="button"
-              onClick={() => setIsPrivacyOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-sm text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
-            >
-              <TfLockLockedAnimated
-                className="h-4 w-4 !text-brand-accent-dark dark:!text-brand-accent-light"
-                aria-hidden="true"
-              />
-              <span className="shrink-0 whitespace-nowrap">
-                Your chats are private by design
-              </span>
-            </button>
-
-            <Modal
-              isOpen={isPrivacyOpen}
-              onClose={() => setIsPrivacyOpen(false)}
-              className="max-w-2xl"
-            >
-              <ModalTitle className="pr-8 font-semibold leading-none tracking-tight">
-                Your Chats Are Private by Design
-              </ModalTitle>
-
-              <div className="mt-4 text-base leading-relaxed text-content-secondary">
-                <FadeInLines
-                  segments={[
-                    {
-                      type: 'text',
-                      content:
-                        'Your messages are encrypted directly to the AI models running inside secure hardware enclaves.',
-                    },
-                    {
-                      type: 'citation',
-                      content: 'Technology',
-                      href: 'https://tinfoil.sh/technology',
-                    },
-                    {
-                      type: 'text',
-                      content:
-                        ' These are hardware-isolated environments powered by confidential computing GPUs with verifiable confidentiality and integrity guarantees. Not even Tinfoil can access your data. This applies to all chats, images, documents, and voice input. Our open-source stack lets you verify this yourself by inspecting the hardware attestation.',
-                    },
-                    {
-                      type: 'citation',
-                      content: 'Source',
-                      href: 'https://github.com/tinfoilsh',
-                    },
-                  ]}
-                />
-              </div>
-              <DataFlowDiagram />
-            </Modal>
-          </motion.div>
+            <ModalTitle className="pr-8 font-semibold leading-none tracking-tight">
+              {WELCOME_PRIVACY_LABEL}
+            </ModalTitle>
+            <ul className="mt-4 space-y-4 text-base leading-relaxed text-content-secondary">
+              {PRIVACY_POINTS.map((segments, index) => (
+                <li key={index} className="flex items-start gap-2">
+                  <TfChevronRight
+                    aria-hidden="true"
+                    className="mt-1 h-4 w-4 shrink-0"
+                  />
+                  <span>
+                    <FadeInLines segments={segments} />
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <DataFlowDiagram />
+          </Modal>
 
           <div className="mt-8">
             {/* Centered Chat Input - Desktop only */}
@@ -515,6 +519,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
           </div>
         </div>
       </div>
+      <div className="flex-[3]" />
     </motion.div>
   )
 })
