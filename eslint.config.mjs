@@ -18,6 +18,10 @@ const eslintConfig = [
       'public/vendor/**',
       'node_modules/**',
       'coverage/**',
+      '**/.wxt/**',
+      '**/.output/**',
+      '**/node_modules/**',
+      '**/test-results/**',
     ],
   },
   ...nextCoreWebVitals,
@@ -51,6 +55,8 @@ const eslintConfig = [
   {
     files: [
       'src/services/harness/**/*.ts',
+      'packages/chat-client/**/*.ts',
+      'apps/extension/**/*.ts',
       'src/services/keys/**/*.ts',
       'src/hooks/use-passkey-backup.ts',
     ],

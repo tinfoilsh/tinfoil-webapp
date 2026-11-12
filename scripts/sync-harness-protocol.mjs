@@ -11,7 +11,10 @@ import prettier from 'prettier'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export const PROTOCOL_DIR = path.join(root, 'harness-protocol')
 export const PROTOCOL_DOCUMENT = path.join(PROTOCOL_DIR, 'openapi.yaml')
-export const PROTOCOL_TYPES = path.join(root, 'src/services/harness/openapi.ts')
+export const PROTOCOL_TYPES = path.join(
+  root,
+  'packages/chat-client/src/openapi.ts',
+)
 
 const HEADER = `// Generated from harness-protocol/openapi.yaml by
 // \`npm run sync:harness-protocol\`. Do not edit.

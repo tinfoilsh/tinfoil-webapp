@@ -13,7 +13,7 @@ jobs:
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - run: npm ci
@@ -37,3 +37,29 @@ jobs:
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
+
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck:extension
+      - run: npm run test:extension
+      - run: npm run build:extension
+        env:
+          WXT_CLERK_PUBLISHABLE_KEY: ${{ vars.EXTENSION_CLERK_PUBLISHABLE_KEY }}
+          WXT_CLERK_FRONTEND_API: ${{ vars.EXTENSION_CLERK_FRONTEND_API }}
+          WXT_HARNESS_URL: ${{ vars.EXTENSION_HARNESS_URL }}
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/extension
+      - run: npm run test:browser --workspace=apps/extension
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tinfoil-browser-chrome
+          path: apps/extension/.output/chrome-mv3/
+          if-no-files-found: error
+          include-hidden-files: true

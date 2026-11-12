@@ -32,6 +32,7 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
+    "apps",
     "node_modules",
     "out",
     "vitest.setup.ts",

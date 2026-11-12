@@ -1,2 +1,6 @@
 wasm_exec.js
 harness-protocol/
+apps/*/.output/
+apps/*/.wxt/
+apps/*/test-results/
+apps/*/playwright-report/

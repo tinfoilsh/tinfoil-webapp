@@ -35,6 +35,27 @@ npm run build
 
 Reproduce a shuffled failure with the seed Vitest prints: `npm run test:shuffle -- --sequence.seed=42`. `npm run test:unit` runs Vitest in watch mode. `npm run check:clerk-privacy` checks the live Clerk environment and runs on a schedule in CI.
 
+## Browser extension
+
+Use Node.js 22 or newer. Configure the public Clerk key and frontend API in `apps/extension/.env`; enable Clerk's Native API and register the extension ID shown in `chrome://extensions` ([Clerk setup](https://clerk.com/docs/chrome-extension/getting-started/quickstart)). Browser actions require an attested harness release advertising `browserTools`; set its origin as `WXT_HARNESS_URL`.
+
+```bash
+cp apps/extension/.env.example apps/extension/.env
+npm run dev:extension
+```
+
+In `chrome://extensions`, enable Developer mode and load `apps/extension/.output/chrome-mv3-dev` as an unpacked extension. Use a persistent Chrome profile to keep local chats between sessions.
+
+```bash
+npm run build:extension
+npm run typecheck:extension
+npm run test:extension
+npm exec --workspace=apps/extension -- playwright install chromium
+npm run test:browser --workspace=apps/extension
+```
+
+The production-mode folder is `apps/extension/.output/chrome-mv3`. Reload its extension card after rebuilding. CI publishes that folder as the `tinfoil-browser-chrome` artifact; its public configuration comes from the `EXTENSION_CLERK_PUBLISHABLE_KEY`, `EXTENSION_CLERK_FRONTEND_API`, and `EXTENSION_HARNESS_URL` repository variables.
+
 ## Releases
 
 Start from a clean `main` with an authenticated GitHub CLI (`gh auth status`).

@@ -1,0 +1,32 @@
+{
+  "name": "@tinfoil/browser-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "vitest run",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "@clerk/chrome-extension": "3.1.105",
+    "@tinfoil/chat-client": "*",
+    "@tinfoil/chat-ui": "*",
+    "@tinfoilsh/tinfoil-icons": "^2.6.0",
+    "idb": "^8.0.3",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "remark-gfm": "^4.0.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/chrome": "^0.3.7",
+    "@wxt-dev/module-react": "^1.2.2",
+    "devtools-protocol": "^0.0.1742540",
+    "esbuild": "^0.28.2",
+    "wxt": "0.21.5"
+  }
+}
