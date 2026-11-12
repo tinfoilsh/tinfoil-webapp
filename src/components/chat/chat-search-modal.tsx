@@ -329,7 +329,7 @@ export function ChatSearchModal({
               Search chats and projects
             </DialogPrimitive.Title>
 
-            <div className="flex items-center gap-3 border-b border-border-subtle px-4 py-3">
+            <div className="flex items-center gap-3 border-b border-border-subtle bg-surface-raised px-4 py-3">
               <TfMagnifyingGlass
                 className="h-4 w-4 flex-none text-content-muted"
                 aria-hidden="true"
