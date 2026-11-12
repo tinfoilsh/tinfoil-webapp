@@ -6,10 +6,11 @@ import {
   chooseOption,
   inspectElement,
   selectText,
+  stableElement,
   stableViewport,
 } from './element'
 import { BrowserError } from './errors'
-import { actionSchema, webURL } from './schema'
+import { actionSchema, changesPage, webURL } from './schema'
 
 const PROTOCOL_VERSION = '1.3'
 const MAX_NODES = 300
@@ -21,17 +22,8 @@ const SCREENSHOT_QUALITY = 65
 const SCREENSHOT_TTL_MS = 60_000
 const MAX_IMAGE_BASE64 = 2 << 20
 const MAX_CAPTURE_ATTEMPTS = 3
-const STABLE_VIEWPORT_FRAMES = 3
-const VIEWPORT_SETTLE_TIMEOUT_MS = 2_000
-const LAYOUT_HASH_ALGORITHM = 'SHA-256'
-const MAX_LAYOUT_BYTES = 8 << 20
-const LAYOUT_STYLES = [
-  'display',
-  'visibility',
-  'transform',
-  'opacity',
-  'pointer-events',
-]
+const STABLE_GEOMETRY_FRAMES = 3
+const GEOMETRY_SETTLE_TIMEOUT_MS = 2_000
 const SCROLL_DISTANCE = 600
 const WAIT_TIMEOUT_MS = 3_000
 const ELEMENT_GROUP = 'tinfoil-elements'
@@ -63,10 +55,11 @@ type Page = {
     id: string
     generation: string
     capturedAt: number
-    layout: string
+    image: string
     width: number
     height: number
     viewport: Protocol.Page.VisualViewport
+    parameters: Protocol.Page.CaptureScreenshotRequest
   }
 }
 export type TabInfo = { id: number; title: string; url: string }
@@ -415,23 +408,6 @@ export class BrowserDriver {
         'STALE_ELEMENT',
         'Read the page again to obtain a current element reference.',
       )
-    const current = await this.send(
-      entry.target.session,
-      'Accessibility.getPartialAXTree',
-      { backendNodeId: entry.backendId, fetchRelatives: false },
-    )
-    const node = current.nodes.find(
-      (n) => n.backendDOMNodeId === entry.backendId,
-    )
-    if (
-      !node ||
-      String(node.name?.value || '').slice(0, MAX_LABEL_CHARS) !== entry.name ||
-      String(node.role?.value || '') !== entry.role
-    )
-      throw new BrowserError(
-        'STALE_ELEMENT',
-        'The target changed. Read the page again.',
-      )
     await this.send(entry.target.session, 'DOM.scrollIntoViewIfNeeded', {
       backendNodeId: entry.backendId,
     })
@@ -444,6 +420,42 @@ export class BrowserDriver {
       throw new BrowserError(
         'STALE_ELEMENT',
         'The element is no longer available.',
+      )
+    const settled = await this.send(
+      entry.target.session,
+      'Runtime.callFunctionOn',
+      {
+        objectId,
+        functionDeclaration: stableElement.toString(),
+        arguments: [
+          { value: STABLE_GEOMETRY_FRAMES },
+          { value: GEOMETRY_SETTLE_TIMEOUT_MS },
+        ],
+        awaitPromise: true,
+        returnByValue: true,
+      },
+    )
+    if (settled.result.value !== true)
+      throw new BrowserError(
+        'ELEMENT_UNAVAILABLE',
+        'The element moved or disappeared. Read the page again.',
+      )
+    const current = await this.send(
+      entry.target.session,
+      'Accessibility.getPartialAXTree',
+      { backendNodeId: entry.backendId, fetchRelatives: false },
+    )
+    const node = current.nodes.find(
+      (node) => node.backendDOMNodeId === entry.backendId,
+    )
+    if (
+      !node ||
+      String(node.name?.value || '').slice(0, MAX_LABEL_CHARS) !== entry.name ||
+      String(node.role?.value || '') !== entry.role
+    )
+      throw new BrowserError(
+        'STALE_ELEMENT',
+        'The target changed. Read the page again.',
       )
     const inspected = await this.send(
       entry.target.session,
@@ -525,29 +537,6 @@ export class BrowserDriver {
     return { x, y }
   }
 
-  private async layoutFingerprint(page: Page): Promise<string> {
-    const snapshots: Protocol.DOMSnapshot.CaptureSnapshotResponse[] = []
-    for (const target of page.targets.values()) {
-      snapshots.push(
-        await this.send(target.session, 'DOMSnapshot.captureSnapshot', {
-          computedStyles: LAYOUT_STYLES,
-          includeDOMRects: true,
-          includePaintOrder: true,
-        }),
-      )
-    }
-    const data = new TextEncoder().encode(JSON.stringify(snapshots))
-    if (data.byteLength > MAX_LAYOUT_BYTES)
-      throw new BrowserError(
-        'PAGE_TOO_LARGE',
-        'Use element references on this page; its layout is too large for coordinate actions.',
-      )
-    const digest = await crypto.subtle.digest(LAYOUT_HASH_ALGORITHM, data)
-    return Array.from(new Uint8Array(digest), (byte) =>
-      byte.toString(16).padStart(2, '0'),
-    ).join('')
-  }
-
   private async screenshot(
     id: number,
     page: Page,
@@ -556,7 +545,7 @@ export class BrowserDriver {
     const root = { tabId: id }
     await this.send(root, 'Page.bringToFront')
     const ready = await this.send(root, 'Runtime.evaluate', {
-      expression: `(${stableViewport.toString()})(${STABLE_VIEWPORT_FRAMES}, ${VIEWPORT_SETTLE_TIMEOUT_MS})`,
+      expression: `(${stableViewport.toString()})(${STABLE_GEOMETRY_FRAMES}, ${GEOMETRY_SETTLE_TIMEOUT_MS})`,
       awaitPromise: true,
       returnByValue: true,
     })
@@ -590,14 +579,10 @@ export class BrowserDriver {
         scale,
       },
     }
-    const layout = await this.layoutFingerprint(page)
     const shot = await this.send(root, 'Page.captureScreenshot', parameters)
     const after = (await this.send(root, 'Page.getLayoutMetrics'))
       .cssVisualViewport
-    if (
-      JSON.stringify(after) !== JSON.stringify(viewport) ||
-      layout !== (await this.layoutFingerprint(page))
-    ) {
+    if (JSON.stringify(after) !== JSON.stringify(viewport)) {
       if (attempt < MAX_CAPTURE_ATTEMPTS)
         return this.screenshot(id, page, attempt + 1)
       throw new BrowserError(
@@ -629,10 +614,11 @@ export class BrowserDriver {
       id: screenshotId,
       generation,
       capturedAt: Date.now(),
-      layout,
+      image: shot.data,
       width,
       height,
       viewport,
+      parameters,
     }
     return {
       text: JSON.stringify({
@@ -677,7 +663,10 @@ export class BrowserDriver {
         'STALE_SCREENSHOT',
         'The viewport changed. Take a fresh screenshot or use an element reference.',
       )
-    if ((await this.layoutFingerprint(page)) !== shot.layout)
+    if (
+      (await this.send(root, 'Page.captureScreenshot', shot.parameters))
+        .data !== shot.image
+    )
       throw new BrowserError(
         'STALE_SCREENSHOT',
         'The visible page changed. Take a fresh screenshot or use an element reference.',
@@ -739,6 +728,19 @@ export class BrowserDriver {
     }
     const [id, page] = await this.page(action.tabId)
     const root: Session = { tabId: id }
+    if (changesPage(action)) {
+      await this.send(root, 'Page.bringToFront')
+      const ready = await this.send(root, 'Runtime.evaluate', {
+        expression: `(${stableViewport.toString()})(${STABLE_GEOMETRY_FRAMES}, ${GEOMETRY_SETTLE_TIMEOUT_MS})`,
+        awaitPromise: true,
+        returnByValue: true,
+      })
+      if (ready.result.value !== true)
+        throw new BrowserError(
+          'ELEMENT_UNAVAILABLE',
+          'The viewport is moving. Read the page again once it settles.',
+        )
+    }
     if (action.action === 'read') return this.read(id, action.text)
     if (action.action === 'screenshot') return this.screenshot(id, page)
     if (

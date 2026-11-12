@@ -53,7 +53,7 @@ test.beforeAll(async () => {
       return
     }
     response.end(
-      `<!doctype html><title>Browser fixture</title><label>Name<input id="name" value="Before"></label><label>Password<input type="password" value="never-send-this"></label><button id="save" onclick="this.dataset.clicks=String(Number(this.dataset.clicks||0)+1);document.querySelector('output').textContent='Saved '+document.querySelector('#name').value">Save</button><output></output><select aria-label="Color"><option value="red">Red</option><option value="blue">Blue</option></select><div id="shadow"></div><iframe src="/frame"></iframe><iframe src="${origin.replace('localhost', '127.0.0.1')}/frame"></iframe><script>const root=document.querySelector('#shadow').attachShadow({mode:'open'});root.innerHTML='<button>Shadow button</button>';root.querySelector('button').onclick=()=>document.querySelector('output').textContent='Shadow clicked'</script>`,
+      `<!doctype html><title>Browser fixture</title><label>Name<input id="name" value="Before"></label><label>Password<input type="password" value="never-send-this"></label><button id="save" onclick="this.dataset.clicks=String(Number(this.dataset.clicks||0)+1);document.querySelector('output').textContent='Saved '+document.querySelector('#name').value">Save</button><output></output><select aria-label="Color"><option value="red">Red</option><option value="blue">Blue</option></select><div id="shadow"></div><iframe src="/frame"></iframe><iframe src="${origin.replace('localhost', '127.0.0.1')}/frame"></iframe><canvas id="canvas" width="80" height="40"></canvas><script>const root=document.querySelector('#shadow').attachShadow({mode:'open'});root.innerHTML='<button>Shadow button</button>';root.querySelector('button').onclick=()=>document.querySelector('output').textContent='Shadow clicked';const ctx=document.querySelector('#canvas').getContext('2d');ctx.fillStyle='red';ctx.fillRect(0,0,80,40)</script>`,
     )
   })
   await new Promise<void>((resolve) => server.listen(0, resolve))
@@ -262,6 +262,7 @@ test('coordinate actions use the captured viewport and reject changed screenshot
   }
   let x = 0
   let y = 0
+  let clicked = false
   for (
     let observation = 0;
     observation < MAX_SNAPSHOT_OBSERVATIONS;
@@ -287,9 +288,16 @@ test('coordinate actions use the captured viewport and reject changed screenshot
         y,
       } as BrowserAction,
     )
-    if (result.ok) break
+    if (result.ok) {
+      clicked = true
+      break
+    }
     expect(result.code).toBe('STALE_SCREENSHOT')
   }
+  if (!clicked)
+    throw new Error(
+      'The fixture stayed stale; no coordinate click was dispatched',
+    )
   await expect(page.locator('output').first()).toHaveText('Saved Before')
   await expect(page.locator('#save')).toHaveAttribute('data-clicks', '1')
   const next = await capture()
@@ -299,6 +307,24 @@ test('coordinate actions use the captured viewport and reject changed screenshot
   await expect(
     execute({ action: 'click', tabId, screenshotId: next.screenshotId, x, y }),
   ).rejects.toThrow('visible page changed')
+  const canvasShot = await capture()
+  await page.locator('canvas').evaluate((canvas) => {
+    if (!(canvas instanceof HTMLCanvasElement))
+      throw new Error('Missing canvas fixture')
+    const context = canvas.getContext('2d')!
+    context.fillStyle = 'blue'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+  })
+  await expect(
+    execute({
+      action: 'click',
+      tabId,
+      screenshotId: canvasShot.screenshotId,
+      x,
+      y,
+    }),
+  ).rejects.toThrow('visible page changed')
+  await expect(page.locator('#save')).toHaveAttribute('data-clicks', '1')
 })
 
 test('long pages can be searched and offscreen targets are scrolled into view', async () => {

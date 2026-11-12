@@ -118,3 +118,41 @@ export function stableViewport(
     frame = requestAnimationFrame(inspect)
   })
 }
+
+export function stableElement(
+  this: Element,
+  frames: number,
+  timeoutMs: number,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    let previous = ''
+    let stable = 0
+    let frame: number
+    const finish = (ready: boolean) => {
+      clearTimeout(timer)
+      cancelAnimationFrame(frame)
+      resolve(ready)
+    }
+    const timer = setTimeout(() => finish(false), timeoutMs)
+    const inspect = () => {
+      if (!this.isConnected) {
+        finish(false)
+        return
+      }
+      const box = this.getBoundingClientRect()
+      const current = JSON.stringify([
+        box.x,
+        box.y,
+        box.width,
+        box.height,
+        innerWidth,
+        innerHeight,
+      ])
+      stable = current === previous ? stable + 1 : 0
+      previous = current
+      if (stable >= frames) finish(true)
+      else frame = requestAnimationFrame(inspect)
+    }
+    frame = requestAnimationFrame(inspect)
+  })
+}
