@@ -1,5 +1,4 @@
 import { WelcomePrivacyButton } from '@/components/chat/welcome-privacy-button'
-import { LOCK_FRAMES } from '@/components/onboarding/lock-frames'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
@@ -38,42 +37,36 @@ async function advanceUntil(predicate: () => boolean) {
   expect(predicate()).toBe(true)
 }
 
-it('types the text, draws the border, then swings the open lock shut', async () => {
+it('types the text, then draws the border', async () => {
   render(<WelcomePrivacyButton onClick={vi.fn()} />)
   const button = screen.getByRole('button', { name: LABEL })
   const text = button.querySelector('span.absolute')!
   const border = button.querySelector('rect')!
   const borderFrame = border.parentElement!
-  const lockPath = () => button.querySelector('path')?.getAttribute('d')
 
   expect(text.textContent).toBe('')
   expect(borderFrame).toHaveAttribute('opacity', '0')
-  expect(lockPath()).toBeUndefined()
 
   await advanceUntil(() => !!text.textContent)
   expect(LABEL).toContain(text.textContent)
   expect(text.textContent).not.toBe(LABEL)
   expect(borderFrame).toHaveAttribute('opacity', '0')
-  expect(lockPath()).toBeUndefined()
 
   await advanceUntil(() => borderFrame.getAttribute('opacity') === '1')
   expect(text.textContent).toBe(LABEL)
-  expect(lockPath()).toBeUndefined()
   await advanceUntil(
     () => Number.parseFloat(border.getAttribute('stroke-dasharray') ?? '') > 0,
   )
   expect(
     Number.parseFloat(border.getAttribute('stroke-dasharray')!),
   ).toBeLessThan(1)
-  expect(lockPath()).toBeUndefined()
 
-  await advanceUntil(() => lockPath() !== undefined)
-  expect(Number.parseFloat(border.getAttribute('stroke-dasharray')!)).toBe(1)
-  expect(lockPath()).toBe(LOCK_FRAMES[0])
-  await advanceUntil(() => lockPath() === LOCK_FRAMES[LOCK_FRAMES.length - 1])
+  await advanceUntil(
+    () => Number.parseFloat(border.getAttribute('stroke-dasharray')!) === 1,
+  )
 })
 
-it('shows the finished label, border, and closed lock with reduced motion', () => {
+it('shows the finished label and border with reduced motion', () => {
   reducedMotion = true
   media.dispatchEvent(new Event('change'))
   render(<WelcomePrivacyButton onClick={vi.fn()} />)
@@ -82,8 +75,4 @@ it('shows the finished label, border, and closed lock with reduced motion', () =
   const border = button.querySelector('rect')!
   expect(border.parentElement).toHaveAttribute('opacity', '1')
   expect(Number.parseFloat(border.getAttribute('stroke-dasharray')!)).toBe(1)
-  expect(button.querySelector('path')).toHaveAttribute(
-    'd',
-    LOCK_FRAMES[LOCK_FRAMES.length - 1],
-  )
 })
