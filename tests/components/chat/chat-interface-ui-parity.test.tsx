@@ -213,7 +213,10 @@ it('honors the Settings shortcut tab', async () => {
   sessionStorage.setItem(UI_SIDEBAR_OPEN, 'true')
   render(view())
   fireEvent.click(await screen.findByRole('button', { name: 'Ada' }))
-  fireEvent.click(await screen.findByRole('menuitem', { name: /^Settings/ }))
+  const settings = await screen.findByRole('menuitem', { name: /^Settings/ })
+  await act(async () => {
+    fireEvent.click(settings)
+  })
   await screen.findByRole('dialog', { name: 'Settings' })
   expect(
     await screen.findByRole('checkbox', { name: 'Redact sidebar chat titles' }),
@@ -228,7 +231,9 @@ it('closes the verifier when opening Settings', async () => {
   const panel = (await screen.findByTitle('Tinfoil Verification Center'))
     .parentElement!
   expect(panel).not.toHaveAttribute('inert')
-  fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+  })
   await screen.findByRole('dialog', { name: 'Settings' })
   expect(panel).toHaveAttribute('inert')
 })
