@@ -15,7 +15,7 @@ Never use console.log/error/warn in production code. Use the logging utilities f
 
 # Building and Running
 
-NEVER run npm run dev, npm start, or start the development server. Only make code changes and let the user handle running the server and build commands.
+All agents may run builds, type checks, linters, and automated tests, including browser integration tests, to validate changes. Start development servers only when the user requests them.
 
 # API Requests
 
