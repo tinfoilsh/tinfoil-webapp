@@ -2,6 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes loading-lock-ring-gap {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: var(--loading-ring-offset);
+  }
+}
+
+.loading-lock-ring-gap {
+  animation: loading-lock-ring-gap 1.2s
+    steps(var(--loading-ring-dash-count), end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-lock-ring-gap {
+    animation: none;
+  }
+}
+
 @keyframes move-x {
   0% {
     transform: translateX(var(--move-x-from));

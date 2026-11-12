@@ -49,6 +49,10 @@ function animation(container: HTMLElement) {
   return container.querySelector('svg')!.parentElement!
 }
 
+function ring(container: HTMLElement) {
+  return container.querySelector('svg > circle')!
+}
+
 it('renders the open lock on the initial server-rendered page', () => {
   const container = document.createElement('div')
   container.innerHTML = renderToStaticMarkup(<LogoLoading />)
@@ -63,12 +67,18 @@ it.each([true, false])(
       <LogoLoading isLoading={initiallyLoading} onFinished={onFinished} />,
     )
     expect(lockPath(view.container)).toBe(OPEN)
+    expect(ring(view.container).hasAttribute('stroke-dasharray')).toBe(
+      initiallyLoading,
+    )
     if (initiallyLoading) {
       await act(() => vi.advanceTimersByTimeAsync(ANIMATION_TIMEOUT_MS))
       expect(lockPath(view.container)).toBe(OPEN)
       expect(onFinished).not.toHaveBeenCalled()
       view.rerender(<LogoLoading isLoading={false} onFinished={onFinished} />)
     }
+
+    expect(ring(view.container).hasAttribute('stroke-dasharray')).toBe(false)
+    expect(ring(view.container).hasAttribute('mask')).toBe(false)
 
     await act(() => vi.advanceTimersByTimeAsync(OPEN_HOLD_MS - FRAME_MS))
     expect(lockPath(view.container)).toBe(OPEN)
@@ -99,6 +109,8 @@ it('cancels a pending reveal if loading resumes during the zoom', async () => {
   expect(onFinished).not.toHaveBeenCalled()
   view.rerender(<LogoLoading isLoading onFinished={onFinished} />)
   expect(lockPath(view.container)).toBe(OPEN)
+  expect(ring(view.container).hasAttribute('stroke-dasharray')).toBe(true)
+  expect(ring(view.container).hasAttribute('mask')).toBe(true)
   expect(animation(view.container).style.opacity).toBe('1')
   await act(() => vi.advanceTimersByTimeAsync(ANIMATION_TIMEOUT_MS))
   expect(onFinished).not.toHaveBeenCalled()
