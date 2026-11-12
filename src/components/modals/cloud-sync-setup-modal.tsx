@@ -314,7 +314,7 @@ export function CloudSyncSetupModal({
         component: 'CloudSyncSetupModal',
         action: 'handleRestoreKey',
       })
-      setSetupError('The encryption key you entered is invalid')
+      setSetupError(describeCloudKeySetupFailure('setup_failed').description)
       enterSetupFailed()
     } finally {
       setIsProcessing(false)

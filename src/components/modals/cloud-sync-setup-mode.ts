@@ -1,3 +1,4 @@
+import { InvalidEncryptionKeyError } from '@/services/encryption/encryption-service'
 import {
   CloudKeySetupError,
   inspectRemoteEncryptedState,
@@ -10,10 +11,11 @@ export type CloudKeySetupMode = 'recoverExisting' | 'explicitStartFresh'
  * confirmed different cloud data exists under another key;
  * `verification_unavailable` means we couldn't reach/verify the
  * enclave (attestation or network outage) so the key may well be
- * correct; `invalid_key` covers malformed input or unexpected errors.
+ * correct; `invalid_key` means the key is malformed; `setup_failed`
+ * covers any other error, which says nothing about the key.
  */
 export type CloudKeySetupFailureReason =
-  'key_mismatch' | 'verification_unavailable' | 'invalid_key'
+  'key_mismatch' | 'verification_unavailable' | 'invalid_key' | 'setup_failed'
 
 export type CloudKeySetupResult =
   { ok: true } | { ok: false; reason: CloudKeySetupFailureReason }
@@ -25,7 +27,8 @@ export function classifyCloudKeySetupError(
     if (error.remoteState === 'unknown') return 'verification_unavailable'
     if (error.remoteState === 'exists') return 'key_mismatch'
   }
-  return 'invalid_key'
+  if (error instanceof InvalidEncryptionKeyError) return 'invalid_key'
+  return 'setup_failed'
 }
 
 export function describeCloudKeySetupFailure(
@@ -48,6 +51,12 @@ export function describeCloudKeySetupFailure(
       return {
         title: 'Invalid key',
         description: 'The encryption key you entered is invalid.',
+      }
+    case 'setup_failed':
+      return {
+        title: 'Setup failed',
+        description:
+          'Something went wrong while setting up your encryption key. Please try again.',
       }
   }
 }

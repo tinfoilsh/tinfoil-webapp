@@ -20,6 +20,17 @@ export const ENCRYPTION_KEY_CHANGED_EVENT = 'encryptionKeyChanged'
 // so persisting a wrong-length key here would silently break sync.
 const CEK_BYTE_LENGTH = 32
 
+/**
+ * Thrown by `setKey` for a key that is not a well-formed encryption key,
+ * so callers can tell a malformed key from any other failure to set one.
+ */
+export class InvalidEncryptionKeyError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'InvalidEncryptionKeyError'
+  }
+}
+
 function dispatchEncryptionKeyChanged(): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(ENCRYPTION_KEY_CHANGED_EVENT))
@@ -217,7 +228,7 @@ export class EncryptionService {
       ) {
         throw error
       }
-      throw new Error(`Invalid encryption key: ${error}`)
+      throw new InvalidEncryptionKeyError(`Invalid encryption key: ${error}`)
     }
   }
 
