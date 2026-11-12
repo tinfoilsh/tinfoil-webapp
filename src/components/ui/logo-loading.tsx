@@ -1,5 +1,6 @@
 'use client'
 
+import { Logo } from '@/components/logo'
 import { PrivacyLock } from '@/components/onboarding/privacy-lock'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useState } from 'react'
@@ -39,7 +40,7 @@ function LockAnimation({
         startOpen={!reducedMotion}
         delay={OPEN_HOLD_S}
         onSettled={setClosed}
-        className="h-32 w-32 text-content-primary"
+        className="h-8 w-8 text-content-primary"
       />
     </motion.div>
   )
@@ -60,6 +61,10 @@ export function LogoLoading({
           isLoading={isLoading}
           onFinished={onFinished}
         />
+      </div>
+      <div className="absolute inset-x-0 bottom-[max(2rem,env(safe-area-inset-bottom))] flex justify-center">
+        <Logo className="h-5 w-auto dark:hidden" />
+        <Logo dark className="hidden h-5 w-auto dark:block" />
       </div>
     </div>
   )
