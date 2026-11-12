@@ -686,7 +686,11 @@ it('compacts again when the user retries a compaction that failed', async () => 
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
 
   await waitFor(() => expect(run.turns).toHaveLength(2))
-  expect(run.turns[1]).toMatchObject({ kind: 'compact', threadId: THREAD_ID })
+  expect(run.turns[1]).toMatchObject({
+    kind: 'compact',
+    threadId: THREAD_ID,
+    compactLatest: true,
+  })
   run.emit(1, ...started('run-again'))
   await screen.findByRole('note', {
     name: 'Earlier messages above are being summarized for the assistant',
@@ -708,6 +712,57 @@ it('offers no compaction of a chat compacted since its last reply', async () => 
       { name: 'Compact chat' },
     ),
   ).toBeDisabled()
+})
+
+it('retries a reply that failed without asking to compact anything', async () => {
+  signIn({ cloud: true, session: compacting })
+  const run = scriptRuns()
+  await openChat()
+  fireEvent.change(screen.getByRole('textbox', { name: /message/i }), {
+    target: { value: 'Third question' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+  await waitFor(() => expect(run.turns).toHaveLength(1))
+  run.emit(
+    0,
+    {
+      type: 'RUN_STARTED',
+      threadId: THREAD_ID,
+      runId: 'run-turn',
+      instance: 'instance-1',
+    },
+    {
+      type: 'RUN_ERROR',
+      threadId: THREAD_ID,
+      runId: 'run-turn',
+      code: 'MODEL_UNAVAILABLE',
+      message: 'The model is temporarily unavailable',
+      action: 'retry',
+    },
+  )
+  run.end(0)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Try again' }))
+
+  await waitFor(() => expect(run.turns).toHaveLength(2))
+  expect(run.turns[1]).toMatchObject({ kind: 'retry', threadId: THREAD_ID })
+  expect(run.turns[1]).not.toHaveProperty('compactLatest')
+  run.emit(
+    1,
+    {
+      type: 'RUN_STARTED',
+      threadId: THREAD_ID,
+      runId: 'run-retry',
+      instance: 'instance-1',
+    },
+    {
+      type: 'RUN_FINISHED',
+      threadId: THREAD_ID,
+      runId: 'run-retry',
+      metadata: {},
+    },
+  )
+  run.end(1)
 })
 
 it('asks a harness that keeps the latest exchange to compact what comes before it', async () => {
