@@ -223,7 +223,9 @@ export function CloudSyncSetupModal({
   const handleGenerateKey = async () => {
     setIsProcessing(true)
     try {
-      const newKey = await encryptionService.generateKey()
+      // A key whose setup failed may already be saved, so another try keeps
+      // it rather than leaving the user with a saved key that opens nothing.
+      const newKey = generatedKey ?? (await encryptionService.generateKey())
       const keySetupMode = await determineGeneratedKeySetupMode({
         manualRecoveryNeeded,
       })
