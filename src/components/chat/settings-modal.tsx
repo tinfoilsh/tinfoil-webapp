@@ -3308,7 +3308,7 @@ ${encryptionKey.replace('key_', '')}
                           >
                             <div className="flex items-start gap-2">
                               <TfPersonKey
-                                className="mt-0.5 h-4 w-4 shrink-0 text-link"
+                                className="mt-0.5 h-4 w-4 shrink-0 text-brand-accent-dark dark:text-brand-accent-light"
                                 aria-hidden="true"
                               />
                               <div>
@@ -3323,10 +3323,10 @@ ${encryptionKey.replace('key_', '')}
                             </div>
                             <div className="ml-6 mt-2 flex items-center gap-1.5">
                               <TfShieldCheckAnimated
-                                className="h-3.5 w-3.5 text-link"
+                                className="h-3.5 w-3.5 text-brand-accent-dark dark:text-brand-accent-light"
                                 aria-hidden="true"
                               />
-                              <span className="text-xs font-medium text-link">
+                              <span className="text-xs font-medium text-brand-accent-dark dark:text-brand-accent-light">
                                 Passkey active
                               </span>
                             </div>

@@ -68,7 +68,7 @@ export function SteppedSlider<T extends string>({
               key={step.id}
               className={cn(
                 'h-1 w-1 shrink-0 rounded-full',
-                i <= index ? 'bg-white/70' : 'bg-content-muted/40',
+                i <= index ? 'bg-brand-dark/70' : 'bg-content-muted/40',
               )}
             />
           ))}
