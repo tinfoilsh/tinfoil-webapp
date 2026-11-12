@@ -3,7 +3,7 @@
  *
  * Tinfoil Brand Colors:
  * - tinfoil-dark: #05252E Midnight Petrol (primary dark background)
- * - tinfoil-light: #F2F1EC Bone (light background)
+ * - tinfoil-light: #F9F8F6 Bone (light background)
  * - tinfoil-accent-dark: #004444 Deep Teal (primary brand color)
  * - tinfoil-accent-light: #A8C7D1 Steel Mist (accent/success color)
  * - tinfoil-oak: #E6CCA8 Pale Oak (actions, selection, hovers)
@@ -19,7 +19,7 @@ export const colors = {
 
   // Tinfoil light - used for light backgrounds, cards
   'tinfoil-light': {
-    DEFAULT: '#F2F1EC',
+    DEFAULT: '#F9F8F6',
     hover: '#EEECE3',
   },
 
@@ -49,7 +49,7 @@ export const colors = {
 
   // Legacy gray colors for general use
   gray: {
-    light: '#F2F1EC',
+    light: '#F9F8F6',
     DEFAULT: '#D1D5DB',
     hover: '#9CA3AF',
   },

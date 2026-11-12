@@ -17,16 +17,16 @@
 
     /* Brand palette */
     --color-brand-dark: 193 80.4% 10%;
-    --color-brand-light: 50 18.7% 93.7%;
+    --color-brand-light: 40 20% 97%;
     --color-accent-dark: 180 100% 13.3%;
     --color-accent-dark-darker: 180 100% 10%;
     --color-accent-light: 195 30.8% 73.9%;
     --color-accent-light-darker: 195 24.8% 67.3%;
 
     /* Surface tokens */
-    --surface-canvas: 50 18.7% 93.7%;
+    --surface-canvas: 40 20% 97%;
     --surface-raised: 0 0% 100%;
-    --surface-muted: 40 20% 97%;
+    --surface-muted: 180 15.4% 94.9%;
     --surface-background: var(--surface-canvas);
     --surface-chat-background: var(--surface-canvas);
     --surface-chat: var(--surface-muted);
