@@ -92,6 +92,23 @@ describe('classifyCloudKeySetupError', () => {
     ).toBe('setup_failed')
   })
 
+  it('does not blame a well-formed key when browser storage cannot be read', async () => {
+    const blocked = new DOMException(
+      'The operation is insecure.',
+      'SecurityError',
+    )
+    vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+      throw blocked
+    })
+
+    const refused: unknown = await encryptionService
+      .setKey(`key_${'aa'.repeat(32)}`, { persist: false })
+      .catch((error: unknown) => error)
+
+    expect(refused).toBe(blocked)
+    expect(classifyCloudKeySetupError(refused)).toBe('setup_failed')
+  })
+
   it.each([
     ['unknown', 'verification_unavailable'],
     ['exists', 'key_mismatch'],

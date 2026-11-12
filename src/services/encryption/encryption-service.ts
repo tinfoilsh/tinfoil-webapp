@@ -177,58 +177,50 @@ export class EncryptionService {
     options: { persist?: boolean } = {},
   ): Promise<void> {
     const { persist = true } = options
+    const previousKey =
+      this.currentKeyString ?? localStorage.getItem(USER_ENCRYPTION_KEY)
+
+    const previousHistory = this.loadKeyHistoryFromStorage()
+
     try {
-      const previousKey =
-        this.currentKeyString ?? localStorage.getItem(USER_ENCRYPTION_KEY)
-
-      const previousHistory = this.loadKeyHistoryFromStorage()
-
       this.getKeyBytes(keyString)
-
-      let history = previousHistory.filter(
-        (storedKey) => storedKey !== keyString,
-      )
-
-      if (previousKey && previousKey !== keyString) {
-        history = [
-          previousKey,
-          ...history.filter((storedKey) => storedKey !== previousKey),
-        ]
-      }
-
-      if (persist) {
-        this.persistKeyState(
-          {
-            primaryKey: keyString,
-            history,
-          },
-          {
-            previousKey,
-            previousHistory,
-          },
-          {
-            failurePrefix: 'Failed to persist encryption key',
-            rollbackAction: 'setKeyRollback',
-          },
-        )
-      }
-
-      this.currentKeyString = keyString
-      this.fallbackKeyStrings = history
-      // Listeners derive from the persisted key (getKey reads
-      // localStorage), so a staged key must not announce a change
-      // yet; persistCurrentKeyState emits once the commit lands.
-      if (persist) {
-        dispatchEncryptionKeyChanged()
-      }
     } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message.startsWith('Failed to persist encryption key')
-      ) {
-        throw error
-      }
       throw new InvalidEncryptionKeyError(`Invalid encryption key: ${error}`)
+    }
+
+    let history = previousHistory.filter((storedKey) => storedKey !== keyString)
+
+    if (previousKey && previousKey !== keyString) {
+      history = [
+        previousKey,
+        ...history.filter((storedKey) => storedKey !== previousKey),
+      ]
+    }
+
+    if (persist) {
+      this.persistKeyState(
+        {
+          primaryKey: keyString,
+          history,
+        },
+        {
+          previousKey,
+          previousHistory,
+        },
+        {
+          failurePrefix: 'Failed to persist encryption key',
+          rollbackAction: 'setKeyRollback',
+        },
+      )
+    }
+
+    this.currentKeyString = keyString
+    this.fallbackKeyStrings = history
+    // Listeners derive from the persisted key (getKey reads
+    // localStorage), so a staged key must not announce a change
+    // yet; persistCurrentKeyState emits once the commit lands.
+    if (persist) {
+      dispatchEncryptionKeyChanged()
     }
   }
 
