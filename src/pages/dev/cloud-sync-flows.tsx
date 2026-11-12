@@ -388,6 +388,7 @@ export default function CloudSyncFlowsDevPage() {
                     verification_unavailable
                   </option>
                   <option value="invalid_key">invalid_key</option>
+                  <option value="setup_failed">setup_failed</option>
                 </select>
               </label>
               <label className="flex flex-col gap-1 text-xs text-content-secondary">
