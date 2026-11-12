@@ -9,6 +9,10 @@ websites' surface roles: Bone (`#F9F8F6`) for `surface-canvas`, white for
 `#121212`, `#1C1C1E`, and `#2C2C2E`. Use the semantic surface tokens for chat,
 sidebar, input, and dialog backgrounds.
 
+Search bars use `bg-surface-raised` across the complete control, including search
+icons and clear buttons: white in light mode and the raised surface in dark mode.
+Do not let search bars inherit the canvas or muted background.
+
 # Logging in this project
 
 Never use console.log/error/warn in production code. Use the logging utilities from `@/utils/error-handling`.
