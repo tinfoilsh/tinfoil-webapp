@@ -239,7 +239,7 @@ export function PromptLibraryModal({
         className={cn(
           'group relative flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
           isSelected
-            ? 'border-brand-accent-dark/40 bg-brand-accent-dark/5 dark:border-brand-accent-light/40 dark:bg-brand-accent-light/5'
+            ? 'border-yellow-700 bg-primary/20 dark:border-primary'
             : 'border-border-subtle bg-surface-chat-background hover:bg-surface-chat',
         )}
         aria-pressed={isActive}
@@ -263,7 +263,7 @@ export function PromptLibraryModal({
             {isDefault && (
               <>
                 <TfBookmarkFilled
-                  className="h-3.5 w-3.5 text-brand-accent-dark dark:text-brand-accent-light"
+                  className="h-3.5 w-3.5 text-yellow-700 dark:text-primary"
                   aria-hidden="true"
                 />
                 <span className="sr-only">Default for new chats</span>
@@ -281,7 +281,7 @@ export function PromptLibraryModal({
             {isActive && (
               <>
                 <TfBoxCheckmark
-                  className="h-3.5 w-3.5 text-brand-accent-dark dark:text-brand-accent-light"
+                  className="h-3.5 w-3.5 text-yellow-700 dark:text-primary"
                   aria-hidden="true"
                 />
                 <span className="sr-only">Active</span>
@@ -557,7 +557,7 @@ function PresetDetail({
                     setIsEditingName(false)
                   }
                 }}
-                className="w-full rounded-md border border-border-subtle bg-surface-chat-background px-2 py-0.5 text-base font-semibold text-content-primary outline-none focus:border-brand-accent-dark/40 dark:focus:border-brand-accent-light/40"
+                className="w-full rounded-md border border-border-subtle bg-surface-chat-background px-2 py-0.5 text-base font-semibold text-content-primary outline-none focus:border-ring"
               />
             ) : (
               <h3 className="line-clamp-2 rounded-md px-1.5 py-0.5 text-base font-semibold text-content-primary md:truncate">
@@ -670,7 +670,7 @@ function PresetDetail({
           className={cn(
             'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
             isDefault
-              ? 'text-brand-accent-dark hover:bg-brand-accent-dark/10 dark:text-brand-accent-light dark:hover:bg-brand-accent-light/10'
+              ? 'bg-primary text-primary-foreground hover:bg-primary/90'
               : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
           )}
         >

@@ -389,7 +389,7 @@ export function ModelSelector({
             type="button"
             role="menuitemradio"
             aria-checked={isActive}
-            className={`relative flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${isActive ? 'text-content-primary' : 'cursor-pointer text-content-secondary hover:bg-surface-card/70'}`}
+            className={`relative flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${isActive ? 'bg-primary/20 text-content-primary' : 'cursor-pointer text-content-secondary hover:bg-surface-card/70'}`}
             {...menuItemHandlers(handleSelect)}
           >
             <span className="font-medium">{option.label}</span>
@@ -401,7 +401,7 @@ export function ModelSelector({
             <span className="flex-1" />
             {isActive && (
               <TfBoxCheckmark
-                className="h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light"
+                className="h-4 w-4 flex-none text-yellow-700 dark:text-primary"
                 aria-hidden="true"
               />
             )}
@@ -419,7 +419,7 @@ export function ModelSelector({
         key={model.id}
         role="menuitemradio"
         aria-checked={isSelected}
-        className={`relative flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors ${isSelected ? 'text-content-primary' : 'cursor-pointer text-content-secondary hover:bg-surface-card/70'}`}
+        className={`relative flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors ${isSelected ? 'bg-primary/20 text-content-primary' : 'cursor-pointer text-content-secondary hover:bg-surface-card/70'}`}
         {...menuItemHandlers(() => {
           onSelect(model.id as AIModel)
           focusTrigger()
@@ -457,7 +457,7 @@ export function ModelSelector({
         </div>
         {isSelected && (
           <TfBoxCheckmark
-            className="mt-0.5 h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light"
+            className="mt-0.5 h-4 w-4 flex-none text-yellow-700 dark:text-primary"
             aria-hidden="true"
           />
         )}
@@ -578,7 +578,7 @@ export function ModelSelector({
               </div>
               <span
                 aria-hidden="true"
-                className={`relative h-5 w-9 flex-none rounded-full border border-border-subtle transition-colors after:absolute after:left-[1px] after:top-[1px] after:h-4 after:w-4 after:rounded-full after:shadow-sm after:transition-all after:content-[''] ${thinkingEnabled ? 'bg-brand-accent-dark after:translate-x-full after:bg-white dark:bg-brand-accent-light' : 'bg-content-muted/40 after:bg-content-muted/70'}`}
+                className={`relative h-5 w-9 flex-none rounded-full border border-border-subtle transition-colors after:absolute after:left-[1px] after:top-[1px] after:h-4 after:w-4 after:rounded-full after:shadow-sm after:transition-all after:content-[''] ${thinkingEnabled ? 'bg-primary after:translate-x-full after:bg-primary-foreground' : 'bg-content-muted/40 after:bg-content-muted/70'}`}
               />
             </button>
           </>

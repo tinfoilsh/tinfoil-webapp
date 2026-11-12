@@ -508,10 +508,10 @@ function ShareModalContent({
                                 void handleShareEnabledChange(e.target.checked)
                               }
                               aria-label="Make this conversation shareable with anyone who has the link"
-                              className="peer h-5 w-5 cursor-pointer appearance-none rounded border border-border-subtle bg-surface-chat transition-all checked:border-brand-accent-dark checked:bg-brand-accent-dark"
+                              className="peer h-5 w-5 cursor-pointer appearance-none rounded border border-border-subtle bg-surface-chat transition-all checked:border-primary checked:bg-primary"
                             />
                             <TfBoxCheckmark
-                              className="pointer-events-none absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100"
+                              className="pointer-events-none absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-primary-foreground opacity-0 peer-checked:opacity-100"
                               aria-hidden="true"
                             />
                           </div>

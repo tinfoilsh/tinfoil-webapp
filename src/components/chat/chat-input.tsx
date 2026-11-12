@@ -1048,7 +1048,7 @@ export const ChatInput = memo(function ChatInput({
                             <span className="flex-1">Web search</span>
                             {webSearchEnabled && (
                               <TfBoxCheckmark
-                                className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
+                                className="h-4 w-4 text-yellow-700 dark:text-primary"
                                 aria-hidden="true"
                               />
                             )}
@@ -1072,7 +1072,7 @@ export const ChatInput = memo(function ChatInput({
                             <span className="flex-1">Deep research</span>
                             {researchEnabled && (
                               <TfBoxCheckmark
-                                className="h-4 w-4 text-brand-accent-light"
+                                className="h-4 w-4 text-yellow-700 dark:text-primary"
                                 aria-hidden="true"
                               />
                             )}
@@ -1119,7 +1119,7 @@ export const ChatInput = memo(function ChatInput({
                     type="button"
                     onClick={onResearchToggle}
                     aria-label="Turn off deep research"
-                    className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-brand-accent-light transition-colors hover:bg-surface-chat-background"
+                    className="flex h-7 items-center gap-1.5 rounded-lg bg-primary px-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                   >
                     <TfWebSearch className="h-4 w-4" aria-hidden="true" />
                     Deep research

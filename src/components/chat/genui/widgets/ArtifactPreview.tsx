@@ -522,7 +522,7 @@ function ArtifactPreviewInlineCard({
       className={cn(
         'my-3 flex w-full items-center rounded-lg border bg-surface-card text-left transition-colors',
         isSelected
-          ? 'border-brand-accent-dark bg-brand-accent-dark/10 dark:border-brand-accent-light dark:bg-brand-accent-light/10'
+          ? 'border-yellow-700 bg-primary/20 dark:border-primary'
           : 'border-border-subtle hover:bg-surface-chat-background',
       )}
     >
@@ -536,7 +536,7 @@ function ArtifactPreviewInlineCard({
           className={cn(
             'h-6 w-6 flex-shrink-0',
             isSelected
-              ? 'text-brand-accent-dark dark:text-brand-accent-light'
+              ? 'text-yellow-700 dark:text-primary'
               : 'text-content-muted',
           )}
           aria-hidden
