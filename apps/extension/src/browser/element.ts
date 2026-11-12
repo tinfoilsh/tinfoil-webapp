@@ -12,10 +12,31 @@ export function inspectElement(this: Element) {
   const x = Math.max(0, Math.min(innerWidth - 1, box.left + box.width / 2))
   const y = Math.max(0, Math.min(innerHeight - 1, box.top + box.height / 2))
   let hit = this.ownerDocument.elementFromPoint(x, y)
+  const roots: ShadowRoot[] = []
+  for (
+    let root = this.getRootNode();
+    root instanceof ShadowRoot;
+    root = root.host.getRootNode()
+  )
+    roots.unshift(root)
+  for (const root of roots) {
+    if (hit !== root.host) break
+    hit = root.elementFromPoint(x, y)
+  }
   while (hit?.shadowRoot) {
     const nested = hit.shadowRoot.elementFromPoint(x, y)
     if (!nested || nested === hit) break
     hit = nested
+  }
+  let withinTarget = false
+  for (let element = hit; element;) {
+    if (element === this) {
+      withinTarget = true
+      break
+    }
+    const root = element.getRootNode()
+    element =
+      element.parentElement || (root instanceof ShadowRoot ? root.host : null)
   }
   return {
     connected: this.isConnected,
@@ -24,14 +45,19 @@ export function inspectElement(this: Element) {
       box.height > 0 &&
       style.visibility === 'visible' &&
       style.display !== 'none',
-    covered: hit !== this && !this.contains(hit),
+    covered: !withinTarget,
     disabled: this.matches(':disabled, [aria-disabled="true"]'),
     sensitive,
   }
 }
 
 export function selectText(this: Element): boolean {
-  if (this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) {
+  if (
+    (this instanceof HTMLInputElement &&
+      /^(?:text|search|url|tel|email|password|number)$/.test(this.type)) ||
+    this instanceof HTMLTextAreaElement
+  ) {
+    if (this.readOnly) return false
     this.select()
     return true
   }

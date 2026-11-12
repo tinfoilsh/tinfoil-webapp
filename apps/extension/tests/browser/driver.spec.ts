@@ -3,6 +3,7 @@ import {
   expect,
   test,
   type BrowserContext,
+  type Page,
   type Worker,
 } from '@playwright/test'
 import type { BrowserAction } from '@tinfoil/chat-client/types'
@@ -23,18 +24,25 @@ let origin: string
 let context: BrowserContext
 let worker: Worker
 let profile: string
+let fixturePage: Page | undefined
 
 test.beforeAll(async () => {
   server = createServer((request, response) => {
     response.setHeader('Content-Type', 'text/html')
     if (request.url === '/frame') {
       response.end(
-        '<label>Frame name<input id="frame-name"></label><button onclick="document.querySelector(\'output\').textContent=\'Frame saved\'">Save frame</button><output></output>',
+        '<label>Frame name<input id="frame-name"></label><label>Frame password<input type="password" value="frame-secret"></label><button onclick="document.querySelector(\'output\').textContent=\'Frame saved\'">Save frame</button><output></output>',
       )
       return
     }
     if (request.url === '/next') {
       response.end('<h1>Next page</h1>')
+      return
+    }
+    if (request.url === '/form') {
+      response.end(
+        '<label>Card<input name="autocomplete" autocomplete="section-payment cc-number" value="sensitive-card"></label><label>Locked<input readonly value="fixed"></label><div id="closed"></div><output></output><script>const root=document.querySelector("#closed").attachShadow({mode:"closed"});root.innerHTML="<button>Closed button</button>";root.querySelector("button").onclick=()=>document.querySelector("output").textContent="Closed clicked"</script>',
+      )
       return
     }
     if (request.url === '/long') {
@@ -84,6 +92,26 @@ test.afterAll(async () => {
   if (profile) await rm(profile, { recursive: true, force: true })
 })
 
+test.afterEach(async () => {
+  try {
+    if (worker) await worker.evaluate(() => globalThis.browserTest?.stop())
+  } finally {
+    await fixturePage?.close()
+    fixturePage = undefined
+  }
+})
+
+async function startFixture(suffix = '') {
+  const page = await context.newPage()
+  fixturePage = page
+  await page.goto(`${origin}${suffix}`)
+  const tabId = await worker.evaluate(
+    (url) => browserTest.start(url),
+    page.url(),
+  )
+  return { page, tabId }
+}
+
 function ref(text: string, name: string) {
   const line = text
     .split('\n')
@@ -96,12 +124,7 @@ const execute = (action: BrowserAction) =>
   worker.evaluate((action) => browserTest.execute(action), action)
 
 test('real debugger actions edit fields, click, select, reject stale refs and stop', async () => {
-  const page = await context.newPage()
-  await page.goto(origin)
-  const tabId = await worker.evaluate(
-    (url) => browserTest.start(url),
-    page.url(),
-  )
+  const { page, tabId } = await startFixture()
   const read = await execute({ action: 'read', tabId })
   expect(read.text).not.toContain('never-send-this')
   const oldSave = ref(read.text, 'Save')
@@ -147,16 +170,10 @@ test('real debugger actions edit fields, click, select, reject stale refs and st
     execute({ action: 'click', tabId, ref: ref(current.text, 'Save') }),
   ).rejects.toThrow()
   await expect(page.locator('output').first()).toHaveText('Saved Ada')
-  await page.close()
 })
 
 test('shadow DOM and cross-origin frames expose usable references', async () => {
-  const page = await context.newPage()
-  await page.goto(`${origin}/?frames`)
-  const tabId = await worker.evaluate(
-    (url) => browserTest.start(url),
-    page.url(),
-  )
+  const { page, tabId } = await startFixture('/?frames')
   let observation = await execute({ action: 'read', tabId })
   await execute({
     action: 'click',
@@ -172,6 +189,30 @@ test('shadow DOM and cross-origin frames expose usable references', async () => 
         .filter((line) => line.includes('button "Save frame"')).length
     })
     .toBe(2)
+  for (const index of [0, 1]) {
+    const fields = observation.text
+      .split('\n')
+      .filter((line) => line.includes('textbox "Frame name"'))
+    const field = fields[index].match(/^\[([^\]]+)\]/)![1]
+    observation = await execute({
+      action: 'fill',
+      tabId,
+      ref: field,
+      text: `Frame ${index}`,
+    })
+    await expect(
+      page.frameLocator('iframe').nth(index).locator('#frame-name'),
+    ).toHaveValue(`Frame ${index}`)
+    expect(observation.text).not.toContain('frame-secret')
+    const passwords = observation.text
+      .split('\n')
+      .filter((line) => line.includes('textbox "Frame password"'))
+    const password = passwords[index].match(/^\[([^\]]+)\]/)![1]
+    await expect(
+      execute({ action: 'fill', tabId, ref: password, text: 'blocked' }),
+    ).rejects.toThrow('passwords')
+    observation = await execute({ action: 'read', tabId })
+  }
   const buttons = observation.text
     .split('\n')
     .filter((line) => line.includes('button "Save frame"'))
@@ -180,17 +221,10 @@ test('shadow DOM and cross-origin frames expose usable references', async () => 
   await expect(page.frameLocator('iframe').nth(1).locator('output')).toHaveText(
     'Frame saved',
   )
-  await worker.evaluate(() => browserTest.stop())
-  await page.close()
 })
 
 test('unselected tabs and arbitrary code cannot be executed', async () => {
-  const page = await context.newPage()
-  await page.goto(`${origin}/?scope`)
-  const tabId = await worker.evaluate(
-    (url) => browserTest.start(url),
-    page.url(),
-  )
+  const { tabId } = await startFixture('/?scope')
   await expect(
     execute({ action: 'read', tabId: tabId + 1000 }),
   ).rejects.toThrow('not selected')
@@ -200,17 +234,10 @@ test('unselected tabs and arbitrary code cannot be executed', async () => {
   await expect(execute({ action: 'close', tabId })).rejects.toThrow(
     'created by this task',
   )
-  await worker.evaluate(() => browserTest.stop())
-  await page.close()
 })
 
 test('coordinate actions use the captured viewport and reject changed screenshots', async () => {
-  const page = await context.newPage()
-  await page.goto(`${origin}/?pixels`)
-  const tabId = await worker.evaluate(
-    (url) => browserTest.start(url),
-    page.url(),
-  )
+  const { page, tabId } = await startFixture('/?pixels')
   const screenshot = await execute({ action: 'screenshot', tabId })
   const box = (await page.locator('#save').boundingBox())!
   const viewport = await page.evaluate(() => ({
@@ -242,17 +269,10 @@ test('coordinate actions use the captured viewport and reject changed screenshot
   await expect(
     execute({ action: 'click', tabId, screenshotId: next.screenshotId, x, y }),
   ).rejects.toThrow('visible page changed')
-  await worker.evaluate(() => browserTest.stop())
-  await page.close()
 })
 
 test('long pages can be searched and offscreen targets are scrolled into view', async () => {
-  const page = await context.newPage()
-  await page.goto(`${origin}/long`)
-  const tabId = await worker.evaluate(
-    (url) => browserTest.start(url),
-    page.url(),
-  )
+  const { page, tabId } = await startFixture('/long')
   const visible = await execute({ action: 'read', tabId })
   expect(visible.text).toContain('button "Top"')
   expect(visible.text).not.toContain('button "Bottom"')
@@ -261,6 +281,25 @@ test('long pages can be searched and offscreen targets are scrolled into view', 
   await expect(
     page.getByRole('button', { name: 'Bottom saved' }),
   ).toBeInViewport()
-  await worker.evaluate(() => browserTest.stop())
-  await page.close()
+})
+
+test('form observations protect payment values and actions handle readonly and closed-shadow controls', async () => {
+  const { page, tabId } = await startFixture('/form')
+  const observation = await execute({ action: 'read', tabId })
+  expect(observation.text).not.toContain('sensitive-card')
+  await expect(
+    execute({
+      action: 'fill',
+      tabId,
+      ref: ref(observation.text, 'Locked'),
+      text: 'overwrite',
+    }),
+  ).rejects.toThrow('not an editable')
+  await execute({
+    action: 'click',
+    tabId,
+    ref: ref(observation.text, 'Closed button'),
+  })
+  await expect(page.locator('output')).toHaveText('Closed clicked')
+  await expect(page.getByLabel('Locked')).toHaveValue('fixed')
 })

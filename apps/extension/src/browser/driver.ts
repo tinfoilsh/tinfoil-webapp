@@ -267,6 +267,36 @@ export class BrowserDriver {
         }
         seen.add(frame.frame.id)
         lines.push(`Frame: ${frame.frame.url}`)
+        const byId = new Map(nodes.map((node) => [node.nodeId, node]))
+        const fields = new Map<string, { sensitive: boolean; value: string }>()
+        const field = async (node: Protocol.Accessibility.AXNode) => {
+          const cached = fields.get(node.nodeId)
+          if (cached) return cached
+          const result = { sensitive: false, value: '' }
+          if (node.value?.value && node.backendDOMNodeId) {
+            const described = await this.send(
+              target.session,
+              'DOM.describeNode',
+              { backendNodeId: node.backendDOMNodeId },
+            )
+            const attributes = described.node.attributes || []
+            const attribute = (key: string) => {
+              for (let index = 0; index < attributes.length; index += 2)
+                if (attributes[index] === key)
+                  return attributes[index + 1] || ''
+              return ''
+            }
+            result.sensitive =
+              attribute('type').toLowerCase() === 'password' ||
+              /(?:^|\s)(?:cc-|one-time-code|current-password|new-password)/i.test(
+                attribute('autocomplete'),
+              )
+            if (!result.sensitive)
+              result.value = `value=${JSON.stringify(String(node.value.value).slice(0, MAX_LABEL_CHARS))}`
+          }
+          fields.set(node.nodeId, result)
+          return result
+        }
         for (const node of nodes) {
           if (node.ignored || count >= MAX_NODES) continue
           const role = String(node.role?.value || '')
@@ -279,6 +309,20 @@ export class BrowserDriver {
             continue
           if (filter && !name.toLocaleLowerCase().includes(filter)) continue
           if (++scanned > MAX_SCANNED_NODES) break
+          let protectedValue = false
+          for (
+            let parent = node.parentId, remaining = nodes.length;
+            parent && remaining-- > 0;
+          ) {
+            const ancestor = byId.get(parent)
+            if (!ancestor) break
+            if ((await field(ancestor)).sensitive) {
+              protectedValue = true
+              break
+            }
+            parent = ancestor.parentId
+          }
+          if (protectedValue) continue
           if (!filter && node.backendDOMNodeId) {
             try {
               const bounds = await this.send(
@@ -325,26 +369,7 @@ export class BrowserDriver {
             )
             .map((p) => `${p.name}=${String(p.value.value)}`)
             .join(' ')
-          let value = ''
-          if (node.value?.value && node.backendDOMNodeId) {
-            const described = await this.send(
-              target.session,
-              'DOM.describeNode',
-              { backendNodeId: node.backendDOMNodeId },
-            )
-            const attributes = described.node.attributes || []
-            const attribute = (key: string) => {
-              const index = attributes.indexOf(key)
-              return index < 0 ? '' : attributes[index + 1] || ''
-            }
-            if (
-              attribute('type').toLowerCase() !== 'password' &&
-              !/(?:^|\s)(?:cc-|one-time-code|current-password|new-password)/i.test(
-                attribute('autocomplete'),
-              )
-            )
-              value = `value=${JSON.stringify(String(node.value.value).slice(0, MAX_LABEL_CHARS))}`
-          }
+          const { value } = await field(node)
           lines.push(
             `${actionable ? `[${ref}] ` : ''}${role} ${JSON.stringify(name)} ${state} ${value}`,
           )

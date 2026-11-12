@@ -1,20 +1,29 @@
 import type { BrowserAction } from '@tinfoil/chat-client/types'
 import { BrowserDriver } from '../../src/browser/driver'
 
-let driver: BrowserDriver
-let abort: AbortController
+let task: { driver: BrowserDriver; abort: AbortController } | undefined
 export async function start(url: string) {
-  abort = new AbortController()
-  driver = new BrowserDriver(abort.signal, () => abort.abort())
-  const tab = (await chrome.tabs.query({})).find((tab) => tab.url === url)
-  if (!tab?.id) throw new Error('Fixture tab missing')
-  await driver.attach(tab.id)
-  return tab.id
+  await stop()
+  const abort = new AbortController()
+  const driver = new BrowserDriver(abort.signal, () => abort.abort())
+  task = { driver, abort }
+  try {
+    const tab = (await chrome.tabs.query({})).find((tab) => tab.url === url)
+    if (!tab?.id) throw new Error('Fixture tab missing')
+    await driver.attach(tab.id)
+    return tab.id
+  } catch (cause) {
+    await stop()
+    throw cause
+  }
 }
-export function execute(action: BrowserAction) {
-  return driver.execute(action)
+export async function execute(action: BrowserAction) {
+  if (!task) throw new Error('Browser control is stopped')
+  return task.driver.execute(action)
 }
 export async function stop() {
-  abort.abort()
-  await driver.dispose()
+  const previous = task
+  task = undefined
+  previous?.abort.abort()
+  await previous?.driver.dispose()
 }
