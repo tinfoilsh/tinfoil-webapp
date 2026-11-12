@@ -27,6 +27,11 @@ const COMPACTION_FEATURE = 'compaction'
 const COMPACTION_NOTE = 'Earlier messages will be summarized to make room.'
 const COMPACT_EXPLANATION =
   'Compacting summarizes earlier messages so the chat uses less of the context window. The latest exchange is kept as it is.'
+// The session feature of a harness that summarizes the latest exchange too
+// when the user compacts a chat.
+const COMPACT_LATEST_FEATURE = 'compactLatest'
+const COMPACT_LATEST_EXPLANATION =
+  'Compacting summarizes the conversation so far, including the latest exchange, so the chat uses less of the context window.'
 const NOTHING_TO_COMPACT_NOTE = 'Nothing to compact right now.'
 export const COMPACT_LABEL = 'Compact chat'
 export const COMPACTING_LABEL = 'Compacting…'
@@ -60,6 +65,7 @@ export function ContextUsageIndicator({
   compaction?: ChatCompaction
 }) {
   const compacts = useSessionFeature(COMPACTION_FEATURE)
+  const compactsLatest = useSessionFeature(COMPACT_LATEST_FEATURE)
   const [isOpen, setIsOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -205,7 +211,9 @@ export function ContextUsageIndicator({
               <p className="mt-2 text-xs text-content-secondary">{note}</p>
             )}
             <p className="mt-2 text-xs text-content-secondary">
-              {COMPACT_EXPLANATION}
+              {compactsLatest
+                ? COMPACT_LATEST_EXPLANATION
+                : COMPACT_EXPLANATION}
             </p>
             <button
               type="button"

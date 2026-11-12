@@ -521,6 +521,14 @@ export function chatTurns({
     }
     return reopen()
   }
+  // A turn that compacts the open chat on request. Where the harness offers
+  // it, the compaction summarizes the latest exchange too, as the chat shows
+  // a marker at its end.
+  const compactTurnOf = (fields: Partial<Turn>): Partial<Turn> => ({
+    ...fields,
+    kind: 'compact',
+    ...(session?.features.compactLatest ? { compactLatest: true } : {}),
+  })
   // Retries what failed. A run that ended with an error runs again, as the
   // harness decides from the chat: a continuation continues again, a reply
   // is regenerated, and a message left without a reply is answered. A
@@ -529,13 +537,15 @@ export function chatTurns({
   async function retry(fields: Partial<Turn> = {}) {
     const { failedRun, status, compactTurn } = controller.view.get()
     if (!failedRun || status !== 'error') return reconnect()
-    return send({ ...fields, kind: compactTurn ? 'compact' : 'retry' })
+    return send(
+      compactTurn ? compactTurnOf(fields) : { ...fields, kind: 'retry' },
+    )
   }
-  // Compacts the open chat on request: the harness summarizes its earlier
-  // messages without asking the model. It does so only while no reply runs.
+  // Compacts the open chat on request: the harness summarizes its messages
+  // without asking the model. It does so only while no reply runs.
   function compact(fields: Partial<Turn> = {}) {
     if (!open.get().id || isRunning(controller.view.get())) return
-    return send({ ...fields, kind: 'compact' })
+    return send(compactTurnOf(fields))
   }
   // Asks the harness for new arguments for a widget call, while the chat
   // shows no run or error of its own. A retry that does not repair the

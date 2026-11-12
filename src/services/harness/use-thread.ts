@@ -981,13 +981,13 @@ export function useThread(
       (onDevice(openState) || keyReady),
     canChangeMessages: !loading && !openState.failedId && !!chat.id,
     // The open chat can be compacted while no reply runs and it holds
-    // earlier messages to summarize.
+    // messages for the harness to summarize.
     canCompact:
       !loading &&
       !openState.failedId &&
       !!id &&
       !running &&
-      compactable(state.messages),
+      compactable(state.messages, !!session?.features.compactLatest),
     compacting,
     // The chat's latest turn compacted it on request, which an error reports.
     compactTurn: !!state.compactTurn,

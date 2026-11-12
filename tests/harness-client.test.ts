@@ -1,6 +1,7 @@
 import { API_BASE_URL } from '@/config'
 import { HarnessClient, REQUEST_TIMEOUT_MS } from '@/services/harness/client'
 import {
+  CHAT_END,
   INFERENCE_KEY_HEADER,
   type HarnessRoute,
 } from '@/services/harness/protocol'
@@ -1023,6 +1024,24 @@ describe('compacting a chat', () => {
   ])('leaves no marker for a compaction that %s', (_, outcome, closing) => {
     const state = run([started, ended(outcome, closing)])
     expect(state.messages).toEqual(window)
+  })
+
+  it('opens a marker at the end of the chat when it names no message', () => {
+    const opened = run([
+      {
+        type: 'COMPACTION_START',
+        messageId: 'c1',
+        beforeMessageId: CHAT_END,
+        timestamp: 't3',
+      },
+    ])
+    expect(opened.messages).toEqual([
+      ...window,
+      { id: 'c1', role: 'compaction', createdAt: 't3' },
+    ])
+
+    const closed = run([ended('completed', marker, CHAT_END)])
+    expect(closed.messages).toEqual([...window, marker])
   })
 
   it('shows no marker before a message that is not loaded', () => {
