@@ -184,10 +184,11 @@ export class HarnessClient {
   // enclave is verified. One that could not be made is forgotten, so the
   // next request verifies the enclave again.
   private connection(): Promise<Transport> {
+    this.lifetime.signal.throwIfAborted()
     if (this.secure) return this.secure
     const secure = withDeadline(
       ATTESTATION_TIMEOUT_MS,
-      undefined,
+      this.lifetime.signal,
       this.connect,
       unverified,
     )
@@ -204,7 +205,7 @@ export class HarnessClient {
     const secure = await this.connection()
     const verification = await withDeadline(
       ATTESTATION_TIMEOUT_MS,
-      undefined,
+      this.lifetime.signal,
       (signal) => secure.ensureVerified({ signal }),
       unverified,
     )
@@ -229,6 +230,9 @@ export class HarnessClient {
     signal?: AbortSignal,
     { instance, lastEventId, threadId }: RouteHeaders = {},
   ): Promise<Response> {
+    signal = signal
+      ? AbortSignal.any([signal, this.lifetime.signal])
+      : this.lifetime.signal
     if (!/^\/v1\/(?:[a-z-]+\/)*[a-z-]+$/.test(path)) {
       throw new HarnessError({
         code: ERROR_CODES.badRequest,
@@ -238,6 +242,7 @@ export class HarnessClient {
     }
     signal?.throwIfAborted()
     const { secure } = await this.attested()
+    signal.throwIfAborted()
     let token = await this.getToken()
     const anonymous = !token
     if (anonymous) {

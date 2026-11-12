@@ -1146,6 +1146,38 @@ describe('attested harness transport', () => {
   beforeEach(() => {
     stubChatAccess()
   })
+  it('disposal aborts a request already sent through the attested transport', async () => {
+    const secure = transport()
+    let sent!: () => void
+    const started = new Promise<void>((resolve) => {
+      sent = resolve
+    })
+    secure.fetch.mockImplementation(
+      (_url, options: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = options.signal!
+          signal.addEventListener('abort', () => reject(signal.reason), {
+            once: true,
+          })
+          sent()
+        }),
+    )
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'session',
+      async () => secure,
+    )
+    const pending = client
+      .post('/v1/session', {})
+      .catch((error: unknown) => error)
+    await started
+    client.dispose()
+    expect(await pending).toMatchObject({ name: 'AbortError' })
+    await expect(client.post('/v1/session', {})).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    expect(secure.fetch).toHaveBeenCalledTimes(1)
+  })
   // The harness's refusal of an expired Clerk session.
   const expiredSession = () =>
     Response.json(

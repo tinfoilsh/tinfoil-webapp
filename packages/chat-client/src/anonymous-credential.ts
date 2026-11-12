@@ -92,7 +92,10 @@ export class AnonymousCredentialCache {
       )
     // The harness reports the key's quota; only the key and its expiry are
     // read here.
-    const value = await response.json()
+    const value = await response.json().catch((cause) => {
+      if (cause instanceof SyntaxError) return null
+      throw cause
+    })
     const expiresAt = Date.parse(value?.expires_at)
     if (
       typeof value?.key !== 'string' ||
