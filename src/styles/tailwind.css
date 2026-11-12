@@ -2,6 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes loading-lock-ring-gap {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: var(--loading-ring-offset);
+  }
+}
+
+.loading-lock-ring-gap {
+  animation: loading-lock-ring-gap 1.2s
+    steps(var(--loading-ring-dash-count), end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-lock-ring-gap {
+    animation: none;
+  }
+}
+
 @keyframes move-x {
   0% {
     transform: translateX(var(--move-x-from));
@@ -16,27 +36,30 @@
     color-scheme: light;
 
     /* Brand palette */
-    --color-brand-dark: 198 68.4% 7.5%;
-    --color-brand-light: 180 17.2% 94.3%;
+    --color-brand-dark: 193 80.4% 10%;
+    --color-brand-light: 40 20% 97%;
     --color-accent-dark: 180 100% 13.3%;
     --color-accent-dark-darker: 180 100% 10%;
-    --color-accent-light: 163 45.9% 59.4%;
-    --color-accent-light-darker: 163 37% 53%;
+    --color-accent-light: 195 30.8% 73.9%;
+    --color-accent-light-darker: 195 24.8% 67.3%;
 
     /* Surface tokens */
-    --surface-background: 40 20% 97%;
-    --surface-chat-background: 40 20% 97%;
-    --surface-chat: 40 15% 92%;
-    --surface-card: 40 15% 92%;
-    --surface-sidebar: 40 20% 97%;
-    --surface-sidebar-panel: 40 15% 92%;
-    --surface-sidebar-button: 40 20% 97%;
-    --surface-sidebar-button-hover: 40 15% 90%;
-    --surface-settings: 40 15% 92%;
-    --surface-input: 40 15% 92%;
-    --surface-thinking: 40 15% 92%;
-    --surface-message-user: 40 15% 92%;
-    --surface-message-assistant: 40 20% 97%;
+    --surface-canvas: 40 20% 97%;
+    --surface-raised: 0 0% 100%;
+    --surface-muted: 180 15.4% 94.9%;
+    --surface-background: var(--surface-canvas);
+    --surface-chat-background: var(--surface-canvas);
+    --surface-chat: var(--surface-muted);
+    --surface-card: var(--surface-raised);
+    --surface-sidebar: var(--surface-canvas);
+    --surface-sidebar-panel: var(--surface-raised);
+    --surface-sidebar-button: var(--surface-canvas);
+    --surface-sidebar-button-hover: var(--surface-muted);
+    --surface-settings: var(--surface-raised);
+    --surface-input: var(--surface-raised);
+    --surface-thinking: var(--surface-muted);
+    --surface-message-user: var(--surface-muted);
+    --surface-message-assistant: var(--surface-canvas);
     --redaction-block: 0 0% 6%;
 
     /* Borders */
@@ -50,8 +73,8 @@
     --content-inverse: 0 0% 100%;
 
     /* Buttons */
-    --button-send-background: var(--color-brand-dark);
-    --button-send-foreground: 0 0% 100%;
+    --button-send-background: var(--primary);
+    --button-send-foreground: var(--color-brand-dark);
 
     /* Neutral scale */
     --gray-950: var(--color-brand-dark);
@@ -73,8 +96,9 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
-    --primary: var(--color-brand-dark);
-    --primary-foreground: 0 0% 100%;
+    --primary: 34.84 55.36% 78.04%;
+    --primary-foreground: var(--color-brand-dark);
+    --link: var(--color-accent-dark);
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
     --muted: var(--surface-chat);
@@ -85,8 +109,8 @@
     --destructive-foreground: 0 0% 98%;
     --border: var(--border-subtle);
     --input: var(--border-subtle);
-    --ring: var(--color-accent-light);
-    --chart-1: 163 45.9% 59.4%;
+    --ring: var(--color-accent-dark);
+    --chart-1: 195 30.8% 73.9%;
     --chart-2: 180 100% 28%;
     --chart-3: 198 68.4% 40%;
     --chart-4: 210 34% 18%;
@@ -98,19 +122,9 @@
   .dark {
     color-scheme: dark;
 
-    --surface-background: var(--color-brand-dark);
-    --surface-chat-background: 0 0% 7.1%;
-    --surface-chat: 240 2.2% 17.6%;
-    --surface-card: 240 3.4% 11.4%;
-    --surface-sidebar: 0 0% 7.1%;
-    --surface-sidebar-panel: 0 0% 11.7%;
-    --surface-sidebar-button: 240 2.2% 17.6%;
-    --surface-sidebar-button-hover: 240 2.2% 22%;
-    --surface-settings: 0 0% 7.1%;
-    --surface-input: 240 2.2% 17.6%;
-    --surface-thinking: 240 2.2% 17.6%;
-    --surface-message-user: 240 2.2% 17.6%;
-    --surface-message-assistant: 0 0% 7.1%;
+    --surface-canvas: 0 0% 7.1%;
+    --surface-raised: 240 3.4% 11.4%;
+    --surface-muted: 240 2.2% 17.6%;
     --redaction-block: 0 0% 4%;
 
     --border-subtle: 240 3.7% 26%;
@@ -121,10 +135,10 @@
     --content-muted: 218 10.6% 72%;
     --content-inverse: var(--color-brand-dark);
 
-    --button-send-background: 0 0% 100%;
+    --button-send-background: var(--primary);
     --button-send-foreground: var(--color-brand-dark);
 
-    --color-accent-light-darker: 163 37% 53%;
+    --color-accent-light-darker: 195 24.8% 67.3%;
 
     --gray-950: var(--color-brand-dark);
     --gray-900: 0 0% 7.1%;
@@ -144,8 +158,7 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
-    --primary: var(--color-accent-light);
-    --primary-foreground: var(--color-brand-dark);
+    --link: 257 32% 70%;
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
     --muted: var(--surface-chat);
@@ -156,7 +169,7 @@
     --destructive-foreground: 0 0% 98%;
     --border: var(--border-subtle);
     --input: var(--border-subtle);
-    --ring: var(--color-accent-light);
+    --ring: var(--primary);
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;

@@ -234,11 +234,15 @@ it('hides the web search control and has the harness leave search out once Setti
       name: 'Web search',
     }),
   ).toHaveAttribute('aria-checked', 'true')
-  fireEvent.keyDown(screen.getByRole('menu', { name: 'Input options' }), {
-    key: 'Escape',
+  await act(async () => {
+    fireEvent.keyDown(screen.getByRole('menu', { name: 'Input options' }), {
+      key: 'Escape',
+    })
   })
 
-  fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+  })
   const settings = await screen.findByRole('dialog', { name: 'Settings' })
   fireEvent.click(
     within(settings).getAllByRole('button', { name: 'Chat Settings' })[0],

@@ -682,7 +682,7 @@ ${generatedKey.replace('key_', '')}
               onClick={handleCopyKey}
               className={`w-full min-w-[5rem] ${
                 isCopied
-                  ? 'border-brand-accent-dark bg-brand-accent-dark text-white hover:border-brand-accent-dark/90 hover:bg-brand-accent-dark/90'
+                  ? 'border-tinfoil-oak bg-tinfoil-oak text-brand-dark hover:border-tinfoil-oak-hover hover:bg-tinfoil-oak-hover'
                   : ''
               }`}
               title="Copy to clipboard"

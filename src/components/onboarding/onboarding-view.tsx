@@ -227,7 +227,7 @@ function OnboardingSafeguardsPage({
           <SafeguardsShield
             popping={finishing}
             onPopped={onFinished}
-            className="h-24 w-24 text-tinfoil-accent-blue dark:text-white"
+            className="h-24 w-24 text-link dark:text-white"
           />
         </div>
 

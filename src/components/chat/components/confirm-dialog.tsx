@@ -62,10 +62,10 @@ export function ConfirmDialog({
                 type="button"
                 onClick={onConfirm}
                 className={cn(
-                  'rounded-lg px-3 py-2 text-sm font-semibold text-white transition-colors',
+                  'rounded-lg px-3 py-2 text-sm font-semibold transition-colors',
                   isDestructive
-                    ? 'bg-red-600 hover:bg-red-700'
-                    : 'bg-brand-accent-dark hover:bg-brand-accent-dark/90',
+                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    : 'bg-tinfoil-oak text-brand-dark hover:bg-tinfoil-oak-hover',
                 )}
               >
                 {confirmLabel}

@@ -52,7 +52,7 @@ export function SteppedSlider<T extends string>({
       <SliderPrimitive.Track className="relative h-full w-full grow overflow-hidden rounded-full bg-content-muted/20">
         <SliderPrimitive.Range
           className={cn(
-            'absolute h-full rounded-full bg-tinfoil-accent-blue',
+            'absolute h-full rounded-full bg-tinfoil-oak',
             index === lastIndex && 'stepped-slider-max-fill',
           )}
           style={{
@@ -68,14 +68,14 @@ export function SteppedSlider<T extends string>({
               key={step.id}
               className={cn(
                 'h-1 w-1 shrink-0 rounded-full',
-                i <= index ? 'bg-white/70' : 'bg-content-muted/40',
+                i <= index ? 'bg-brand-dark/70' : 'bg-content-muted/40',
               )}
             />
           ))}
         </div>
       </SliderPrimitive.Track>
       <SliderPrimitive.Thumb
-        className="block size-[var(--slider-size)] cursor-grab rounded-full border-4 border-transparent bg-white bg-clip-padding ring-offset-surface-chat drop-shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tinfoil-accent-blue focus-visible:ring-offset-2 active:cursor-grabbing dark:focus-visible:ring-white"
+        className="block size-[var(--slider-size)] cursor-grab rounded-full border-4 border-transparent bg-white bg-clip-padding ring-offset-surface-chat drop-shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:cursor-grabbing dark:focus-visible:ring-white"
         aria-label={ariaLabel}
         aria-valuetext={steps[index]?.label}
       />

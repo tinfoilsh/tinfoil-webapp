@@ -1,7 +1,7 @@
 export const SIDEBAR_PATTERN_EDGE_WIDTH_PX = 4.5
 const TILE_HEIGHT_PX = 14
 const BORDER_WIDTH_PX = 0.5
-const DARK_PATTERN_COLOR = 'rgba(6, 24, 32, 0.25)'
+const DARK_PATTERN_COLOR = 'rgba(5, 37, 46, 0.25)'
 const LIGHT_PATTERN_COLOR = 'rgba(249, 248, 246, 0.28)'
 
 export function SidebarPatternEdge({ isDarkMode }: { isDarkMode: boolean }) {

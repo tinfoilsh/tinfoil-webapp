@@ -1048,7 +1048,7 @@ export const ChatInput = memo(function ChatInput({
                             <span className="flex-1">Web search</span>
                             {webSearchEnabled && (
                               <TfBoxCheckmark
-                                className="h-4 w-4 text-brand-accent-light"
+                                className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
                                 aria-hidden="true"
                               />
                             )}
@@ -1211,7 +1211,7 @@ export const ChatInput = memo(function ChatInput({
                         }
                       }}
                       className={cn(
-                        'group flex h-10 w-10 items-center justify-center rounded-site-control bg-tinfoil-accent-blue text-white transition-colors hover:bg-tinfoil-accent-blue-hover disabled:opacity-50 md:h-8 md:w-8',
+                        'group flex h-10 w-10 items-center justify-center rounded-site-control bg-tinfoil-oak text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:opacity-50 md:h-8 md:w-8',
                         !isCompact && 'ml-2',
                       )}
                       style={{ WebkitTapHighlightColor: 'transparent' }}
@@ -1226,7 +1226,7 @@ export const ChatInput = memo(function ChatInput({
                     >
                       {showStopAction ? (
                         <TfStopAnimated
-                          className="h-6 w-6 text-white/80 transition-colors md:h-5 md:w-5"
+                          className="h-6 w-6 text-current transition-colors md:h-5 md:w-5"
                           aria-hidden="true"
                         />
                       ) : (

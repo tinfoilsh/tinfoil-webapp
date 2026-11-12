@@ -85,7 +85,7 @@ export function ImportFileList({
             type="button"
             onClick={onImport}
             disabled={importDisabled}
-            className="rounded-lg bg-brand-accent-dark px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-tinfoil-oak px-4 py-2 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {importLabel}
           </button>

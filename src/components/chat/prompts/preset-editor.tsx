@@ -97,7 +97,7 @@ export function PresetEditor({
             type="button"
             onClick={onSave}
             disabled={!canSave}
-            className="rounded-lg bg-tinfoil-accent-blue px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-tinfoil-accent-blue-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-tinfoil-oak px-3 py-2 text-sm font-semibold text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             Save
           </button>

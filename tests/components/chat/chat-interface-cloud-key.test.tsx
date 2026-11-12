@@ -399,7 +399,9 @@ it('points the settings entries to Cloud Sync only while the key is refused', as
 
   await act(() => api.refreshProfile())
   expect(rail).toHaveAccessibleDescription(ATTENTION)
-  fireEvent.click(rail)
+  await act(async () => {
+    fireEvent.click(rail)
+  })
   const dialog = await screen.findByRole('dialog', { name: 'Settings' })
   expect(
     within(dialog).getAllByRole('button', {

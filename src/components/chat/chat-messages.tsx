@@ -511,51 +511,43 @@ export function ChatMessages({
 
   if (messages.length === 0 && !isWaitingForResponse) {
     return (
-      <div className="relative flex min-h-full w-full flex-col items-center overflow-y-auto">
-        {/* Asymmetric spacers bias the panel above center so the model menu,
-            which opens below the input, has room on tall screens. */}
-        <div className="flex-[2]" />
-        <div className="relative z-10 w-full max-w-4xl px-8 pb-8 pt-16">
-          <WelcomeScreen
-            chatId={chatId}
-            isDarkMode={isDarkMode}
-            isPremium={isPremium}
-            models={models}
-            onSubmit={readOnly ? undefined : onSubmit}
-            input={input}
-            setInput={setInput}
-            loadingState={loadingState}
-            cancelGeneration={cancelGeneration}
-            inputRef={inputRef}
-            handleInputFocus={handleInputFocus}
-            handleDocumentUpload={handleDocumentUpload}
-            processedDocuments={processedDocuments}
-            removeDocument={removeDocument}
-            selectedModel={selectedModel}
-            handleModelSelect={handleModelSelect}
-            expandedLabel={expandedLabel as LabelType}
-            handleLabelClick={handleLabelClick}
-            webSearchEnabled={webSearchEnabled}
-            onWebSearchToggle={onWebSearchToggle}
-            researchEnabled={researchEnabled}
-            onResearchToggle={onResearchToggle}
-            reasoningEffort={reasoningEffort}
-            setReasoningEffort={setReasoningEffort}
-            thinkingEnabled={thinkingEnabled}
-            setThinkingEnabled={setThinkingEnabled}
-            autoIntelligence={autoIntelligence}
-            setAutoIntelligence={setAutoIntelligence}
-            isTemporaryMode={isTemporaryMode}
-            activePromptPreset={activePromptPreset}
-            onOpenPromptLibrary={onOpenPromptLibrary}
-            onSelectPromptPreset={onSelectPromptPreset}
-            composerNotice={composerNotice}
-            quote={quote}
-            onClearQuote={onClearQuote}
-          />
-        </div>
-        <div className="flex-[3]" />
-      </div>
+      <WelcomeScreen
+        chatId={chatId}
+        isDarkMode={isDarkMode}
+        isPremium={isPremium}
+        models={models}
+        onSubmit={readOnly ? undefined : onSubmit}
+        input={input}
+        setInput={setInput}
+        loadingState={loadingState}
+        cancelGeneration={cancelGeneration}
+        inputRef={inputRef}
+        handleInputFocus={handleInputFocus}
+        handleDocumentUpload={handleDocumentUpload}
+        processedDocuments={processedDocuments}
+        removeDocument={removeDocument}
+        selectedModel={selectedModel}
+        handleModelSelect={handleModelSelect}
+        expandedLabel={expandedLabel as LabelType}
+        handleLabelClick={handleLabelClick}
+        webSearchEnabled={webSearchEnabled}
+        onWebSearchToggle={onWebSearchToggle}
+        researchEnabled={researchEnabled}
+        onResearchToggle={onResearchToggle}
+        reasoningEffort={reasoningEffort}
+        setReasoningEffort={setReasoningEffort}
+        thinkingEnabled={thinkingEnabled}
+        setThinkingEnabled={setThinkingEnabled}
+        autoIntelligence={autoIntelligence}
+        setAutoIntelligence={setAutoIntelligence}
+        isTemporaryMode={isTemporaryMode}
+        activePromptPreset={activePromptPreset}
+        onOpenPromptLibrary={onOpenPromptLibrary}
+        onSelectPromptPreset={onSelectPromptPreset}
+        composerNotice={composerNotice}
+        quote={quote}
+        onClearQuote={onClearQuote}
+      />
     )
   }
 

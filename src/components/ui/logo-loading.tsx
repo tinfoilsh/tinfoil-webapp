@@ -1,69 +1,113 @@
 'use client'
 
-import type { AnimationItem } from 'lottie-web'
-import { useEffect, useRef } from 'react'
+import { Logo } from '@/components/logo'
+import { PrivacyLock } from '@/components/onboarding/privacy-lock'
+import { motion, useReducedMotion } from 'framer-motion'
+import { useId, useState, type CSSProperties } from 'react'
 
-// Fetch the animation JSON once, when the first loader mounts. The session
-// provider renders the loader on first paint, so importing this module must
-// not start network work. Resolve to null on failure: the loader then shows
-// no animation.
-let animationDataPromise: Promise<unknown> | undefined
-function loadAnimationData(): Promise<unknown> {
-  animationDataPromise ??= fetch('/logo-loading-loop.json')
-    .then((res) => res.json())
-    .catch(() => null)
-  return animationDataPromise
+const OPEN_HOLD_S = 0.1
+const LOCK_CLOSE_DURATION_S = 0.25
+const ZOOM_OUT_DURATION_S = 0.15
+const ZOOM_OUT_SCALE = 0.25
+const LOADING_RING_SIZE = 64
+const LOADING_LOCK_SIZE = 32
+const RING_DASH_COUNT = 12
+const RING_DASH_LENGTH = 0.7
+const RING_STYLE: CSSProperties & {
+  '--loading-ring-dash-count': number
+  '--loading-ring-offset': string
+} = {
+  '--loading-ring-dash-count': RING_DASH_COUNT,
+  '--loading-ring-offset': `${-RING_DASH_COUNT}px`,
 }
 
-function LogoAnimation({
-  isLoading = true,
+function LockAnimation({
+  isLoading,
   onFinished,
 }: {
-  isLoading?: boolean
+  isLoading: boolean
   onFinished?: () => void
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const animationRef = useRef<AnimationItem | null>(null)
-  const onFinishedRef = useRef(onFinished)
+  const [closed, setClosed] = useState(false)
+  const reducedMotion = useReducedMotion()
+  const maskId = useId()
 
-  useEffect(() => {
-    onFinishedRef.current = onFinished
-  }, [onFinished])
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    let unmounted = false
-
-    Promise.all([import('lottie-web'), loadAnimationData()])
-      .then(([{ default: lottie }, animationData]) => {
-        if (!animationData || unmounted) return
-        const anim = lottie.loadAnimation({
-          container,
-          renderer: 'svg',
-          loop: true,
-          autoplay: true,
-          animationData,
-        })
-        animationRef.current = anim
-      })
-      .catch(() => {})
-
-    return () => {
-      unmounted = true
-      animationRef.current?.destroy()
-      animationRef.current = null
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!isLoading) {
-      onFinishedRef.current?.()
-    }
-  }, [isLoading])
-
-  return <div ref={containerRef} className="h-20 w-20" />
+  return (
+    <motion.div
+      className="relative flex h-16 w-16 items-center justify-center text-content-primary"
+      initial="waiting"
+      animate={!isLoading && closed ? 'finished' : 'waiting'}
+      variants={{
+        waiting: { scale: 1, opacity: 1 },
+        finished: { scale: reducedMotion ? 1 : ZOOM_OUT_SCALE, opacity: 0 },
+      }}
+      transition={{
+        duration: reducedMotion ? 0 : ZOOM_OUT_DURATION_S,
+        ease: 'easeIn',
+      }}
+      onAnimationComplete={(definition) => {
+        if (definition === 'finished' && !isLoading) onFinished?.()
+      }}
+    >
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 64 64"
+        width={LOADING_RING_SIZE}
+        height={LOADING_RING_SIZE}
+        className="pointer-events-none absolute inset-0 h-16 w-16 -rotate-90"
+        fill="none"
+        style={RING_STYLE}
+      >
+        {isLoading && (
+          <defs>
+            <mask
+              id={maskId}
+              maskUnits="userSpaceOnUse"
+              x="0"
+              y="0"
+              width="64"
+              height="64"
+            >
+              <rect width="64" height="64" fill="white" />
+              <circle
+                cx="32"
+                cy="32"
+                r="30"
+                pathLength={RING_DASH_COUNT}
+                stroke="black"
+                strokeWidth="4"
+                strokeDasharray={`${RING_DASH_LENGTH} ${RING_DASH_COUNT - RING_DASH_LENGTH}`}
+                className={reducedMotion ? undefined : 'loading-lock-ring-gap'}
+              />
+            </mask>
+          </defs>
+        )}
+        <circle
+          cx="32"
+          cy="32"
+          r="30"
+          pathLength={RING_DASH_COUNT}
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeDasharray={
+            isLoading
+              ? `${RING_DASH_LENGTH} ${1 - RING_DASH_LENGTH}`
+              : undefined
+          }
+          mask={isLoading ? `url(#${maskId})` : undefined}
+        />
+      </svg>
+      <PrivacyLock
+        size={LOADING_LOCK_SIZE}
+        locked={!isLoading}
+        startOpen={!reducedMotion}
+        delay={OPEN_HOLD_S}
+        duration={LOCK_CLOSE_DURATION_S}
+        onSettled={setClosed}
+        className="h-8 w-8 text-content-primary"
+      />
+    </motion.div>
+  )
 }
 
 export function LogoLoading({
@@ -76,7 +120,15 @@ export function LogoLoading({
   return (
     <div className="app-shell flex overflow-hidden bg-surface-chat-background">
       <div className="flex flex-1 items-center justify-center">
-        <LogoAnimation isLoading={isLoading} onFinished={onFinished} />
+        <LockAnimation
+          key={isLoading ? 'loading' : 'ready'}
+          isLoading={isLoading}
+          onFinished={onFinished}
+        />
+      </div>
+      <div className="absolute inset-x-0 bottom-[max(2rem,env(safe-area-inset-bottom))] flex justify-center">
+        <Logo className="h-5 w-auto dark:hidden" />
+        <Logo dark className="hidden h-5 w-auto dark:block" />
       </div>
     </div>
   )

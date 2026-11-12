@@ -2,23 +2,25 @@
  * Global color definitions for consistent theming across the application
  *
  * Tinfoil Brand Colors:
- * - tinfoil-dark: #061820 (primary dark background)
- * - tinfoil-light: #EEF3F3 (light background)
- * - tinfoil-accent-dark: #004444 (primary brand color)
- * - tinfoil-accent-light: #68C7AC (accent/success color)
+ * - tinfoil-dark: #05252E Midnight Petrol (primary dark background)
+ * - tinfoil-light: #F9F8F6 Bone (light background)
+ * - tinfoil-accent-dark: #004444 Deep Teal (primary brand color)
+ * - tinfoil-accent-light: #A8C7D1 Steel Mist (accent/success color)
+ * - tinfoil-oak: #E6CCA8 Pale Oak (actions, selection, hovers)
+ * - tinfoil-twilight: #6B5B95 Twilight (secondary accents, charts)
  */
 
 export const colors = {
   // Tinfoil dark - used for dark backgrounds, headers, text
   'tinfoil-dark': {
-    DEFAULT: '#061820',
-    hover: '#0A2230',
+    DEFAULT: '#05252E',
+    hover: '#08333F',
   },
 
   // Tinfoil light - used for light backgrounds, cards
   'tinfoil-light': {
-    DEFAULT: '#EEF3F3',
-    hover: '#E5EFEF',
+    DEFAULT: '#F9F8F6',
+    hover: '#EEECE3',
   },
 
   // Tinfoil accent dark - used for buttons, links, primary actions
@@ -30,14 +32,24 @@ export const colors = {
 
   // Tinfoil accent light - used for success states, checkmarks, accents
   'tinfoil-accent-light': {
-    DEFAULT: '#68C7AC',
-    hover: '#7FD4BB',
-    darker: '#5AB39A',
+    DEFAULT: '#A8C7D1',
+    hover: '#BED7DF',
+    darker: '#97B6C0',
+  },
+
+  // Tinfoil oak - used for actions, selection, hovers
+  'tinfoil-oak': {
+    DEFAULT: '#E6CCA8',
+  },
+
+  // Tinfoil twilight - used for secondary accents and charts
+  'tinfoil-twilight': {
+    DEFAULT: '#6B5B95',
   },
 
   // Legacy gray colors for general use
   gray: {
-    light: '#EEF3F3',
+    light: '#F9F8F6',
     DEFAULT: '#D1D5DB',
     hover: '#9CA3AF',
   },
@@ -116,7 +128,7 @@ export const TINFOIL_COLORS = {
     accentLight: colors['tinfoil-accent-light'].DEFAULT,
   },
   surface: {
-    cardLight: colors['tinfoil-light'].DEFAULT,
+    cardLight: '#FFFFFF',
     cardDark: '#1C1C1E',
   },
   content: {

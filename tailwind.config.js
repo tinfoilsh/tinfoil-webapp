@@ -1,5 +1,6 @@
 const { radius } = require('./src/lib/radius')
-const TINFOIL_ACCENT_BLUE_RGB = '16 52 125'
+const TINFOIL_OAK_RGB = '230 204 168'
+const TINFOIL_TWILIGHT_RGB = '107 91 149'
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -89,6 +90,7 @@ module.exports = {
         border: 'hsl(var(--border) / <alpha-value>)',
         input: 'hsl(var(--input) / <alpha-value>)',
         ring: 'hsl(var(--ring) / <alpha-value>)',
+        link: 'hsl(var(--link) / <alpha-value>)',
         brand: {
           dark: 'hsl(var(--color-brand-dark) / <alpha-value>)',
           light: 'hsl(var(--color-brand-light) / <alpha-value>)',
@@ -99,17 +101,32 @@ module.exports = {
           'accent-light-darker':
             'hsl(var(--color-accent-light-darker) / <alpha-value>)',
         },
-        // Mirrors tinfoil-accent-blue from @tinfoil/tailwind-preset.
-        'tinfoil-accent-blue': {
-          DEFAULT: `rgb(${TINFOIL_ACCENT_BLUE_RGB})`,
-          hover: '#1F458F',
-          darker: '#01236B',
-          subtle: `rgb(${TINFOIL_ACCENT_BLUE_RGB} / 0.10)`,
-          soft: `rgb(${TINFOIL_ACCENT_BLUE_RGB} / 0.30)`,
-          medium: `rgb(${TINFOIL_ACCENT_BLUE_RGB} / 0.60)`,
-          bold: `rgb(${TINFOIL_ACCENT_BLUE_RGB} / 0.90)`,
+        // Mirrors the secondary Twilight accent in @tinfoil/tailwind-preset.
+        'tinfoil-twilight': {
+          DEFAULT: `rgb(${TINFOIL_TWILIGHT_RGB})`,
+          hover: '#605185',
+          darker: '#524573',
+          light: '#A89ACB',
+          subtle: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.10)`,
+          soft: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.30)`,
+          medium: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.60)`,
+          bold: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.90)`,
+        },
+        // Mirrors tinfoil-oak from @tinfoil/tailwind-preset.
+        'tinfoil-oak': {
+          DEFAULT: `rgb(${TINFOIL_OAK_RGB})`,
+          hover: '#DDBB8C',
+          darker: '#D2AA75',
+          tint: '#F5ECDD',
+          subtle: `rgb(${TINFOIL_OAK_RGB} / 0.10)`,
+          soft: `rgb(${TINFOIL_OAK_RGB} / 0.30)`,
+          medium: `rgb(${TINFOIL_OAK_RGB} / 0.60)`,
+          bold: `rgb(${TINFOIL_OAK_RGB} / 0.90)`,
         },
         surface: {
+          canvas: 'hsl(var(--surface-canvas) / <alpha-value>)',
+          raised: 'hsl(var(--surface-raised) / <alpha-value>)',
+          muted: 'hsl(var(--surface-muted) / <alpha-value>)',
           background: 'hsl(var(--surface-background) / <alpha-value>)',
           chat: 'hsl(var(--surface-chat) / <alpha-value>)',
           'chat-background':

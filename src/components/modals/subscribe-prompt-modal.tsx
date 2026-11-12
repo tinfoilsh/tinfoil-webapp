@@ -50,7 +50,7 @@ export function SubscribePromptModal({
                 void startUpgrade()
               }}
               disabled={upgradeLoading}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-tinfoil-oak px-4 py-2.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:cursor-not-allowed disabled:opacity-60"
             >
               {upgradeLoading ? 'Redirecting…' : 'Subscribe to Premium'}
             </button>
@@ -65,7 +65,7 @@ export function SubscribePromptModal({
             <Link
               href={signInHref}
               onClick={onClose}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-tinfoil-oak px-4 py-2.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover"
             >
               Subscribe to Premium
             </Link>
