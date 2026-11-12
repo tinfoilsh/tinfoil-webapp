@@ -19,6 +19,7 @@ declare global {
   var browserTest: typeof Driver
 }
 const root = fileURLToPath(new URL('../..', import.meta.url))
+const MAX_SNAPSHOT_OBSERVATIONS = 10
 let server: Server
 let origin: string
 let context: BrowserContext
@@ -52,7 +53,7 @@ test.beforeAll(async () => {
       return
     }
     response.end(
-      `<!doctype html><title>Browser fixture</title><label>Name<input id="name" value="Before"></label><label>Password<input type="password" value="never-send-this"></label><button id="save" onclick="document.querySelector('output').textContent='Saved '+document.querySelector('#name').value">Save</button><output></output><select aria-label="Color"><option value="red">Red</option><option value="blue">Blue</option></select><div id="shadow"></div><iframe src="/frame"></iframe><iframe src="${origin.replace('localhost', '127.0.0.1')}/frame"></iframe><script>const root=document.querySelector('#shadow').attachShadow({mode:'open'});root.innerHTML='<button>Shadow button</button>';root.querySelector('button').onclick=()=>document.querySelector('output').textContent='Shadow clicked'</script>`,
+      `<!doctype html><title>Browser fixture</title><label>Name<input id="name" value="Before"></label><label>Password<input type="password" value="never-send-this"></label><button id="save" onclick="this.dataset.clicks=String(Number(this.dataset.clicks||0)+1);document.querySelector('output').textContent='Saved '+document.querySelector('#name').value">Save</button><output></output><select aria-label="Color"><option value="red">Red</option><option value="blue">Blue</option></select><div id="shadow"></div><iframe src="/frame"></iframe><iframe src="${origin.replace('localhost', '127.0.0.1')}/frame"></iframe><script>const root=document.querySelector('#shadow').attachShadow({mode:'open'});root.innerHTML='<button>Shadow button</button>';root.querySelector('button').onclick=()=>document.querySelector('output').textContent='Shadow clicked'</script>`,
     )
   })
   await new Promise<void>((resolve) => server.listen(0, resolve))
@@ -76,6 +77,7 @@ test.beforeAll(async () => {
   const bundle = await build({
     entryPoints: [path.join(root, 'tests/browser/driver-entry.ts')],
     bundle: true,
+    minify: true,
     write: false,
     format: 'iife',
     globalName: 'browserTest',
@@ -238,31 +240,59 @@ test('unselected tabs and arbitrary code cannot be executed', async () => {
 
 test('coordinate actions use the captured viewport and reject changed screenshots', async () => {
   const { page, tabId } = await startFixture('/?pixels')
-  const screenshot = await execute({ action: 'screenshot', tabId })
-  const box = (await page.locator('#save').boundingBox())!
-  const viewport = await page.evaluate(() => ({
-    width: innerWidth,
-    height: innerHeight,
-  }))
-  const info = JSON.parse(screenshot.text) as {
-    screenshotId: string
-    width: number
-    height: number
+  const capture = async () => {
+    for (
+      let observation = 0;
+      observation < MAX_SNAPSHOT_OBSERVATIONS;
+      observation++
+    ) {
+      const result = await worker.evaluate(
+        (id) => browserTest.attempt({ action: 'screenshot', tabId: id }),
+        tabId,
+      )
+      if (result.ok)
+        return JSON.parse(result.result.text) as {
+          screenshotId: string
+          width: number
+          height: number
+        }
+      expect(result.code).toBe('PAGE_CHANGED')
+    }
+    throw new Error('The fixture never produced a stable viewport')
   }
-  const x = ((box.x + box.width / 2) * info.width) / viewport.width
-  const y = ((box.y + box.height / 2) * info.height) / viewport.height
-  await expect(page.locator('output').first()).toHaveText('')
-  await execute({
-    action: 'click',
-    tabId,
-    screenshotId: info.screenshotId,
-    x,
-    y,
-  })
+  let x = 0
+  let y = 0
+  for (
+    let observation = 0;
+    observation < MAX_SNAPSHOT_OBSERVATIONS;
+    observation++
+  ) {
+    await expect(page.locator('output').first()).toHaveText('')
+    expect(await page.locator('#save').getAttribute('data-clicks')).toBeNull()
+    const info = await capture()
+    const box = (await page.locator('#save').boundingBox())!
+    const viewport = await page.evaluate(() => ({
+      width: innerWidth,
+      height: innerHeight,
+    }))
+    x = ((box.x + box.width / 2) * info.width) / viewport.width
+    y = ((box.y + box.height / 2) * info.height) / viewport.height
+    const result = await worker.evaluate(
+      (action) => browserTest.attempt(action),
+      {
+        action: 'click',
+        tabId,
+        screenshotId: info.screenshotId,
+        x,
+        y,
+      } as BrowserAction,
+    )
+    if (result.ok) break
+    expect(result.code).toBe('STALE_SCREENSHOT')
+  }
   await expect(page.locator('output').first()).toHaveText('Saved Before')
-  const next = JSON.parse(
-    (await execute({ action: 'screenshot', tabId })).text,
-  ) as typeof info
+  await expect(page.locator('#save')).toHaveAttribute('data-clicks', '1')
+  const next = await capture()
   await page.locator('#save').evaluate((button) => {
     button.style.transform = 'translateX(100px)'
   })

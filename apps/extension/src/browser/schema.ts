@@ -1,6 +1,7 @@
 import type { BrowserAction } from '@tinfoil/chat-client/types'
 import { z } from 'zod'
 import { MAX_TABS } from '../config'
+import { BrowserError } from './errors'
 
 export const actionSchema = z
   .object({
@@ -50,13 +51,14 @@ export const selectedTabsSchema = z
   .max(MAX_TABS)
 
 export function webURL(value: string): string {
-  const url = new URL(value)
+  const url = URL.canParse(value) ? new URL(value) : undefined
   if (
+    !url ||
     !['https:', 'http:'].includes(url.protocol) ||
     url.username ||
     url.password
   )
-    throw new Error('Choose an HTTP or HTTPS page.')
+    throw new BrowserError('INVALID_URL', 'Choose an HTTP or HTTPS page.')
   return url.href
 }
 

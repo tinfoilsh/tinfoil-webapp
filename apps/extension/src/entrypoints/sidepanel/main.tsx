@@ -467,6 +467,7 @@ function ChatPanel({
           className="composer"
         >
           <textarea
+            disabled={sending}
             aria-label="Message Tinfoil"
             placeholder={
               busy ? 'Give another instruction…' : 'What would you like to do?'

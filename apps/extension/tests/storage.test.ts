@@ -118,39 +118,61 @@ test('deleting local history removes its journal while preserving another accoun
   })
 })
 
-test('upgrading local history indexes summaries without losing the transcript', async () => {
-  const name = crypto.randomUUID()
-  const legacy = await openDB(name, 1, {
-    upgrade(db) {
-      db.createObjectStore('tasks', { keyPath: ['owner', 'id'] }).createIndex(
-        'owner',
-        'owner',
-      )
-      db.createObjectStore('actions', {
-        keyPath: ['owner', 'runId', 'executionId'],
-      }).createIndex('task', ['owner', 'taskId'])
-    },
-  })
-  const task = {
-    owner: 'alice',
-    id: 'kept',
-    title: 'Saved task',
-    updatedAt: 1,
-    phase: 'completed',
-    state: initialChat(),
-    lastPrompt: 'Private content that must remain in the record',
-  }
-  await legacy.put('tasks', task)
-  legacy.close()
-  const store = open(name)
-  expect(await store.list('alice')).toEqual([
-    {
+test.each([1, 2])(
+  'upgrading local history from version %s preserves the transcript and removes the old index',
+  async (version) => {
+    const name = crypto.randomUUID()
+    const legacy = await openDB(name, version, {
+      upgrade(db) {
+        const tasks = db.createObjectStore('tasks', {
+          keyPath: ['owner', 'id'],
+        })
+        tasks.createIndex('owner', 'owner')
+        if (version === 2)
+          tasks.createIndex('summary', [
+            'owner',
+            'updatedAt',
+            'id',
+            'title',
+            'phase',
+          ])
+        db.createObjectStore('actions', {
+          keyPath: ['owner', 'runId', 'executionId'],
+        }).createIndex('task', ['owner', 'taskId'])
+      },
+    })
+    const task = {
       owner: 'alice',
       id: 'kept',
       title: 'Saved task',
       updatedAt: 1,
       phase: 'completed',
-    },
-  ])
-  expect(await store.get('alice', 'kept')).toEqual(task)
-})
+      state: initialChat(),
+      lastPrompt: 'Private content that must remain in the record',
+    }
+    await legacy.put('tasks', task)
+    expect(legacy.transaction('tasks').store.indexNames.contains('owner')).toBe(
+      true,
+    )
+    legacy.close()
+    const store = open(name)
+    expect(await store.list('alice')).toEqual([
+      {
+        owner: 'alice',
+        id: 'kept',
+        title: 'Saved task',
+        updatedAt: 1,
+        phase: 'completed',
+      },
+    ])
+    expect(await store.get('alice', 'kept')).toEqual(task)
+    const inspected = await openDB(name)
+    try {
+      expect([...inspected.transaction('tasks').store.indexNames]).toEqual([
+        'summary',
+      ])
+    } finally {
+      inspected.close()
+    }
+  },
+)

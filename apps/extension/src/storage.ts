@@ -4,11 +4,11 @@ import type {
   BrowserResult,
   StoredThread,
 } from '@tinfoil/chat-client/types'
-import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import { openDB, unwrap, type DBSchema, type IDBPDatabase } from 'idb'
 import { BrowserError } from './browser/errors'
 
 const DATABASE_NAME = 'tinfoil-browser'
-const DATABASE_VERSION = 2
+const DATABASE_VERSION = 3
 
 export type TaskPhase =
   'idle' | 'running' | 'paused' | 'review' | 'interrupted' | 'completed'
@@ -53,7 +53,6 @@ interface BrowserDatabase extends DBSchema {
     key: [string, string]
     value: Task
     indexes: {
-      owner: string
       summary: [string, number, string, string, TaskPhase]
     }
   }
@@ -72,7 +71,7 @@ export class TaskStore {
         if (oldVersion < 1) {
           db.createObjectStore('tasks', {
             keyPath: ['owner', 'id'],
-          }).createIndex('owner', 'owner')
+          })
           db.createObjectStore('actions', {
             keyPath: ['owner', 'runId', 'executionId'],
           }).createIndex('task', ['owner', 'taskId'])
@@ -87,6 +86,9 @@ export class TaskStore {
               'title',
               'phase',
             ])
+        const tasks = unwrap(transaction.objectStore('tasks'))
+        if (oldVersion < 3 && tasks.indexNames.contains('owner'))
+          tasks.deleteIndex('owner')
       },
     })
   }

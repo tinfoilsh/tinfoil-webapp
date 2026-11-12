@@ -23,6 +23,15 @@ const MAX_IMAGE_BASE64 = 2 << 20
 const MAX_CAPTURE_ATTEMPTS = 3
 const STABLE_VIEWPORT_FRAMES = 3
 const VIEWPORT_SETTLE_TIMEOUT_MS = 2_000
+const LAYOUT_HASH_ALGORITHM = 'SHA-256'
+const MAX_LAYOUT_BYTES = 8 << 20
+const LAYOUT_STYLES = [
+  'display',
+  'visibility',
+  'transform',
+  'opacity',
+  'pointer-events',
+]
 const SCROLL_DISTANCE = 600
 const WAIT_TIMEOUT_MS = 3_000
 const ELEMENT_GROUP = 'tinfoil-elements'
@@ -54,11 +63,10 @@ type Page = {
     id: string
     generation: string
     capturedAt: number
-    image: string
+    layout: string
     width: number
     height: number
     viewport: Protocol.Page.VisualViewport
-    parameters: Protocol.Page.CaptureScreenshotRequest
   }
 }
 export type TabInfo = { id: number; title: string; url: string }
@@ -274,11 +282,17 @@ export class BrowserDriver {
           if (cached) return cached
           const result = { sensitive: false, value: '' }
           if (node.value?.value && node.backendDOMNodeId) {
-            const described = await this.send(
-              target.session,
-              'DOM.describeNode',
-              { backendNodeId: node.backendDOMNodeId },
-            )
+            let described: Protocol.DOM.DescribeNodeResponse
+            try {
+              described = await this.send(target.session, 'DOM.describeNode', {
+                backendNodeId: node.backendDOMNodeId,
+              })
+            } catch {
+              this.check()
+              result.sensitive = true
+              fields.set(node.nodeId, result)
+              return result
+            }
             const attributes = described.node.attributes || []
             const attribute = (key: string) => {
               for (let index = 0; index < attributes.length; index += 2)
@@ -511,6 +525,29 @@ export class BrowserDriver {
     return { x, y }
   }
 
+  private async layoutFingerprint(page: Page): Promise<string> {
+    const snapshots: Protocol.DOMSnapshot.CaptureSnapshotResponse[] = []
+    for (const target of page.targets.values()) {
+      snapshots.push(
+        await this.send(target.session, 'DOMSnapshot.captureSnapshot', {
+          computedStyles: LAYOUT_STYLES,
+          includeDOMRects: true,
+          includePaintOrder: true,
+        }),
+      )
+    }
+    const data = new TextEncoder().encode(JSON.stringify(snapshots))
+    if (data.byteLength > MAX_LAYOUT_BYTES)
+      throw new BrowserError(
+        'PAGE_TOO_LARGE',
+        'Use element references on this page; its layout is too large for coordinate actions.',
+      )
+    const digest = await crypto.subtle.digest(LAYOUT_HASH_ALGORITHM, data)
+    return Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, '0'),
+    ).join('')
+  }
+
   private async screenshot(
     id: number,
     page: Page,
@@ -553,10 +590,14 @@ export class BrowserDriver {
         scale,
       },
     }
+    const layout = await this.layoutFingerprint(page)
     const shot = await this.send(root, 'Page.captureScreenshot', parameters)
     const after = (await this.send(root, 'Page.getLayoutMetrics'))
       .cssVisualViewport
-    if (JSON.stringify(after) !== JSON.stringify(viewport)) {
+    if (
+      JSON.stringify(after) !== JSON.stringify(viewport) ||
+      layout !== (await this.layoutFingerprint(page))
+    ) {
       if (attempt < MAX_CAPTURE_ATTEMPTS)
         return this.screenshot(id, page, attempt + 1)
       throw new BrowserError(
@@ -588,11 +629,10 @@ export class BrowserDriver {
       id: screenshotId,
       generation,
       capturedAt: Date.now(),
-      image: shot.data,
+      layout,
       width,
       height,
       viewport,
-      parameters,
     }
     return {
       text: JSON.stringify({
@@ -637,10 +677,7 @@ export class BrowserDriver {
         'STALE_SCREENSHOT',
         'The viewport changed. Take a fresh screenshot or use an element reference.',
       )
-    if (
-      (await this.send(root, 'Page.captureScreenshot', shot.parameters))
-        .data !== shot.image
-    )
+    if ((await this.layoutFingerprint(page)) !== shot.layout)
       throw new BrowserError(
         'STALE_SCREENSHOT',
         'The visible page changed. Take a fresh screenshot or use an element reference.',
@@ -681,7 +718,10 @@ export class BrowserDriver {
   }
 
   async execute(input: BrowserAction): Promise<BrowserResult> {
-    const action = actionSchema.parse(input)
+    const parsed = actionSchema.safeParse(input)
+    if (!parsed.success)
+      throw new BrowserError('INVALID_ACTION', parsed.error.message)
+    const action = parsed.data
     this.check()
     if (action.action === 'tabs')
       return { text: JSON.stringify(await this.tabs()) }
