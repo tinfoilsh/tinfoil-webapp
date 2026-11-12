@@ -59,7 +59,8 @@ export default defineBackground(() => {
       skipCache?: boolean
     }): Promise<string | null> => {
       if (disconnected) {
-        if (!lastToken) throw new Error('Sign in again to continue.')
+        if (!lastToken || options?.skipCache)
+          throw new Error('Sign in again to continue.')
         return lastToken
       }
       const id = crypto.randomUUID()
@@ -107,14 +108,12 @@ export default defineBackground(() => {
               .dispose()
               .finally(() => previous.port.disconnect())
           : Promise.resolve()
-        void ready
-          .then(() => controller!.initialize())
-          .catch((cause) =>
-            send({
-              type: 'state',
-              view: { tasks: [], verified: false, error: errorText(cause) },
-            }),
-          )
+        void controller.initialize(ready).catch((cause) =>
+          send({
+            type: 'state',
+            view: { tasks: [], verified: false, error: errorText(cause) },
+          }),
+        )
       } else if (message.type === 'command') {
         void (
           controller

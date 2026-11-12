@@ -11,7 +11,10 @@ import {
   isImeComposition,
   isSubmitShortcut,
 } from '@tinfoil/chat-ui/keyboard-utils'
-import { StreamingMarkdown } from '@tinfoil/chat-ui/StreamingMarkdown'
+import {
+  StreamingMarkdown,
+  type MarkdownComponents,
+} from '@tinfoil/chat-ui/StreamingMarkdown'
 import {
   StrictMode,
   useCallback,
@@ -22,7 +25,6 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import '../../../../../src/styles/tailwind.css'
 import { webURL } from '../../browser/schema'
@@ -38,7 +40,7 @@ import './style.css'
 
 const REMARK_PLUGINS = [remarkGfm]
 const REHYPE_PLUGINS: [] = []
-const MARKDOWN_COMPONENTS: Components = {
+const MARKDOWN_COMPONENTS: MarkdownComponents = {
   a: ({ href, children }) => {
     let safe: string | undefined
     try {
@@ -131,6 +133,7 @@ function ChatPanel({
   )
   const view = useSyncExternalStore(connection.subscribe, connection.snapshot)
   const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [tabs, setTabs] = useState<chrome.tabs.Tab[]>([])
   const [selected, setSelected] = useState<number[]>([])
@@ -201,7 +204,8 @@ function ChatPanel({
   }
   const submit = async () => {
     const content = input.trim()
-    if (!content) return
+    if (!content || sending) return
+    setSending(true)
     setError('')
     try {
       await connection.command({
@@ -219,6 +223,8 @@ function ChatPanel({
       setError(
         cause instanceof Error ? cause.message : 'Could not send the message.',
       )
+    } finally {
+      setSending(false)
     }
   }
 
@@ -504,9 +510,9 @@ function ChatPanel({
               variant="solid"
               type="submit"
               size="sm"
-              disabled={!input.trim() || !view.session}
+              disabled={sending || !input.trim() || !view.session}
             >
-              {busy ? 'Update task' : 'Send'}
+              {sending ? 'Starting…' : busy ? 'Update task' : 'Send'}
             </Button>
           </div>
         </form>

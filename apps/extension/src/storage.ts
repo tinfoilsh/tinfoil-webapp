@@ -8,7 +8,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { BrowserError } from './browser/errors'
 
 const DATABASE_NAME = 'tinfoil-browser'
-const DATABASE_VERSION = 1
+const DATABASE_VERSION = 2
 
 export type TaskPhase =
   'idle' | 'running' | 'paused' | 'review' | 'interrupted' | 'completed'
@@ -43,8 +43,20 @@ interface ActionRecord {
   result?: BrowserResult
 }
 
+export type TaskSummary = Pick<
+  Task,
+  'owner' | 'id' | 'title' | 'updatedAt' | 'phase'
+>
+
 interface BrowserDatabase extends DBSchema {
-  tasks: { key: [string, string]; value: Task; indexes: { owner: string } }
+  tasks: {
+    key: [string, string]
+    value: Task
+    indexes: {
+      owner: string
+      summary: [string, number, string, string, TaskPhase]
+    }
+  }
   actions: {
     key: [string, string, string]
     value: ActionRecord
@@ -56,27 +68,49 @@ export class TaskStore {
   private readonly database: Promise<IDBPDatabase<BrowserDatabase>>
   constructor(name = DATABASE_NAME) {
     this.database = openDB<BrowserDatabase>(name, DATABASE_VERSION, {
-      upgrade(db) {
-        db.createObjectStore('tasks', { keyPath: ['owner', 'id'] }).createIndex(
-          'owner',
-          'owner',
-        )
-        db.createObjectStore('actions', {
-          keyPath: ['owner', 'runId', 'executionId'],
-        }).createIndex('task', ['owner', 'taskId'])
+      upgrade(db, oldVersion, _newVersion, transaction) {
+        if (oldVersion < 1) {
+          db.createObjectStore('tasks', {
+            keyPath: ['owner', 'id'],
+          }).createIndex('owner', 'owner')
+          db.createObjectStore('actions', {
+            keyPath: ['owner', 'runId', 'executionId'],
+          }).createIndex('task', ['owner', 'taskId'])
+        }
+        if (oldVersion < 2)
+          transaction
+            .objectStore('tasks')
+            .createIndex('summary', [
+              'owner',
+              'updatedAt',
+              'id',
+              'title',
+              'phase',
+            ])
       },
     })
   }
-  async list(owner: string): Promise<Task[]> {
-    return (
-      await (await this.database).getAllFromIndex('tasks', 'owner', owner)
-    ).sort((a, b) => b.updatedAt - a.updatedAt)
+  async list(owner: string): Promise<TaskSummary[]> {
+    const summaries: TaskSummary[] = []
+    const index = (await this.database)
+      .transaction('tasks')
+      .store.index('summary')
+    const range = IDBKeyRange.bound([owner], [owner, []])
+    for (
+      let cursor = await index.openKeyCursor(range, 'prev');
+      cursor;
+      cursor = await cursor.continue()
+    ) {
+      const [, updatedAt, id, title, phase] = cursor.key
+      summaries.push({ owner, id, title, updatedAt, phase })
+    }
+    return summaries
   }
   async get(owner: string, id: string) {
     return (await this.database).get('tasks', [owner, id])
   }
   async put(task: Task) {
-    await (await this.database).put('tasks', structuredClone(task))
+    await (await this.database).put('tasks', task)
   }
   async clearActions(owner: string, taskId: string) {
     const tx = (await this.database).transaction('actions', 'readwrite')

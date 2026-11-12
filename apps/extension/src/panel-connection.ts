@@ -1,4 +1,4 @@
-import { PANEL_HEARTBEAT_MS, PANEL_PORT, TOKEN_TIMEOUT_MS } from './config'
+import { PANEL_HEARTBEAT_MS, PANEL_PORT } from './config'
 import type { Command, ToPanel, View } from './messages'
 
 export class PanelConnection {
@@ -82,20 +82,7 @@ export class PanelConnection {
     if (!port) throw new Error('Reopen the panel to reconnect.')
     const id = crypto.randomUUID()
     return new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(id)
-        reject(new Error('The extension did not respond.'))
-      }, TOKEN_TIMEOUT_MS)
-      this.pending.set(id, {
-        resolve: () => {
-          clearTimeout(timeout)
-          resolve()
-        },
-        reject: (cause) => {
-          clearTimeout(timeout)
-          reject(cause)
-        },
-      })
+      this.pending.set(id, { resolve, reject })
       port.postMessage({ type: 'command', id, command })
     })
   }

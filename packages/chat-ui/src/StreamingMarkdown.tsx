@@ -3,6 +3,8 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import type { PluggableList } from 'unified'
 import { MarkdownBlocks } from './markdown-blocks'
 
+export type { Components as MarkdownComponents } from 'react-markdown'
+
 interface MarkdownOptions {
   remarkPlugins: PluggableList
   rehypePlugins: PluggableList

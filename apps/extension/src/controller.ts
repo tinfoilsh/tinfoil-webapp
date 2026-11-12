@@ -53,6 +53,7 @@ export class TaskController {
     resolve: (allow: boolean) => void
   }
   private disposed = false
+  private reconnecting = false
   private generation = 0
   private transitions: Promise<void> = Promise.resolve()
   private readonly summaries = new Map<string, View['tasks'][number]>()
@@ -66,15 +67,23 @@ export class TaskController {
       new BrowserDriver(signal, interrupted),
   ) {}
 
-  async initialize() {
+  initialize(after: Promise<void> = Promise.resolve()): Promise<void> {
+    const pending = this.transitions.then(() => after).then(() => this.load())
+    this.transitions = pending.catch(() => undefined)
+    return pending
+  }
+
+  private async load() {
     const tasks = await this.store.list(this.owner)
-    for (const task of tasks) {
-      this.summaries.set(task.id, {
-        id: task.id,
-        title: task.title,
-        updatedAt: task.updatedAt,
+    for (const summary of tasks) {
+      this.summaries.set(summary.id, {
+        id: summary.id,
+        title: summary.title,
+        updatedAt: summary.updatedAt,
       })
-      if (['running', 'review', 'paused'].includes(task.phase)) {
+      if (['running', 'review', 'paused'].includes(summary.phase)) {
+        const task = await this.store.get(this.owner, summary.id)
+        if (!task) continue
         task.phase = 'interrupted'
         task.error =
           'This task was interrupted. Resume to reconnect, or send a new instruction after checking the page.'
@@ -82,6 +91,8 @@ export class TaskController {
       }
     }
     this.task = tasks[0]
+      ? await this.store.get(this.owner, tasks[0].id)
+      : undefined
     await this.emit()
     try {
       this.session = await this.client.post<Session>(ROUTES.session, {})
@@ -115,7 +126,11 @@ export class TaskController {
         effort: task.effort,
         tabs: task.tabs,
         confirmActions: task.confirmActions,
-        error: task.error,
+        error:
+          task.error ||
+          (this.reconnecting
+            ? 'Connection interrupted. Reconnecting to the same run…'
+            : undefined),
       },
       pending: this.review && {
         ...this.review.request,
@@ -158,7 +173,7 @@ export class TaskController {
     switch (command.kind) {
       case 'send':
         await this.stopActive()
-        await this.begin(command, generation)
+        await this.begin(command, generation, command.content)
         return
       case 'resume':
         if (this.active && this.task?.phase === 'paused') {
@@ -167,6 +182,15 @@ export class TaskController {
           this.gate = undefined
           await this.save(this.task)
           return
+        }
+        if (this.active) {
+          if (
+            !this.task ||
+            !['interrupted', 'completed'].includes(this.task.phase)
+          )
+            throw new Error('The task is already running.')
+          await this.active.done
+          this.checkGeneration(generation)
         }
         if (!this.task) return
         if (this.task.receipt) this.launch(this.task, command.tabs)
@@ -181,6 +205,7 @@ export class TaskController {
               confirmActions: this.task.confirmActions,
             },
             generation,
+            this.task.lastPrompt,
           )
         return
       case 'pause':
@@ -221,6 +246,7 @@ export class TaskController {
   private async begin(
     input: Extract<Command, { kind: 'send' }>,
     generation: number,
+    lastPrompt: string,
   ) {
     this.checkGeneration(generation)
     if (!this.session || !this.verified) {
@@ -257,7 +283,7 @@ export class TaskController {
         tabs: [],
         confirmActions: true,
       } satisfies Task)
-    task.lastPrompt = input.content
+    task.lastPrompt = lastPrompt
     task.model = input.model
     task.effort = input.effort
     task.confirmActions = input.confirmActions
@@ -349,6 +375,7 @@ export class TaskController {
               )
           for await (const frame of stream) {
             signal.throwIfAborted()
+            this.reconnecting = false
             const event = frame.event
             if (event.type === 'RUN_STARTED')
               task.receipt = {
@@ -373,18 +400,21 @@ export class TaskController {
           )
             throw cause
           if (attempt >= RECONNECT_DELAYS_MS.length) throw cause
-          task.error = 'Connection interrupted. Reconnecting to the same run…'
+          this.reconnecting = true
           await this.save(task)
           await wait(RECONNECT_DELAYS_MS[attempt], signal)
           if (task.receipt) next = undefined
         }
       }
     } catch (cause) {
+      this.reconnecting = false
       task.phase = 'interrupted'
       task.error =
         task.error ||
         (signal.aborted
-          ? 'Task stopped. Check the page before continuing.'
+          ? signal.reason instanceof BrowserError
+            ? signal.reason.message
+            : 'Task stopped. Check the page before continuing.'
           : errorText(cause))
       await driver.dispose()
       if (task.receipt) await this.cancelAndCollect(task)
@@ -501,6 +531,16 @@ export class TaskController {
           return await driver.execute(request.operation)
         } catch (cause) {
           signal.throwIfAborted()
+          if (
+            changesPage(request.operation) &&
+            (!(cause instanceof BrowserError) ||
+              ['COMMAND_FAILED', 'PAGE_CHANGED'].includes(cause.code))
+          ) {
+            throw new BrowserError(
+              'OUTCOME_UNKNOWN',
+              'The action may have completed, but its result could not be verified. Check the page before continuing.',
+            )
+          }
           return { text: JSON.stringify(browserFailure(cause)) }
         }
       },
@@ -577,7 +617,12 @@ export class TaskController {
   private async stopActive() {
     const active = this.active
     if (!active) return
-    active.abort.abort()
+    if (
+      this.task?.receipt ||
+      !this.task ||
+      !['interrupted', 'completed'].includes(this.task.phase)
+    )
+      active.abort.abort()
     await active.done
   }
   async dispose() {

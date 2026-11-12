@@ -9,6 +9,7 @@ import 'fake-indexeddb/auto'
 import { afterEach, expect, test, vi } from 'vitest'
 import { client, signIn, testSession } from '../../../tests/harness-fixture'
 import { storedThread } from '../../../tests/services/harness/thread-fixture'
+import { BrowserError } from '../src/browser/errors'
 import { TaskController } from '../src/controller'
 import type { View } from '../src/messages'
 import { TaskStore } from '../src/storage'
@@ -67,7 +68,7 @@ function setup() {
     await controller.dispose()
     await store.close()
   })
-  return { store, controller, until, actions: () => actions }
+  return { store, controller, until, browser, actions: () => actions }
 }
 
 function started(turn: Turn): Frame {
@@ -219,7 +220,8 @@ test('stopping during review prevents execution and collects the canceled thread
   expect(review.pending?.preview).toBe('Click Save on the selected tab')
   await controller.command({ kind: 'stop' })
   expect(actions()).toBe(0)
-  const saved = (await store.list('alice'))[0]
+  const summary = (await store.list('alice'))[0]
+  const saved = (await store.get('alice', summary.id))!
   expect(saved.phase).toBe('interrupted')
   expect(saved.receipt).toBeUndefined()
   expect(saved.thread?.messages[0].content).toBe('Save the form')
@@ -250,8 +252,88 @@ test('an expired browser operation is canceled before dispatch', async () => {
   await until((view) => view.task?.phase === 'interrupted' && !view.pending)
   expect(actions()).toBe(0)
   expect(
+    client.post.mock.calls
+      .filter(([path]) => path === '/v1/threads/cancel')
+      .map(([, input]) => input),
+  ).toEqual([{ threadId: turn.threadId, runId: 'run' }])
+  expect(
     client.post.mock.calls.some(
       ([path]) => path === '/v1/threads/browser/result',
     ),
   ).toBe(false)
+})
+
+test('resuming repeatedly preserves the original task instead of nesting instructions', async () => {
+  const { controller, until, store } = setup()
+  const sent: Turn[] = []
+  client.events.mockImplementation(async function* (_path: string, turn: Turn) {
+    sent.push(turn)
+    yield started(turn)
+    yield ended(turn, true)
+  })
+  await controller.initialize()
+  await controller.command(send)
+  await until((view) => sent.length === 1 && view.task?.phase === 'interrupted')
+  for (const count of [2, 3]) {
+    await controller.command({ kind: 'resume', tabs: [] })
+    await until(
+      (view) => sent.length === count && view.task?.phase === 'interrupted',
+    )
+  }
+  expect(sent[1].content).toBe(sent[2].content)
+  const [summary] = await store.list('alice')
+  expect((await store.get('alice', summary.id))?.lastPrompt).toBe(
+    'Save the form',
+  )
+})
+
+test('stop cancels a send queued behind initialization', async () => {
+  const { controller } = setup()
+  let ready!: () => void
+  const prior = new Promise<void>((resolve) => {
+    ready = resolve
+  })
+  const initialize = controller.initialize(prior)
+  const sendResult = controller.command(send).catch((error: unknown) => error)
+  await controller.stop()
+  ready()
+  await initialize
+  expect(await sendResult).toMatchObject({ name: 'AbortError' })
+  expect(client.events).not.toHaveBeenCalled()
+})
+
+test('an uncertain mutation stops the run instead of becoming a retryable tool result', async () => {
+  const { controller, until, browser, actions, store } = setup()
+  const execute = browser.execute
+  browser.execute = async () => {
+    await execute()
+    throw new BrowserError('COMMAND_FAILED', 'Connection lost after click')
+  }
+  let turn!: Turn
+  client.events.mockImplementation(async function* (path: string, input: Turn) {
+    if (path === '/v1/threads/follow') {
+      yield ended(turn, true)
+      return
+    }
+    turn = input
+    yield started(turn)
+    yield browserRequest(turn)
+    throw new Error('An uncertain mutation must end the stream')
+  })
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/session') return session
+    if (path === '/v1/threads/cancel') return { cancelled: true }
+    throw new Error(`Unexpected path ${path}`)
+  })
+  await controller.initialize()
+  await controller.command({ ...send, tabs: [1] })
+  const final = await until((view) => view.task?.phase === 'interrupted')
+  expect(actions()).toBe(1)
+  expect(final.task?.error).toContain('may have completed')
+  expect((await store.get('alice', final.task!.id))?.phase).toBe('interrupted')
+  expect(
+    client.post.mock.calls.filter(
+      ([path]) => path === '/v1/threads/browser/result',
+    ),
+  ).toEqual([])
 })

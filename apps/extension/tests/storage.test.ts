@@ -1,5 +1,6 @@
 import { initialChat } from '@tinfoil/chat-client/reducer'
 import 'fake-indexeddb/auto'
+import { openDB } from 'idb'
 import { afterEach, expect, test } from 'vitest'
 import { TaskStore } from '../src/storage'
 
@@ -102,8 +103,54 @@ test('deleting local history removes its journal while preserving another accoun
   await store.delete('alice', task.id)
   expect(await store.list('alice')).toEqual([])
   expect(await store.action('alice', 'run', 'save')).toBeUndefined()
-  expect(await store.list('bob')).toEqual([{ ...task, owner: 'bob' }])
+  expect(await store.list('bob')).toEqual([
+    {
+      owner: 'bob',
+      id: task.id,
+      title: task.title,
+      updatedAt: task.updatedAt,
+      phase: task.phase,
+    },
+  ])
+  expect(await store.get('bob', task.id)).toEqual({ ...task, owner: 'bob' })
   expect((await store.action('bob', 'run', 'save'))?.result).toEqual({
     text: 'bob',
   })
+})
+
+test('upgrading local history indexes summaries without losing the transcript', async () => {
+  const name = crypto.randomUUID()
+  const legacy = await openDB(name, 1, {
+    upgrade(db) {
+      db.createObjectStore('tasks', { keyPath: ['owner', 'id'] }).createIndex(
+        'owner',
+        'owner',
+      )
+      db.createObjectStore('actions', {
+        keyPath: ['owner', 'runId', 'executionId'],
+      }).createIndex('task', ['owner', 'taskId'])
+    },
+  })
+  const task = {
+    owner: 'alice',
+    id: 'kept',
+    title: 'Saved task',
+    updatedAt: 1,
+    phase: 'completed',
+    state: initialChat(),
+    lastPrompt: 'Private content that must remain in the record',
+  }
+  await legacy.put('tasks', task)
+  legacy.close()
+  const store = open(name)
+  expect(await store.list('alice')).toEqual([
+    {
+      owner: 'alice',
+      id: 'kept',
+      title: 'Saved task',
+      updatedAt: 1,
+      phase: 'completed',
+    },
+  ])
+  expect(await store.get('alice', 'kept')).toEqual(task)
 })
