@@ -2239,7 +2239,7 @@ ${encryptionKey.replace('key_', '')}
                             className={cn(
                               'flex flex-col items-center gap-1 rounded-lg border p-3 transition-all',
                               themeMode === theme.id
-                                ? 'border-primary bg-primary/20'
+                                ? 'border-yellow-700 bg-primary/20 dark:border-primary'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
@@ -2374,7 +2374,7 @@ ${encryptionKey.replace('key_', '')}
                             className={cn(
                               'flex flex-col items-center gap-1 rounded-lg border p-2 transition-all',
                               chatFont === font.id
-                                ? 'border-primary bg-primary/20'
+                                ? 'border-yellow-700 bg-primary/20 dark:border-primary'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
@@ -2422,7 +2422,7 @@ ${encryptionKey.replace('key_', '')}
                             className={cn(
                               'cursor-pointer rounded-lg border px-2 py-1.5 text-center text-xs text-content-primary transition-all has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring',
                               readAloudSpeed === speed
-                                ? 'border-primary bg-primary/20'
+                                ? 'border-yellow-700 bg-primary/20 dark:border-primary'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >

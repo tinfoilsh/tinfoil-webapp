@@ -522,7 +522,7 @@ function ArtifactPreviewInlineCard({
       className={cn(
         'my-3 flex w-full items-center rounded-lg border bg-surface-card text-left transition-colors',
         isSelected
-          ? 'border-primary bg-primary/20'
+          ? 'border-yellow-700 bg-primary/20 dark:border-primary'
           : 'border-border-subtle hover:bg-surface-chat-background',
       )}
     >

@@ -42,7 +42,7 @@ export function PromptPresetSuggestions({
             className={cn(
               pillBase,
               isActive
-                ? 'border-primary bg-primary text-primary-foreground'
+                ? 'border-yellow-700 bg-primary text-primary-foreground dark:border-primary'
                 : 'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
             )}
           >
