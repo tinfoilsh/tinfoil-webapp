@@ -112,7 +112,7 @@ function QuestionsCard({
                           ? () => pick(question, option.id)
                           : undefined
                       }
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-brand-accent-dark"
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
                     />
                     <span>{option.label}</span>
                   </label>

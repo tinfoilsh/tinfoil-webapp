@@ -2239,7 +2239,7 @@ ${encryptionKey.replace('key_', '')}
                             className={cn(
                               'flex flex-col items-center gap-1 rounded-lg border p-3 transition-all',
                               themeMode === theme.id
-                                ? 'border-brand-accent-dark bg-brand-accent-light/10 dark:border-brand-accent-light'
+                                ? 'border-primary bg-primary/20'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
@@ -2281,7 +2281,7 @@ ${encryptionKey.replace('key_', '')}
                             }}
                             className="peer sr-only"
                           />
-                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong dark:peer-checked:bg-brand-accent-light" />
+                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:bg-primary-foreground peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong" />
                         </label>
                       </div>
                     </div>
@@ -2312,7 +2312,7 @@ ${encryptionKey.replace('key_', '')}
                             }}
                             className="peer sr-only"
                           />
-                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong dark:peer-checked:bg-brand-accent-light" />
+                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:bg-primary-foreground peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong" />
                         </label>
                       </div>
                     </div>
@@ -2374,7 +2374,7 @@ ${encryptionKey.replace('key_', '')}
                             className={cn(
                               'flex flex-col items-center gap-1 rounded-lg border p-2 transition-all',
                               chatFont === font.id
-                                ? 'border-brand-accent-dark bg-brand-accent-light/10 dark:border-brand-accent-light'
+                                ? 'border-primary bg-primary/20'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
@@ -2420,9 +2420,9 @@ ${encryptionKey.replace('key_', '')}
                           <label
                             key={speed}
                             className={cn(
-                              'cursor-pointer rounded-lg border px-2 py-1.5 text-center text-xs text-content-primary transition-all has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-accent-dark dark:has-[:focus-visible]:ring-brand-accent-light',
+                              'cursor-pointer rounded-lg border px-2 py-1.5 text-center text-xs text-content-primary transition-all has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring',
                               readAloudSpeed === speed
-                                ? 'border-brand-accent-dark bg-brand-accent-light/10 dark:border-brand-accent-light'
+                                ? 'border-primary bg-primary/20'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
@@ -2505,7 +2505,7 @@ ${encryptionKey.replace('key_', '')}
                             }}
                             className="peer sr-only"
                           />
-                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong dark:peer-checked:bg-brand-accent-light" />
+                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:bg-primary-foreground peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong" />
                         </label>
                       </div>
                     </div>
@@ -2544,7 +2544,7 @@ ${encryptionKey.replace('key_', '')}
                               }}
                               className="peer sr-only"
                             />
-                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none dark:peer-checked:bg-brand-accent-light" />
+                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:bg-primary-foreground peer-focus:outline-none" />
                           </label>
                         </div>
 
@@ -2570,7 +2570,7 @@ ${encryptionKey.replace('key_', '')}
                                 }}
                                 className="peer sr-only"
                               />
-                              <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none dark:peer-checked:bg-brand-accent-light" />
+                              <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:bg-primary-foreground peer-focus:outline-none" />
                             </label>
                           </div>
                         )}
@@ -2604,7 +2604,7 @@ ${encryptionKey.replace('key_', '')}
                               }}
                               className="peer sr-only"
                             />
-                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none dark:peer-checked:bg-brand-accent-light" />
+                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:bg-primary-foreground peer-focus:outline-none" />
                           </label>
                         </div>
                       </div>
@@ -2643,7 +2643,7 @@ ${encryptionKey.replace('key_', '')}
                           }
                           className="peer sr-only"
                         />
-                        <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none dark:peer-checked:bg-brand-accent-light" />
+                        <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:bg-primary-foreground peer-focus:outline-none" />
                       </label>
                     </div>
                   </div>
@@ -2741,7 +2741,7 @@ ${encryptionKey.replace('key_', '')}
                                 className={cn(
                                   'rounded-site-control px-3 py-1.5 text-sm transition-colors',
                                   selectedTraits.includes(trait)
-                                    ? 'bg-brand-accent-light text-brand-accent-dark'
+                                    ? 'bg-primary text-primary-foreground'
                                     : isDarkMode
                                       ? 'bg-surface-chat text-content-secondary hover:bg-surface-chat'
                                       : 'border border-border-subtle bg-surface-sidebar text-content-secondary hover:bg-surface-chat',
@@ -3043,7 +3043,7 @@ ${encryptionKey.replace('key_', '')}
                             }
                             className="peer sr-only"
                           />
-                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none dark:peer-checked:bg-brand-accent-light" />
+                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:bg-primary-foreground peer-focus:outline-none" />
                         </label>
                       </div>
                     </div>
@@ -3544,7 +3544,7 @@ ${encryptionKey.replace('key_', '')}
                                 }
                                 className="peer sr-only"
                               />
-                              <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none dark:peer-checked:bg-brand-accent-light" />
+                              <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:bg-primary-foreground peer-focus:outline-none" />
                             </label>
                           </div>
                           {localChatsEnabled && (
