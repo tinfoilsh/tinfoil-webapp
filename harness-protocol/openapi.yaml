@@ -1683,7 +1683,7 @@ components:
         composer: {$ref: "#/components/schemas/Composer"}
         presets: {type: array, items: {$ref: "#/components/schemas/Preset"}}
         features:
-          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes.
+          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes.
           type: object
           additionalProperties: {type: boolean}
 
@@ -1810,7 +1810,7 @@ components:
         toolCallId: {type: string, description: "The widget call a retryToolCall regenerates."}
         attachments: {type: array, items: {$ref: "#/components/schemas/SentAttachment"}}
         widgets: {type: array, items: {type: string}, description: "The widgets this client renders."}
-        compactLatest: {type: boolean, description: "A compact turn, or a retry that compacts again, summarizes the chat's latest exchange too, as COMPACTION_START describes. A client sends it when it shows a compaction marker at the end of a chat."}
+        compactLatest: {type: boolean, description: "A compact turn, or a retry that compacts again, summarizes the chat's latest exchange too, as COMPACTION_START describes. It is refused on any other kind. A client sends it only while the session's features.compactLatest is true, and when it shows a compaction marker at the end of a chat."}
         options: {$ref: "#/components/schemas/TurnOptions"}
 
     TurnOptions:
