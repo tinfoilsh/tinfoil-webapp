@@ -15,6 +15,7 @@ export default defineConfig({
         'favicon-16x16.png',
         'favicon-32x32.png',
         'android-chrome-192x192.png',
+        'icons/chevron-right.svg',
       ]) {
         files.push({
           absoluteSrc: path.resolve(wxt.config.root, '../../public', name),

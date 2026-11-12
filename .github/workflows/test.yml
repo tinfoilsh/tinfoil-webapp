@@ -54,6 +54,7 @@ jobs:
           WXT_CLERK_PUBLISHABLE_KEY: ${{ vars.EXTENSION_CLERK_PUBLISHABLE_KEY }}
           WXT_CLERK_FRONTEND_API: ${{ vars.EXTENSION_CLERK_FRONTEND_API }}
           WXT_HARNESS_URL: ${{ vars.EXTENSION_HARNESS_URL }}
+          WXT_EXTENSION_PUBLIC_KEY: ${{ vars.EXTENSION_PUBLIC_KEY }}
       - run: npx playwright install --with-deps chromium
         working-directory: apps/extension
       - run: npm run test:browser --workspace=apps/extension

@@ -21,7 +21,7 @@ All agents may run builds, type checks, linters, and automated tests, including 
 
 NEVER use raw fetch() for API requests to Tinfoil enclaves. Always use the Tinfoil SDK client for the enclave: `HarnessClient` (src/services/harness/client.ts) for the chat harness, which makes every inference call itself, and the SDK's `EnclaveHTTPClient` for any other enclave. The SDK handles attestation verification which is critical for security.
 
-The harness's wire types come from `harness-protocol/openapi.yaml` through `src/services/harness/openapi.ts`; `types.ts` only names them. Never hand-write a harness request, response or event type, or edit the generated file: sync the protocol from the harness (see DEVELOPMENT.md).
+The harness's wire types come from `harness-protocol/openapi.yaml` through `packages/chat-client/src/openapi.ts`; `types.ts` only names them. Never hand-write a harness request, response or event type, or edit the generated file: sync the protocol from the harness (see DEVELOPMENT.md).
 
 # Error Classification
 
