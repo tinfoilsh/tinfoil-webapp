@@ -6,7 +6,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const OPEN = LOCK_FRAMES[0]
 const CLOSED = LOCK_FRAMES[LOCK_FRAMES.length - 1]
-const OPEN_HOLD_MS = 500
+const OPEN_HOLD_MS = 100
+const READY_ANIMATION_LIMIT_MS = 650
 const FRAME_MS = 16
 const ANIMATION_TIMEOUT_MS = 5000
 const media = window.matchMedia('(prefers-reduced-motion)')
@@ -88,6 +89,7 @@ it.each([true, false])(
 
     expect(ring(view.container).hasAttribute('stroke-dasharray')).toBe(false)
     expect(ring(view.container).hasAttribute('mask')).toBe(false)
+    const readyAt = Date.now()
 
     await act(() => vi.advanceTimersByTimeAsync(OPEN_HOLD_MS - FRAME_MS))
     expect(lockPath(view.container)).toBe(OPEN)
@@ -104,6 +106,7 @@ it.each([true, false])(
     expect(Number(animation(view.container).style.opacity)).toBeGreaterThan(0)
     expect(onFinished).not.toHaveBeenCalled()
     await advanceUntil(() => onFinished.mock.calls.length === 1)
+    expect(Date.now() - readyAt).toBeLessThanOrEqual(READY_ANIMATION_LIMIT_MS)
     expect(animation(view.container).style.opacity).toBe('0')
     expect(animation(view.container).style.transform).toBe('scale(0.25)')
     await act(() => vi.advanceTimersByTimeAsync(ANIMATION_TIMEOUT_MS))

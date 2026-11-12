@@ -21,6 +21,7 @@ export function PrivacyLock({
   locked,
   startOpen = false,
   delay = 0,
+  duration = LOCK_SWING_S,
   onSettled,
   className,
   size = DEFAULT_LOCK_SIZE,
@@ -28,6 +29,7 @@ export function PrivacyLock({
   locked: boolean
   startOpen?: boolean
   delay?: number
+  duration?: number
   onSettled?: (locked: boolean) => void
   className?: string
   size?: number
@@ -45,13 +47,13 @@ export function PrivacyLock({
     }
     const remaining = Math.abs(target - frame.get()) / LOCKED_FRAME
     const controls = animate(frame, target, {
-      duration: LOCK_SWING_S * remaining,
+      duration: duration * remaining,
       delay: locked ? delay : 0,
       ease: 'linear',
       onComplete: () => onSettled?.(locked),
     })
     return () => controls.stop()
-  }, [frame, locked, prefersReducedMotion, delay, onSettled])
+  }, [frame, locked, prefersReducedMotion, delay, duration, onSettled])
 
   return (
     <svg

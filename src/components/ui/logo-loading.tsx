@@ -5,8 +5,9 @@ import { PrivacyLock } from '@/components/onboarding/privacy-lock'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useId, useState, type CSSProperties } from 'react'
 
-const OPEN_HOLD_S = 0.5
-const ZOOM_OUT_DURATION_S = 0.35
+const OPEN_HOLD_S = 0.1
+const LOCK_CLOSE_DURATION_S = 0.25
+const ZOOM_OUT_DURATION_S = 0.15
 const ZOOM_OUT_SCALE = 0.25
 const LOADING_RING_SIZE = 64
 const LOADING_LOCK_SIZE = 32
@@ -101,6 +102,7 @@ function LockAnimation({
         locked={!isLoading}
         startOpen={!reducedMotion}
         delay={OPEN_HOLD_S}
+        duration={LOCK_CLOSE_DURATION_S}
         onSettled={setClosed}
         className="h-8 w-8 text-content-primary"
       />
