@@ -990,7 +990,7 @@ ${generatedKey.replace('key_', '')}
           chevron
           onClick={handlePasskeyRecovery}
           disabled={isRecovering}
-          className="min-w-[11rem]"
+          className="min-w-[11rem] border-brand-accent-dark-darker bg-brand-accent-dark-darker text-white hover:border-brand-accent-dark hover:bg-brand-accent-dark"
         >
           <TfFingerprint className="h-4 w-4" aria-hidden="true" />
           {isRecovering ? 'Authenticating...' : 'Unlock with Passkey'}
