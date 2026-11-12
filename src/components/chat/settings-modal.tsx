@@ -2083,7 +2083,7 @@ ${encryptionKey.replace('key_', '')}
                 className={cn(
                   'flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
                   activeTab === item.id
-                    ? 'bg-surface-chat text-content-primary'
+                    ? 'bg-primary text-primary-foreground'
                     : 'text-content-secondary hover:bg-surface-chat/50',
                 )}
               >
@@ -2124,7 +2124,7 @@ ${encryptionKey.replace('key_', '')}
                 className={cn(
                   'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                   activeTab === item.id
-                    ? 'bg-surface-chat text-content-primary'
+                    ? 'bg-primary text-primary-foreground'
                     : 'text-content-secondary hover:bg-surface-chat/50',
                 )}
               >
