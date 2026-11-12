@@ -53,10 +53,19 @@ function ring(container: HTMLElement) {
   return container.querySelector('svg > circle')!
 }
 
-it('renders the open lock on the initial server-rendered page', () => {
+it('server-renders a bounded ring and open lock before styles load', () => {
   const container = document.createElement('div')
   container.innerHTML = renderToStaticMarkup(<LogoLoading />)
   expect(lockPath(container)).toBe(OPEN)
+  const [ring, lock] = container.querySelectorAll('svg')
+  expect([ring.getAttribute('width'), ring.getAttribute('height')]).toEqual([
+    '64',
+    '64',
+  ])
+  expect([lock.getAttribute('width'), lock.getAttribute('height')]).toEqual([
+    '32',
+    '32',
+  ])
 })
 
 it.each([true, false])(

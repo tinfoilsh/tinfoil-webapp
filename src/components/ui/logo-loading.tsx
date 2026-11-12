@@ -8,6 +8,8 @@ import { useId, useState, type CSSProperties } from 'react'
 const OPEN_HOLD_S = 0.5
 const ZOOM_OUT_DURATION_S = 0.35
 const ZOOM_OUT_SCALE = 0.25
+const LOADING_RING_SIZE = 64
+const LOADING_LOCK_SIZE = 32
 const RING_DASH_COUNT = 12
 const RING_DASH_LENGTH = 0.7
 const RING_STYLE: CSSProperties & {
@@ -49,7 +51,9 @@ function LockAnimation({
       <svg
         aria-hidden="true"
         viewBox="0 0 64 64"
-        className="pointer-events-none absolute inset-0 h-full w-full -rotate-90"
+        width={LOADING_RING_SIZE}
+        height={LOADING_RING_SIZE}
+        className="pointer-events-none absolute inset-0 h-16 w-16 -rotate-90"
         fill="none"
         style={RING_STYLE}
       >
@@ -93,6 +97,7 @@ function LockAnimation({
         />
       </svg>
       <PrivacyLock
+        size={LOADING_LOCK_SIZE}
         locked={!isLoading}
         startOpen={!reducedMotion}
         delay={OPEN_HOLD_S}
