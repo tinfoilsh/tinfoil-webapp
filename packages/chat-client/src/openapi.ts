@@ -1144,6 +1144,7 @@ export interface components {
           | 'ATTACHMENT_UNSUPPORTED'
           | 'ATTACHMENTS_UNAVAILABLE'
           | 'BAD_REQUEST'
+          | 'BROWSER_TIMEOUT'
           | 'CHAT_FLAGGED'
           | 'COMPACTION_FAILED'
           | 'CONTEXT_TOO_LARGE'
@@ -1338,7 +1339,8 @@ export interface components {
      *     executor identity and secret for each turn. The token is sent only in
      *     sealed bodies, never in prompts, events or persistent chat records.
      *     Browser actions run sequentially, at most 40 per turn. Each waits at
-     *     most five minutes for its executor. Clients cancel a run when they
+     *     most five minutes for its executor; a timeout ends the run with
+     *     BROWSER_TIMEOUT and leaves later actions unexecuted. Clients cancel a run when they
      *     relinquish browser control, and stop local dispatch immediately.
      */
     BrowserAccess: {
@@ -1346,6 +1348,7 @@ export interface components {
       executorId: string
       token: string
     }
+    /** @description Arguments validated against the model-facing browser tool schema. The executor additionally validates selected tabs, URL schemes, current references, and action permissions before dispatch. */
     BrowserAction: {
       /** @enum {string} */
       action:
@@ -1369,8 +1372,18 @@ export interface components {
       ref?: string
       text?: string
       url?: string
-      key?: string
-      direction?: string
+      /** @enum {string} */
+      key?:
+        | 'Enter'
+        | 'Tab'
+        | 'Escape'
+        | 'ArrowDown'
+        | 'ArrowUp'
+        | 'ArrowLeft'
+        | 'ArrowRight'
+        | 'Backspace'
+      /** @enum {string} */
+      direction?: 'up' | 'down'
       /** @description The fresh screenshot whose pixels a coordinate action uses. */
       screenshotId?: string
       x?: number
