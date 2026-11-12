@@ -223,7 +223,9 @@ export function CloudSyncSetupModal({
   const handleGenerateKey = async () => {
     setIsProcessing(true)
     try {
-      const newKey = await encryptionService.generateKey()
+      // A key whose setup failed may already be saved, so another try keeps
+      // it rather than leaving the user with a saved key that opens nothing.
+      const newKey = generatedKey ?? (await encryptionService.generateKey())
       const keySetupMode = await determineGeneratedKeySetupMode({
         manualRecoveryNeeded,
       })
@@ -314,7 +316,7 @@ export function CloudSyncSetupModal({
         component: 'CloudSyncSetupModal',
         action: 'handleRestoreKey',
       })
-      setSetupError('The encryption key you entered is invalid')
+      setSetupError(describeCloudKeySetupFailure('setup_failed').description)
       enterSetupFailed()
     } finally {
       setIsProcessing(false)
@@ -706,9 +708,10 @@ ${generatedKey.replace('key_', '')}
         size="landing"
         chevron
         onClick={handleComplete}
+        disabled={isProcessing}
         className="mx-auto mt-auto"
       >
-        Let&apos;s go!
+        {isProcessing ? 'Setting up...' : "Let's go!"}
       </Button>
     </div>
   )

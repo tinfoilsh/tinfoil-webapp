@@ -9,7 +9,7 @@ import { PiSpinner } from 'react-icons/pi'
 
 export type VerificationStatus = 'pending' | 'verified' | 'failed'
 
-const VERIFIED_LABEL = 'Privacy verified'
+export const VERIFIED_LABEL = 'Privacy verified'
 // How long the verified label shows beside the lock as it swings shut, and how
 // long it takes to fold away into the lock.
 export const VERIFIED_LABEL_SHOWN_MS = 2500
@@ -24,18 +24,16 @@ export function VerificationStatusButton({
   status,
   isPanelOpen,
   onTogglePanel,
-  compactLabel,
   announceVerified,
   onVerifiedAnnounced,
+  className,
 }: {
   status: VerificationStatus
   isPanelOpen: boolean
   onTogglePanel: () => void
-  // Hides the label in a narrow conversation, where the chat header has no
-  // room for it.
-  compactLabel: boolean
   announceVerified: boolean
   onVerifiedAnnounced: () => void
+  className?: string
 }) {
   const [leaving, setLeaving] = useState(false)
   const announced = useRef(onVerifiedAnnounced)
@@ -52,7 +50,7 @@ export function VerificationStatusButton({
   }, [announcing, leaving])
 
   return (
-    <div className="group relative">
+    <div className={cn('group relative', className)}>
       <button
         id="verification-status"
         className={cn(
@@ -72,14 +70,7 @@ export function VerificationStatusButton({
         {status === 'pending' ? (
           <>
             <PiSpinner className="h-4 w-4 animate-spin" />
-            <span
-              className={cn(
-                'text-sm leading-none',
-                compactLabel && 'sr-only @3xl/conversation:not-sr-only',
-              )}
-            >
-              Verifying...
-            </span>
+            <span className="text-sm leading-none">Verifying...</span>
           </>
         ) : status === 'verified' ? (
           <>
@@ -98,10 +89,7 @@ export function VerificationStatusButton({
             {announcing && (
               <span
                 data-leaving={leaving || undefined}
-                className={cn(
-                  'grid grid-cols-[1fr] opacity-100 transition-[grid-template-columns,opacity] ease-in data-[leaving]:grid-cols-[0fr] data-[leaving]:opacity-0 motion-reduce:transition-none',
-                  compactLabel && 'hidden @3xl/conversation:grid',
-                )}
+                className="grid grid-cols-[1fr] opacity-100 transition-[grid-template-columns,opacity] ease-in data-[leaving]:grid-cols-[0fr] data-[leaving]:opacity-0 motion-reduce:transition-none"
                 style={{ transitionDuration: `${VERIFIED_LABEL_EXIT_MS}ms` }}
               >
                 <span className="min-w-0 overflow-hidden">
@@ -118,14 +106,7 @@ export function VerificationStatusButton({
               className="h-4 w-4 !text-red-500"
               aria-hidden="true"
             />
-            <span
-              className={cn(
-                'text-sm leading-none text-red-500',
-                compactLabel && 'sr-only @3xl/conversation:not-sr-only',
-              )}
-            >
-              Error
-            </span>
+            <span className="text-sm leading-none text-red-500">Error</span>
           </>
         )}
       </button>

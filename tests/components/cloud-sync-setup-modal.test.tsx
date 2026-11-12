@@ -168,6 +168,59 @@ describe('CloudSyncSetupModal onboarding', () => {
     await waitFor(() => expect(baseProps.onClose).toHaveBeenCalledTimes(1))
   })
 
+  it('keeps the key it showed when its setup fails and is tried again', async () => {
+    const generateKey = vi
+      .spyOn(encryptionService, 'generateKey')
+      .mockResolvedValueOnce('key_shown-first')
+      .mockResolvedValueOnce('key_generated-again')
+    vi.spyOn(setupMode, 'determineGeneratedKeySetupMode').mockResolvedValue(
+      'recoverExisting',
+    )
+    let finishSetup!: (result: setupMode.CloudKeySetupResult) => void
+    baseProps.onSetupComplete.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishSetup = resolve
+      }),
+    )
+    render(<CloudSyncSetupModal {...baseProps} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Generate Encryption Key' }),
+    )
+    await screen.findByText('key_shown-first')
+    fireEvent.click(screen.getByRole('button', { name: "Let's go!" }))
+
+    // The button says the key is being set up, and takes no second click.
+    const settingUp = await screen.findByRole('button', {
+      name: 'Setting up...',
+    })
+    expect(settingUp).toBeDisabled()
+    fireEvent.click(settingUp)
+    await act(async () => {
+      finishSetup({ ok: false, reason: 'setup_failed' })
+    })
+    expect(
+      await screen.findByRole('heading', { name: 'Setup Failed' }),
+    ).toBeInTheDocument()
+    expect(baseProps.onSetupComplete).toHaveBeenCalledTimes(1)
+
+    baseProps.onSetupComplete.mockResolvedValue({ ok: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Go Back' }))
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Generate Encryption Key' }),
+    )
+    expect(await screen.findByText('key_shown-first')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: "Let's go!" }))
+
+    await waitFor(() => expect(baseProps.onClose).toHaveBeenCalledTimes(1))
+    expect(baseProps.onSetupComplete.mock.calls).toEqual([
+      ['key_shown-first', 'recoverExisting'],
+      ['key_shown-first', 'recoverExisting'],
+    ])
+    expect(generateKey).toHaveBeenCalledTimes(1)
+  })
+
   it('disables intro actions while passkey setup is in progress', () => {
     render(
       <CloudSyncSetupModal

@@ -238,6 +238,7 @@ describe('IndexedDB pending sync index', () => {
       'attachmentPayloads',
       'chatSummaries',
       'chats',
+      'dictationSegments',
       'migrations',
     ])
     expect(
@@ -301,17 +302,93 @@ describe('IndexedDB pending sync index', () => {
     })
   })
 
-  it('fails a blocked upgrade promptly and allows a retry', async () => {
+  it('waits for an upgrade another tab blocks, and finishes it once that tab closes', async () => {
     const olderConnection = await openVersionThree([storedChat('cloud-chat')])
+    // A tab that cannot answer, as one the browser froze.
     olderConnection.onversionchange = () => undefined
     const storage = new IndexedDBStorage()
-
-    await expect(storage.getAllChatIds()).rejects.toThrow(
-      'Database upgrade blocked',
+    const blocked = new Promise<void>((resolve) =>
+      storage.access.subscribe(() => {
+        if (storage.access.get() === 'blocked') resolve()
+      }),
     )
+
+    const ids = storage.getAllChatIds()
+    await blocked
+    const summaries = storage.getChatSummaries()
     olderConnection.close()
 
+    await expect(ids).resolves.toEqual(['cloud-chat'])
+    expect((await summaries).map((chat) => chat.id)).toEqual(['cloud-chat'])
+    expect(storage.access.get()).toBe('ready')
+  })
+
+  it('stops saying an upgrade is blocked once it fails', async () => {
+    const olderConnection = await openVersionThree([storedChat('cloud-chat')])
+    olderConnection.onversionchange = () => undefined
+    const open = indexedDB.open.bind(indexedDB)
+    // The upgrade fails once it runs, as when the browser's storage is full.
+    vi.spyOn(indexedDB, 'open').mockImplementationOnce((name, version) => {
+      const request = open(name, version)
+      // After the page's own upgrade handler, before the upgrade commits.
+      request.addEventListener('upgradeneeded', () =>
+        queueMicrotask(() => request.transaction!.abort()),
+      )
+      return request
+    })
+    const storage = new IndexedDBStorage()
+    const blocked = new Promise<void>((resolve) =>
+      storage.access.subscribe(() => {
+        if (storage.access.get() === 'blocked') resolve()
+      }),
+    )
+
+    const ids = storage.getAllChatIds()
+    await blocked
+    olderConnection.close()
+
+    await expect(ids).rejects.toThrow('Failed to open database')
+    expect(storage.access.get()).toBe('ready')
     await expect(storage.getAllChatIds()).resolves.toEqual(['cloud-chat'])
+  })
+
+  it('stops using the database once a newer version upgrades it, leaving its chats', async () => {
+    const storage = new IndexedDBStorage()
+    await storage.saveChat(storedChat('kept'))
+    expect(storage.access.get()).toBe('ready')
+
+    // Opens only once this page closed its connection.
+    const newer = await openDatabase(DB_VERSION + 1)
+
+    expect(storage.access.get()).toBe('outdated')
+    await expect(storage.getAllChatIds()).rejects.toThrow(
+      'upgraded by a newer version',
+    )
+    await expect(storage.saveChat(storedChat('unsaved'))).rejects.toThrow(
+      'upgraded by a newer version',
+    )
+    const kept = await new Promise<IDBValidKey[]>((resolve, reject) => {
+      const request = newer
+        .transaction('chats')
+        .objectStore('chats')
+        .getAllKeys()
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+    })
+    newer.close()
+    expect(kept).toEqual(['kept'])
+  })
+
+  it('says the page is outdated when the browser holds a newer database', async () => {
+    ;(await openDatabase(DB_VERSION + 1)).close()
+    const storage = new IndexedDBStorage()
+    expect(storage.access.get()).toBe('ready')
+
+    await expect(storage.getChatSummaries()).rejects.toThrow(
+      'Failed to open database',
+    )
+
+    expect(storage.access.get()).toBe('outdated')
   })
 
   it('stores attachment payloads separately and hydrates them on read', async () => {

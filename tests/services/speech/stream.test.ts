@@ -7,7 +7,7 @@ import { decodePcmStream, speechSource } from '@/services/speech/stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SEALED, stubChatAccess } from '../../harness-fixture'
 
-vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
+vi.mock('tinfoil', () => ({ EnclaveHTTPClient: { create: vi.fn() } }))
 
 async function collect(stream: AsyncIterable<Float32Array>): Promise<number[]> {
   const samples: number[] = []
@@ -82,17 +82,16 @@ describe('speech requests', () => {
   function connect(response: () => Response | Promise<Response>) {
     stubChatAccess()
     const secure = {
-      ready: vi.fn().mockResolvedValue(undefined),
       fetch: vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
         response(),
       ),
-      getVerificationDocument: vi.fn(),
+      ensureVerified: vi.fn().mockResolvedValue(undefined),
     }
     const api = new HarnessAPI(
       new HarnessClient(
         'https://harness.example/',
         async () => 'clerk-session',
-        () => secure,
+        async () => secure,
       ),
       'alice',
     )
@@ -188,14 +187,14 @@ describe('speech requests', () => {
           headers: { 'Content-Type': 'audio/pcm' },
         }),
     )
-    secure.ready.mockReturnValue(
+    secure.ensureVerified.mockReturnValue(
       new Promise<void>((resolve) => {
         verified = resolve
       }),
     )
     const controller = new AbortController()
     const result = collect(speech(controller.signal))
-    await vi.waitFor(() => expect(secure.ready).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(secure.ensureVerified).toHaveBeenCalledOnce())
     controller.abort()
     verified()
     await expect(result).rejects.toMatchObject({ name: 'AbortError' })

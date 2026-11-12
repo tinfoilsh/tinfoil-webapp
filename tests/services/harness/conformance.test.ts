@@ -62,6 +62,7 @@ describe('recorded harness runs', () => {
             ),
           ),
         ),
+        ...(message.research ? { research: message.research } : {}),
       })),
       title: state.snapshot.thread?.title,
       titleState: state.snapshot.thread?.titleState,

@@ -77,6 +77,14 @@ export interface TurnContext {
   reopen(): Promise<OpenChatResult> | undefined
 }
 
+// The turns a research may answer: those that answer a question anew.
+const RESEARCH_KINDS: readonly Turn['kind'][] = [
+  'send',
+  'edit',
+  'regenerate',
+  'retry',
+]
+
 // The turns of the open chat: sending, regenerating, continuing, and what
 // retries them, through the open chat's store and the run controller.
 export function chatTurns({
@@ -153,6 +161,12 @@ export function chatTurns({
       delete left.webSearch
     return left
   }
+  // A turn the open chat researches says so, while the session offers it
+  // and Settings leave web search on, which the harness refuses it without.
+  const researched = (
+    options: Turn['options'],
+    research: boolean,
+  ): Turn['options'] => (research ? { ...options, research: true } : options)
   // The message a turn adds, under the id the harness stores it with. A
   // message queued behind a running reply shows in the queue instead.
   function sentMessage(input: Turn): ThreadMessage | null {
@@ -277,6 +291,15 @@ export function chatTurns({
     }
     const settings = turnSettings(current)
     const choice = presetChoice()
+    const research =
+      current.research &&
+      !!session?.features.research &&
+      (profile.webSearchAvailable ?? true) &&
+      RESEARCH_KINDS.includes(fields.kind ?? 'send')
+    // Deep research is asked for once: the harness marks the question, and
+    // carries the research through the answers to the questions it asks
+    // first and through an edit or regeneration of the question.
+    if (research) patch({ research: false })
     const threadId = startChat(choice)
     const defaults = turnDefaults(threadId)
     const shown = controller.track()
@@ -337,12 +360,20 @@ export function chatTurns({
           {
             defaults: {
               ...defaults,
-              options: leaveToPreset(defaults.options, choice),
+              options: researched(
+                leaveToPreset(defaults.options, choice),
+                research,
+              ),
             },
             fields: {
               ...fields,
               ...(fields.options
-                ? { options: leaveToPreset(fields.options, choice) }
+                ? {
+                    options: researched(
+                      leaveToPreset(fields.options, choice),
+                      research,
+                    ),
+                  }
                 : {}),
             },
             key,
@@ -490,6 +521,14 @@ export function chatTurns({
     }
     return reopen()
   }
+  // A turn that compacts the open chat on request. Where the harness offers
+  // it, the compaction summarizes the latest exchange too, as the chat shows
+  // a marker at its end.
+  const compactTurnOf = (fields: Partial<Turn>): Partial<Turn> => ({
+    ...fields,
+    kind: 'compact',
+    ...(session?.features.compactLatest ? { compactLatest: true } : {}),
+  })
   // Retries what failed. A run that ended with an error runs again, as the
   // harness decides from the chat: a continuation continues again, a reply
   // is regenerated, and a message left without a reply is answered. A
@@ -498,13 +537,15 @@ export function chatTurns({
   async function retry(fields: Partial<Turn> = {}) {
     const { failedRun, status, compactTurn } = controller.view.get()
     if (!failedRun || status !== 'error') return reconnect()
-    return send({ ...fields, kind: compactTurn ? 'compact' : 'retry' })
+    return send(
+      compactTurn ? compactTurnOf(fields) : { ...fields, kind: 'retry' },
+    )
   }
-  // Compacts the open chat on request: the harness summarizes its earlier
-  // messages without asking the model. It does so only while no reply runs.
+  // Compacts the open chat on request: the harness summarizes its messages
+  // without asking the model. It does so only while no reply runs.
   function compact(fields: Partial<Turn> = {}) {
     if (!open.get().id || isRunning(controller.view.get())) return
-    return send({ ...fields, kind: 'compact' })
+    return send(compactTurnOf(fields))
   }
   // Asks the harness for new arguments for a widget call, while the chat
   // shows no run or error of its own. A retry that does not repair the

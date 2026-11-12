@@ -1,4 +1,5 @@
 import { Card } from '@/components/ui/card'
+import { PrivateImage } from '@/components/ui/private-image'
 import { defineGenUIWidget } from '../types'
 import type { RenderSportsDataArgs as Props } from '../widget-args'
 
@@ -71,7 +72,7 @@ function TeamBlock({
         className={`flex items-center gap-2 ${align === 'right' ? 'flex-row-reverse' : ''}`}
       >
         {team.logo && (
-          <img
+          <PrivateImage
             src={team.logo}
             alt=""
             className="h-7 w-7 rounded-full object-cover"

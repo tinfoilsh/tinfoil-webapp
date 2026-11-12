@@ -16,6 +16,7 @@ export const DefaultInputRenderer: InputRenderer = {
 
     return (
       <ChatInput
+        chatId={props.chatId}
         input={props.input}
         setInput={props.setInput}
         handleSubmit={handleSubmit}

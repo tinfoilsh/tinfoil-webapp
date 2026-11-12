@@ -1,4 +1,5 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
+import { PrivateImage } from '@/components/ui/private-image'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
 import {
@@ -118,7 +119,7 @@ function ImageLightbox({
         className="flex max-h-full max-w-full flex-col items-center gap-3 px-12 pb-12 pt-12"
         onClick={(event) => event.stopPropagation()}
       >
-        <img
+        <PrivateImage
           src={current.url}
           alt={current.alt ?? ''}
           className="max-h-[80vh] max-w-full rounded-md object-contain"

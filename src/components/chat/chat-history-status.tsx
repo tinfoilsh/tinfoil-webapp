@@ -35,8 +35,10 @@ const descriptions = {
   ],
 } as const
 
-const LOCAL_NOT_FOUND_DESCRIPTION =
-  'This local chat may have been deleted from your browser.'
+const LOCAL_DESCRIPTIONS: Partial<Record<ChatHistoryProblem, string>> = {
+  'not-found': 'This local chat may have been deleted from your browser.',
+  failed: "This chat couldn't be opened from this browser. Please try again.",
+}
 
 const icons = {
   'sign-in': TfPersonAnimated,
@@ -94,9 +96,7 @@ export function ChatHistoryStatus({
           {title}
         </h2>
         <p role="alert" className="mb-6 text-content-secondary">
-          {problem === 'not-found' && local
-            ? LOCAL_NOT_FOUND_DESCRIPTION
-            : description}
+          {(local && LOCAL_DESCRIPTIONS[problem]) || description}
         </p>
         {problem === 'sign-in' ? (
           <Link

@@ -1,6 +1,6 @@
 import { SPEECH } from '@/services/speech/constants'
 import type { SpeechSource } from '@/services/speech/stream'
-import { vi } from 'vitest'
+import { onTestFinished, vi } from 'vitest'
 
 export class FakeAudioContext {
   currentTime = 0
@@ -145,4 +145,74 @@ export function controlledSpeak() {
     return new Response(body, { headers: { 'Content-Type': 'audio/pcm' } })
   })
   return { responses, speak }
+}
+
+// A browser's MediaRecorder, whose recording holds what a test says the
+// microphone heard while it recorded. Like a browser, it hands the
+// recording over after stop returns.
+export class FakeMediaRecorder {
+  static recorders: FakeMediaRecorder[] = []
+  static isTypeSupported = (mimeType: string) => mimeType === 'audio/webm'
+  ondataavailable: ((event: { data: Blob }) => void) | null = null
+  onstop: (() => void) | null = null
+  state: 'inactive' | 'recording' = 'inactive'
+  // Whether another recorder was recording when this one was stopped.
+  overlapped = false
+  private heard: string[] = []
+
+  constructor(
+    readonly stream: MediaStream,
+    readonly options: MediaRecorderOptions,
+  ) {
+    FakeMediaRecorder.recorders.push(this)
+  }
+  start() {
+    this.state = 'recording'
+  }
+  hear(sound: string) {
+    if (this.state !== 'recording') throw new Error('Not recording')
+    this.heard.push(sound)
+  }
+  stop() {
+    if (this.state === 'inactive') return
+    this.state = 'inactive'
+    this.overlapped = FakeMediaRecorder.recorders.some(
+      (recorder) => recorder.state === 'recording',
+    )
+    queueMicrotask(() => {
+      if (this.heard.length)
+        this.ondataavailable?.({
+          data: new Blob(this.heard, { type: this.options.mimeType }),
+        })
+      this.onstop?.()
+    })
+  }
+}
+
+// The recorder recording now.
+export function recording(): FakeMediaRecorder {
+  const recorders = FakeMediaRecorder.recorders.filter(
+    (recorder) => recorder.state === 'recording',
+  )
+  if (recorders.length !== 1)
+    throw new Error(`${recorders.length} recorders are recording`)
+  return recorders[0]
+}
+
+// A microphone the page is granted, as MediaRecorder and getUserMedia give
+// it, until the test ends.
+export function grantMicrophone() {
+  const track = { stop: vi.fn() }
+  const stream = { getTracks: () => [track] } as unknown as MediaStream
+  const getUserMedia = vi.fn(async () => stream)
+  FakeMediaRecorder.recorders = []
+  vi.stubGlobal('MediaRecorder', FakeMediaRecorder)
+  Object.defineProperty(navigator, 'mediaDevices', {
+    value: { getUserMedia },
+    configurable: true,
+  })
+  onTestFinished(() => {
+    delete (navigator as { mediaDevices?: unknown }).mediaDevices
+  })
+  return { track, stream, getUserMedia }
 }

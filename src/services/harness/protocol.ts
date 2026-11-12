@@ -53,6 +53,7 @@ export const ROUTES = {
   projectDocumentUpload: '/v1/projects/documents/upload',
   projectDocumentDelete: '/v1/projects/documents/delete',
   favicon: '/v1/metadata/favicon',
+  remoteImage: '/v1/metadata/image',
   linkMetadata: '/v1/metadata/link',
   speech: '/v1/speech',
   transcriptions: '/v1/transcriptions',
@@ -72,6 +73,12 @@ export const COMPACTION_ROLE = 'compaction'
 // The outcome of a compaction that wrote its marker. A client treats any
 // other as failed.
 export const COMPACTION_COMPLETED = 'completed'
+// What a compaction marker at the end of the chat, after its last message,
+// sits before: COMPACTION_START names no message for it.
+export const CHAT_END = ''
+// The session feature under which the harness takes a chat kept on this
+// device from its latest compaction marker on.
+export const PARTIAL_THREAD_FEATURE = 'partialThread'
 
 // A run's stream: a turn starts one, and following one replays it.
 export type RunRoute = typeof ROUTES.turn | typeof ROUTES.follow
@@ -83,12 +90,15 @@ export const ERROR_CODES = {
   runNotFound: 'RUN_NOT_FOUND',
   runInFlight: 'RUN_IN_FLIGHT',
   quotaExhausted: 'QUOTA_EXHAUSTED',
+  // A deep research started within the hour of the last one. Only another
+  // research waits; the chat is not limited.
+  researchLimitReached: 'RESEARCH_LIMIT_REACHED',
   rateLimited: 'RATE_LIMITED',
   contextTooLarge: 'CONTEXT_TOO_LARGE',
   // The chat's earlier messages could not be summarized to make room for a
   // turn.
   compactionFailed: 'COMPACTION_FAILED',
-  // A chat compacted on request holds nothing before its latest exchange to
+  // A chat compacted on request holds nothing its latest compaction did not
   // summarize.
   nothingToCompact: 'NOTHING_TO_COMPACT',
   // A text read aloud holds nothing to read once its code, images and bare
@@ -144,6 +154,9 @@ export const ERROR_CODES = {
   // Set by this client, not the harness: a change that needs the account's
   // settings before they have loaded.
   profileLoading: 'PROFILE_LOADING',
+  // Set by this client, not the harness: the harness refused a sign-in or
+  // chat access the account had just renewed.
+  signInUnconfirmed: 'SIGN_IN_UNCONFIRMED',
 } as const satisfies Record<string, ErrorCode | ClientErrorCode>
 
 // What this client does about an error it has no handling of its own for.
@@ -195,6 +208,26 @@ export const unanswered = (): HarnessErrorBody => ({
   action: ERROR_ACTIONS.retry,
   message:
     'The chat service did not answer in time. Check your connection and try again.',
+})
+
+// Why a request failed when the chat service's enclave was not verified in
+// time, as over a connection that stalled. The request was not sent.
+export const unverified = (): HarnessErrorBody => ({
+  code: ERROR_CODES.connection,
+  action: ERROR_ACTIONS.retry,
+  message:
+    'The chat service could not be verified in time. Check your connection and try again.',
+})
+
+// Why a request failed when the harness refused a sign-in or chat access the
+// account had just renewed, as when the request took too long to arrive. The
+// account is signed in, so signing in again would change nothing, and the
+// request was not carried out.
+export const unconfirmed = (): HarnessErrorBody => ({
+  code: ERROR_CODES.signInUnconfirmed,
+  action: ERROR_ACTIONS.retry,
+  message:
+    'The chat service could not confirm your sign-in in time. Check your connection and try again.',
 })
 
 // Carries a signed-in account's chat access, which the harness checks before

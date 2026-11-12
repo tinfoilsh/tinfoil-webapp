@@ -10,6 +10,7 @@ import {
   ENCRYPTION_KEY_CHANGED_EVENT,
   encryptionService,
 } from '@/services/encryption/encryption-service'
+import { useReloadHold } from '@/services/reload-when-updated'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -106,6 +107,7 @@ export function useThread(
         presetChosen: false,
         chosenPresetId: null,
         modelChosen: false,
+        research: false,
       }),
       controller: new RunController(
         api,
@@ -121,8 +123,8 @@ export function useThread(
   // The answers picked in questions widgets that are not saved yet.
   const [answers] = useState(() => new AnswerSaves())
   // The view of each message, kept until the message, whether it streams,
-  // the reasoning summaries or why its reply stopped change, so a message
-  // that did not change keeps its view.
+  // the reasoning summaries, why its reply stopped or whether it researches
+  // change, so a message that did not change keeps its view.
   const [views] = useState(
     () =>
       new WeakMap<
@@ -132,6 +134,7 @@ export function useThread(
           summaries: ChatState['summaries']
           canceled: boolean
           truncated: boolean
+          research: boolean
           view: Message
         }
       >(),
@@ -246,6 +249,7 @@ export function useThread(
       chosenPresetId: null,
       modelChosen: false,
       webSearch: undefined,
+      research: false,
     }))
   }, [controller, attachments, open])
   // What a new chat's saved prompt chooses and the user did not change,
@@ -487,7 +491,8 @@ export function useThread(
   const refreshedChat = useRef<{ id: string; revision: string } | null>(null)
   // The open chat has changes its store has not answered. A copy read
   // meanwhile would take them back, so the chat is read again once they are.
-  const changingOpen = useStore(controller.changes).has(openState.id ?? '')
+  const changes = useStore(controller.changes)
+  const changingOpen = changes.has(openState.id ?? '')
   useEffect(() => {
     if (
       !chatRevision ||
@@ -687,6 +692,18 @@ export function useThread(
   // ends it: the reply, or the message it had not begun answering.
   const stopped =
     isStopping(state) && !compacting ? shownList.at(-1) : undefined
+  // The reply a research streams is one before its run commits it as one:
+  // while a turn runs, the chat's last message is a reply to a question that
+  // asks for deep research.
+  const [question, reply] = shownList.slice(-2)
+  const researching =
+    running &&
+    !compacting &&
+    question?.role === 'user' &&
+    !!question.research &&
+    reply?.role === 'assistant'
+      ? reply
+      : undefined
   const viewOf = (message: ShownMessage, streaming: boolean) => {
     // A stopped reply continued since is no longer one.
     const canceled =
@@ -695,15 +712,18 @@ export function useThread(
         (message.role === 'user' || !!message.isInterrupted))
     const truncated =
       !canceled && truncatedMessages.has(message.id) && !!message.isInterrupted
+    const research = message === researching
     const kept = views.get(message)
     if (
       kept?.streaming === streaming &&
       kept.summaries === state.summaries &&
       kept.canceled === canceled &&
-      kept.truncated === truncated
+      kept.truncated === truncated &&
+      kept.research === research
     )
       return kept.view
-    const shown = messageView(message, streaming, state.summaries)
+    const viewed = messageView(message, streaming, state.summaries)
+    const shown = research ? { ...viewed, research: true } : viewed
     const view = canceled
       ? { ...shown, canceledByUser: true }
       : truncated
@@ -714,6 +734,7 @@ export function useThread(
       summaries: state.summaries,
       canceled,
       truncated,
+      research,
       view,
     })
     return view
@@ -759,6 +780,15 @@ export function useThread(
     ? undefined
     : state.messages[0]?.createdAt
   const messageCount = state.messages.length
+  // A reload would cut off a reply this page streams, in this chat or one it
+  // left, lose a change the chat's store has not answered, and lose a
+  // temporary chat, which only page memory keeps.
+  useReloadHold(
+    running ||
+      deviceRuns.size > 0 ||
+      changes.size > 0 ||
+      (temporary && messageCount > 0),
+  )
   // The same list while nothing it shows changes, so a title the user just
   // typed is not animated in again.
   const chats = useMemo(() => {
@@ -828,10 +858,16 @@ export function useThread(
     unsaved,
     projectId,
   ])
-  // The favorites, the most recently pinned first.
+  // The favorites the harness stores, the most recently pinned first, then
+  // those this device keeps, as it lists them.
   const favoriteIds = useMemo(
-    () => (listsCloud ? pinnedListed.map((thread) => thread.id).reverse() : []),
-    [listsCloud, pinnedListed],
+    () => [
+      ...(listsCloud ? pinnedListed.map((thread) => thread.id).reverse() : []),
+      ...deviceListed
+        .filter((thread) => thread.pinned)
+        .map((thread) => thread.id),
+    ],
+    [listsCloud, pinnedListed, deviceListed],
   )
   const summary =
     state.snapshot.thread ??
@@ -908,7 +944,11 @@ export function useThread(
     setModel: (next: string) => patch({ model: next, modelChosen: true }),
     presetId,
     selectPreset,
-    setWebSearch: (next: boolean) => patch({ webSearch: next }),
+    // Deep research searches the web, so turning web search off turns it off.
+    setWebSearch: (next: boolean) =>
+      patch({ webSearch: next, ...(next ? {} : { research: false }) }),
+    research: openState.research,
+    setResearch: (next: boolean) => patch({ research: next }),
     temporary,
     setTemporary: (next: boolean) => patch({ temporary: next }),
     local: isLocalChat,
@@ -941,13 +981,13 @@ export function useThread(
       (onDevice(openState) || keyReady),
     canChangeMessages: !loading && !openState.failedId && !!chat.id,
     // The open chat can be compacted while no reply runs and it holds
-    // earlier messages to summarize.
+    // messages for the harness to summarize.
     canCompact:
       !loading &&
       !openState.failedId &&
       !!id &&
       !running &&
-      compactable(state.messages),
+      compactable(state.messages, !!session?.features.compactLatest),
     compacting,
     // The chat's latest turn compacted it on request, which an error reports.
     compactTurn: !!state.compactTurn,

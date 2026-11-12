@@ -3,7 +3,8 @@ import { cn } from '@/components/ui/utils'
 import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
 import { useHarness } from '@/services/harness/provider'
-import { transcribe } from '@/services/speech/transcribe'
+import { useReloadHold } from '@/services/reload-when-updated'
+import { dictation } from '@/services/speech/dictation'
 import { logError } from '@/utils/error-handling'
 import {
   TfAttachment,
@@ -13,6 +14,7 @@ import {
   TfGlobeX,
   TfQuote,
   TfStack,
+  TfWebSearch,
 } from '@tinfoilsh/tinfoil-icons'
 import {
   TfArrowUpAnimated,
@@ -30,6 +32,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import {
@@ -38,6 +41,7 @@ import {
   ContextUsageIndicator,
   type ContextUsage,
 } from './components/context-usage-indicator'
+import { DictationNotice } from './components/dictation-notice'
 import { FilePreview, imageDataUrl } from './components/file-preview'
 import { UnsavedImagesNotice } from './components/unsaved-images-notice'
 import { CONSTANTS } from './constants'
@@ -67,6 +71,9 @@ function getSharedTextareaRegistry(ref: object): Set<HTMLTextAreaElement> {
 }
 
 type ChatInputProps = {
+  // The chat the composer writes in, which dictation started here belongs
+  // to; a new chat's is empty.
+  chatId: string
   input: string
   setInput: (value: string) => void
   handleSubmit: (e: FormEvent) => void
@@ -84,6 +91,10 @@ type ChatInputProps = {
   modelSelectorButton?: React.ReactNode
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
+  // Whether the next question is researched in depth, and what toggles it
+  // where the session offers deep research.
+  researchEnabled?: boolean
+  onResearchToggle?: () => void
   quote?: string | null
   onClearQuote?: () => void
   isTemporaryMode?: boolean
@@ -109,6 +120,7 @@ const isDocumentSubmittable = (doc: ProcessedDocument) =>
   !doc.isUploading && !doc.isGeneratingDescription && !doc.isUnsupported
 
 export const ChatInput = memo(function ChatInput({
+  chatId,
   input,
   setInput,
   handleSubmit,
@@ -126,6 +138,8 @@ export const ChatInput = memo(function ChatInput({
   modelSelectorButton,
   webSearchEnabled,
   onWebSearchToggle,
+  researchEnabled = false,
+  onResearchToggle,
   quote,
   onClearQuote,
   isTemporaryMode,
@@ -303,39 +317,32 @@ export const ChatInput = memo(function ChatInput({
   }, [textareaResetNonce])
 
   // --- Speech-to-text state ---
-  const [isRecording, setIsRecording] = useState(false)
-  const [isTranscribing, setIsTranscribing] = useState(false)
-  // Mirrors mediaStreamRef in state so the live waveform re-renders with the
-  // active stream while recording.
-  const [recordingStream, setRecordingStream] = useState<MediaStream | null>(
-    null,
+  const dictationState = useSyncExternalStore(
+    dictation.subscribe,
+    dictation.getSnapshot,
+    dictation.getServerSnapshot,
   )
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const mediaStreamRef = useRef<MediaStream | null>(null)
-  const recordingSessionRef = useRef(0)
-  const audioChunksRef = useRef<Blob[]>([])
-  const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
+  const isRecording = dictationState.status === 'recording'
+  const isTranscribing = dictationState.status === 'transcribing'
+  // A reload cuts off the recording under way, and the text of one being
+  // transcribed has yet to reach the composer.
+  useReloadHold(isRecording || isTranscribing)
+  const recordingStream = dictationState.stream
+  // The draft as dictated text is added to it, which can happen more than
+  // once before the composer renders again.
+  const draftRef = useRef(input)
   useEffect(() => {
-    const recordingSession = recordingSessionRef
-    return () => {
-      recordingSession.current++
-      if (recordingTimeoutRef.current) {
-        clearTimeout(recordingTimeoutRef.current)
-        recordingTimeoutRef.current = null
-      }
-      const recorder = mediaRecorderRef.current
-      if (recorder) {
-        recorder.ondataavailable = null
-        recorder.onstop = null
-        if (recorder.state !== 'inactive') recorder.stop()
-        mediaRecorderRef.current = null
-      }
-      mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
-      mediaStreamRef.current = null
-      audioChunksRef.current = []
-    }
-  }, [])
+    draftRef.current = input
+  }, [input])
+
+  // Leaving the composer or its chat closes the microphone if it opened it,
+  // as another composer can stay mounted while hidden; what was recorded is
+  // still transcribed and waits for the chat it was dictated in.
+  const [dictationOwner] = useState(() => Symbol('dictation'))
+  useEffect(
+    () => () => dictation.stop(dictationOwner),
+    [dictationOwner, chatId],
+  )
 
   // --- Input options menu state (the "+" button) ---
   const [isInputMenuOpen, setIsInputMenuOpen] = useState(false)
@@ -521,153 +528,40 @@ export const ChatInput = memo(function ChatInput({
     }
   }
 
-  const stopRecording = useCallback(() => {
-    if (
-      mediaRecorderRef.current &&
-      mediaRecorderRef.current.state !== 'inactive'
-    ) {
-      mediaRecorderRef.current.stop()
-    }
-    if (recordingTimeoutRef.current) {
-      clearTimeout(recordingTimeoutRef.current)
-      recordingTimeoutRef.current = null
-    }
-  }, [])
+  const stopRecording = useCallback(() => dictation.stop(), [])
 
-  const sendAudioForTranscription = useCallback(
-    async (blob: Blob) => {
-      try {
-        setIsTranscribing(true)
-
-        const file = new File([blob], 'audio.webm', { type: 'audio/webm' })
-        const text = await transcribe(file)
-
-        if (text) {
-          const currentInput = input.trim()
-          const newText = text.trim()
-
-          if (currentInput) {
-            setInput(currentInput + ' ' + newText)
-          } else {
-            setInput(newText)
-          }
-          // Focus the textarea so the user can edit or send the transcription,
-          // then explicitly resize after React commits the new value to the DOM.
-          // The layout effect should handle this, but mobile Safari can report
-          // stale scrollHeight for programmatic value changes.
-          ownTextareaRef.current?.focus()
-          requestAnimationFrame(() => {
-            resizeTextarea(ownTextareaRef.current)
-          })
-        } else {
-          throw new Error('No transcription text received')
-        }
-      } catch (err) {
-        toast({
-          title: 'Transcription Error',
-          description:
-            err instanceof Error ? err.message : 'Failed to transcribe audio',
-          variant: 'destructive',
-          position: 'top-right',
+  // The chat's dictated text joins the end of the draft as each recording is
+  // transcribed.
+  useEffect(
+    () =>
+      dictation.listen(chatId, (text) => {
+        const draft = draftRef.current.trim()
+        const next = draft ? `${draft} ${text}` : text
+        draftRef.current = next
+        setInput(next)
+        if (dictation.getSnapshot().status === 'recording') return
+        // Focus the textarea so the user can edit or send the transcription,
+        // then explicitly resize after React commits the new value to the DOM.
+        // The layout effect should handle this, but mobile Safari can report
+        // stale scrollHeight for programmatic value changes.
+        ownTextareaRef.current?.focus()
+        requestAnimationFrame(() => {
+          resizeTextarea(ownTextareaRef.current)
         })
-      } finally {
-        setIsTranscribing(false)
-      }
-    },
-    [setInput, toast, input, resizeTextarea],
+      }),
+    [chatId, setInput, resizeTextarea],
   )
 
-  const isWebMAudioSupported = () => {
-    return (
-      typeof MediaRecorder !== 'undefined' &&
-      MediaRecorder.isTypeSupported('audio/webm')
-    )
-  }
-
   const startRecording = useCallback(async () => {
-    const recordingSession = ++recordingSessionRef.current
-    let stream: MediaStream | null = null
+    if (!session) return
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 44100,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
+      await dictation.start({
+        owner: dictationOwner,
+        chatId,
+        segmentSeconds: session.composer.dictationSegmentSeconds,
+        persist: !isTemporaryMode,
       })
-      if (recordingSession !== recordingSessionRef.current) {
-        stream.getTracks().forEach((track) => track.stop())
-        return
-      }
-      mediaStreamRef.current = stream
-
-      if (!isWebMAudioSupported()) {
-        throw new Error('WebM audio recording is not supported in this browser')
-      }
-
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm',
-        audioBitsPerSecond: 128000,
-      })
-      mediaRecorderRef.current = mediaRecorder
-      audioChunksRef.current = []
-
-      mediaRecorder.ondataavailable = (event: BlobEvent) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data)
-        }
-      }
-
-      mediaRecorder.onstop = async () => {
-        // The recorder can stop on its own (e.g. the microphone track ends),
-        // so recording state is cleared here rather than only in stopRecording.
-        setIsRecording(false)
-        setRecordingStream(null)
-        try {
-          // Stop all tracks
-          stream?.getTracks().forEach((track) => track.stop())
-          if (mediaStreamRef.current === stream) mediaStreamRef.current = null
-
-          // Create WebM blob
-          const webmBlob = new Blob(audioChunksRef.current, {
-            type: 'audio/webm',
-          })
-          audioChunksRef.current = []
-
-          if (webmBlob.size === 0) {
-            throw new Error('No audio data recorded')
-          }
-
-          // Send WebM for transcription
-          sendAudioForTranscription(webmBlob)
-        } catch (err) {
-          toast({
-            title: 'Recording Error',
-            description:
-              err instanceof Error
-                ? err.message
-                : 'Failed to process audio recording.',
-            variant: 'destructive',
-            position: 'top-right',
-          })
-          setIsTranscribing(false)
-        }
-      }
-
-      mediaRecorder.start(1000)
-      setIsRecording(true)
-      setRecordingStream(stream)
-
-      // Auto-stop after configured timeout
-      if (session)
-        recordingTimeoutRef.current = setTimeout(() => {
-          stopRecording()
-        }, session.composer.dictationMaxSeconds * 1000)
     } catch (err) {
-      stream?.getTracks().forEach((track) => track.stop())
-      if (mediaStreamRef.current === stream) mediaStreamRef.current = null
-      if (recordingSession !== recordingSessionRef.current) return
       toast({
         title: 'Recording Error',
         description:
@@ -678,7 +572,7 @@ export const ChatInput = memo(function ChatInput({
         position: 'top-right',
       })
     }
-  }, [sendAudioForTranscription, stopRecording, toast, session])
+  }, [session, isTemporaryMode, toast, dictationOwner, chatId])
 
   // Handle paste event for images and long text detection
   const handlePaste = useCallback(
@@ -952,6 +846,13 @@ export const ChatInput = memo(function ChatInput({
           )}
 
           {imagesUnsaved && <UnsavedImagesNotice className="mb-3" />}
+          <DictationNotice
+            retrying={dictationState.retrying}
+            failed={dictationState.failed}
+            onRetry={() => dictation.retry()}
+            onDiscard={() => dictation.discard()}
+            className="mb-3"
+          />
 
           {/* In compact mode the toolbar below uses display: contents so its
               button groups become flex siblings of the textarea and can be
@@ -1153,6 +1054,30 @@ export const ChatInput = memo(function ChatInput({
                             )}
                           </button>
                         )}
+                        {onResearchToggle && (
+                          <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            aria-checked={researchEnabled}
+                            onClick={() => {
+                              onResearchToggle()
+                              closeInputMenu(true)
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
+                          >
+                            <TfWebSearch
+                              className="h-5 w-5 text-content-secondary"
+                              aria-hidden="true"
+                            />
+                            <span className="flex-1">Deep research</span>
+                            {researchEnabled && (
+                              <TfBoxCheckmark
+                                className="h-4 w-4 text-brand-accent-light"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </button>
+                        )}
                         {contextUsage && (
                           <div className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary md:hidden">
                             <span className="flex-1">Context</span>
@@ -1189,6 +1114,18 @@ export const ChatInput = memo(function ChatInput({
                     </>
                   )}
                 </div>
+                {researchEnabled && onResearchToggle && (
+                  <button
+                    type="button"
+                    onClick={onResearchToggle}
+                    aria-label="Turn off deep research"
+                    className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-brand-accent-light transition-colors hover:bg-surface-chat-background"
+                  >
+                    <TfWebSearch className="h-4 w-4" aria-hidden="true" />
+                    Deep research
+                    <TfBoxX className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                )}
               </div>
 
               <div

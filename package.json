@@ -1,6 +1,6 @@
 {
   "name": "tinfoil-chat",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -17,7 +17,7 @@
     "test:shuffle": "vitest run --sequence.shuffle",
     "test:typecheck": "tsc --project tsconfig.test.json --noEmit --incremental false",
     "test:coverage": "vitest run --coverage",
-    "prebuild": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs && node scripts/copy-vendor.mjs",
+    "prebuild": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs && node scripts/copy-vendor.mjs && node scripts/write-deployment.mjs",
     "predev": "node scripts/copy-vendor.mjs",
     "postinstall": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs",
     "sync:harness-protocol": "node scripts/sync-harness-protocol.mjs"
@@ -51,9 +51,11 @@
     "html2pdf.js": "^0.14.0",
     "isomorphic-dompurify": "^2.35.0",
     "katex": "^0.16.22",
+    "lru-cache": "^11.5.3",
     "lucide-react": "^0.473.0",
     "mermaid": "11.16.1",
     "next": "^16.2.6",
+    "p-limit": "^7.3.3",
     "pyodide": "0.27.8",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
@@ -71,7 +73,7 @@
     "remark-parse": "^11.0.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
-    "tinfoil": "^1.2.2",
+    "tinfoil": "2.0.0-rc.1",
     "unified": "^11.0.5",
     "uuid": "^11.1.1",
     "yet-another-react-lightbox": "^3.32.0",

@@ -5,6 +5,7 @@
  * and fades into the image once it reports `onLoad`. Falls back to a muted
  * placeholder tile on error.
  */
+import { PrivateImage } from '@/components/ui/private-image'
 import { TfImageSlash } from '@tinfoilsh/tinfoil-icons'
 import { useRef, useState, type ImgHTMLAttributes } from 'react'
 
@@ -50,12 +51,13 @@ export function ImageWithSkeleton({
           <TfImageSlash className="h-6 w-6" aria-hidden="true" />
         </div>
       ) : (
-        <img
+        <PrivateImage
           {...imgProps}
           alt={alt ?? ''}
           className={`${className ?? ''} ${loaded ? 'opacity-100' : 'opacity-0'} transition-opacity duration-200`}
           onLoad={() => setLoaded(true)}
           onError={() => setErrored(true)}
+          onUnavailable={() => setErrored(true)}
         />
       )}
     </div>

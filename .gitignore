@@ -58,6 +58,8 @@ napkin.md
 /coverage
 /public/js/plausible.upstream.js*
 
-# Generated on install/build: scripts/copy-vendor.mjs, scripts/patch-clerk-worker.mjs
+# Generated on install/build: scripts/copy-vendor.mjs, scripts/patch-clerk-worker.mjs,
+# scripts/write-deployment.mjs
 /public/vendor/
 /public/workers/clerk-timers.js
+/public/deployment.json

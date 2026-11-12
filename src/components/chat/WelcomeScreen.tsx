@@ -223,6 +223,7 @@ function FadeInLines({ segments }: { segments: Segment[] }) {
 }
 
 interface WelcomeScreenProps {
+  chatId: string
   isDarkMode: boolean
   isPremium?: boolean
   models?: BaseModel[]
@@ -245,6 +246,8 @@ interface WelcomeScreenProps {
   ) => void
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
+  researchEnabled?: boolean
+  onResearchToggle?: () => void
   reasoningEffort?: ReasoningEffort
   setReasoningEffort?: (effort: ReasoningEffort) => void
   thinkingEnabled?: boolean
@@ -264,6 +267,7 @@ interface WelcomeScreenProps {
 // adopt the dashed border treatment when the parent is in temporary mode.
 
 export const WelcomeScreen = memo(function WelcomeScreen({
+  chatId,
   isDarkMode,
   isPremium,
   models,
@@ -283,6 +287,8 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   handleLabelClick,
   webSearchEnabled,
   onWebSearchToggle,
+  researchEnabled,
+  onResearchToggle,
   reasoningEffort,
   setReasoningEffort,
   thinkingEnabled,
@@ -398,6 +404,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
               >
                 {composerNotice}
                 <ChatInput
+                  chatId={chatId}
                   input={input}
                   setInput={setInput}
                   handleSubmit={onSubmit}
@@ -463,6 +470,8 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   }
                   webSearchEnabled={webSearchEnabled}
                   onWebSearchToggle={onWebSearchToggle}
+                  researchEnabled={researchEnabled}
+                  onResearchToggle={onResearchToggle}
                   isTemporaryMode={isTemporaryMode}
                   activePromptPreset={activePromptPreset}
                   onOpenPromptLibrary={onOpenPromptLibrary}

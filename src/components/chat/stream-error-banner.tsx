@@ -214,6 +214,8 @@ function quotaClassification(error: StreamErrorInfo): ErrorClassification {
 // chat service's structured error code. Only a failure without a response (a
 // transport error, an interrupted stream, a connection that could not be
 // verified) is a connection problem; any other code came from the service.
+// One refusal is resent the same way: a sign-in that reached the service too
+// late to be accepted.
 // Both the copy and the retry affordance derive from the same result so they
 // can never disagree. The raw message stays available in the expandable
 // details section.
@@ -230,6 +232,13 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
   switch (error.code) {
     case ERROR_CODES.unauthenticated:
       return CLASSIFICATIONS.auth
+    // The account is signed in, and its request reached the service too late
+    // to be accepted. It is sent again, as after a lost connection.
+    case ERROR_CODES.signInUnconfirmed:
+      return {
+        ...CLASSIFICATIONS.connection,
+        title: 'Your sign-in could not be confirmed in time',
+      }
     case ERROR_CODES.keyRequired:
       return CLASSIFICATIONS.key
     // The chats are sealed with another key than this device holds.
@@ -242,6 +251,14 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
       }
     case ERROR_CODES.quotaExhausted:
       return quotaClassification(error)
+    case ERROR_CODES.researchLimitReached: {
+      const resetLabel = formatResetTime(error)
+      return {
+        kind: 'rate-limit',
+        title: 'Deep research limit reached',
+        suggestion: `You can start one deep research an hour${resetLabel ? `, and the next at ${resetLabel}` : ''}. Turn off deep research to keep chatting.`,
+      }
+    }
     case ERROR_CODES.rateLimited:
       return CLASSIFICATIONS.busy
     case ERROR_CODES.queueFull:

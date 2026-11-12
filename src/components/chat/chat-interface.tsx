@@ -10,7 +10,13 @@ import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { toast } from '@/hooks/use-toast'
 import { logError } from '@/utils/error-handling'
 import { useAuth, useUser } from '@clerk/react'
-import { TfDocumentPlus, TfShare, TfTinSad } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfApplicationWindow,
+  TfDocumentPlus,
+  TfRefresh,
+  TfShare,
+  TfTinSad,
+} from '@tinfoilsh/tinfoil-icons'
 import {
   TfArrowDownAnimated,
   TfGhost2Animated,
@@ -60,6 +66,7 @@ import { ArtifactSidebar } from './artifact-sidebar'
 import { AskSidebar } from './ask-sidebar'
 import { ChatAnnouncer } from './chat-announcer'
 import { ChatHeader } from './chat-header'
+import { ChatHeaderMenu } from './chat-header-menu'
 import {
   ChatHistoryStatus,
   type ChatHistoryProblem,
@@ -75,6 +82,7 @@ import { CompactedNotice, CompactionStatus } from './compaction-status'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { DragProvider } from './drag-context'
+import { canRequestChatPin } from './favorite-view'
 import { ForkOverlay } from './fork-overlay'
 import { type QuestionAnswering } from './genui/questions-context'
 import { ArtifactRetryError } from './genui/retry'
@@ -95,6 +103,7 @@ import { useStableHandlers } from './hooks/use-stable-handlers'
 import { MessageQueue } from './message-queue'
 import { ModelSelector } from './model-selector'
 import { ModelSelectorTriggerLabel } from './model-selector-trigger-label'
+import { PageNotice } from './page-notice'
 import { openProjectChat } from './project-navigation'
 import { QuoteSelectionPopover } from './quote-selection-popover'
 import { initializeRenderers } from './renderers/client'
@@ -158,6 +167,7 @@ import { verifyChatService } from '@/services/harness/attestation'
 import { ERROR_CODES } from '@/services/harness/protocol'
 import { reportProfileError, useHarness } from '@/services/harness/provider'
 import { HarnessError } from '@/services/harness/sse'
+import { useStore } from '@/services/harness/store'
 import { isAttachmentsUnavailable } from '@/services/harness/transfer'
 import type { Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
@@ -167,6 +177,8 @@ import {
   registerStartFreshKeyIfNeeded,
 } from '@/services/keys/cloud-key-authorization'
 import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
+import { useReloadHold } from '@/services/reload-when-updated'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { hasPasskeyBackup } from '@/utils/signout-cleanup'
 import { useUIState } from './hooks/use-ui-state'
 
@@ -207,6 +219,7 @@ export function ChatInterface({
   } = useHarness()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const { user } = useUser()
+  const databaseAccess = useStore(indexedDBStorage.access)
   const router = useRouter()
   const {
     isClient,
@@ -423,6 +436,8 @@ export function ChatInterface({
     ProcessedDocument[]
   >([])
   const [quote, setQuote] = useState<string | null>(null)
+  // A reload loses the message being written: its text, quote and files.
+  useReloadHold(!!input.trim() || !!quote || processedDocuments.length > 0)
   // Onboarding is shown to signed-in users once their profile has loaded,
   // unless the account completed it on any device. A refused key keeps the
   // profile from loading, so the account and this device decide then.
@@ -493,7 +508,16 @@ export function ChatInterface({
     (session?.features.webSearch ?? false) &&
     (profile.webSearchAvailable ?? true)
   const chatWebSearchEnabled = currentChat.webSearchEnabled ?? true
-  const effectiveWebSearchEnabled = webSearchAvailable && chatWebSearchEnabled
+  // Deep research, which a subscriber's session offers, searches the web, so
+  // Settings turning web search off turns it off too.
+  const researchAvailable =
+    (session?.features.research ?? false) &&
+    (profile.webSearchAvailable ?? true)
+  const researchEnabled = researchAvailable && thread.research
+  // A researched question searches the web whatever its chat's setting, so
+  // web search shows on while deep research is.
+  const effectiveWebSearchEnabled =
+    webSearchAvailable && (chatWebSearchEnabled || researchEnabled)
   const contextUsage = thread.contextUsage
   const modKey =
     typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
@@ -859,11 +883,10 @@ export function ChatInterface({
   const removeQueuedMessage = (id: string) => {
     void thread.removeQueued(id).catch(thread.report)
   }
+  // Every favorite listed, the most recently pinned first.
   const favoriteChats = useMemo(() => {
     const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
-    return thread.favoriteIds
-      .flatMap((id) => chatsById.get(id) ?? [])
-      .slice(0, CONSTANTS.MAX_FAVORITE_CHATS)
+    return thread.favoriteIds.flatMap((id) => chatsById.get(id) ?? [])
   }, [chats, thread.favoriteIds])
   const pinnedChatIds = useMemo(
     () => favoriteChats.map((c) => c.id),
@@ -926,20 +949,19 @@ export function ChatInterface({
       })
     }
   }
-  // Pinning a chat kept on this device moves it to the cloud first, where
-  // favorites are stored.
-  const handleToggleFavorite = async (favorite: {
-    id: string
-    isLocalOnly?: boolean
-  }) => {
+  // A chat kept on this device stays there as a favorite.
+  const handleToggleFavorite = async (favorite: { id: string }) => {
     if (pinnedChatIds.includes(favorite.id)) {
       unpinChat(favorite.id)
       return
     }
-    const chat = chats.find((candidate) => candidate.id === favorite.id)
-    if (chat?.isLocalOnly ?? favorite.isLocalOnly) {
-      if (!canMoveChats) return
-      if (!(await handleConvertChatToCloud(favorite.id))) return
+    if (pinnedChatIds.length >= CONSTANTS.MAX_FAVORITE_CHATS) {
+      toast({
+        title: 'Favorites are full',
+        description: `You can pin up to ${CONSTANTS.MAX_FAVORITE_CHATS} chats. Remove one to pin another.`,
+        variant: 'destructive',
+      })
+      return
     }
     await thread
       .update(favorite.id, { pinned: true })
@@ -1121,6 +1143,7 @@ export function ChatInterface({
         })
         .catch(logSettingError('Failed to save the chat web search setting'))
   }
+  const handleResearchToggle = () => thread.setResearch(!researchEnabled)
   const handleOpenVerifierSidebar = () => {
     handleSetVerifierSidebarOpen(!isVerifierSidebarOpen)
     if (!isVerifierSidebarOpen) {
@@ -1237,6 +1260,9 @@ export function ChatInterface({
     }
   }
   const sidebarChat = useSidebarChat({ context: thread.askContext, options })
+  // An ask and its answer live only in this page, and only while the
+  // sidebar shows them: the next ask replaces one it closed on.
+  useReloadHold(isAskSidebarOpen && sidebarChat.messages.length > 0)
   // A flag stops the chat: its reply in progress, which takes the turns
   // queued behind it with it, and an ask about it.
   const runningRef = useRef(isStreaming)
@@ -1799,6 +1825,7 @@ export function ChatInterface({
     setActivePreset: handleSetActivePreset,
     clearPromptPreset: () => handleSetActivePreset(null),
     toggleWebSearch: handleWebSearchToggle,
+    toggleResearch: handleResearchToggle,
     selectModel: handleModelSelect,
     clickLabel: handleLabelClick,
     setReasoningEffort,
@@ -1904,31 +1931,44 @@ export function ChatInterface({
     [projects],
   )
 
+  // Chats kept in this browser can be neither read nor saved until the
+  // database opens.
+  if (databaseAccess === 'outdated') {
+    return (
+      <PageNotice
+        icon={TfRefresh}
+        title="Tinfoil Chat was updated"
+        action={{ label: 'Reload', onClick: () => window.location.reload() }}
+      >
+        A newer version of Tinfoil Chat was opened in another tab. Reload this
+        page to keep using your chats.
+      </PageNotice>
+    )
+  }
+
+  if (databaseAccess === 'blocked') {
+    return (
+      <PageNotice
+        icon={TfApplicationWindow}
+        title="Close your other Tinfoil Chat tabs"
+      >
+        Tinfoil Chat is updating the chats saved in this browser. Close Tinfoil
+        Chat in your other tabs and windows, and this page will continue on its
+        own.
+      </PageNotice>
+    )
+  }
+
   if (!session && sessionError) {
     return (
-      <div className="flex h-screen items-center justify-center bg-surface-chat-background px-4 font-aeonik">
-        <div className="max-w-md text-center">
-          <div className="mb-6 flex justify-center">
-            <TfTinSad
-              className="h-24 w-24 !text-content-secondary"
-              aria-hidden="true"
-            />
-          </div>
-          <h2 className="mb-3 text-xl font-semibold text-content-primary">
-            Something went wrong
-          </h2>
-          <p role="alert" className="mb-6 text-content-secondary">
-            Tinfoil Chat is experiencing some technical difficulties. We&apos;re
-            working on resolving it. Please try again later.
-          </p>
-          <button
-            onClick={() => window.location.reload()}
-            className="rounded-lg bg-tinfoil-oak px-6 py-2.5 text-brand-dark transition-colors hover:bg-tinfoil-oak-hover"
-          >
-            Try Now
-          </button>
-        </div>
-      </div>
+      <PageNotice
+        icon={TfTinSad}
+        title="Something went wrong"
+        action={{ label: 'Try Now', onClick: () => window.location.reload() }}
+      >
+        Tinfoil Chat is experiencing some technical difficulties. We&apos;re
+        working on resolving it. Please try again later.
+      </PageNotice>
     )
   }
 
@@ -2016,6 +2056,11 @@ export function ChatInterface({
       </div>
     )
 
+  const isOpenChatPinned = pinnedChatIds.includes(currentChat.id)
+  // Favorites are an account's; a signed-out visitor's chats last only as
+  // long as the browser tab. A favorite stays removable.
+  const canTogglePinOpenChat =
+    isOpenChatPinned || canRequestChatPin(currentChat, !!isSignedIn)
   const topControls = (
     <>
       {/* New chat button - only show in compact conversations with messages */}
@@ -2030,7 +2075,7 @@ export function ChatInterface({
             e.preventDefault()
             createNewChat(currentChat.isLocalOnly, true)
           }}
-          className="flex items-center justify-center rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:hidden max-md:hidden"
+          className="flex items-center justify-center rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:hidden"
           aria-label="New chat"
         >
           <TfWriting2Animated className="h-4 w-4" aria-hidden="true" />
@@ -2079,25 +2124,44 @@ export function ChatInterface({
 
       {/* Share button - a signed-in user shares a chat the harness stores,
           or one kept on this device when the harness seals local shares. A
-          signed-out visitor can copy the chat's markdown. */}
+          signed-out visitor can copy the chat's markdown. A compact
+          conversation keeps it in the menu below. */}
       {canShare && (
         <button
           type="button"
           onClick={handleOpenShareModal}
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:px-3 @3xl/conversation:py-2"
+          className="hidden items-center justify-center gap-1.5 rounded-lg border border-transparent bg-surface-chat-background px-3 py-2 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:flex"
           aria-label="Share"
         >
           <TfShare className="h-4 w-4" aria-hidden="true" />
-          <span className="hidden text-sm @3xl/conversation:inline">Share</span>
+          <span className="text-sm">Share</span>
         </button>
       )}
 
-      {/* Verifier toggle button */}
+      {hasVisibleChatHeader && (
+        <ChatHeaderMenu
+          className="@3xl/conversation:hidden"
+          verificationStatus={verificationStatus}
+          onOpenVerification={handleOpenVerifierSidebar}
+          onShare={canShare ? handleOpenShareModal : undefined}
+          isPinned={isOpenChatPinned}
+          onTogglePin={
+            canTogglePinOpenChat
+              ? () => void handleToggleFavorite(currentChat)
+              : undefined
+          }
+        />
+      )}
+
+      {/* Verifier toggle button - a compact conversation's header keeps it
+          in the menu above */}
       <VerificationStatusButton
+        className={
+          hasVisibleChatHeader ? 'hidden @3xl/conversation:block' : undefined
+        }
         status={verificationStatus}
         isPanelOpen={isVerifierSidebarOpen}
         onTogglePanel={handleOpenVerifierSidebar}
-        compactLabel={hasVisibleChatHeader}
         announceVerified={!isVerificationAnnounced}
         onVerifiedAnnounced={() => setIsVerificationAnnounced(true)}
       />
@@ -2771,6 +2835,10 @@ export function ChatInterface({
                       onWebSearchToggle={
                         webSearchAvailable ? handleWebSearchToggle : undefined
                       }
+                      researchEnabled={researchEnabled}
+                      onResearchToggle={
+                        researchAvailable ? handleResearchToggle : undefined
+                      }
                       reasoningEffort={reasoningEffort}
                       setReasoningEffort={setReasoningEffort}
                       thinkingEnabled={thinkingEnabled}
@@ -2881,6 +2949,7 @@ export function ChatInterface({
                       />
                       <ChatInput
                         key={isChatHydrating ? 'loading' : 'ready'}
+                        chatId={currentChat.id}
                         input={input}
                         setInput={setInput}
                         handleSubmit={composerActions.submit}
@@ -2911,6 +2980,12 @@ export function ChatInterface({
                         onWebSearchToggle={
                           webSearchAvailable
                             ? composerActions.toggleWebSearch
+                            : undefined
+                        }
+                        researchEnabled={researchEnabled}
+                        onResearchToggle={
+                          researchAvailable
+                            ? composerActions.toggleResearch
                             : undefined
                         }
                       />

@@ -2,6 +2,7 @@ import { AuthCleanupHandler } from '@/components/auth-cleanup-handler'
 import { useChatFontSync } from '@/components/chat/hooks/use-chat-font'
 import { SignoutProgressOverlay } from '@/components/signout-progress-overlay'
 import { HarnessProvider } from '@/services/harness/provider'
+import { useReloadWhenUpdated } from '@/services/reload-when-updated'
 import '@/styles/globals.css'
 import '@/styles/tailwind.css'
 import { analyticsExcluded } from '@/utils/analytics-routes'
@@ -151,6 +152,9 @@ export default function App({ Component, pageProps, router }: AppProps) {
   ].includes(router.pathname)
   // A shared link opens even while the account loads, or if it cannot.
   const sharedChat = router.pathname === '/share/[[...slug]]'
+  // A page of the chat service left open reloads into a newer deployment.
+  // Signing in is left alone, as a reload would start its steps over.
+  useReloadWhenUpdated(!withoutHarness)
 
   return (
     <>

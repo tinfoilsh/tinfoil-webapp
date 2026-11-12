@@ -47,7 +47,7 @@ export const REJOIN_DELAYS_MS = [
 ]
 
 // Resolves after ms, or as soon as signal aborts.
-function pause(ms: number, signal: AbortSignal): Promise<void> {
+export function pause(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (ms <= 0 || signal.aborted) return resolve()
     const done = () => {
@@ -184,6 +184,9 @@ export interface Receipt {
   threadId: string
   runId: string
   instance: string
+  // The settings of the chat the user changed while the run was in flight,
+  // which the thread it returns does not hold.
+  changed?: string[]
 }
 
 // Streams the runs of the chat a view shows: a turn's run, or a live run it
@@ -238,7 +241,11 @@ export class RunController {
     // Set by the chat around the runs, which may change them as it renders.
     public hooks: RunHooks = {},
     private readonly receiptKey?: string,
-  ) {}
+  ) {
+    const receipt = this.receipt()
+    if (receipt?.changed?.length)
+      this.settingsChanged(receipt.threadId, receipt.changed)
+  }
 
   // The view moves to another chat: runs it followed stop, other than
   // device runs, which go on to save their replies, and turns the user
@@ -274,12 +281,18 @@ export class RunController {
     return ++this.clock
   }
 
-  // The user changed settings of a device chat through the harness.
+  // The user changed settings of a device chat.
   settingsChanged(threadId: string, settings: readonly string[]) {
     const at = this.tick()
     const changes = this.settingChanges.get(threadId) ?? new Map()
     for (const setting of settings) changes.set(setting, at)
     this.settingChanges.set(threadId, changes)
+    const receipt = this.receipt()
+    if (receipt?.threadId === threadId)
+      this.writeReceipt({
+        ...receipt,
+        changed: [...new Set([...(receipt.changed ?? []), ...settings])],
+      })
   }
 
   // The settings of a device chat changed after a run's turn read it.
@@ -559,8 +572,12 @@ export class RunController {
     this.pending = null
     // A stored chat names its run itself; a chat on this device is
     // rejoined after a reload through this receipt.
-    if (device) this.writeReceipt(run)
-    else this.hooks.accepted?.(threadId)
+    if (device) {
+      const kept = this.receipt()
+      this.writeReceipt(
+        kept?.runId === run.runId ? { ...run, changed: kept.changed } : run,
+      )
+    } else this.hooks.accepted?.(threadId)
   }
 
   // The open chat's run ended with its stream, refused or cut off. A turn
@@ -697,8 +714,11 @@ export class RunController {
         typeof receipt?.instance !== 'string'
       )
         return null
-      const { threadId, runId, instance } = receipt
-      return { threadId, runId, instance }
+      const { threadId, runId, instance, changed } = receipt
+      return Array.isArray(changed) &&
+        changed.every((setting) => typeof setting === 'string')
+        ? { threadId, runId, instance, changed }
+        : { threadId, runId, instance }
     } catch {
       // Receipts are optional routing hints; an invalid one is discarded.
       return null

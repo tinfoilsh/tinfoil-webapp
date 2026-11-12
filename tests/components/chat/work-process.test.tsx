@@ -184,6 +184,27 @@ describe('WorkProcess once the run has finished', () => {
     renderWork(blocks)
     expect(getHeader()).toHaveTextContent(new RegExp(`^${label}$`))
   })
+
+  it('names a research by its searches and the links it read', () => {
+    render(
+      <WorkProcess
+        blocks={[
+          thinking('t0'),
+          search('s1'),
+          read('r2', ['completed', 'failed']),
+          thinking('t3'),
+          search('s4'),
+          read('r5', ['completed', 'completed']),
+        ]}
+        isActive={false}
+        isDarkMode={false}
+        research
+      />,
+    )
+    expect(getHeader()).toHaveTextContent(
+      /^Researched with 2 searches and read 3 links$/,
+    )
+  })
 })
 
 describe('WorkProcess while the run is active', () => {

@@ -1,5 +1,6 @@
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { UI_SIDEBAR_OPEN } from '@/constants/storage-keys'
+import { CHAT_END } from '@/services/harness/protocol'
 import { publish } from '@/services/harness/runtime'
 import type {
   Frame,
@@ -117,13 +118,20 @@ const summaryOf = ({
   ...summary
 }: Thread) => summary
 
-const compacting = {
+// A harness that compacts a chat on request and keeps its latest exchange as
+// it is, as one released before compactLatest does.
+const keepingLatest = {
   ...testSession,
   features: {
     ...testSession.features,
     compaction: true,
     manualCompaction: true,
   },
+}
+
+const compacting = {
+  ...keepingLatest,
+  features: { ...keepingLatest.features, compactLatest: true },
 }
 
 beforeEach(() => {
@@ -213,10 +221,16 @@ const composerStatus = (name: string) =>
 const compactingStatus = () => composerStatus('Compacting conversation')
 const compactedNotice = () => composerStatus('Conversation compacted')
 
-const started = (runId: string, shown = messages): HarnessEvent[] => [
+// A run that compacts the chat: at its end, as a compaction the user asks
+// for does, or before the message `before` names.
+const started = (
+  runId: string,
+  shown = messages,
+  before = CHAT_END,
+): HarnessEvent[] => [
   { type: 'RUN_STARTED', threadId: THREAD_ID, runId, instance: 'instance-1' },
   { type: 'MESSAGES_SNAPSHOT', messages: shown, hasOlder: false },
-  { type: 'COMPACTION_START', messageId: 'c1', beforeMessageId: 'u2' },
+  { type: 'COMPACTION_START', messageId: 'c1', beforeMessageId: before },
 ]
 
 // The chat, whose last reply the service stopped as it thought again.
@@ -246,6 +260,15 @@ const marker: Message = {
   },
 }
 
+// The marker of a compaction the user asked for, which summarizes both
+// exchanges.
+const endMarker: Message = {
+  ...marker,
+  content:
+    '## Goals and context\nThe user asked two questions and got answers.',
+  compaction: { ...marker.compaction!, messages: 4 },
+}
+
 it('compacts a chat from its context indicator, leaving its last reply as it was while the summary is written', async () => {
   signIn({ cloud: true, session: compacting })
   const run = scriptRuns()
@@ -259,6 +282,7 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
     kind: 'compact',
     threadId: THREAD_ID,
     key: KEY,
+    compactLatest: true,
     options: { model: 'test-model' },
   })
   expect(run.turns[0]).not.toHaveProperty('content')
@@ -287,9 +311,9 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
     {
       type: 'COMPACTION_END',
       messageId: 'c1',
-      beforeMessageId: 'u2',
+      beforeMessageId: CHAT_END,
       outcome: 'completed',
-      marker,
+      marker: endMarker,
     },
     {
       type: 'STATE_SNAPSHOT',
@@ -320,22 +344,29 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
       name: 'Context window 10% used (~21k of 210k tokens)',
     }),
   ).toBeInTheDocument()
+  // The marker sits under the last reply, which the model no longer reads
+  // either.
+  const summarizedNote = screen.getByRole('note', {
+    name: 'Earlier messages above were summarized and are no longer read by the assistant',
+  })
+  const lastReply = screen.getByText('Second answer')
   expect(
-    screen.getByRole('button', { name: 'Compacted 2 earlier messages' }),
+    lastReply.compareDocumentPosition(summarizedNote) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
+  expect(lastReply.closest('[data-out-of-context]')).not.toBeNull()
+  expect(
+    screen.getByRole('button', { name: 'Compacted 4 earlier messages' }),
   ).toBeInTheDocument()
   expect(compactingStatus()).not.toBeInTheDocument()
 
   // The chat says it was compacted, also once the revision the compaction
   // saved has the chat read again.
-  expect(compactedNotice()).toHaveTextContent('Summarized 2 earlier messages.')
+  expect(compactedNotice()).toHaveTextContent('Summarized 4 earlier messages.')
   client.post.mockImplementation(async (path: string) => {
     if (path === '/v1/threads/get')
       return structuredClone({
-        ...threadOf([
-          ...stoppedThinking.slice(0, 2),
-          marker,
-          ...stoppedThinking.slice(2),
-        ]),
+        ...threadOf([...stoppedThinking, endMarker]),
         contextUsage: {
           usedTokens: 23_000,
           limitTokens: 210_000,
@@ -356,9 +387,9 @@ it('compacts a chat from its context indicator, leaving its last reply as it was
     }),
   ).toBeInTheDocument()
 
-  // It shows where, as its marker sits above the exchange it kept.
+  // It shows where, as its marker sits under the reply it summarized last.
   const notice = compactedNotice()
-  expect(notice).toHaveTextContent('Summarized 2 earlier messages.')
+  expect(notice).toHaveTextContent('Summarized 4 earlier messages.')
   const scrolled = vi.fn()
   const hadScroll = Object.hasOwn(Element.prototype, 'scrollIntoView')
   const scroll = Element.prototype.scrollIntoView
@@ -399,6 +430,8 @@ it('queues a message sent while the chat compacts, and streams its reply once th
     threadId: THREAD_ID,
     content: 'Third question',
   })
+  // Only a turn that may compact asks for the latest exchange too.
+  expect(run.turns[1]).not.toHaveProperty('compactLatest')
   const queued = {
     queueId: 'run-queued',
     kind: 'send',
@@ -425,9 +458,9 @@ it('queues a message sent while the chat compacts, and streams its reply once th
     {
       type: 'COMPACTION_END',
       messageId: 'c1',
-      beforeMessageId: 'u2',
+      beforeMessageId: CHAT_END,
       outcome: 'completed',
-      marker,
+      marker: endMarker,
     },
     {
       type: 'RUN_FINISHED',
@@ -448,9 +481,8 @@ it('queues a message sent while the chat compacts, and streams its reply once th
     {
       type: 'MESSAGES_SNAPSHOT',
       messages: [
-        ...messages.slice(0, 2),
-        marker,
-        ...messages.slice(2),
+        ...messages,
+        endMarker,
         {
           id: 'u3',
           role: 'user',
@@ -513,7 +545,7 @@ it('says the chat is compacting while a turn compacts it before the reply', asyn
   }
   expect(compactingStatus()).not.toBeInTheDocument()
 
-  run.emit(0, ...started('run-turn', [...messages, question]))
+  run.emit(0, ...started('run-turn', [...messages, question], 'u2'))
 
   await waitFor(() => expect(compactingStatus()).toBeInTheDocument())
   run.emit(
@@ -597,7 +629,7 @@ it('stops a compaction without saying the user stopped the reply before it', asy
       {
         type: 'COMPACTION_END',
         messageId: 'c1',
-        beforeMessageId: 'u2',
+        beforeMessageId: CHAT_END,
         outcome: 'failed',
       },
       {
@@ -634,7 +666,7 @@ it('compacts again when the user retries a compaction that failed', async () => 
     {
       type: 'COMPACTION_END',
       messageId: 'c1',
-      beforeMessageId: 'u2',
+      beforeMessageId: CHAT_END,
       outcome: 'failed',
     },
     {
@@ -654,7 +686,11 @@ it('compacts again when the user retries a compaction that failed', async () => 
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
 
   await waitFor(() => expect(run.turns).toHaveLength(2))
-  expect(run.turns[1]).toMatchObject({ kind: 'compact', threadId: THREAD_ID })
+  expect(run.turns[1]).toMatchObject({
+    kind: 'compact',
+    threadId: THREAD_ID,
+    compactLatest: true,
+  })
   run.emit(1, ...started('run-again'))
   await screen.findByRole('note', {
     name: 'Earlier messages above are being summarized for the assistant',
@@ -663,8 +699,114 @@ it('compacts again when the user retries a compaction that failed', async () => 
   run.end(1)
 })
 
-it('offers no compaction of a chat whose only exchange is its latest', async () => {
+it('offers no compaction of a chat compacted since its last reply', async () => {
   signIn({ cloud: true, session: compacting })
+  scriptRuns()
+  await openChat([...messages, endMarker])
+
+  fireEvent.click(screen.getByRole('button', { name: USAGE_LABEL }))
+
+  expect(
+    within(screen.getByRole('dialog', { name: 'Context window' })).getByRole(
+      'button',
+      { name: 'Compact chat' },
+    ),
+  ).toBeDisabled()
+})
+
+it('retries a reply that failed without asking to compact anything', async () => {
+  signIn({ cloud: true, session: compacting })
+  const run = scriptRuns()
+  await openChat()
+  fireEvent.change(screen.getByRole('textbox', { name: /message/i }), {
+    target: { value: 'Third question' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+  await waitFor(() => expect(run.turns).toHaveLength(1))
+  run.emit(
+    0,
+    {
+      type: 'RUN_STARTED',
+      threadId: THREAD_ID,
+      runId: 'run-turn',
+      instance: 'instance-1',
+    },
+    {
+      type: 'RUN_ERROR',
+      threadId: THREAD_ID,
+      runId: 'run-turn',
+      code: 'MODEL_UNAVAILABLE',
+      message: 'The model is temporarily unavailable',
+      action: 'retry',
+    },
+  )
+  run.end(0)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Try again' }))
+
+  await waitFor(() => expect(run.turns).toHaveLength(2))
+  expect(run.turns[1]).toMatchObject({ kind: 'retry', threadId: THREAD_ID })
+  expect(run.turns[1]).not.toHaveProperty('compactLatest')
+  run.emit(
+    1,
+    {
+      type: 'RUN_STARTED',
+      threadId: THREAD_ID,
+      runId: 'run-retry',
+      instance: 'instance-1',
+    },
+    {
+      type: 'RUN_FINISHED',
+      threadId: THREAD_ID,
+      runId: 'run-retry',
+      metadata: {},
+    },
+  )
+  run.end(1)
+})
+
+it('asks a harness that keeps the latest exchange to compact what comes before it', async () => {
+  signIn({ cloud: true, session: keepingLatest })
+  const run = scriptRuns()
+  await openChat()
+
+  compactFromIndicator()
+
+  await waitFor(() => expect(run.turns).toHaveLength(1))
+  expect(run.turns[0]).toMatchObject({ kind: 'compact', threadId: THREAD_ID })
+  expect(run.turns[0]).not.toHaveProperty('compactLatest')
+  run.emit(
+    0,
+    ...started('run-compact', messages, 'u2'),
+    {
+      type: 'COMPACTION_END',
+      messageId: 'c1',
+      beforeMessageId: 'u2',
+      outcome: 'completed',
+      marker,
+    },
+    {
+      type: 'RUN_FINISHED',
+      threadId: THREAD_ID,
+      runId: 'run-compact',
+      metadata: {},
+    },
+  )
+  run.end(0)
+  await screen.findByRole('button', { name: 'Compacted 2 earlier messages' })
+
+  // The exchange the harness kept is all that follows its marker.
+  fireEvent.click(screen.getByRole('button', { name: USAGE_LABEL }))
+  expect(
+    within(screen.getByRole('dialog', { name: 'Context window' })).getByRole(
+      'button',
+      { name: 'Compact chat' },
+    ),
+  ).toBeDisabled()
+})
+
+it('offers a harness that keeps the latest exchange no compaction of a chat with only that exchange', async () => {
+  signIn({ cloud: true, session: keepingLatest })
   scriptRuns()
   await openChat(messages.slice(2))
 

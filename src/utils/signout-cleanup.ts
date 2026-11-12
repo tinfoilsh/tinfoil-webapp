@@ -10,6 +10,7 @@ import {
 import { authTokenManager } from '@/services/auth'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { resetHarnessAPI } from '@/services/harness/runtime'
+import { dictation } from '@/services/speech/dictation'
 import { speechPlayer } from '@/services/speech/player'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
@@ -36,6 +37,7 @@ interface ClearUserDataOptions {
 
 async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   speechPlayer.stop()
+  dictation.reset()
   const {
     context,
     preserveUserId,

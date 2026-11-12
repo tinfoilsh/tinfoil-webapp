@@ -1336,7 +1336,7 @@ describe('DefaultMessageRenderer work traces', () => {
     ).toBeInTheDocument()
   })
 
-  it("lists the last search's results and the citations as the reply's sources", () => {
+  it("lists the last search's results and the citations as the reply's sources, and every page a research found", () => {
     const page = (name: string) => ({
       url: `https://${name}.example/`,
       title: `Page ${name}`,
@@ -1372,35 +1372,96 @@ describe('DefaultMessageRenderer work traces', () => {
       status: 'completed',
       sources: [page('read')],
     })
-    const { unmount } = renderReply(
-      reply([
-        call('s1', 'web_search', {
-          query: 'one',
-          status: 'completed',
-          sources: [page('first')],
-        }),
-        call('s2', 'web_search', {
-          query: 'two',
-          status: 'completed',
-          sources: [page('second')],
-        }),
-        read,
-      ]),
-      false,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show 2 sources' }))
-    expect(
+    const searched = reply([
+      call('s1', 'web_search', {
+        query: 'one',
+        status: 'completed',
+        sources: [page('first')],
+      }),
+      call('s2', 'web_search', {
+        query: 'two',
+        status: 'completed',
+        sources: [page('second')],
+      }),
+      read,
+    ])
+    const listed = () =>
       within(screen.getByRole('dialog'))
         .getAllByRole('link')
-        .map((link) => link.getAttribute('href')),
-    ).toEqual(['https://second.example/', 'https://first.example/'])
+        .map((link) => link.getAttribute('href'))
+    const { unmount } = renderReply(searched, false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 sources' }))
+    expect(listed()).toEqual([
+      'https://second.example/',
+      'https://first.example/',
+    ])
     unmount()
+
+    const { unmount: unmountResearch } = renderReply(
+      { ...searched, research: { version: 1 } },
+      false,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Show 3 sources' }))
+    expect(listed()).toEqual([
+      'https://first.example/',
+      'https://second.example/',
+      'https://read.example/',
+    ])
+    unmountResearch()
 
     renderReply(reply([read]), false)
     expect(
       screen.queryByRole('button', { name: /^Show \d+ sources?$/ }),
     ).not.toBeInTheDocument()
+  })
+
+  it('labels a question that asks for deep research', () => {
+    const question = (
+      research?: { version: number },
+      fields: Partial<WireMessage> = {
+        content: 'Compare the enforcement timelines.',
+      },
+    ): WireMessage => ({
+      id: 'u1',
+      role: 'user',
+      createdAt: '2026-08-07T00:00:00.000Z',
+      ...fields,
+      ...(research ? { research } : {}),
+    })
+    const { unmount } = renderReply(question({ version: 1 }), false)
+    expect(screen.getByText('Deep research')).toBeInTheDocument()
+    unmount()
+
+    // Answering the questions a research asks first starts it, with no text
+    // of its own to show.
+    const answered = renderReply(
+      question(
+        { version: 1 },
+        {
+          answers: [
+            {
+              toolCallId: 'call_questions',
+              questions: [
+                {
+                  id: 'scope',
+                  prompt: 'Which regions?',
+                  answered: true,
+                  selected: [{ id: 'eu', label: 'The EU' }],
+                },
+              ],
+            },
+          ],
+        },
+      ),
+      false,
+    )
+    expect(screen.getByText('Answered 1 of 1 question')).toBeInTheDocument()
+    expect(screen.getByText('Deep research')).toBeInTheDocument()
+    answered.unmount()
+
+    renderReply(question(), false)
+    expect(screen.queryByText('Deep research')).not.toBeInTheDocument()
   })
 
   it('shows each page back-to-back reads asked for, and which failed', () => {

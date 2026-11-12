@@ -3,6 +3,7 @@ import type {
   TimelineURLFetchBlock,
   TimelineWebSearchBlock,
 } from '@/components/chat/types'
+import { TfWebSearch } from '@tinfoilsh/tinfoil-icons'
 import { memo, useId, useMemo, useState, type ReactNode } from 'react'
 import { ThinkingLabel, ThoughtProcess } from './ThoughtProcess'
 import {
@@ -22,6 +23,8 @@ interface WorkProcessProps {
   /** True while the stream is still inside this run (no answer text yet). */
   isActive: boolean
   isDarkMode: boolean
+  /** The steps are a research, whose report follows them. */
+  research?: boolean
 }
 
 const ACTION_LIST = new Intl.ListFormat('en', {
@@ -56,6 +59,19 @@ function describeWork(blocks: WorkBlock[]): string {
   }
   const description = ACTION_LIST.format(actions.values())
   return description.charAt(0).toUpperCase() + description.slice(1)
+}
+
+const searchesNoun = (count: number) =>
+  count === 1 ? 'a search' : `${count} searches`
+
+// What a research's steps did, as "Researched with 12 searches and read 30
+// links". Links read count across the steps.
+function describeResearch(blocks: WorkBlock[]): string {
+  const searches = blocks.filter((block) => block.type === 'web_search').length
+  const linksRead = blocks
+    .flatMap((block) => (block.type === 'url_fetches' ? block.fetches : []))
+    .filter((fetch) => fetch.status === 'completed').length
+  return `Researched with ${searchesNoun(searches)} and read ${linksNoun(linksRead)}`
 }
 
 type LiveActivity =
@@ -94,6 +110,7 @@ export const WorkProcess = memo(function WorkProcess({
   blocks,
   isActive,
   isDarkMode,
+  research = false,
 }: WorkProcessProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const detailsId = useId()
@@ -105,7 +122,10 @@ export const WorkProcess = memo(function WorkProcess({
   const activeThinking = activity?.kind === 'thinking' ? activity.block : null
   const summary = activeThinking?.summary ?? ''
 
-  const description = useMemo(() => describeWork(blocks), [blocks])
+  const description = useMemo(
+    () => (research ? describeResearch(blocks) : describeWork(blocks)),
+    [blocks, research],
+  )
   const startedAt = useMemo(() => {
     const starts = blocks.flatMap((block) =>
       block.startedAt === undefined ? [] : [block.startedAt],
@@ -122,12 +142,19 @@ export const WorkProcess = memo(function WorkProcess({
           ) : activity?.kind === 'action' ? (
             activity.label
           ) : activity?.kind === 'idle' ? (
-            <span className="font-medium">Working</span>
+            <span className="font-medium">
+              {research ? 'Researching' : 'Working'}
+            </span>
           ) : (
             <span className="font-medium">{description}</span>
           )
         }
         isRunning={isActive}
+        runningIcon={
+          research ? (
+            <TfWebSearch className="h-4 w-4 animate-pulse text-content-muted motion-reduce:animate-none" />
+          ) : undefined
+        }
         startedAt={startedAt}
         isExpanded={isExpanded}
         onToggle={() => setIsExpanded((v) => !v)}

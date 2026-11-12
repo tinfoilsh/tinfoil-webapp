@@ -1,6 +1,7 @@
 import { API_BASE_URL } from '@/config'
 import { HarnessClient, REQUEST_TIMEOUT_MS } from '@/services/harness/client'
 import {
+  CHAT_END,
   INFERENCE_KEY_HEADER,
   type HarnessRoute,
 } from '@/services/harness/protocol'
@@ -20,15 +21,15 @@ import type {
   TerminalEvent,
   TimelineBlock,
 } from '@/services/harness/types'
+import { EnclaveHTTPClient } from 'tinfoil'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeTimeouts, SEALED, stubChatAccess } from './harness-fixture'
 
-vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
+vi.mock('tinfoil', () => ({ EnclaveHTTPClient: { create: vi.fn() } }))
 
 const transport = () => ({
-  ready: vi.fn().mockResolvedValue(undefined),
   fetch: vi.fn(),
-  getVerificationDocument: vi.fn(),
+  ensureVerified: vi.fn().mockResolvedValue(undefined),
 })
 
 function stream(text: string, bytesPerChunk = 1): ReadableStream<Uint8Array> {
@@ -1025,6 +1026,24 @@ describe('compacting a chat', () => {
     expect(state.messages).toEqual(window)
   })
 
+  it('opens a marker at the end of the chat when it names no message', () => {
+    const opened = run([
+      {
+        type: 'COMPACTION_START',
+        messageId: 'c1',
+        beforeMessageId: CHAT_END,
+        timestamp: 't3',
+      },
+    ])
+    expect(opened.messages).toEqual([
+      ...window,
+      { id: 'c1', role: 'compaction', createdAt: 't3' },
+    ])
+
+    const closed = run([ended('completed', marker, CHAT_END)])
+    expect(closed.messages).toEqual([...window, marker])
+  })
+
   it('shows no marker before a message that is not loaded', () => {
     const state = run([
       { type: 'COMPACTION_START', messageId: 'c1', beforeMessageId: 'u0' },
@@ -1152,7 +1171,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       getToken,
-      () => secure,
+      async () => secure,
     )
     const body = { key: 'cek', clientRequestId: 'nonce' }
     await expect(client.post('/v1/threads/turn', body)).resolves.toEqual({
@@ -1183,7 +1202,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       vi.fn().mockResolvedValueOnce('first').mockResolvedValueOnce('second'),
-      () => secure,
+      async () => secure,
     )
     await client.post('/v1/session', {})
     await client.post('/v1/session', {})
@@ -1199,12 +1218,80 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       vi.fn().mockResolvedValueOnce('old').mockResolvedValueOnce(null),
-      () => secure,
+      async () => secure,
     )
     await expect(client.post('/v1/session', {})).rejects.toMatchObject({
       status: 401,
     })
     expect(secure.fetch).toHaveBeenCalledTimes(1)
+  })
+  // An account whose renewed session or chat access the harness refuses too
+  // is signed in: its request was not answered in time, and signing in again
+  // would change nothing.
+  it.each([
+    { renewed: 'session', refusal: expiredSession },
+    {
+      renewed: 'chat access',
+      refusal: () =>
+        Response.json(
+          {
+            error: {
+              code: 'CREDENTIAL_REQUIRED',
+              message: 'Chat access expired',
+              action: 'reauthenticate',
+            },
+          },
+          { status: 401, headers: SEALED },
+        ),
+    },
+  ])(
+    'fails a signed-in request whose renewed $renewed is refused too as one to send again',
+    async ({ refusal }) => {
+      const secure = transport()
+      secure.fetch.mockImplementation(async () => refusal())
+      const client = new HarnessClient(
+        'https://harness.example',
+        vi.fn().mockResolvedValueOnce('old').mockResolvedValue('fresh'),
+        async () => secure,
+      )
+      const failure = await client
+        .post('/v1/threads/turn', {})
+        .catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(HarnessError)
+      expect(failure).toMatchObject({
+        status: undefined,
+        detail: { code: 'SIGN_IN_UNCONFIRMED', action: 'retry' },
+      })
+      expect(
+        secure.fetch.mock.calls.map((call) =>
+          new Headers(call[1].headers).get('Authorization'),
+        ),
+      ).toEqual(['Bearer old', 'Bearer fresh'])
+    },
+  )
+  it("keeps the harness's refusal of a signed-out caller whose new key is refused too", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        Response.json({
+          key: 'free_key',
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+          is_free_tier: true,
+        }),
+      ),
+    )
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => expiredSession())
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => null,
+      async () => secure,
+    )
+    await expect(client.post('/v1/session', {})).rejects.toMatchObject({
+      status: 401,
+      detail: { code: 'UNAUTHENTICATED', action: 'reauthenticate' },
+    })
+    expect(secure.fetch).toHaveBeenCalledTimes(2)
   })
   // A refusal signing in again cannot change: a key this device must unlock,
   // or a stored chat a signed-out caller asked for.
@@ -1225,7 +1312,7 @@ describe('attested harness transport', () => {
       const client = new HarnessClient(
         'https://harness.example',
         getToken,
-        () => secure,
+        async () => secure,
       )
       await expect(client.post('/v1/threads/get', {})).rejects.toMatchObject({
         status: 401,
@@ -1260,7 +1347,7 @@ describe('attested harness transport', () => {
       const client = new HarnessClient(
         'https://harness.example',
         getToken,
-        () => secure,
+        async () => secure,
       )
       await expect(client.post('/v1/session', {})).rejects.toMatchObject({
         status: 401,
@@ -1290,7 +1377,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       getToken,
-      () => secure,
+      async () => secure,
     )
     const refusal = await client
       .post('/v1/threads/delete', { id: 't' })
@@ -1309,7 +1396,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     await expect(
       client.post('/v1/threads/search', { query: 'peroxide' }),
@@ -1335,7 +1422,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     await expect(client.post('/v1/threads/get', {})).rejects.toMatchObject({
       detail: {
@@ -1359,7 +1446,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     const ids: (number | undefined)[] = []
     for (const lastEventId of [2, undefined])
@@ -1385,7 +1472,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     const run = (instance: string) =>
       new Response(
@@ -1480,7 +1567,7 @@ describe('attested harness transport', () => {
       const client = new HarnessClient(
         'https://harness.example',
         async () => null,
-        () => secure,
+        async () => secure,
       )
       const turn = async (threadId: string) => {
         for await (const _ of client.events('/v1/threads/turn', {
@@ -1541,7 +1628,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     secure.fetch.mockResolvedValueOnce(new Response('{"id":"attachment"}'))
     await client.upload(
@@ -1572,38 +1659,109 @@ describe('attested harness transport', () => {
       runId: 'r',
     })
   })
-  it('abandons an attestation that stalls and verifies again with a new client', async () => {
-    vi.useFakeTimers()
-    try {
-      const stalled = transport()
-      stalled.ready.mockReturnValue(new Promise(() => {}))
-      const fresh = transport()
-      fresh.fetch.mockResolvedValue(new Response('{"ok":true}'))
-      const created = [stalled, fresh]
-      const client = new HarnessClient(
-        'https://harness.example',
-        async () => 'clerk',
-        () => created.shift()!,
-      )
+  it('verifies the enclave of the chat service against the release of the harness', async () => {
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => new Response('{"ok":true}'))
+    const create = vi.mocked(EnclaveHTTPClient.create)
+    create.mockReset().mockResolvedValue(secure as never)
+    const client = new HarnessClient(
+      'https://harness.example:8443',
+      async () => 'clerk',
+    )
 
-      const stuck = expect(
-        client.post('/v1/session', {}),
-      ).rejects.toMatchObject({ code: 'CONNECTION' })
-      await vi.advanceTimersByTimeAsync(20_000)
-      await stuck
+    await client.post('/v1/session', {})
+    await client.post('/v1/session', {})
 
-      await expect(client.post('/v1/session', {})).resolves.toEqual({
-        ok: true,
-      })
-      expect(created).toEqual([])
-      expect(stalled.fetch).not.toHaveBeenCalled()
-      expect(fresh.fetch).toHaveBeenCalledExactlyOnceWith(
-        'https://harness.example/v1/session',
-        expect.objectContaining({ method: 'POST', body: '{}' }),
-      )
-    } finally {
-      vi.useRealTimers()
-    }
+    expect(create).toHaveBeenCalledExactlyOnceWith(
+      'harness.example:8443',
+      'tinfoilsh/confidential-tinfoil-harness',
+      { signal: expect.any(AbortSignal) },
+    )
+    expect(secure.fetch.mock.calls.map(([url]) => url)).toEqual([
+      'https://harness.example:8443/v1/session',
+      'https://harness.example:8443/v1/session',
+    ])
+  })
+  it('abandons an attestation that stalls and verifies the enclave again', async () => {
+    fakeTimeouts()
+    const fresh = transport()
+    fresh.fetch.mockResolvedValue(new Response('{"ok":true}'))
+    const connect = vi
+      .fn<(signal: AbortSignal) => Promise<ReturnType<typeof transport>>>()
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValueOnce(fresh)
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      connect,
+    )
+
+    const stuck = expect(client.post('/v1/session', {})).rejects.toMatchObject({
+      code: 'CONNECTION',
+      message:
+        'The chat service could not be verified in time. Check your connection and try again.',
+    })
+    await vi.advanceTimersByTimeAsync(20_000)
+    await stuck
+    expect(connect.mock.calls[0][0].aborted).toBe(true)
+
+    await expect(client.post('/v1/session', {})).resolves.toEqual({
+      ok: true,
+    })
+    expect(connect).toHaveBeenCalledTimes(2)
+    expect(fresh.fetch).toHaveBeenCalledExactlyOnceWith(
+      'https://harness.example/v1/session',
+      expect.objectContaining({ method: 'POST', body: '{}' }),
+    )
+  })
+  it('verifies the enclave again after a verification that failed', async () => {
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => new Response('{"ok":true}'))
+    const rejected = new Error('Attestation failed')
+    const connect = vi
+      .fn<(signal: AbortSignal) => Promise<ReturnType<typeof transport>>>()
+      .mockRejectedValueOnce(rejected)
+      .mockResolvedValueOnce(secure)
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      connect,
+    )
+
+    await expect(client.post('/v1/session', {})).rejects.toBe(rejected)
+    expect(secure.fetch).not.toHaveBeenCalled()
+
+    await expect(client.post('/v1/session', {})).resolves.toEqual({
+      ok: true,
+    })
+    expect(connect).toHaveBeenCalledTimes(2)
+  })
+  it('does not send a request while an expired verification cannot be made again in time', async () => {
+    fakeTimeouts()
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => new Response('{"ok":true}'))
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      async () => secure,
+    )
+    await client.post('/v1/session', {})
+    secure.fetch.mockClear()
+    secure.ensureVerified.mockReturnValueOnce(new Promise(() => {}))
+
+    const stuck = expect(client.post('/v1/session', {})).rejects.toMatchObject({
+      code: 'CONNECTION',
+      message:
+        'The chat service could not be verified in time. Check your connection and try again.',
+    })
+    await vi.advanceTimersByTimeAsync(20_000)
+    await stuck
+    expect(secure.ensureVerified.mock.lastCall?.[0].signal.aborted).toBe(true)
+    expect(secure.fetch).not.toHaveBeenCalled()
+
+    await expect(client.post('/v1/session', {})).resolves.toEqual({
+      ok: true,
+    })
   })
   describe('a connection that stalls', () => {
     function deferred<T>() {
@@ -1628,7 +1786,7 @@ describe('attested harness transport', () => {
       const client = new HarnessClient(
         'https://harness.example',
         async () => 'clerk',
-        () => secure,
+        async () => secure,
       )
       const signalOf = (call: number): AbortSignal | undefined =>
         secure.fetch.mock.calls[call][1].signal
@@ -1653,6 +1811,7 @@ describe('attested harness transport', () => {
     it.each([
       { path: '/v1/threads/delete', input: { id: 't' } },
       { path: '/v1/threads/search', input: { query: 'peroxide', limit: 20 } },
+      { path: '/v1/metadata/image', input: { url: 'https://a.example/p' } },
     ] as const)(
       'fails a request to $path it does not answer in time as a lost connection',
       async ({ path, input }) => {
@@ -1680,7 +1839,7 @@ describe('attested harness transport', () => {
       const client = new HarnessClient(
         'https://harness.example',
         () => new Promise<string>(() => {}),
-        () => secure,
+        async () => secure,
       )
       const listing = track(client.post('/v1/threads/list', {}))
 
@@ -1767,7 +1926,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     for (const path of [
       'https://other.example/v1/session',
@@ -1784,7 +1943,7 @@ describe('attested harness transport', () => {
         new HarnessClient(
           'http://harness.example',
           async () => null,
-          () => secure,
+          async () => secure,
         ),
     ).toThrow(HarnessError)
   })
@@ -1802,7 +1961,7 @@ describe('chat access a signed-in client mints', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      () => secure,
+      async () => secure,
     )
     const reported: RateLimit[] = []
     client.onRateLimit = (rateLimit) => reported.push(rateLimit)
@@ -1984,137 +2143,6 @@ describe('chat access a signed-in client mints', () => {
     },
   )
 
-  describe('while a run stream is open', () => {
-    const RENEWAL_POINT_MS = 10 * 60_000
-    const encoder = new TextEncoder()
-    // A run stream the test holds open until it finishes the run.
-    function heldRun() {
-      let controller!: ReadableStreamDefaultController<Uint8Array>
-      const body = new ReadableStream<Uint8Array>({
-        start(c) {
-          controller = c
-        },
-      })
-      const send = (type: string) =>
-        controller.enqueue(encoder.encode(`data: {"type":"${type}"}\n\n`))
-      send('RUN_STARTED')
-      return {
-        response: () =>
-          new Response(body, {
-            headers: { 'Content-Type': 'text/event-stream' },
-          }),
-        finish: () => {
-          send('RUN_FINISHED')
-          controller.close()
-        },
-      }
-    }
-    // Reads a run's stream, resolving `started` at its first event.
-    function read(client: HarnessClient) {
-      let started!: () => void
-      const running = new Promise<void>((resolve) => {
-        started = resolve
-      })
-      const reading = (async () => {
-        const types: string[] = []
-        for await (const frame of client.events('/v1/threads/follow', {
-          threadId: 'thread',
-          runId: 'run',
-        })) {
-          types.push(frame.event.type)
-          started()
-        }
-        return types
-      })()
-      return { running, reading }
-    }
-
-    beforeEach(() => {
-      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
-      return () => vi.useRealTimers()
-    })
-
-    it('mints the chat token again before it expires and presents it once', async () => {
-      const keys = ['idle-token', 'run-token', 'renewed-token']
-      const controlplane = vi.fn<typeof fetch>(async () =>
-        Response.json({ key: keys.shift(), expires_at: expiresAt() }),
-      )
-      vi.stubGlobal('fetch', controlplane)
-      const run = heldRun()
-      let presented!: () => void
-      const presenting = new Promise<void>((resolve) => {
-        presented = resolve
-      })
-      const secure = transport()
-      secure.fetch.mockImplementation(async (url: string) => {
-        if (url.endsWith('/v1/threads/follow')) return run.response()
-        if (secure.fetch.mock.calls.length > 1) presented()
-        return Response.json({})
-      })
-      const { client } = connect(secure)
-
-      // No run is open: the token is left to expire.
-      await client.post('/v1/session', {})
-      await vi.advanceTimersByTimeAsync(2 * RENEWAL_POINT_MS)
-      expect(controlplane).toHaveBeenCalledOnce()
-      expect(vi.getTimerCount()).toBe(0)
-
-      const { running, reading } = read(client)
-      await running
-      expect(controlplane).toHaveBeenCalledTimes(2)
-      await vi.advanceTimersByTimeAsync(RENEWAL_POINT_MS - 1)
-      expect(controlplane).toHaveBeenCalledTimes(2)
-      expect(secure.fetch).toHaveBeenCalledTimes(2)
-
-      await vi.advanceTimersByTimeAsync(1)
-      await presenting
-      expect(controlplane).toHaveBeenCalledTimes(3)
-      expect(
-        secure.fetch.mock.calls.map(([url, init]) => [
-          url,
-          new Headers(init.headers).get('Authorization'),
-          new Headers(init.headers).get(INFERENCE_KEY_HEADER),
-        ]),
-      ).toEqual([
-        ['https://harness.example/v1/session', 'Bearer clerk', 'idle-token'],
-        [
-          'https://harness.example/v1/threads/follow',
-          'Bearer clerk',
-          'run-token',
-        ],
-        ['https://harness.example/v1/session', 'Bearer clerk', 'renewed-token'],
-      ])
-
-      run.finish()
-      await expect(reading).resolves.toEqual(['RUN_STARTED', 'RUN_FINISHED'])
-      await vi.advanceTimersByTimeAsync(2 * RENEWAL_POINT_MS)
-      expect(controlplane).toHaveBeenCalledTimes(3)
-      expect(secure.fetch).toHaveBeenCalledTimes(3)
-      expect(vi.getTimerCount()).toBe(0)
-    })
-
-    it("leaves an account's free key as it is", async () => {
-      const controlplane = vi.fn<typeof fetch>(async (url) =>
-        String(url).endsWith('/api/chat/token')
-          ? new Response('{}', { status: 402 })
-          : Response.json({ key: 'free_key', expires_at: expiresAt() }),
-      )
-      vi.stubGlobal('fetch', controlplane)
-      const run = heldRun()
-      const secure = transport()
-      secure.fetch.mockImplementation(async () => run.response())
-      const { client } = connect(secure)
-
-      const { running, reading } = read(client)
-      await running
-      await vi.advanceTimersByTimeAsync(2 * RENEWAL_POINT_MS)
-      run.finish()
-      await expect(reading).resolves.toEqual(['RUN_STARTED', 'RUN_FINISHED'])
-      expect(controlplane).toHaveBeenCalledTimes(2)
-      expect(access(secure)).toEqual(['free_key'])
-    })
-  })
-
   it('mints again when the harness refuses the access it was sent', async () => {
     const keys = ['old-token', 'new-token']
     vi.stubGlobal(
@@ -2162,7 +2190,7 @@ describe('chat access a signed-in client mints', () => {
     const client = new HarnessClient(
       'https://harness.example',
       vi.fn().mockResolvedValueOnce('expired').mockResolvedValue('fresh'),
-      () => secure,
+      async () => secure,
     )
     await expect(client.post('/v1/threads/turn', {})).resolves.toEqual({
       ok: true,

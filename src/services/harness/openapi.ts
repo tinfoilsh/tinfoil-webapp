@@ -18,6 +18,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/metrics': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Export aggregate service metrics
+     * @description Prometheus HTTP, run lifecycle, and runtime metrics. The measured shim validates an admin key with metrics.read before forwarding this operational endpoint. No chat content, caller identifiers, or credentials are exported.
+     */
+    get: operations['metrics']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/v1/session': {
     parameters: {
       query?: never
@@ -849,7 +869,10 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Transcribe a recording */
+    /**
+     * Transcribe a recording
+     * @description A recording not transcribed within two minutes fails with UPSTREAM_REFUSED.
+     */
     post: operations['transcriptions']
     delete?: never
     options?: never
@@ -951,6 +974,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/v1/metadata/image': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Load a public image inside the enclave
+     * @description Fetches an HTTPS image without caller headers or cookies and returns a PNG copy. Private destinations, nonstandard ports, excessive redirects, oversized downloads and images over the pixel limit are refused. Animation is reduced to its first frame. Clients never fall back to downloading the URL directly.
+     */
+    post: operations['remoteImage']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/v1/metadata/link': {
     parameters: {
       query?: never
@@ -996,6 +1039,12 @@ export interface components {
     }
     PageRequest: {
       url: string
+    }
+    RemoteImage: {
+      /** @description Base64-encoded PNG, no more than 8 MiB before base64 encoding. */
+      image_bytes: string
+      /** @constant */
+      image_content_type: 'image/png'
     }
     ErrorResponse: {
       error: components['schemas']['ErrorBody']
@@ -1087,6 +1136,7 @@ export interface components {
           | 'QUOTA_EXHAUSTED'
           | 'RATE_LIMITED'
           | 'RECORD_UNSUPPORTED'
+          | 'RESEARCH_LIMIT_REACHED'
           | 'REQUEST_TIMEOUT'
           | 'REVISION_CONFLICT'
           | 'RUN_IN_FLIGHT'
@@ -1134,7 +1184,7 @@ export interface components {
       profileDefaults: components['schemas']['Profile']
       composer: components['schemas']['Composer']
       presets: components['schemas']['Preset'][]
-      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. */
+      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes. */
       features: {
         [key: string]: boolean
       }
@@ -1173,7 +1223,10 @@ export interface components {
       attachments: components['schemas']['FileGroup'][]
       projectDocuments: components['schemas']['FileGroup'][]
       pasteAsFileChars: number
+      /** @description How long a client that sends dictation as one recording lets it run. */
       dictationMaxSeconds: number
+      /** @description How long a client lets dictation run before it sends what it recorded to be transcribed and records on: it ends each recording at the first pause after this long. Short recordings transcribe in seconds, and one that fails loses no more than itself. */
+      dictationSegmentSeconds: number
     }
     /** @description Files the composer takes by extension, and the largest each may be. */
     FileGroup: {
@@ -1212,10 +1265,12 @@ export interface components {
        *     compact compacts the chat on request, as COMPACTION_START describes,
        *     and asks the model nothing: its run sends the compaction and ends.
        *     It is refused with NOTHING_TO_COMPACT when no message after the
-       *     chat's latest compaction marker comes before its last question, and
-       *     with RUN_IN_FLIGHT while the chat has a running reply. A retry after
-       *     a compact turn failed compacts again. A client sends it only while
-       *     the session's features.manualCompaction is true.
+       *     chat's latest compaction marker comes before its last question,
+       *     or, when it sends compactLatest, when no reply comes after that
+       *     marker. It is refused with RUN_IN_FLIGHT while the chat has a
+       *     running reply. A retry after a compact turn failed compacts again.
+       *     A client sends it only while the session's
+       *     features.manualCompaction is true.
        * @enum {string}
        */
       kind?:
@@ -1245,6 +1300,8 @@ export interface components {
       attachments?: components['schemas']['SentAttachment'][]
       /** @description The widgets this client renders. */
       widgets?: string[]
+      /** @description A compact turn, or a retry that compacts again, summarizes the chat's latest exchange too, as COMPACTION_START describes. It is refused on any other kind. A client sends it only while the session's features.compactLatest is true, and when it shows a compaction marker at the end of a chat. */
+      compactLatest?: boolean
       options?: components['schemas']['TurnOptions']
     }
     TurnOptions: {
@@ -1257,6 +1314,37 @@ export interface components {
       webSearch?: boolean
       piiCheck?: boolean
       genUI?: boolean
+      /**
+       * @description The turn researches its question on the web at length, for up to
+       *     about half an hour, before it answers with a report. A client
+       *     sends it only while the session's features.research is true, and
+       *     only on a send, edit, regenerate or retry.
+       *
+       *     The run searches the web whatever the chat's web search setting,
+       *     and is refused with TOOL_UNAVAILABLE when the settings turn web
+       *     search off. A caller may start one research an hour: a turn sent
+       *     within an hour of the last research's start is refused with
+       *     RESEARCH_LIMIT_REACHED and the resetsAt when the next may start.
+       *     A research's first model turn may instead ask the user what it
+       *     needs to know with the questions widget, when the turn's widgets
+       *     name it, and the run then ends; such a run does not count as the
+       *     hour's research, and the research starts with the next send, which
+       *     answers them, without this option.
+       *
+       *     The turn's question is stored with research, so a client may show
+       *     that it asked for deep research. An edit, regenerate or retry of
+       *     such a question researches it again without this option, and a
+       *     continue goes on with its report without researching.
+       *
+       *     While it researches, what the model writes between its tool calls
+       *     streams as reasoning, beside its web_search and web_fetch calls.
+       *     When the turn's widgets name render_artifact_preview, the model
+       *     then writes its report in that widget as Markdown, and the reply's
+       *     text says what it found; otherwise only its report streams as the
+       *     reply's text. The reply is committed with research, and later turns
+       *     read it as its report alone.
+       */
+      research?: boolean
       /** @description 256 random bits the client keeps, hex encoded, which scope the model enclaves' prompt cache to the client. Turns without one share a cache only within their chat. */
       cacheSecret?: string
     }
@@ -1540,10 +1628,14 @@ export interface components {
      *     first question it keeps, or else before the turn's question. A run
      *     compacts at most once, before its first model turn or between two of
      *     them. A compact turn compacts its chat the same way, taking the chat's
-     *     last question and what follows it for the turn's question.
-     *     beforeMessageId names a message of the run's MESSAGES_SNAPSHOT.
-     *     A client shows the marker before that message, and the messages
-     *     before it as ones the model no longer reads.
+     *     last question and what follows it for the turn's question. One with
+     *     compactLatest instead summarizes every message from the chat's latest
+     *     marker on up to its last reply, and its marker sits after that reply:
+     *     before a question without a reply, or else at the end of the chat.
+     *     beforeMessageId names a message of the run's MESSAGES_SNAPSHOT, or
+     *     is empty for a marker at the end of the chat. A client shows the
+     *     marker before that message, or after the chat's last message, and
+     *     the messages before it as ones the model no longer reads.
      */
     CompactionStartEvent: {
       /**
@@ -1555,7 +1647,7 @@ export interface components {
       messageId: string
       beforeMessageId: string
     }
-    /** @description Closes a compaction marker, which sits before the message beforeMessageId names, as COMPACTION_START named it. A completed one carries the marker, which the chat keeps even if the reply then fails, and is followed by a STATE_SNAPSHOT with the context the turn's prompt now fills. A client removes a failed one, after which the run ends with COMPACTION_FAILED. */
+    /** @description Closes a compaction marker, which sits where beforeMessageId places it, as COMPACTION_START placed it. A completed one carries the marker, which the chat keeps even if the reply then fails, and is followed by a STATE_SNAPSHOT with the context the turn's prompt now fills. A client removes a failed one, after which the run ends with COMPACTION_FAILED. */
     CompactionEndEvent: {
       /**
        * @description discriminator enum property added by openapi-typescript
@@ -1602,7 +1694,7 @@ export interface components {
       rateLimit?: components['schemas']['RateLimit']
       metadata?: components['schemas']['RunMetadata']
     }
-    /** @description What a run's last event reports. A device chat's run returns the whole chat. */
+    /** @description What a run's last event reports. A device chat's run returns the whole chat, or the chat from the compaction marker its client sent it from, as ThreadInput describes. */
     RunMetadata: {
       messages?: components['schemas']['CommittedReply'][]
       thread?: components['schemas']['ThreadRecord']
@@ -1625,6 +1717,7 @@ export interface components {
       isError?: boolean
       isInterrupted?: boolean
       annotations?: components['schemas']['Annotation'][]
+      research?: components['schemas']['Research']
     }
     /** @description How a chat came by its title. A client shows the title of a state it does not know as it is. */
     TitleState: ('placeholder' | 'generated' | 'manual') | string
@@ -1718,19 +1811,36 @@ export interface components {
       /** @description A question's answers to questions widgets, as it sent them to the model. */
       answers?: components['schemas']['WidgetAnswers'][]
       compaction?: components['schemas']['Compaction']
+      research?: components['schemas']['Research']
+    }
+    /**
+     * @description Set on a question that asks for deep research, and on a reply that
+     *     researched its question, as TurnOptions.research describes. A
+     *     client may show that such a question asked for deep research. Such a
+     *     reply's timeline holds the research's reasoning and its web_search
+     *     and web_fetch calls, then either the render_artifact_preview call that
+     *     holds the report and the text that says what it found, or the report
+     *     as its text. A client may show the research's steps apart from the
+     *     report. The model reads the reply back as its report alone.
+     */
+    Research: {
+      /** @description The version of the instructions it researched under. */
+      version: number
     }
     /**
      * @description What a compaction marker records of its summary. A compaction marker
      *     is a message of role compaction whose content summarizes every message
-     *     before it, which the model reads in their place. It always sits
-     *     directly before a question. A client shows the messages before a
-     *     chat's latest marker as ones the model no longer reads, and the marker
-     *     as a step the user can open to read the summary. The marker is not one
+     *     before it, which the model reads in their place. It sits directly
+     *     before a question, or, after a compact turn with compactLatest, at
+     *     the end of the chat until the next question. A client shows the
+     *     messages before a chat's latest marker as ones the model no longer
+     *     reads, and the marker as a step the user can open to read the
+     *     summary. The marker is not one
      *     of the chat's messages: messageCount leaves it out, and a client offers
      *     no action on it.
      */
     Compaction: {
-      /** @description How many messages the summary covers, those an earlier marker covered included. */
+      /** @description How many messages the summary covers, those an earlier marker covered included, whether or not a device sent the harness the messages before that marker. */
       messages: number
       /** @description When the summary was started, in epoch milliseconds. */
       startedAt: number
@@ -1901,8 +2011,31 @@ export interface components {
       isInterrupted?: boolean
       answers?: components['schemas']['WidgetAnswers'][]
       compaction?: components['schemas']['Compaction']
+      research?: components['schemas']['Research']
     }
-    /** @description A device chat as its client sends it: a ThreadRecord the harness returned, sent back whole, or a record without a recordVersion that an older client kept or a client made for a new chat. The harness refuses a ThreadRecord with a member its version does not have. */
+    /**
+     * @description A device chat as its client sends it: a ThreadRecord the harness
+     *     returned, sent back whole, or a record without a recordVersion that an
+     *     older client kept or a client made for a new chat. The harness refuses
+     *     a ThreadRecord with a member its version does not have.
+     *
+     *     While the session's features.partialThread is true, a client may send
+     *     a ThreadRecord from its latest compaction marker on, leaving out the
+     *     messages before that marker, which its summary covers. It may do so
+     *     in a turn, in a change of the chat's settings, in an answer to a
+     *     questions widget and in a request to read a message aloud, unless the
+     *     request names a message, a tool call or an attachment among the
+     *     messages left out, which sends the record whole. A turn also sends
+     *     the record whole unless a question after the marker comes before the
+     *     one it answers: the harness reads the exchange before the question a
+     *     turn answers, which the marker otherwise covers. The harness reads
+     *     the chat as it reads the whole record, except that a question sends
+     *     no answers to a questions widget among the messages left out. What it
+     *     returns of the chat starts at that marker too, a run's thread and
+     *     window among them, and its messageCount counts the messages sent: the
+     *     client keeps the messages it left out before the messages returned.
+     *     Every other request sends the record whole.
+     */
     ThreadInput: {
       /** @description The version of the ThreadRecord the harness returned. Absent from a record an older client kept or a client made. */
       recordVersion?: number
@@ -2323,6 +2456,26 @@ export interface operations {
             /** @constant */
             ok: true
           }
+        }
+      }
+    }
+  }
+  metrics: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Prometheus text exposition. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'text/plain': string
         }
       }
     }
@@ -3677,6 +3830,31 @@ export interface operations {
             favicon_bytes?: string
             favicon_content_type?: string
           }
+        }
+      }
+      default: components['responses']['Error']
+    }
+  }
+  remoteImage: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PageRequest']
+      }
+    }
+    responses: {
+      /** @description Image bytes for local display. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RemoteImage']
         }
       }
       default: components['responses']['Error']

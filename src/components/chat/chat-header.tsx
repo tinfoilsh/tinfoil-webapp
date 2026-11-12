@@ -84,21 +84,27 @@ export function ChatHeader({
   }
   if (storageStatus) {
     metaItems.push(
-      <span key="storage" className="flex items-center gap-1">
+      <span key="storage" className="flex min-w-0 items-center gap-1">
         {storageStatus.kind === 'temporary' ? (
-          <span className="flex items-center gap-1 text-orange-500">
-            <TfGhost2Animated className="h-3 w-3" aria-hidden="true" />
-            Temporary chat
+          <span className="flex min-w-0 items-center gap-1 text-orange-500">
+            <TfGhost2Animated
+              className="h-3 w-3 flex-none"
+              aria-hidden="true"
+            />
+            <span className="truncate">Temporary chat</span>
           </span>
         ) : storageStatus.kind === 'local' ? (
           <>
-            <TfFloppyDisk className="h-3.5 w-3.5" aria-hidden="true" />
-            Only saved locally
+            <TfFloppyDisk
+              className="h-3.5 w-3.5 flex-none"
+              aria-hidden="true"
+            />
+            <span className="truncate">Only saved locally</span>
           </>
         ) : (
           <>
-            <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
-            Synced
+            <TfCloud className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
+            <span className="truncate">Synced</span>
           </>
         )}
       </span>,
@@ -142,16 +148,28 @@ export function ChatHeader({
               </div>
             ) : (
               metaItems.length > 0 && (
-                <p className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap font-aeonik-fono text-xs leading-4 text-content-muted">
-                  {metaItems.map((item, index) => (
-                    <span
-                      key={index}
-                      className="flex flex-none items-center gap-1.5"
-                    >
-                      {index > 0 && <span aria-hidden="true">·</span>}
-                      {item}
-                    </span>
-                  ))}
+                // The items fill the line from its end, so where there is no
+                // room the earliest give way first, onto a second line the
+                // header hides, rather than show cut off. The last, as the
+                // storage status, stays, and shortens only when it alone has
+                // no room.
+                <p className="mt-0.5 flex h-4 min-w-0 flex-row-reverse flex-wrap items-center justify-end gap-x-1.5 overflow-hidden whitespace-nowrap font-aeonik-fono text-xs leading-4 text-content-muted">
+                  {metaItems.map((item, index) => {
+                    const fromEnd = metaItems.length - 1 - index
+                    return (
+                      <span
+                        key={index}
+                        style={{ order: fromEnd }}
+                        className={cn(
+                          'flex items-center gap-1.5',
+                          fromEnd === 0 ? 'min-w-0' : 'flex-none',
+                        )}
+                      >
+                        {item}
+                        {fromEnd > 0 && <span aria-hidden="true">·</span>}
+                      </span>
+                    )
+                  })}
                 </p>
               )
             )}

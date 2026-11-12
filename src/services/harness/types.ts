@@ -26,6 +26,7 @@ export type ClientErrorCode =
   | 'LOCAL_SAVE_FAILED'
   | 'LOCAL_CHAT_UNREADABLE'
   | 'PROFILE_LOADING'
+  | 'SIGN_IN_UNCONFIRMED'
 
 // Why a request or run failed: as the harness reports it, or as this client
 // met it on its own.
@@ -91,6 +92,7 @@ export type TokenBudget = Schemas['TokenBudget']
 export type RateLimit = Schemas['RateLimit']
 export type SessionModel = Schemas['SessionModel']
 export type Session = Schemas['Session']
+export type RemoteImage = Schemas['RemoteImage']
 export type FileGroup = Schemas['FileGroup']
 export type KeyOrigin = Schemas['KeyOrigin']
 

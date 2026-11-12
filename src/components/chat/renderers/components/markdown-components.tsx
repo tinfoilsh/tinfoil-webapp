@@ -1,6 +1,7 @@
 import { CONSTANTS } from '@/components/chat/constants'
 import { CodeBlock } from '@/components/code-block'
 import { Favicon } from '@/components/ui/favicon'
+import { PrivateImage } from '@/components/ui/private-image'
 import {
   Tooltip,
   TooltipContent,
@@ -457,7 +458,7 @@ function createMarkdownComponents(): Components {
     // Images
     img({ src, alt, ...props }: any) {
       return (
-        <img
+        <PrivateImage
           {...props}
           src={src}
           alt={alt || ''}

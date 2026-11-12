@@ -26,6 +26,7 @@ import {
   type MessageOverflowMenuItem,
 } from '../components/MessageOverflowMenu'
 import { ReadAloudButton } from '../components/ReadAloudButton'
+import { ResearchTab } from '../components/ResearchTab'
 import { SentAnswers } from '../components/SentAnswers'
 import { SourcesButton } from '../components/SourcesButton'
 import { StreamingChunkedText } from '../components/StreamingChunkedText'
@@ -113,23 +114,34 @@ const DefaultMessageComponent = ({
     [isUser, message.timeline],
   )
   const timelineSegments = React.useMemo(
-    () => segmentTimeline(displayTimeline),
-    [displayTimeline],
+    () => segmentTimeline(displayTimeline, message.research),
+    [displayTimeline, message.research],
   )
   // A reply that searched lists its last search's results and what it
-  // cites; earlier searches and read pages list theirs in their own rows.
+  // cites; earlier searches and read pages list theirs in their own rows. A
+  // research's report draws on every page it found or read, which it lists
+  // after what the report cites.
   const sources = React.useMemo(() => {
+    const cited = (message.annotations ?? []).map(
+      (annotation) => annotation.url_citation,
+    )
+    if (message.research)
+      return [
+        ...cited,
+        ...displayTimeline.flatMap((block) =>
+          block.type === 'web_search'
+            ? (block.state.sources ?? [])
+            : block.type === 'url_fetches'
+              ? block.fetches.flatMap((fetch) => fetch.sources ?? [])
+              : [],
+        ),
+      ]
     const lastSearch = displayTimeline.findLast(
       (block) => block.type === 'web_search',
     )
     if (lastSearch?.type !== 'web_search') return []
-    return [
-      ...(lastSearch.state.sources ?? []),
-      ...(message.annotations ?? []).map(
-        (annotation) => annotation.url_citation,
-      ),
-    ]
-  }, [displayTimeline, message.annotations])
+    return [...(lastSearch.state.sources ?? []), ...cited]
+  }, [displayTimeline, message.annotations, message.research])
   // A link to a page the reply's searches or reads found shows as a
   // citation while the reply streams, before the harness names what it
   // cites. The lookup changes only when its pages do, not with each chunk.
@@ -428,7 +440,8 @@ const DefaultMessageComponent = ({
       )}
 
       {hasUserAnswers && !isEditing && (
-        <div className="flex w-full justify-end px-4 pt-2">
+        <div className="flex w-full flex-col items-end px-4 pt-2">
+          {message.research && <ResearchTab />}
           <SentAnswers answers={message.answers ?? []} />
         </div>
       )}
@@ -451,6 +464,7 @@ const DefaultMessageComponent = ({
                   blocks={segment.blocks}
                   isActive={isActive}
                   isDarkMode={isDarkMode}
+                  research={message.research}
                 />
               </div>
             )
@@ -648,36 +662,51 @@ const DefaultMessageComponent = ({
               <div
                 className={`w-full ${isUser ? 'flex justify-end px-4 pb-8 pt-2' : 'px-4 py-2'}`}
               >
+                {/* The bubble widens to hold the research tab on it. */}
                 <div
-                  className={cn(
-                    isUser ? 'max-w-[95%]' : 'w-full',
-                    isUser &&
-                      'rounded-site-lg bg-surface-message-user/90 px-4 py-2 shadow-sm backdrop-blur-sm',
-                  )}
+                  className={isUser ? 'flex max-w-[95%] flex-col' : 'w-full'}
                 >
-                  <div className="relative">
-                    <div
-                      ref={isUser ? userMessageContentRef : undefined}
-                      style={
-                        isUser &&
-                        isUserMessageOverflowing &&
-                        !isUserMessageExpanded
-                          ? {
-                              maxHeight: USER_MESSAGE_MAX_HEIGHT,
-                              overflow: 'hidden',
-                            }
-                          : undefined
-                      }
-                    >
+                  {isUser && message.research && !hasUserAnswers && (
+                    <ResearchTab />
+                  )}
+                  <div
+                    className={cn(
+                      isUser &&
+                        'rounded-site-lg bg-surface-message-user/90 px-4 py-2 shadow-sm backdrop-blur-sm',
+                    )}
+                  >
+                    <div className="relative">
                       <div
-                        className={cn(
-                          'prose w-full max-w-none text-base prose-pre:bg-transparent prose-pre:p-0',
-                          'text-content-primary prose-headings:text-content-primary prose-strong:text-content-primary prose-code:text-content-primary',
-                          'prose-a:text-blue-500 hover:prose-a:text-blue-600',
-                        )}
+                        ref={isUser ? userMessageContentRef : undefined}
+                        style={
+                          isUser &&
+                          isUserMessageOverflowing &&
+                          !isUserMessageExpanded
+                            ? {
+                                maxHeight: USER_MESSAGE_MAX_HEIGHT,
+                                overflow: 'hidden',
+                              }
+                            : undefined
+                        }
                       >
-                        {!isUser && isStreaming && isLastMessage ? (
-                          <StreamingContentWrapper isStreaming={true}>
+                        <div
+                          className={cn(
+                            'prose w-full max-w-none text-base prose-pre:bg-transparent prose-pre:p-0',
+                            'text-content-primary prose-headings:text-content-primary prose-strong:text-content-primary prose-code:text-content-primary',
+                            'prose-a:text-blue-500 hover:prose-a:text-blue-600',
+                          )}
+                        >
+                          {!isUser && isStreaming && isLastMessage ? (
+                            <StreamingContentWrapper isStreaming={true}>
+                              <StreamingChunkedText
+                                content={message.content}
+                                isDarkMode={isDarkMode}
+                                isUser={isUser}
+                                isStreaming={isStreaming}
+                                citationUrlTitles={citationUrlTitles}
+                              />
+                            </StreamingContentWrapper>
+                          ) : (
                             <StreamingChunkedText
                               content={message.content}
                               isDarkMode={isDarkMode}
@@ -685,45 +714,37 @@ const DefaultMessageComponent = ({
                               isStreaming={isStreaming}
                               citationUrlTitles={citationUrlTitles}
                             />
-                          </StreamingContentWrapper>
-                        ) : (
-                          <StreamingChunkedText
-                            content={message.content}
-                            isDarkMode={isDarkMode}
-                            isUser={isUser}
-                            isStreaming={isStreaming}
-                            citationUrlTitles={citationUrlTitles}
-                          />
-                        )}
+                          )}
+                        </div>
                       </div>
+
+                      {isUser &&
+                        isUserMessageOverflowing &&
+                        !isUserMessageExpanded && (
+                          <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-surface-message-user/90 to-transparent" />
+                        )}
                     </div>
 
-                    {isUser &&
-                      isUserMessageOverflowing &&
-                      !isUserMessageExpanded && (
-                        <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-surface-message-user/90 to-transparent" />
-                      )}
+                    {isUser && isUserMessageOverflowing && (
+                      <button
+                        onClick={() =>
+                          setIsUserMessageExpanded(!isUserMessageExpanded)
+                        }
+                        className="mt-1 flex w-full items-center justify-center gap-1 py-1 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
+                      >
+                        <span>
+                          {isUserMessageExpanded ? 'Show less' : 'Show more'}
+                        </span>
+                        <TfChevronDownAnimated
+                          aria-hidden="true"
+                          className={cn(
+                            'h-3 w-3 transition-transform',
+                            isUserMessageExpanded && 'rotate-180',
+                          )}
+                        />
+                      </button>
+                    )}
                   </div>
-
-                  {isUser && isUserMessageOverflowing && (
-                    <button
-                      onClick={() =>
-                        setIsUserMessageExpanded(!isUserMessageExpanded)
-                      }
-                      className="mt-1 flex w-full items-center justify-center gap-1 py-1 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
-                    >
-                      <span>
-                        {isUserMessageExpanded ? 'Show less' : 'Show more'}
-                      </span>
-                      <TfChevronDownAnimated
-                        aria-hidden="true"
-                        className={cn(
-                          'h-3 w-3 transition-transform',
-                          isUserMessageExpanded && 'rotate-180',
-                        )}
-                      />
-                    </button>
-                  )}
                 </div>
               </div>
             )}

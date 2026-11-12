@@ -24,6 +24,7 @@ function renderChatInput(handleSubmit = vi.fn(), initialInput = 'hello') {
     const [input, setInput] = useState(initialInput)
     return (
       <ChatInput
+        chatId=""
         input={input}
         setInput={setInput}
         handleSubmit={handleSubmit}
