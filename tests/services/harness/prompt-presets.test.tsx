@@ -278,7 +278,6 @@ describe('the default prompt of a new device chat', () => {
       threadId: expect.any(String),
       kind: 'send',
       widgets: [],
-      compactLatest: true,
       options: {
         model: 'test-model',
         timezone: expect.any(String),

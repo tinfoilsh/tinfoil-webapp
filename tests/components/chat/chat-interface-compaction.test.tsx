@@ -118,13 +118,20 @@ const summaryOf = ({
   ...summary
 }: Thread) => summary
 
-const compacting = {
+// A harness that compacts a chat on request and keeps its latest exchange as
+// it is, as one released before compactLatest does.
+const keepingLatest = {
   ...testSession,
   features: {
     ...testSession.features,
     compaction: true,
     manualCompaction: true,
   },
+}
+
+const compacting = {
+  ...keepingLatest,
+  features: { ...keepingLatest.features, compactLatest: true },
 }
 
 beforeEach(() => {
@@ -423,6 +430,8 @@ it('queues a message sent while the chat compacts, and streams its reply once th
     threadId: THREAD_ID,
     content: 'Third question',
   })
+  // Only a turn that may compact asks for the latest exchange too.
+  expect(run.turns[1]).not.toHaveProperty('compactLatest')
   const queued = {
     queueId: 'run-queued',
     kind: 'send',
@@ -690,6 +699,61 @@ it('offers no compaction of a chat compacted since its last reply', async () => 
   signIn({ cloud: true, session: compacting })
   scriptRuns()
   await openChat([...messages, endMarker])
+
+  fireEvent.click(screen.getByRole('button', { name: USAGE_LABEL }))
+
+  expect(
+    within(screen.getByRole('dialog', { name: 'Context window' })).getByRole(
+      'button',
+      { name: 'Compact chat' },
+    ),
+  ).toBeDisabled()
+})
+
+it('asks a harness that keeps the latest exchange to compact what comes before it', async () => {
+  signIn({ cloud: true, session: keepingLatest })
+  const run = scriptRuns()
+  await openChat()
+
+  compactFromIndicator()
+
+  await waitFor(() => expect(run.turns).toHaveLength(1))
+  expect(run.turns[0]).toMatchObject({ kind: 'compact', threadId: THREAD_ID })
+  expect(run.turns[0]).not.toHaveProperty('compactLatest')
+  run.emit(
+    0,
+    ...started('run-compact', messages, 'u2'),
+    {
+      type: 'COMPACTION_END',
+      messageId: 'c1',
+      beforeMessageId: 'u2',
+      outcome: 'completed',
+      marker,
+    },
+    {
+      type: 'RUN_FINISHED',
+      threadId: THREAD_ID,
+      runId: 'run-compact',
+      metadata: {},
+    },
+  )
+  run.end(0)
+  await screen.findByRole('button', { name: 'Compacted 2 earlier messages' })
+
+  // The exchange the harness kept is all that follows its marker.
+  fireEvent.click(screen.getByRole('button', { name: USAGE_LABEL }))
+  expect(
+    within(screen.getByRole('dialog', { name: 'Context window' })).getByRole(
+      'button',
+      { name: 'Compact chat' },
+    ),
+  ).toBeDisabled()
+})
+
+it('offers a harness that keeps the latest exchange no compaction of a chat with only that exchange', async () => {
+  signIn({ cloud: true, session: keepingLatest })
+  scriptRuns()
+  await openChat(messages.slice(2))
 
   fireEvent.click(screen.getByRole('button', { name: USAGE_LABEL }))
 

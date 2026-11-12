@@ -273,12 +273,18 @@ export function compactedView(state: {
     : undefined
 }
 // Whether compacting the chat on request has anything to summarize, as the
-// harness decides it for a turn that compacts the latest exchange too: a
-// reply after the latest compaction marker.
-export function compactable(messages: readonly WireMessage[]): boolean {
-  const reply = messages.findLastIndex(({ role }) => role === 'assistant')
+// harness decides it. A turn that compacts the latest exchange too needs a
+// reply after the latest compaction marker. Any other needs a message after
+// that marker that comes before the last question, which the harness keeps
+// with its reply.
+export function compactable(
+  messages: readonly WireMessage[],
+  includingLatest: boolean,
+): boolean {
   const marker = messages.findLastIndex(({ role }) => role === COMPACTION_ROLE)
-  return reply > marker
+  if (includingLatest)
+    return messages.findLastIndex(({ role }) => role === 'assistant') > marker
+  return messages.findLastIndex(({ role }) => role === 'user') > marker + 1
 }
 // A message as the view shows it, with the latest summary of each thinking
 // block's reasoning.

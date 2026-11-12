@@ -104,8 +104,7 @@ export function chatTurns({
   claim,
   reopen,
 }: TurnContext) {
-  // The fields every turn of the open chat has. A compaction on request
-  // summarizes the latest exchange too, as the chat shows a marker at its end.
+  // The fields every turn of the open chat has.
   const turnDefaults = (threadId: string): Turn => ({
     clientRequestId: crypto.randomUUID(),
     threadId,
@@ -113,7 +112,6 @@ export function chatTurns({
     widgets: GENUI_WIDGETS.map((widget) => widget.name).filter((name) =>
       session?.widgets.includes(name),
     ),
-    compactLatest: true,
     options: {
       model: open.get().model,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -523,6 +521,11 @@ export function chatTurns({
     }
     return reopen()
   }
+  // Where the harness offers it, a compaction on request, or a retry that
+  // compacts again, summarizes the latest exchange too, as the chat shows a
+  // marker at its end. The harness refuses the member on any other turn.
+  const latestToo = (): Partial<Turn> =>
+    session?.features.compactLatest ? { compactLatest: true } : {}
   // Retries what failed. A run that ended with an error runs again, as the
   // harness decides from the chat: a continuation continues again, a reply
   // is regenerated, and a message left without a reply is answered. A
@@ -531,14 +534,17 @@ export function chatTurns({
   async function retry(fields: Partial<Turn> = {}) {
     const { failedRun, status, compactTurn } = controller.view.get()
     if (!failedRun || status !== 'error') return reconnect()
-    return send({ ...fields, kind: compactTurn ? 'compact' : 'retry' })
+    return send({
+      ...fields,
+      kind: compactTurn ? 'compact' : 'retry',
+      ...latestToo(),
+    })
   }
-  // Compacts the open chat on request: the harness summarizes its messages,
-  // the latest exchange included, without asking the model. It does so only
-  // while no reply runs.
+  // Compacts the open chat on request: the harness summarizes its messages
+  // without asking the model. It does so only while no reply runs.
   function compact(fields: Partial<Turn> = {}) {
     if (!open.get().id || isRunning(controller.view.get())) return
-    return send({ ...fields, kind: 'compact' })
+    return send({ ...fields, kind: 'compact', ...latestToo() })
   }
   // Asks the harness for new arguments for a widget call, while the chat
   // shows no run or error of its own. A retry that does not repair the

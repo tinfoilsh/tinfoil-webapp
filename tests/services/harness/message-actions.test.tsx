@@ -217,7 +217,6 @@ describe('regenerating a reply', () => {
         messageId: call === 0 ? 'a2' : 'msg_regen',
         content: '',
         widgets: ['render_chart'],
-        compactLatest: true,
         options: {
           model: 'test-model',
           timezone: expect.any(String),
@@ -604,7 +603,6 @@ describe('retrying after an error', () => {
       key: KEY,
       kind: 'retry',
       widgets: ['render_chart'],
-      compactLatest: true,
       options: {
         model: 'test-model',
         timezone: expect.any(String),
@@ -1244,7 +1242,6 @@ describe('changing messages of a local chat', () => {
       threadId: THREAD_ID,
       kind: 'retry',
       widgets: ['render_chart'],
-      compactLatest: true,
       options: {
         model: 'test-model',
         timezone: expect.any(String),

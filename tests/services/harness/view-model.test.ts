@@ -202,9 +202,22 @@ describe('the compaction markers of a chat', () => {
   })
 
   it('offers to compact a chat only while a reply follows its latest marker', () => {
-    expect(compactable(endsChat.slice(0, 2))).toBe(true)
-    expect(compactable(endsChat)).toBe(false)
-    expect(compactable([...endsChat, question('u2')])).toBe(false)
-    expect(compactable([...endsChat, question('u2'), answer('a2')])).toBe(true)
+    expect(compactable(endsChat.slice(0, 2), true)).toBe(true)
+    expect(compactable(endsChat, true)).toBe(false)
+    expect(compactable([...endsChat, question('u2')], true)).toBe(false)
+    expect(compactable([...endsChat, question('u2'), answer('a2')], true)).toBe(
+      true,
+    )
+  })
+
+  it('offers a harness that keeps the latest exchange only what comes before it', () => {
+    const exchange = endsChat.slice(0, 2)
+    const kept = [question('u2'), answer('a2')]
+    expect(compactable(exchange, false)).toBe(false)
+    expect(compactable([...exchange, ...kept], false)).toBe(true)
+    expect(compactable([...endsChat, ...kept], false)).toBe(false)
+    expect(compactable([...endsChat, ...kept, question('u3')], false)).toBe(
+      true,
+    )
   })
 })

@@ -269,7 +269,6 @@ describe('local chats of a signed-in account without cloud sync', () => {
       local: true,
       content: 'Hi there',
       widgets: ['render_chart'],
-      compactLatest: true,
       options: {
         model: 'test-model',
         timezone: expect.any(String),
@@ -3443,7 +3442,6 @@ describe('temporary chats', () => {
         threadId: turn().threadId,
         kind: 'send',
         widgets: ['render_chart'],
-        compactLatest: true,
         options: {
           model: 'test-model',
           timezone: expect.any(String),
