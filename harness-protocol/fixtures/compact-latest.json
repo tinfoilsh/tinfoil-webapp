@@ -114,7 +114,7 @@
           "id": "msg_00000000000000000000000000000004",
           "role": "compaction",
           "createdAt": "2026-01-01T00:00:00Z",
-          "content": "## Goals and context\nThe user asked a first question.\n\n## Instructions and preferences\nNone\n\n## Key facts\nNone\n\n## Work the assistant produced\nNone\n\n## Decisions\nNone\n\n## Open threads\nNone",
+          "content": "## Goals and context\nThe user asked two questions.\n\n## Instructions and preferences\nNone\n\n## Key facts\nNone\n\n## Work the assistant produced\nNone\n\n## Decisions\nNone\n\n## Open threads\nNone",
           "compaction": {
             "messages": 4,
             "startedAt": 1767225600000,
@@ -143,9 +143,9 @@
             "webSearchEnabled": false,
             "pinned": false,
             "contextUsage": {
-              "usedTokens": 186,
+              "usedTokens": 185,
               "limitTokens": 6553,
-              "percentage": 2.8383946284144668
+              "percentage": 2.823134442240195
             },
             "activeRun": {
               "runId": "00000000000000000000000000000002",
@@ -179,9 +179,9 @@
             "webSearchEnabled": false,
             "pinned": false,
             "contextUsage": {
-              "usedTokens": 186,
+              "usedTokens": 185,
               "limitTokens": 6553,
-              "percentage": 2.8383946284144668
+              "percentage": 2.823134442240195
             },
             "activeRun": null,
             "messageCount": 4
@@ -255,7 +255,7 @@
                 "id": "msg_00000000000000000000000000000004",
                 "role": "compaction",
                 "createdAt": "2026-01-01T00:00:00Z",
-                "content": "## Goals and context\nThe user asked a first question.\n\n## Instructions and preferences\nNone\n\n## Key facts\nNone\n\n## Work the assistant produced\nNone\n\n## Decisions\nNone\n\n## Open threads\nNone",
+                "content": "## Goals and context\nThe user asked two questions.\n\n## Instructions and preferences\nNone\n\n## Key facts\nNone\n\n## Work the assistant produced\nNone\n\n## Decisions\nNone\n\n## Open threads\nNone",
                 "compaction": {
                   "messages": 4,
                   "startedAt": 1767225600000,
@@ -268,9 +268,9 @@
             "lastRequestId": "00000000-0000-4000-8000-000000000005",
             "activeRun": null,
             "contextUsage": {
-              "usedTokens": 186,
+              "usedTokens": 185,
               "limitTokens": 6553,
-              "percentage": 2.8383946284144668
+              "percentage": 2.823134442240195
             },
             "recordVersion": 2
           },
@@ -324,7 +324,7 @@
         ]
       },
       {
-        "content": "## Goals and context\nThe user asked a first question.\n\n## Instructions and preferences\nNone\n\n## Key facts\nNone\n\n## Work the assistant produced\nNone\n\n## Decisions\nNone\n\n## Open threads\nNone",
+        "content": "## Goals and context\nThe user asked two questions.\n\n## Instructions and preferences\nNone\n\n## Key facts\nNone\n\n## Work the assistant produced\nNone\n\n## Decisions\nNone\n\n## Open threads\nNone",
         "id": "msg_00000000000000000000000000000004",
         "role": "compaction",
         "timeline": []
