@@ -14,6 +14,20 @@ afterEach(async () => {
   await Promise.all(stores.splice(0).map((store) => store.close()))
 })
 
+test('an app-owned history connection closes when a newer version opens', async () => {
+  const name = crypto.randomUUID()
+  const store = open(name)
+  await store.list('alice')
+  const upgraded = await openDB(name, 4)
+  try {
+    await expect(store.get('alice', 'old-context')).rejects.toMatchObject({
+      name: 'InvalidStateError',
+    })
+  } finally {
+    upgraded.close()
+  }
+})
+
 test('a replay returns the journaled result without repeating the action', async () => {
   const store = open()
   let clicks = 0

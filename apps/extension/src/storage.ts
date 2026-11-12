@@ -67,6 +67,9 @@ export class TaskStore {
   private readonly database: Promise<IDBPDatabase<BrowserDatabase>>
   constructor(name = DATABASE_NAME) {
     this.database = openDB<BrowserDatabase>(name, DATABASE_VERSION, {
+      blocking: () => {
+        void this.database.then((database) => database.close())
+      },
       upgrade(db, oldVersion, _newVersion, transaction) {
         if (oldVersion < 1) {
           db.createObjectStore('tasks', {
