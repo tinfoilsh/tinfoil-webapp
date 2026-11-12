@@ -706,9 +706,10 @@ ${generatedKey.replace('key_', '')}
         size="landing"
         chevron
         onClick={handleComplete}
+        disabled={isProcessing}
         className="mx-auto mt-auto"
       >
-        Let&apos;s go!
+        {isProcessing ? 'Setting up...' : "Let's go!"}
       </Button>
     </div>
   )
