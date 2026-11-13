@@ -552,7 +552,7 @@ export function Composer({
 
       {hasMessages && (
         <div className="flex items-center justify-between gap-4 px-3 md:px-6">
-          {/* With nothing beside it, the disclaimer sits in the middle. */}
+          {/* A composer given no footer controls centers the disclaimer. */}
           <p
             className={cn(
               'text-xs text-content-muted',
