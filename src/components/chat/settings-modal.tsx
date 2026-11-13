@@ -73,6 +73,7 @@ import {
 import { useAuth, useUser } from '@clerk/react'
 import { Dialog } from '@headlessui/react'
 import { ArrowUpTrayIcon } from '@heroicons/react/24/outline'
+import { ToggleSwitch } from '@tinfoil/chat-ui/toggle-switch'
 import {
   TfBoxCheckmark,
   TfBoxX,
@@ -2270,19 +2271,11 @@ ${encryptionKey.replace('key_', '')}
                             them.
                           </div>
                         </div>
-                        <label className="relative inline-flex cursor-pointer items-center">
-                          <input
-                            type="checkbox"
-                            aria-label="Redact sidebar chat titles"
-                            checked={pixelateSidebarChatTitles}
-                            onChange={(e) => {
-                              const newValue = e.target.checked
-                              setPixelateSidebarChatTitles(newValue)
-                            }}
-                            className="peer sr-only"
-                          />
-                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong dark:peer-checked:bg-brand-accent-light" />
-                        </label>
+                        <ToggleSwitch
+                          aria-label="Redact sidebar chat titles"
+                          checked={pixelateSidebarChatTitles}
+                          onChange={setPixelateSidebarChatTitles}
+                        />
                       </div>
                     </div>
                     <div
@@ -2301,19 +2294,11 @@ ${encryptionKey.replace('key_', '')}
                             {CONSTANTS.BASE_DOCUMENT_TITLE}&rdquo;.
                           </div>
                         </div>
-                        <label className="relative inline-flex cursor-pointer items-center">
-                          <input
-                            type="checkbox"
-                            aria-label="Show chat title in browser tab"
-                            checked={browserTabChatTitle}
-                            onChange={(e) => {
-                              const newValue = e.target.checked
-                              setBrowserTabChatTitle(newValue)
-                            }}
-                            className="peer sr-only"
-                          />
-                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong dark:peer-checked:bg-brand-accent-light" />
-                        </label>
+                        <ToggleSwitch
+                          aria-label="Show chat title in browser tab"
+                          checked={browserTabChatTitle}
+                          onChange={setBrowserTabChatTitle}
+                        />
                       </div>
                     </div>
                   </div>
@@ -2494,19 +2479,11 @@ ${encryptionKey.replace('key_', '')}
                             button. On phones, Enter always inserts a new line.
                           </div>
                         </div>
-                        <label className="relative inline-flex cursor-pointer items-center">
-                          <input
-                            type="checkbox"
-                            aria-label="Press Enter for new line"
-                            checked={enterToNewlineEnabled}
-                            onChange={(e) => {
-                              const newValue = e.target.checked
-                              setEnterToNewlineEnabled(newValue)
-                            }}
-                            className="peer sr-only"
-                          />
-                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong dark:peer-checked:bg-brand-accent-light" />
-                        </label>
+                        <ToggleSwitch
+                          aria-label="Press Enter for new line"
+                          checked={enterToNewlineEnabled}
+                          onChange={setEnterToNewlineEnabled}
+                        />
                       </div>
                     </div>
                   </div>
@@ -2533,19 +2510,11 @@ ${encryptionKey.replace('key_', '')}
                               the web.
                             </div>
                           </div>
-                          <label className="relative inline-flex cursor-pointer items-center">
-                            <input
-                              type="checkbox"
-                              aria-label="Web Search"
-                              checked={webSearchAvailable}
-                              onChange={(e) => {
-                                const newValue = e.target.checked
-                                setWebSearchAvailable(newValue)
-                              }}
-                              className="peer sr-only"
-                            />
-                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none dark:peer-checked:bg-brand-accent-light" />
-                          </label>
+                          <ToggleSwitch
+                            aria-label="Web Search"
+                            checked={webSearchAvailable}
+                            onChange={setWebSearchAvailable}
+                          />
                         </div>
 
                         {/* Web Search PII Detection - only meaningful while web search is on */}
@@ -2560,18 +2529,10 @@ ${encryptionKey.replace('key_', '')}
                                 information.
                               </div>
                             </div>
-                            <label className="relative inline-flex cursor-pointer items-center">
-                              <input
-                                type="checkbox"
-                                checked={piiCheckEnabled}
-                                onChange={(e) => {
-                                  const newValue = e.target.checked
-                                  setPiiCheckEnabled(newValue)
-                                }}
-                                className="peer sr-only"
-                              />
-                              <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none dark:peer-checked:bg-brand-accent-light" />
-                            </label>
+                            <ToggleSwitch
+                              checked={piiCheckEnabled}
+                              onChange={setPiiCheckEnabled}
+                            />
                           </div>
                         )}
                       </div>
@@ -2594,18 +2555,10 @@ ${encryptionKey.replace('key_', '')}
                               to the model.
                             </div>
                           </div>
-                          <label className="relative inline-flex cursor-pointer items-center">
-                            <input
-                              type="checkbox"
-                              checked={genUIEnabled}
-                              onChange={(e) => {
-                                const newValue = e.target.checked
-                                setGenUIEnabled(newValue)
-                              }}
-                              className="peer sr-only"
-                            />
-                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none dark:peer-checked:bg-brand-accent-light" />
-                          </label>
+                          <ToggleSwitch
+                            checked={genUIEnabled}
+                            onChange={setGenUIEnabled}
+                          />
                         </div>
                       </div>
                     </div>
@@ -2633,18 +2586,11 @@ ${encryptionKey.replace('key_', '')}
                           off, none of these are sent to the model.
                         </div>
                       </div>
-                      <label className="relative inline-flex cursor-pointer items-center">
-                        <input
-                          type="checkbox"
-                          aria-label="Personalize responses"
-                          checked={isUsingPersonalization}
-                          onChange={(e) =>
-                            handleTogglePersonalization(e.target.checked)
-                          }
-                          className="peer sr-only"
-                        />
-                        <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none dark:peer-checked:bg-brand-accent-light" />
-                      </label>
+                      <ToggleSwitch
+                        aria-label="Personalize responses"
+                        checked={isUsingPersonalization}
+                        onChange={handleTogglePersonalization}
+                      />
                     </div>
                   </div>
 
@@ -3033,18 +2979,13 @@ ${encryptionKey.replace('key_', '')}
                             />
                           )}
                         </div>
-                        <label className="relative inline-flex cursor-pointer items-center">
-                          <input
-                            type="checkbox"
-                            aria-label="Encrypted Cloud Sync"
-                            checked={cloudSyncEnabled}
-                            onChange={(e) =>
-                              void handleCloudSyncToggle(e.target.checked)
-                            }
-                            className="peer sr-only"
-                          />
-                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none dark:peer-checked:bg-brand-accent-light" />
-                        </label>
+                        <ToggleSwitch
+                          aria-label="Encrypted Cloud Sync"
+                          checked={cloudSyncEnabled}
+                          onChange={(checked) =>
+                            void handleCloudSyncToggle(checked)
+                          }
+                        />
                       </div>
                     </div>
                     {keyLocked && (
@@ -3534,18 +3475,11 @@ ${encryptionKey.replace('key_', '')}
                                 device and are never synced to the cloud.
                               </div>
                             </div>
-                            <label className="relative inline-flex cursor-pointer items-center">
-                              <input
-                                type="checkbox"
-                                aria-label="Enable local chats"
-                                checked={localChatsEnabled}
-                                onChange={(e) =>
-                                  setLocalOnlyModeEnabled(e.target.checked)
-                                }
-                                className="peer sr-only"
-                              />
-                              <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-dark peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none dark:peer-checked:bg-brand-accent-light" />
-                            </label>
+                            <ToggleSwitch
+                              aria-label="Enable local chats"
+                              checked={localChatsEnabled}
+                              onChange={setLocalOnlyModeEnabled}
+                            />
                           </div>
                           {localChatsEnabled && (
                             <div className="rounded-md border border-orange-500/30 bg-orange-500/10 px-3 py-2">

@@ -21,6 +21,7 @@
     "./StreamingMarkdown": "./src/StreamingMarkdown.tsx",
     "./StreamingTracerDot": "./src/StreamingTracerDot.tsx",
     "./ThoughtProcess": "./src/ThoughtProcess.tsx",
+    "./toggle-switch": "./src/toggle-switch.tsx",
     "./tooltip": "./src/tooltip.tsx",
     "./user-avatar": "./src/user-avatar.tsx",
     "./utils": "./src/utils.ts",
