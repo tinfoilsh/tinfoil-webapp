@@ -20,6 +20,10 @@ declare global {
 }
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const MAX_SNAPSHOT_OBSERVATIONS = 10
+const DEVICE_SCALE_FACTOR = 2
+const WINDOW_SIZE = '1500,1000'
+// The longest side of the picture of a viewport that a model is given.
+const MAX_PICTURE_SIDE = 1280
 // A movement the user can follow is drawn at this many places at least
 // between where it sets off and where it arrives; a jump is drawn at none.
 const PLACES_ON_THE_WAY = 5
@@ -112,6 +116,10 @@ test.beforeAll(async () => {
     args: [
       `--disable-extensions-except=${extension}`,
       `--load-extension=${extension}`,
+      // A screen as dense and a window as large as the ones the extension is
+      // used on, where the viewport is larger than the picture a model reads.
+      `--force-device-scale-factor=${DEVICE_SCALE_FACTOR}`,
+      `--window-size=${WINDOW_SIZE}`,
     ],
   })
   worker =
@@ -794,6 +802,50 @@ test('a task can visit more tabs than it keeps attached and releases every attac
     await expect(page).toHaveURL(`${origin}/?many-tabs-0`)
   } finally {
     await Promise.all(extra.map((tab) => tab.close()))
+  }
+})
+
+test('a screenshot pictures the viewport as it is drawn, and is made smaller for the model by the extension', async () => {
+  const { page, tabId } = await startFixture('/?undisturbed')
+  await execute({ action: 'read', tabId })
+  // What the browser is asked to capture.
+  await worker.evaluate(() => {
+    const scope = globalThis as { captures?: unknown[]; restore?: () => void }
+    const send = chrome.debugger.sendCommand
+    scope.captures = []
+    scope.restore = () => {
+      chrome.debugger.sendCommand = send
+    }
+    chrome.debugger.sendCommand = ((...request: unknown[]) => {
+      if (request[1] === 'Page.captureScreenshot')
+        scope.captures!.push(request[2])
+      return Reflect.apply(send, chrome.debugger, request)
+    }) as typeof send
+  })
+  try {
+    const picture = JSON.parse(
+      (await execute({ action: 'screenshot', tabId })).text,
+    ) as { width: number; height: number }
+    // The screen holds more than the model is given a picture of.
+    expect(
+      await page.evaluate(
+        () => Math.max(innerWidth, innerHeight) * devicePixelRatio,
+      ),
+    ).toBeGreaterThan(MAX_PICTURE_SIDE)
+    expect(Math.max(picture.width, picture.height)).toBe(MAX_PICTURE_SIDE)
+    // To capture a part of the viewport, or the viewport at another size,
+    // the browser draws the page again on the screen the user is looking
+    // at, which they see as a flash. It is asked for neither, however often
+    // a viewport still settling has it capture again.
+    const captures = await worker.evaluate(
+      () => (globalThis as { captures?: object[] }).captures ?? [],
+    )
+    expect(captures.length).toBeGreaterThan(0)
+    expect(captures.filter((capture) => 'clip' in capture)).toEqual([])
+  } finally {
+    await worker.evaluate(() =>
+      (globalThis as { restore?: () => void }).restore?.(),
+    )
   }
 })
 
