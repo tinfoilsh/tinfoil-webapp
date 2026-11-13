@@ -1,4 +1,5 @@
 import {
+  findSelectableModel,
   selectedModelLabel,
   type AutoIntelligenceLevel,
   type BaseModel,
@@ -6,7 +7,7 @@ import {
 } from '@tinfoil/chat-client/models'
 import { ModelSelector } from '@tinfoil/chat-ui/model-selector'
 import { ModelSelectorTriggerLabel } from '@tinfoil/chat-ui/model-selector-trigger-label'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const PICKER_SELECTOR = '[data-model-selector], [data-model-menu]'
 
@@ -33,6 +34,7 @@ export function ModelPicker({
   isDarkMode: boolean
 }) {
   const [isOpen, setIsOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (!isOpen) return
     const dismissOutside = (event: Event) => {
@@ -46,6 +48,7 @@ export function ModelPicker({
       if (event.key !== 'Escape') return
       event.preventDefault()
       setIsOpen(false)
+      trigger.current?.focus()
     }
     document.addEventListener('mousedown', dismissOutside)
     document.addEventListener('focusin', dismissOutside)
@@ -60,6 +63,7 @@ export function ModelPicker({
   return (
     <div className="relative">
       <button
+        ref={trigger}
         type="button"
         data-model-selector
         aria-haspopup="menu"
@@ -86,7 +90,8 @@ export function ModelPicker({
           selectedModel={selectedModel}
           onSelect={(model) => {
             onSelect(model)
-            setIsOpen(false)
+            // Auto stays open for its intelligence level to be set.
+            if (!findSelectableModel(model, models)?.auto) setIsOpen(false)
           }}
           isDarkMode={isDarkMode}
           models={models}

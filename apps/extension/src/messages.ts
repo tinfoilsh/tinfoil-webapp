@@ -48,6 +48,12 @@ export type ToPanel =
   | { type: 'token'; id: string; skipCache?: boolean }
   | { type: 'result'; id: string; error?: string }
 
+// A command, whatever it asks, by the id its answer carries.
+export const commandEnvelopeSchema = z.object({
+  type: z.literal('command'),
+  id: z.string(),
+})
+
 export const toWorkerSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ping') }),
   z.object({ type: z.literal('hello'), owner: z.string().min(1).max(200) }),

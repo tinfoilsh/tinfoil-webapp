@@ -24,7 +24,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
-import { DEFAULT_MODEL } from '../config'
+import { DEFAULT_MODEL, MAX_PROMPT_CHARS } from '../config'
 import { MessageView } from '../message-view'
 import type { Command, View } from '../messages'
 import { PanelConnection } from '../panel-connection'
@@ -150,8 +150,11 @@ export function ChatPanel({
     offered(view.session?.defaultModel) ||
     DEFAULT_MODEL
   const effort = effortChoice ?? task?.effort ?? DEFAULT_EFFORT
-  const autoIntelligence =
-    autoChoice ?? task?.autoIntelligence ?? view.session?.auto.default ?? ''
+  // A level the session no longer offers gives way to its default.
+  const level = autoChoice ?? task?.autoIntelligence
+  const autoIntelligence = autoLevels.some((entry) => entry.id === level)
+    ? level!
+    : (view.session?.auto.default ?? '')
   const problem = error || view.error || task?.error
 
   useEffect(() => connection.connect(), [connection])
@@ -171,6 +174,12 @@ export function ChatPanel({
   const submit = async () => {
     const content = input.trim()
     if (!content || sending) return
+    if (content.length > MAX_PROMPT_CHARS) {
+      setError(
+        `Shorten the message to ${MAX_PROMPT_CHARS.toLocaleString()} characters to send it.`,
+      )
+      return
+    }
     setSending(true)
     setError('')
     try {
@@ -253,6 +262,7 @@ export function ChatPanel({
           setChatsOpen(false)
         }}
         onDelete={(id) => void command({ kind: 'delete', id })}
+        isDarkMode={isDarkMode}
       />
 
       <div

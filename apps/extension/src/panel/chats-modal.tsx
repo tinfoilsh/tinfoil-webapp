@@ -1,6 +1,8 @@
+import { DeleteConfirmation } from '@tinfoil/chat-ui/delete-confirmation'
 import { Modal, ModalTitle } from '@tinfoil/chat-ui/modal'
 import { cn } from '@tinfoil/chat-ui/utils'
 import { TfTrash } from '@tinfoilsh/tinfoil-icons'
+import { useState } from 'react'
 import type { View } from '../messages'
 
 // The chats saved in this extension, to open or delete.
@@ -11,6 +13,7 @@ export function ChatsModal({
   currentId,
   onSelect,
   onDelete,
+  isDarkMode,
 }: {
   isOpen: boolean
   onClose: () => void
@@ -18,7 +21,9 @@ export function ChatsModal({
   currentId?: string
   onSelect: (id: string) => void
   onDelete: (id: string) => void
+  isDarkMode: boolean
 }) {
+  const [deleting, setDeleting] = useState<string>()
   return (
     <Modal
       isOpen={isOpen}
@@ -55,12 +60,22 @@ export function ChatsModal({
             </button>
             <button
               type="button"
-              onClick={() => onDelete(chat.id)}
+              onClick={() => setDeleting(chat.id)}
               aria-label={`Delete ${chat.title}`}
               className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-content-muted opacity-0 transition-opacity hover:text-red-500 focus-visible:opacity-100 group-hover/chat:opacity-100"
             >
               <TfTrash className="h-4 w-4" aria-hidden="true" />
             </button>
+            {deleting === chat.id && (
+              <DeleteConfirmation
+                onConfirm={() => {
+                  setDeleting(undefined)
+                  onDelete(chat.id)
+                }}
+                onCancel={() => setDeleting(undefined)}
+                isDarkMode={isDarkMode}
+              />
+            )}
           </li>
         ))}
       </ul>

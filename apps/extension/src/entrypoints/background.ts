@@ -8,7 +8,11 @@ import {
   TOKEN_TIMEOUT_MS,
 } from '../config'
 import { TaskController, errorText } from '../controller'
-import { toWorkerSchema, type ToPanel } from '../messages'
+import {
+  commandEnvelopeSchema,
+  toWorkerSchema,
+  type ToPanel,
+} from '../messages'
 import { reviewActions } from '../settings'
 import { TaskStore } from '../storage'
 
@@ -87,7 +91,17 @@ export default defineBackground(() => {
     }
     port.onMessage.addListener((raw: unknown) => {
       const parsed = toWorkerSchema.safeParse(raw)
-      if (!parsed.success) return
+      if (!parsed.success) {
+        // A command the panel waits on is answered even when it is refused.
+        const refused = commandEnvelopeSchema.safeParse(raw)
+        if (refused.success)
+          send({
+            type: 'result',
+            id: refused.data.id,
+            error: 'That request could not be understood.',
+          })
+        return
+      }
       const message = parsed.data
       if (message.type === 'token') {
         tokens.get(message.id)?.resolve(message.token)
