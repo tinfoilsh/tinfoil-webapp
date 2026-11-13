@@ -1,6 +1,12 @@
+import {
+  CHAT_ROW_ACTIONS_CLASS_NAME,
+  CHAT_ROW_SELECT_CLASS_NAME,
+  CHAT_ROW_TITLE_CLASS_NAME,
+  chatRowActionClassName,
+  chatRowClassName,
+} from '@tinfoil/chat-ui/chat-row'
 import { DeleteConfirmation } from '@tinfoil/chat-ui/delete-confirmation'
 import { Modal, ModalTitle } from '@tinfoil/chat-ui/modal'
-import { cn } from '@tinfoil/chat-ui/utils'
 import { TfTrash } from '@tinfoilsh/tinfoil-icons'
 import { useState } from 'react'
 import type { View } from '../messages'
@@ -11,6 +17,7 @@ export function ChatsModal({
   onClose,
   chats,
   currentId,
+  runningId,
   onSelect,
   onDelete,
   isDarkMode,
@@ -19,6 +26,8 @@ export function ChatsModal({
   onClose: () => void
   chats: View['tasks']
   currentId?: string
+  // The chat whose task is at work.
+  runningId?: string
   onSelect: (id: string) => void
   onDelete: (id: string) => void
   isDarkMode: boolean
@@ -30,42 +39,53 @@ export function ChatsModal({
       onClose={onClose}
       className="flex h-[calc(100dvh-2rem)] flex-col p-0"
     >
-      <ModalTitle className="flex-none px-6 pb-3 pr-14 pt-6">
+      <ModalTitle className="flex-none px-5 pb-2 pr-14 pt-6">
         Recent chats
       </ModalTitle>
-      <ul className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+      <div role="list" className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
         {chats.length === 0 && (
-          <li className="px-3 py-2 text-sm text-content-muted">
-            No saved chats yet.
-          </li>
+          <p className="p-2 text-sm text-content-muted">No saved chats yet.</p>
         )}
         {chats.map((chat) => (
-          <li key={chat.id} className="group/chat relative">
-            <button
-              type="button"
-              onClick={() => onSelect(chat.id)}
-              aria-current={chat.id === currentId ? 'true' : undefined}
-              className={cn(
-                'flex w-full items-center gap-3 rounded-lg py-2.5 pl-3 pr-10 text-left text-sm transition-colors',
-                chat.id === currentId
-                  ? 'bg-surface-chat text-content-primary'
-                  : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-              )}
+          <div key={chat.id} role="listitem" className="relative">
+            <div
+              className={chatRowClassName(chat.id === currentId, isDarkMode)}
             >
-              <span
-                aria-hidden="true"
-                className="h-1.5 w-1.5 flex-none rounded-full border border-content-muted"
-              />
-              <span className="min-w-0 flex-1 truncate">{chat.title}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setDeleting(chat.id)}
-              aria-label={`Delete ${chat.title}`}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-content-muted opacity-0 transition-opacity hover:text-red-500 focus-visible:opacity-100 group-hover/chat:opacity-100"
-            >
-              <TfTrash className="h-4 w-4" aria-hidden="true" />
-            </button>
+              <button
+                type="button"
+                onClick={() => onSelect(chat.id)}
+                aria-current={chat.id === currentId ? 'page' : undefined}
+                className={CHAT_ROW_SELECT_CLASS_NAME}
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className={CHAT_ROW_TITLE_CLASS_NAME}>
+                    {chat.title}
+                  </span>
+                  {chat.id === runningId && (
+                    <span
+                      className="mx-2 flex w-[18px] flex-shrink-0 items-center justify-center"
+                      title="Generating response"
+                    >
+                      <span className="stream-loader" />
+                      <span className="sr-only">Generating response</span>
+                    </span>
+                  )}
+                </span>
+              </button>
+              <div className={CHAT_ROW_ACTIONS_CLASS_NAME}>
+                <div className="pointer-events-none flex w-0 items-center overflow-hidden opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:w-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:w-auto group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => setDeleting(chat.id)}
+                    aria-label={`Delete ${chat.title}`}
+                    title="Delete"
+                    className={chatRowActionClassName(isDarkMode)}
+                  >
+                    <TfTrash className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+            </div>
             {deleting === chat.id && (
               <DeleteConfirmation
                 onConfirm={() => {
@@ -76,9 +96,9 @@ export function ChatsModal({
                 isDarkMode={isDarkMode}
               />
             )}
-          </li>
+          </div>
         ))}
-      </ul>
+      </div>
     </Modal>
   )
 }
