@@ -4,6 +4,7 @@ import {
   useAuth,
   useClerk,
 } from '@clerk/chrome-extension'
+import { logError } from '@tinfoil/chat-client/logging'
 import type { Message } from '@tinfoil/chat-client/types'
 import { Button } from '@tinfoil/chat-ui/button'
 import {
@@ -37,6 +38,7 @@ import {
 } from '../../config'
 import type { Command } from '../../messages'
 import { PanelConnection } from '../../panel-connection'
+import { sessionToken, watchWebSession } from '../../web-session'
 import './style.css'
 
 const REMARK_PLUGINS = [remarkGfm]
@@ -529,16 +531,33 @@ function ChatPanel({
 function SignedInApp() {
   const { isLoaded, userId } = useAuth()
   const clerk = useClerk()
+  const sessionSync = useRef<ReturnType<typeof watchWebSession> | undefined>(
+    undefined,
+  )
+  const [signInError, setSignInError] = useState(false)
+  useEffect(() => {
+    if (!isLoaded) return
+    const sync = watchWebSession(
+      CLERK_FRONTEND_API,
+      async () => {
+        const client = await clerk.client.reload()
+        if ((clerk.session?.id ?? null) !== client.lastActiveSessionId)
+          await clerk.setActive({ session: client.lastActiveSessionId })
+      },
+      (cause) => {
+        setSignInError(cause !== null)
+        if (cause !== null) logError('Unable to refresh website sign-in', cause)
+      },
+    )
+    sessionSync.current = sync
+    void sync.refresh()
+    return () => {
+      sessionSync.current = undefined
+      sync.dispose()
+    }
+  }, [clerk, isLoaded])
   const getToken = useCallback(
-    async (options?: { skipCache?: boolean }) => {
-      const session = clerk.session
-      if (!session || session.user.id !== userId)
-        throw new Error('The signed-in account changed.')
-      const token = await session.getToken(options)
-      if (clerk.session !== session || clerk.user?.id !== userId)
-        throw new Error('The signed-in account changed.')
-      return token
-    },
+    (options?: { skipCache?: boolean }) => sessionToken(clerk, userId, options),
     [clerk, userId],
   )
   if (!isLoaded)
@@ -552,14 +571,22 @@ function SignedInApp() {
       <div className="setup">
         <h1>Tinfoil Browser</h1>
         <p>
-          Sign in on Tinfoil’s website, then close and reopen this panel to
-          continue.
+          Sign in on Tinfoil’s website. This panel will update automatically.
         </p>
         <Button asChild variant="solid">
           <a href={WEB_SIGN_IN_URL} target="_blank" rel="noopener noreferrer">
             Sign in to Tinfoil
           </a>
         </Button>
+        <Button
+          variant="ghost"
+          onClick={() => void sessionSync.current?.refresh()}
+        >
+          Refresh sign-in
+        </Button>
+        {signInError && (
+          <p role="alert">Could not refresh sign-in. Please try again.</p>
+        )}
       </div>
     )
   return <ChatPanel key={userId} owner={userId} getToken={getToken} />
