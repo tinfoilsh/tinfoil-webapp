@@ -11,7 +11,7 @@ import type { Frame, Message } from '@tinfoil/chat-client/types'
 import { createElement } from 'react'
 import { afterEach, expect, test } from 'vitest'
 import recorded from '../../../harness-protocol/fixtures/browser.json'
-import { MessageView } from '../src/message-view'
+import { Conversation, MessageView } from '../src/message-view'
 
 afterEach(cleanup)
 
@@ -188,4 +188,30 @@ test('a question shows as the user wrote it', () => {
     'Open **the** page then read it',
   )
   expect(screen.queryByText('Encrypted')).not.toBeInTheDocument()
+})
+
+test('a chat waits visibly for its reply until the first of it arrives', () => {
+  const question: Message = {
+    id: 'question',
+    role: 'user',
+    content: 'Open the news and summarize it',
+    createdAt: '2026-11-13T00:00:00Z',
+  }
+  const conversation = (messages: Message[], busy: boolean) =>
+    createElement(Conversation, { messages, busy, isDarkMode: false })
+  const waiting = () =>
+    screen.queryByRole('status', { name: 'Waiting for response' })
+  // A question that has not been sent to a run, or whose run was stopped,
+  // waits for nothing.
+  const view = render(conversation([question], false))
+  expect(waiting()).not.toBeInTheDocument()
+  view.rerender(conversation([question], true))
+  expect(waiting()).toBeVisible()
+
+  // The reply shows its own progress from its first block on.
+  view.rerender(conversation([question, { ...REPLY, timeline: [] }], true))
+  expect(waiting()).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('status', { name: 'Streaming response' }),
+  ).toBeVisible()
 })

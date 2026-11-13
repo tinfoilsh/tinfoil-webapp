@@ -21,7 +21,7 @@ import {
   type ReactNode,
 } from 'react'
 import { MAX_PROMPT_CHARS } from '../config'
-import { MessageView } from '../message-view'
+import { Conversation } from '../message-view'
 import type { Command, View } from '../messages'
 import { turnModel } from '../model-choice'
 import { PanelConnection } from '../panel-connection'
@@ -253,16 +253,11 @@ export function ChatPanel({
         }}
       >
         {hasMessages ? (
-          <div className="mx-auto w-full min-w-0 pb-6 pt-6 font-chat">
-            {messages.map((message, index) => (
-              <MessageView
-                key={message.id}
-                message={message}
-                streaming={busy && index === messages.length - 1}
-                isDarkMode={isDarkMode}
-              />
-            ))}
-          </div>
+          <Conversation
+            messages={messages}
+            busy={busy}
+            isDarkMode={isDarkMode}
+          />
         ) : (
           <div className="flex min-h-full w-full flex-col items-center justify-center px-8 py-10">
             <h1 className="text-center text-2xl font-medium tracking-tight text-content-primary">

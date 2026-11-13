@@ -222,3 +222,34 @@ export function MessageView({
     </div>
   )
 }
+
+// A chat's messages, and a sign that its reply is on the way for as long as
+// none of it has arrived.
+export function Conversation({
+  messages,
+  busy,
+  isDarkMode,
+}: {
+  messages: Message[]
+  // The chat's run is still working on its reply.
+  busy: boolean
+  isDarkMode: boolean
+}) {
+  return (
+    <div className="mx-auto w-full min-w-0 pb-6 pt-6 font-chat">
+      {messages.map((message, index) => (
+        <MessageView
+          key={message.id}
+          message={message}
+          streaming={busy && index === messages.length - 1}
+          isDarkMode={isDarkMode}
+        />
+      ))}
+      {busy && messages.at(-1)?.role === 'user' && (
+        <div className="no-scroll-anchoring group mx-auto mb-6 flex w-full max-w-3xl flex-col items-start px-4 pt-6">
+          <StreamingTracerDot tone="secondary" label="Waiting for response" />
+        </div>
+      )}
+    </div>
+  )
+}
