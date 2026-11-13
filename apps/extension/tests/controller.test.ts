@@ -27,13 +27,13 @@ afterEach(async () => {
   for (const finish of close.splice(0)) await finish()
 })
 
-function setup() {
-  signIn({ userId: 'alice', session })
+function setup(offered: Session = session) {
+  signIn({ userId: 'alice', session: offered })
   const store = new TaskStore(crypto.randomUUID())
   const views: View[] = []
   const observers = new Set<(view: View) => void>()
   let actions = 0
-  let reviewActions = false
+  let reviewActions: boolean | Error = false
   const browser = {
     execute: async () => ({ text: `Saved ${++actions}` }),
     describe: async () => 'Click Save on the selected tab',
@@ -48,7 +48,10 @@ function setup() {
       views.push(structuredClone(view))
       for (const observe of observers) observe(view)
     },
-    async () => reviewActions,
+    async () => {
+      if (reviewActions instanceof Error) throw reviewActions
+      return reviewActions
+    },
     () => browser,
   )
   const until = (test: (view: View) => boolean) =>
@@ -76,7 +79,7 @@ function setup() {
     until,
     browser,
     actions: () => actions,
-    setReviewActions: (value: boolean) => {
+    setReviewActions: (value: boolean | Error) => {
       reviewActions = value
     },
   }
@@ -297,6 +300,70 @@ test('actions run unreviewed until review is turned on, and a waiting action sta
       .filter(([path]) => path === '/v1/threads/browser/result')
       .map(([, input]) => (input as { executionId: string }).executionId),
   ).toEqual(['first', 'second', 'third'])
+})
+
+test('a review setting that cannot be read stops the task before it acts', async () => {
+  const { controller, until, actions, setReviewActions } = setup()
+  setReviewActions(new Error('Storage unavailable'))
+  let turn!: Turn
+  client.events.mockImplementation(async function* (path: string, input: Turn) {
+    if (path === '/v1/threads/follow') {
+      yield ended(turn, true)
+      return
+    }
+    turn = input
+    yield started(turn)
+    yield browserRequest(turn)
+    throw new Error('An unreadable setting must end the stream')
+  })
+  answerPosts({
+    '/v1/threads/cancel': () => ({ cancelled: true }),
+  })
+  await controller.initialize()
+  await controller.command(send)
+  const final = await until((view) => view.task?.phase === 'interrupted')
+  expect(final.task?.error).toContain('review setting could not be read')
+  expect(final.pending).toBeUndefined()
+  expect(actions()).toBe(0)
+  expect(
+    client.post.mock.calls.filter(
+      ([path]) => path === '/v1/threads/browser/result',
+    ),
+  ).toEqual([])
+})
+
+test('a turn on Auto works at a level the session offers, its default when none is chosen', async () => {
+  const { controller, until } = setup({
+    ...session,
+    models: [testSession.models[0], ...session.models],
+  })
+  const sent: Turn[] = []
+  client.events.mockImplementation(async function* (_path: string, turn: Turn) {
+    sent.push(turn)
+    yield started(turn)
+    yield ended(turn)
+  })
+  const settled = (count: number) =>
+    until((view) => sent.length === count && view.task?.phase === 'completed')
+  await controller.initialize()
+  await expect(
+    controller.command({ ...send, model: 'auto', autoIntelligence: 'turbo' }),
+  ).rejects.toThrow('Select an available intelligence level.')
+  expect(sent).toEqual([])
+
+  await controller.command({ ...send, model: 'auto' })
+  await settled(1)
+  expect(sent[0].options).toMatchObject({
+    model: 'auto',
+    autoIntelligence: testSession.auto.default,
+  })
+  await controller.command({ ...send, model: 'auto', autoIntelligence: 'low' })
+  await settled(2)
+  expect(sent[1].options?.autoIntelligence).toBe('low')
+  // A model chosen by name works at no level of Auto's.
+  await controller.command({ ...send, autoIntelligence: 'low' })
+  await settled(3)
+  expect(sent[2].options).not.toHaveProperty('autoIntelligence')
 })
 
 test('stopping during review prevents execution and collects the canceled thread', async () => {

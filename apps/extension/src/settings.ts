@@ -34,9 +34,13 @@ export function useSetting<T>(
     value,
     (next) => {
       setValue(next)
-      item
-        .setValue(next)
-        .catch((cause) => logError('Unable to save a setting', cause))
+      item.setValue(next).catch((cause) => {
+        logError('Unable to save a setting', cause)
+        // The control goes back to what is stored, which is what applies.
+        return item.getValue().then(setValue, (failure) => {
+          logError('Unable to read a setting', failure)
+        })
+      })
     },
   ]
 }

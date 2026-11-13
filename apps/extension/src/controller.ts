@@ -248,12 +248,20 @@ export class TaskController {
       throw new Error(
         'This harness does not support browser tools yet. Configure a harness release with browserTools.',
       )
-    if (
-      !this.session.models.some(
-        (model) => model.id === input.model && !model.deprecated,
-      )
+    const model = this.session.models.find(
+      (entry) => entry.id === input.model && !entry.deprecated,
     )
-      throw new Error('Select an available model.')
+    if (!model) throw new Error('Select an available model.')
+    // Auto always works at a level the session offers, its default when the
+    // turn names none.
+    const autoIntelligence = model.auto
+      ? (input.autoIntelligence ?? this.session.auto.default)
+      : undefined
+    if (
+      autoIntelligence !== undefined &&
+      !this.session.auto.levels.some((level) => level.id === autoIntelligence)
+    )
+      throw new Error('Select an available intelligence level.')
     const task =
       this.task ??
       ({
@@ -270,7 +278,7 @@ export class TaskController {
     task.lastPrompt = lastPrompt
     task.model = input.model
     task.effort = input.effort
-    task.autoIntelligence = input.autoIntelligence
+    task.autoIntelligence = autoIntelligence
     task.error = undefined
     task.receipt = undefined
     this.task = task
@@ -288,9 +296,7 @@ export class TaskController {
       options: {
         model: input.model,
         reasoningEffort: input.effort,
-        ...(input.autoIntelligence
-          ? { autoIntelligence: input.autoIntelligence }
-          : {}),
+        ...(autoIntelligence ? { autoIntelligence } : {}),
         webSearch: false,
         genUI: false,
         locale: navigator.language,
@@ -472,7 +478,7 @@ export class TaskController {
     if (
       !previous &&
       changesPage(request.operation) &&
-      (await this.reviewActions())
+      (await this.reviewRequired())
     ) {
       const preview = await driver.describe(request.operation)
       signal.throwIfAborted()
@@ -534,6 +540,20 @@ export class TaskController {
       },
       signal,
     )
+  }
+
+  // Whether the user asked to approve actions. An action does not run
+  // unreviewed because the answer could not be read.
+  private async reviewRequired(): Promise<boolean> {
+    try {
+      return await this.reviewActions()
+    } catch (cause) {
+      throw new BrowserError(
+        'SETTINGS_UNAVAILABLE',
+        'The review setting could not be read, so the task was stopped before acting.',
+        { cause },
+      )
+    }
   }
 
   private async cancelAndCollect(task: Task) {
