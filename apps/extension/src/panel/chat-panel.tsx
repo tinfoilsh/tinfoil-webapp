@@ -393,6 +393,13 @@ export function ChatPanel({
         data-chat-input-area
         className="relative z-10 min-w-0 flex-none px-4 pb-4"
       >
+        {/* The conversation fades out where it scrolls under the composer. */}
+        {hasMessages && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 bottom-full h-8 bg-gradient-to-t from-surface-chat-background to-transparent"
+          />
+        )}
         <form
           onSubmit={(event) => {
             event.preventDefault()
