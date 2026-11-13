@@ -42,10 +42,10 @@ export function ChatsModal({
       <ModalTitle className="flex-none px-5 pb-2 pr-14 pt-6">
         Recent chats
       </ModalTitle>
+      {chats.length === 0 && (
+        <p className="p-4 text-sm text-content-muted">No saved chats yet.</p>
+      )}
       <div role="list" className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
-        {chats.length === 0 && (
-          <p className="p-2 text-sm text-content-muted">No saved chats yet.</p>
-        )}
         {chats.map((chat) => (
           <div key={chat.id} role="listitem" className="relative">
             <div
