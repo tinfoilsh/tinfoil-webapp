@@ -3,6 +3,7 @@ import { defineConfig } from 'wxt'
 
 const DEVELOPMENT_PUBLIC_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArJZtiYh4iQtdvIJgJUvqw4wJAolhd+achnJAR2HMBuXJhqkGU0BLP1RYyLs/3fa4LLDWDIoOHl8dTw0E2F93WQBTAVX/tpxP1LfAZw+fOTyXnamS1OGWBhjW1GxqmkiTxWSoxtc1tqmCwJfvS0PnteJ0F9j9GUcnLf19xXZkUnwkT/BaS53+oS/NRkke2wYGcWUlOfzOgTD/LSFeVqRE67H2xU4CUq9iLjZpQ6/F8WNTqtLFOH6JZzKI+xuu6Xzbdo68Gv3g0YFAJ1DTYhzYQvmO7W4SKyHIMhwxtdQ3nh1t/8nE0KsxGGh/TGn4q09q8DvXjdkpSPuWqmCYHWIGnwIDAQAB'
+const LOCAL_WEBAPP_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 export default defineConfig({
   srcDir: 'src',
@@ -28,7 +29,6 @@ export default defineConfig({
     const origins = new Set(['https://*.tinfoil.sh/*'])
     for (const value of [
       process.env.WXT_CLERK_FRONTEND_API,
-      process.env.WXT_WEBAPP_URL,
       process.env.WXT_HARNESS_URL,
       process.env.WXT_CONTROLPLANE_URL,
     ]) {
@@ -36,6 +36,18 @@ export default defineConfig({
       const url = new URL(value)
       if (url.protocol !== 'https:' || url.username || url.password)
         throw new Error('Extension services must use HTTPS origins')
+      origins.add(`${url.origin}/*`)
+    }
+    if (process.env.WXT_WEBAPP_URL) {
+      const url = new URL(process.env.WXT_WEBAPP_URL)
+      const localHTTP =
+        url.protocol === 'http:' && LOCAL_WEBAPP_HOSTS.has(url.hostname)
+      if (
+        (!localHTTP && url.protocol !== 'https:') ||
+        url.username ||
+        url.password
+      )
+        throw new Error('The webapp must use HTTPS or a local HTTP origin')
       origins.add(`${url.origin}/*`)
     }
     return {
