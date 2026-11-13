@@ -1,4 +1,5 @@
 import type { HarnessClient } from '@tinfoil/chat-client/client'
+import type { HarnessRoute } from '@tinfoil/chat-client/protocol'
 import type {
   BrowserToolRequest,
   Frame,
@@ -80,6 +81,18 @@ function setup() {
     actions: () => actions,
     workingOn: (tab: TabInfo) => workingOn(tab),
   }
+}
+
+function answerPosts(
+  routes: Partial<Record<HarnessRoute, (input: unknown) => unknown>>,
+) {
+  const fallback = client.post.getMockImplementation()!
+  client.post.mockImplementation(
+    async (path: HarnessRoute, input: unknown, ...rest: unknown[]) => {
+      const answer = routes[path]
+      return answer ? answer(input) : fallback(path, input, ...rest)
+    },
+  )
 }
 
 function started(turn: Turn): Frame {
@@ -191,10 +204,8 @@ test('browser access is automatic and the working tab is published until the run
     yield browserRequest(turn)
     yield ended(turn)
   })
-  client.post.mockImplementation(async (path: string) => {
-    if (path === '/v1/session') return session
-    if (path === '/v1/threads/browser/result') return { accepted: true }
-    throw new Error(`Unexpected path ${path}`)
+  answerPosts({
+    '/v1/threads/browser/result': () => ({ accepted: true }),
   })
   await controller.initialize()
   await controller.command(send)
@@ -226,13 +237,11 @@ test('reconnecting after a lost browser-result acknowledgment does not click twi
     yield ended(turn)
   })
   let replies = 0
-  client.post.mockImplementation(async (path: string) => {
-    if (path === '/v1/session') return session
-    if (path === '/v1/threads/browser/result') {
+  answerPosts({
+    '/v1/threads/browser/result': () => {
       if (++replies === 1) throw new TypeError('Lost response')
       return { accepted: true }
-    }
-    throw new Error(`Unexpected path ${path}`)
+    },
   })
   await controller.initialize()
   await controller.command(send)
@@ -266,10 +275,8 @@ test('stopping during review prevents execution and collects the canceled thread
     yield browserRequest(turn)
     throw new Error('Review should have stopped this stream')
   })
-  client.post.mockImplementation(async (path: string) => {
-    if (path === '/v1/session') return session
-    if (path === '/v1/threads/cancel') return { cancelled: true }
-    throw new Error(`Unexpected path ${path}`)
+  answerPosts({
+    '/v1/threads/cancel': () => ({ cancelled: true }),
   })
   await controller.initialize()
   await controller.command({ ...send, confirmActions: true })
@@ -299,10 +306,8 @@ test('an expired browser operation is canceled before dispatch', async () => {
     yield frame
     throw new Error('An expired operation must end the stream')
   })
-  client.post.mockImplementation(async (path: string) => {
-    if (path === '/v1/session') return session
-    if (path === '/v1/threads/cancel') return { cancelled: true }
-    throw new Error(`Unexpected path ${path}`)
+  answerPosts({
+    '/v1/threads/cancel': () => ({ cancelled: true }),
   })
   await controller.initialize()
   await controller.command(send)
@@ -377,10 +382,8 @@ test('an uncertain mutation stops the run instead of becoming a retryable tool r
     yield browserRequest(turn)
     throw new Error('An uncertain mutation must end the stream')
   })
-  client.post.mockImplementation(async (path: string) => {
-    if (path === '/v1/session') return session
-    if (path === '/v1/threads/cancel') return { cancelled: true }
-    throw new Error(`Unexpected path ${path}`)
+  answerPosts({
+    '/v1/threads/cancel': () => ({ cancelled: true }),
   })
   await controller.initialize()
   await controller.command(send)
