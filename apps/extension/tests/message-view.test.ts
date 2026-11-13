@@ -11,6 +11,7 @@ import type { Frame, Message } from '@tinfoil/chat-client/types'
 import { createElement } from 'react'
 import { afterEach, expect, test } from 'vitest'
 import recorded from '../../../harness-protocol/fixtures/browser.json'
+import { CapturesProvider } from '../src/captures'
 import { Conversation, MessageView } from '../src/message-view'
 
 afterEach(cleanup)
@@ -173,6 +174,61 @@ test('a run of thinking and browser steps shows as one row that names the action
   })
   expect(failed).toBeDisabled()
   expect(screen.getByText('The link moved.')).toBeVisible()
+})
+
+test('a step shows the picture it took of the page, and a run of steps its latest with how many more', () => {
+  const look = (id: string) => ({
+    id,
+    type: 'tool_call',
+    name: 'browser_action',
+    arguments: '{"action":"screenshot","tabId":1}',
+    result: { text: `{"screenshotId":"${id}"}` },
+  })
+  const captures = new Map([
+    ['first', 'data:image/jpeg;base64,Zmlyc3Q='],
+    ['second', 'data:image/jpeg;base64,c2Vjb25k'],
+  ])
+  const { container } = render(
+    createElement(
+      CapturesProvider,
+      { value: captures },
+      show({
+        ...REPLY,
+        timeline: [look('first'), look('second'), look('unkept')],
+      }),
+    ),
+  )
+  const sources = (within: Element) =>
+    [...within.querySelectorAll('img')].map((image) =>
+      image.getAttribute('src'),
+    )
+  const [run, ...steps] = screen.getAllByRole('button')
+  expect(steps).toHaveLength(3)
+  expect(sources(run)).toEqual([captures.get('second')])
+  expect(within(run).getByText('+1')).toBeInTheDocument()
+  // The pictures tell nothing the row's name does not.
+  expect(run).toHaveAccessibleName('Took 3 browser actions')
+
+  // Each step shows its own picture, small in its row and whole in its
+  // details, and a step whose picture was not kept shows what the picture's
+  // answer said instead.
+  const details = (step: HTMLElement) =>
+    container.ownerDocument.getElementById(step.getAttribute('aria-controls')!)!
+  expect(steps.map(sources)).toEqual([
+    [captures.get('first')],
+    [captures.get('second')],
+    [],
+  ])
+  expect(steps.map((step) => sources(details(step)))).toEqual([
+    [captures.get('first')],
+    [captures.get('second')],
+    [],
+  ])
+  expect(steps.map((step) => details(step).textContent)).toEqual([
+    '',
+    '',
+    '{"screenshotId":"unkept"}',
+  ])
 })
 
 test('a question shows as the user wrote it', () => {

@@ -18,7 +18,7 @@ test('an app-owned history connection closes when a newer version opens', async 
   const name = crypto.randomUUID()
   const store = open(name)
   await store.list('alice')
-  const upgraded = await openDB(name, 4)
+  const upgraded = await openDB(name, 5)
   try {
     await expect(store.get('alice', 'old-context')).rejects.toMatchObject({
       name: 'InvalidStateError',
@@ -128,6 +128,86 @@ test('deleting local history removes its journal while preserving another accoun
   expect((await store.action('bob', 'run', 'save'))?.result).toEqual({
     text: 'bob',
   })
+})
+
+test('the picture an action took is kept under its chat and its call, and leaves with that chat alone', async () => {
+  const store = open()
+  const task = {
+    title: 'Private task',
+    updatedAt: 1,
+    state: initialChat(),
+    phase: 'completed' as const,
+    lastPrompt: 'Look at this',
+    model: 'gpt-oss-120b',
+    effort: 'low' as const,
+  }
+  const kept = [
+    ['alice', 'task', 'look'],
+    ['alice', 'task', 'again'],
+    ['alice', 'other', 'look'],
+    ['bob', 'task', 'look'],
+  ] as const
+  for (const [owner, id, toolCallId] of kept) {
+    await store.put({ ...task, owner, id })
+    await store.putCapture(
+      owner,
+      id,
+      toolCallId,
+      `${owner}/${id}/${toolCallId}`,
+    )
+  }
+  const pictures = () =>
+    Promise.all(
+      kept.map(([owner, id, toolCallId]) =>
+        store.capture(owner, id, toolCallId),
+      ),
+    )
+  expect(await pictures()).toEqual([
+    'alice/task/look',
+    'alice/task/again',
+    'alice/other/look',
+    'bob/task/look',
+  ])
+  expect(await store.capture('alice', 'task', 'never')).toBeUndefined()
+
+  await store.delete('alice', 'task')
+  expect(await pictures()).toEqual([
+    undefined,
+    undefined,
+    'alice/other/look',
+    'bob/task/look',
+  ])
+})
+
+test('upgrading local history from version 3 keeps its chats and makes room for their pictures', async () => {
+  const name = crypto.randomUUID()
+  const legacy = await openDB(name, 3, {
+    upgrade(db) {
+      db.createObjectStore('tasks', {
+        keyPath: ['owner', 'id'],
+      }).createIndex('summary', ['owner', 'updatedAt', 'id', 'title', 'phase'])
+      db.createObjectStore('actions', {
+        keyPath: ['owner', 'runId', 'executionId'],
+      }).createIndex('task', ['owner', 'taskId'])
+    },
+  })
+  const task = {
+    owner: 'alice',
+    id: 'kept',
+    title: 'Saved task',
+    updatedAt: 1,
+    phase: 'completed',
+    state: initialChat(),
+    lastPrompt: 'Private content that must remain in the record',
+  }
+  await legacy.put('tasks', task)
+  legacy.close()
+  const store = open(name)
+  expect(await store.get('alice', 'kept')).toEqual(task)
+  await store.putCapture('alice', 'kept', 'look', 'picture')
+  expect(await store.capture('alice', 'kept', 'look')).toBe('picture')
+  await store.delete('alice', 'kept')
+  expect(await store.capture('alice', 'kept', 'look')).toBeUndefined()
 })
 
 test.each([1, 2])(

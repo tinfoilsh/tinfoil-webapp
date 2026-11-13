@@ -141,6 +141,7 @@ export class TaskController {
         model: task.model,
         effort: task.effort,
         autoIntelligence: task.autoIntelligence,
+        captures: task.captures ?? [],
         error:
           task.error ||
           (this.reconnecting
@@ -548,6 +549,10 @@ export class TaskController {
       },
     )
     signal.throwIfAborted()
+    if (result.image) {
+      await this.keepCapture(task, request.toolCallId, result.image)
+      signal.throwIfAborted()
+    }
     await this.client.post(
       ROUTES.browserResult,
       {
@@ -559,6 +564,20 @@ export class TaskController {
       },
       signal,
     )
+  }
+
+  // Keeps the picture an action took of the page with its chat, for the user
+  // to see what the task saw. The task goes on without a picture that could
+  // not be kept.
+  private async keepCapture(task: Task, toolCallId: string, image: string) {
+    if (task.captures?.includes(toolCallId)) return
+    try {
+      await this.store.putCapture(this.owner, task.id, toolCallId, image)
+      task.captures = [...(task.captures ?? []), toolCallId]
+      await this.save(task)
+    } catch (cause) {
+      logError('Unable to keep a capture', cause)
+    }
   }
 
   // Whether the user asked to approve actions. An action does not run

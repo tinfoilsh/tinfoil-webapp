@@ -8,7 +8,7 @@ import { openDB, unwrap, type DBSchema, type IDBPDatabase } from 'idb'
 import { BrowserError } from './browser/errors'
 
 const DATABASE_NAME = 'tinfoil-browser'
-const DATABASE_VERSION = 3
+const DATABASE_VERSION = 4
 
 export type TaskPhase =
   'idle' | 'running' | 'review' | 'interrupted' | 'completed'
@@ -26,6 +26,9 @@ export interface Task {
   // How hard the router's choice of model works, when the model is Auto.
   autoIntelligence?: string
   error?: string
+  // The browser actions of the task whose picture of the page was kept, by
+  // the id of the tool call each answered.
+  captures?: string[]
   receipt?: {
     runId: string
     instance: string
@@ -41,6 +44,16 @@ interface ActionRecord {
   executionId: string
   status: 'started' | 'finished'
   result?: BrowserResult
+}
+
+// The page as a browser action of a task saw it, kept on this device for
+// the user to look at.
+interface CaptureRecord {
+  owner: string
+  taskId: string
+  toolCallId: string
+  // A JPEG, in base64.
+  image: string
 }
 
 export type TaskSummary = Pick<
@@ -59,6 +72,11 @@ interface BrowserDatabase extends DBSchema {
   actions: {
     key: [string, string, string]
     value: ActionRecord
+    indexes: { task: [string, string] }
+  }
+  captures: {
+    key: [string, string, string]
+    value: CaptureRecord
     indexes: { task: [string, string] }
   }
 }
@@ -92,6 +110,10 @@ export class TaskStore {
         const tasks = unwrap(transaction.objectStore('tasks'))
         if (oldVersion < 3 && tasks.indexNames.contains('owner'))
           tasks.deleteIndex('owner')
+        if (oldVersion < 4)
+          db.createObjectStore('captures', {
+            keyPath: ['owner', 'taskId', 'toolCallId'],
+          }).createIndex('task', ['owner', 'taskId'])
       },
     })
   }
@@ -125,16 +147,39 @@ export class TaskStore {
   }
   async delete(owner: string, taskId: string) {
     const tx = (await this.database).transaction(
-      ['tasks', 'actions'],
+      ['tasks', 'actions', 'captures'],
       'readwrite',
     )
-    const keys = await tx
-      .objectStore('actions')
-      .index('task')
-      .getAllKeys([owner, taskId])
-    await Promise.all(keys.map((key) => tx.objectStore('actions').delete(key)))
+    for (const kept of ['actions', 'captures'] as const) {
+      const store = tx.objectStore(kept)
+      const keys = await store.index('task').getAllKeys([owner, taskId])
+      await Promise.all(keys.map((key) => store.delete(key)))
+    }
     await tx.objectStore('tasks').delete([owner, taskId])
     await tx.done
+  }
+  // Keeps the page as a browser action of a task saw it.
+  async putCapture(
+    owner: string,
+    taskId: string,
+    toolCallId: string,
+    image: string,
+  ) {
+    await (
+      await this.database
+    ).put('captures', { owner, taskId, toolCallId, image })
+  }
+  // The picture kept of the page as a browser action of a task saw it, a
+  // JPEG in base64.
+  async capture(
+    owner: string,
+    taskId: string,
+    toolCallId: string,
+  ): Promise<string | undefined> {
+    const kept = await (
+      await this.database
+    ).get('captures', [owner, taskId, toolCallId])
+    return kept?.image
   }
   async action(owner: string, runId: string, executionId: string) {
     return (await this.database).get('actions', [owner, runId, executionId])

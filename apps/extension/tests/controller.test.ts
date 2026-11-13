@@ -261,6 +261,79 @@ test('every turn offers the browser to the model and answers what it asks of it'
   ])
 })
 
+test('the picture an action takes of the page is kept with its chat, under the call it answered', async () => {
+  const { controller, until, browser, store } = setup()
+  const picture = btoa('the page as the task saw it')
+  const answers: { text: string; image?: string }[] = [
+    { text: 'Viewport', image: picture },
+    { text: 'Saved' },
+  ]
+  browser.execute = async () => answers.shift()!
+  client.events.mockImplementation(async function* (_path: string, turn: Turn) {
+    yield started(turn)
+    const look = browserRequest(turn, 'look')
+    yield { ...look, event: { ...look.event, toolCallId: 'look' } }
+    yield browserRequest(turn, 'save')
+    yield ended(turn)
+  })
+  // What this device had kept of the chat when each result reached the
+  // service.
+  const keptAtResult: (string | undefined)[] = []
+  answerPosts({
+    '/v1/threads/browser/result': async (input) => {
+      const { threadId } = input as { threadId: string }
+      keptAtResult.push(await store.capture('alice', threadId, 'look'))
+      return { accepted: true }
+    },
+  })
+  await controller.initialize()
+  await controller.command(send)
+  const done = await until((view) => view.task?.phase === 'completed')
+  const id = done.task!.id
+  expect(done.task?.captures).toEqual(['look'])
+  expect(keptAtResult).toEqual([picture, picture])
+  expect(await store.capture('alice', id, 'look')).toBe(picture)
+  expect(await store.capture('alice', id, 'click')).toBeUndefined()
+  expect((await store.get('alice', id))?.captures).toEqual(['look'])
+  // The service is still answered with the picture.
+  expect(
+    client.post.mock.calls
+      .filter(([path]) => path === '/v1/threads/browser/result')
+      .map(([, input]) => (input as { result: unknown }).result),
+  ).toEqual([{ text: 'Viewport', image: picture }, { text: 'Saved' }])
+
+  await controller.command({ kind: 'delete', id })
+  expect(await store.capture('alice', id, 'look')).toBeUndefined()
+})
+
+test('a picture that cannot be kept does not stop the task that took it', async () => {
+  const { controller, until, browser, store } = setup()
+  const picture = btoa('the page as the task saw it')
+  browser.execute = async () => ({ text: 'Viewport', image: picture })
+  const keep = vi
+    .spyOn(store, 'putCapture')
+    .mockRejectedValue(new DOMException('No room', 'QuotaExceededError'))
+  client.events.mockImplementation(async function* (_path: string, turn: Turn) {
+    yield started(turn)
+    yield browserRequest(turn)
+    yield ended(turn)
+  })
+  answerPosts({
+    '/v1/threads/browser/result': () => ({ accepted: true }),
+  })
+  await controller.initialize()
+  await controller.command(send)
+  const done = await until((view) => view.task?.phase === 'completed')
+  expect(keep).toHaveBeenCalledTimes(1)
+  expect(done.task?.error).toBeUndefined()
+  expect(done.task?.captures).toEqual([])
+  expect(
+    client.post.mock.calls
+      .filter(([path]) => path === '/v1/threads/browser/result')
+      .map(([, input]) => (input as { result: unknown }).result),
+  ).toEqual([{ text: 'Viewport', image: picture }])
+})
+
 test('reconnecting after a lost browser-result acknowledgment does not click twice', async () => {
   const { controller, until, actions, store } = setup()
   let turn!: Turn

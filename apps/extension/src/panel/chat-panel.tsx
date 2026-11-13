@@ -27,6 +27,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
+import { CapturesProvider, useStoredCaptures } from '../captures'
 import { MAX_PROMPT_CHARS } from '../config'
 import { Conversation } from '../message-view'
 import type { Command, View } from '../messages'
@@ -39,6 +40,7 @@ import {
   chosenModel,
   useSetting,
 } from '../settings'
+import { TaskStore } from '../storage'
 import { Logo } from '../ui/logo'
 import { MICROPHONE_SETTINGS_URL, microphonePermission } from '../ui/microphone'
 import { ChatsModal } from './chats-modal'
@@ -59,6 +61,11 @@ const WELCOME_INPUT_MIN_HEIGHT = '36px'
 const FOLLOW_THRESHOLD_PX = 80
 const HEADER_BUTTON_CLASS_NAME =
   'flex items-center justify-center rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary'
+const NO_CAPTURES: string[] = []
+// The panel reads the pictures a chat keeps of its browser actions where the
+// worker put them, on this device.
+let kept: TaskStore | undefined
+const keptStore = () => (kept ??= new TaskStore())
 const NOTICE_BUTTON_CLASS_NAME =
   'flex h-9 shrink-0 items-center gap-1 self-start whitespace-nowrap rounded-site-control border border-red-300 px-3 text-xs font-medium transition-colors hover:bg-red-500/10 dark:border-red-500/40 dark:hover:bg-red-500/20'
 
@@ -156,6 +163,12 @@ export function ChatPanel({
   const hasMessages = messages.length > 0
   const busy = !!task && ['running', 'review'].includes(task.phase)
   const problem = error || view.error || task?.error
+  const captures = useStoredCaptures(
+    keptStore(),
+    owner,
+    task?.id,
+    task?.captures ?? NO_CAPTURES,
+  )
 
   useEffect(() => connection.connect(), [connection])
 
@@ -344,11 +357,13 @@ export function ChatPanel({
         }}
       >
         {hasMessages ? (
-          <Conversation
-            messages={messages}
-            busy={busy}
-            isDarkMode={isDarkMode}
-          />
+          <CapturesProvider value={captures}>
+            <Conversation
+              messages={messages}
+              busy={busy}
+              isDarkMode={isDarkMode}
+            />
+          </CapturesProvider>
         ) : (
           <div className="flex min-h-full w-full flex-col items-center justify-center px-8 py-10">
             <h1 className="text-center text-2xl font-medium tracking-tight text-content-primary">

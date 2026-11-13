@@ -3,6 +3,7 @@ import { ThinkingLabel, ThoughtProcess } from '@tinfoil/chat-ui/ThoughtProcess'
 import { StepDetails, StepHeader } from '@tinfoil/chat-ui/WorkStep'
 import { useId, useState, type ReactNode } from 'react'
 import { actionSchema } from './browser/schema'
+import { useCaptures } from './captures'
 
 export const BROWSER_TOOL = 'browser_action'
 
@@ -126,6 +127,23 @@ function BrowserStepLabel({
   )
 }
 
+// A small picture of the page as a step saw it, after the step's label, and
+// how many more its steps took.
+function CaptureThumbnail({ src, more = 0 }: { src: string; more?: number }) {
+  return (
+    <span className="flex items-center gap-1" aria-hidden="true">
+      <img
+        src={src}
+        alt=""
+        className="h-5 w-8 rounded-[3px] border border-border-subtle object-cover object-top"
+      />
+      {more > 0 && (
+        <span className="text-xs tabular-nums text-content-muted">+{more}</span>
+      )}
+    </span>
+  )
+}
+
 // A browser action the reply took: what it did, and what it saw of the page
 // afterwards.
 export function BrowserStep({
@@ -140,6 +158,7 @@ export function BrowserStep({
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const detailsId = useId()
+  const capture = useCaptures().get(block.id)
   const view = describeBrowserStep(block.arguments)
   const failure = browserStepFailure(block.result)
   const hasResult = block.result !== undefined && !failure
@@ -149,6 +168,7 @@ export function BrowserStep({
         label={
           <BrowserStepLabel view={view} running={running} failure={failure} />
         }
+        extra={capture && <CaptureThumbnail src={capture} />}
         isRunning={running}
         startedAt={block.startedAt}
         isExpanded={isExpanded}
@@ -158,9 +178,19 @@ export function BrowserStep({
       />
       {hasResult && (
         <StepDetails id={detailsId} isExpanded={isExpanded} inGroup={inGroup}>
-          <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] text-content-primary/70">
-            {resultText(block.result)}
-          </pre>
+          {/* A step that took a picture of the page shows it, in place of
+              what the picture's answer told the model of it. */}
+          {capture ? (
+            <img
+              src={capture}
+              alt="The page as this step saw it"
+              className="w-full rounded-md border border-border-subtle"
+            />
+          ) : (
+            <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] text-content-primary/70">
+              {resultText(block.result)}
+            </pre>
+          )}
         </StepDetails>
       )}
     </div>
@@ -222,6 +252,9 @@ export function WorkSteps({
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const detailsId = useId()
+  const captures = useCaptures()
+  const pictures = blocks.flatMap(({ block }) => captures.get(block.id) ?? [])
+  const latest = pictures.at(-1)
   const starts = blocks.flatMap(({ block }) =>
     block.startedAt === undefined ? [] : [block.startedAt],
   )
@@ -234,6 +267,9 @@ export function WorkSteps({
           ) : (
             <span className="font-medium">{describeWork(blocks)}</span>
           )
+        }
+        extra={
+          latest && <CaptureThumbnail src={latest} more={pictures.length - 1} />
         }
         isRunning={isActive}
         startedAt={starts.length > 0 ? Math.min(...starts) : undefined}

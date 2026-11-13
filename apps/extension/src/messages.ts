@@ -42,6 +42,9 @@ export interface View {
     effort: 'low' | 'medium' | 'high'
     autoIntelligence?: string
     error?: string
+    // The browser actions whose picture of the page this device keeps, by
+    // the id of the tool call each answered.
+    captures: string[]
   }
   pending?: BrowserToolRequest & { preview: string }
   error?: string
