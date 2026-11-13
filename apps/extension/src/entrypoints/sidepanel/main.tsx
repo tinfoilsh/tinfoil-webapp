@@ -5,16 +5,11 @@ import {
   useClerk,
 } from '@clerk/chrome-extension'
 import { logError } from '@tinfoil/chat-client/logging'
-import type { Message } from '@tinfoil/chat-client/types'
 import { Button } from '@tinfoil/chat-ui/button'
 import {
   isImeComposition,
   isSubmitShortcut,
 } from '@tinfoil/chat-ui/keyboard-utils'
-import {
-  StreamingMarkdown,
-  type MarkdownComponents,
-} from '@tinfoil/chat-ui/StreamingMarkdown'
 import {
   StrictMode,
   useCallback,
@@ -25,7 +20,6 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { createRoot } from 'react-dom/client'
-import remarkGfm from 'remark-gfm'
 import '../../../../../src/styles/tailwind.css'
 import { webURL } from '../../browser/schema'
 import {
@@ -36,92 +30,17 @@ import {
   MAX_TABS,
   WEB_SIGN_IN_URL,
 } from '../../config'
+import { MessageView } from '../../message-view'
 import type { Command } from '../../messages'
 import { PanelConnection } from '../../panel-connection'
 import { sessionToken, watchWebSession } from '../../web-session'
 import './style.css'
 
-const REMARK_PLUGINS = [remarkGfm]
-const REHYPE_PLUGINS: [] = []
-const MARKDOWN_COMPONENTS: MarkdownComponents = {
-  a: ({ href, children }) => {
-    let safe: string | undefined
-    try {
-      safe = webURL(href || '')
-    } catch {
-      safe = undefined
-    }
-    return safe ? (
-      <a href={safe} target="_blank" rel="noopener noreferrer">
-        {children}
-      </a>
-    ) : (
-      <span>{children}</span>
-    )
-  },
-  img: ({ alt }) => <span>[Image: {alt || 'image'}]</span>,
-}
 const SUGGESTIONS = [
   'Summarize the page I selected',
   'Compare these tabs and make a table',
   'Help me fill out this form',
 ]
-
-function MessageView({
-  message,
-  streaming,
-}: {
-  message: Message
-  streaming: boolean
-}) {
-  const tools = (message.timeline || []).filter(
-    (block) => block.type === 'tool_call',
-  )
-  return (
-    <article
-      className={`message ${message.role === 'user' ? 'user-message' : ''}`}
-    >
-      <div className="message-label">
-        {message.role === 'user' ? 'You' : 'Tinfoil'}
-      </div>
-      {!!tools.length && (
-        <details className="steps">
-          <summary>
-            {tools.length} browser {tools.length === 1 ? 'step' : 'steps'}
-          </summary>
-          {tools.map((tool) => (
-            <div key={tool.id} className="step">
-              <strong>
-                {tool.name === 'browser_action' ? 'Browser action' : tool.name}
-              </strong>
-              <pre>{tool.arguments}</pre>
-              {tool.result !== undefined && (
-                <pre>
-                  {typeof tool.result === 'string'
-                    ? tool.result
-                    : JSON.stringify(tool.result, null, 2)}
-                </pre>
-              )}
-            </div>
-          ))}
-        </details>
-      )}
-      {message.role === 'user' ? (
-        <div className="whitespace-pre-wrap break-words">{message.content}</div>
-      ) : (
-        <div className="markdown">
-          <StreamingMarkdown
-            text={message.content || ''}
-            streaming={streaming}
-            remarkPlugins={REMARK_PLUGINS}
-            rehypePlugins={REHYPE_PLUGINS}
-            components={MARKDOWN_COMPONENTS}
-          />
-        </div>
-      )}
-    </article>
-  )
-}
 
 function ChatPanel({
   owner,
