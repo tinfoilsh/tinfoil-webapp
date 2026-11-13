@@ -295,9 +295,6 @@ export class TaskController {
     task.autoIntelligence = autoIntelligence
     task.error = undefined
     task.receipt = undefined
-    this.task = task
-    await this.save(task)
-    this.checkGeneration(generation)
     const turn: Turn = {
       clientRequestId: crypto.randomUUID(),
       threadId: task.id,
@@ -319,6 +316,23 @@ export class TaskController {
       },
       browser: { executorId: crypto.randomUUID(), token: randomSecret() },
     }
+    // The message shows at once, until the run's first window of the chat
+    // replaces its messages.
+    task.state = {
+      ...task.state,
+      messages: [
+        ...task.state.messages,
+        {
+          id: turn.clientRequestId,
+          role: 'user',
+          content: input.content,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    }
+    this.task = task
+    await this.save(task)
+    this.checkGeneration(generation)
     this.launch(task, turn)
   }
 

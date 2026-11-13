@@ -207,6 +207,48 @@ test('local chats return the saved harness record intact on the next turn', asyn
   expect(client.post.mock.calls.map(([path]) => path)).toEqual(['/v1/session'])
 })
 
+test('a message shows in its chat as soon as it is sent, until the chat the service returns takes its place', async () => {
+  const { controller, until } = setup()
+  let answer!: () => void
+  const answered = new Promise<void>((resolve) => {
+    answer = resolve
+  })
+  let sent: Turn | undefined
+  const stored = {
+    id: 'question',
+    role: 'user' as const,
+    content: 'Save the form',
+    createdAt: '2026-11-12T00:00:00Z',
+  }
+  client.events.mockImplementation(async function* (_path: string, turn: Turn) {
+    sent = turn
+    // The service has said nothing of the turn yet.
+    await answered
+    yield started(turn)
+    yield {
+      id: 1,
+      event: { type: 'MESSAGES_SNAPSHOT', messages: [stored], hasOlder: false },
+    } satisfies Frame
+    yield ended(turn)
+  })
+  await controller.initialize()
+  await controller.command(send)
+  const waiting = await until((view) => view.task?.phase === 'running')
+  await vi.waitFor(() => expect(sent).toBeDefined())
+  expect(waiting.task?.state.messages).toEqual([
+    {
+      id: sent!.clientRequestId,
+      role: 'user',
+      content: 'Save the form',
+      createdAt: expect.any(String),
+    },
+  ])
+
+  answer()
+  const done = await until((view) => view.task?.phase === 'completed')
+  expect(done.task?.state.messages).toEqual([stored])
+})
+
 test('a task stored in a phase it cannot rest in opens as interrupted', async () => {
   const { controller, until, store } = setup()
   const stored = {
