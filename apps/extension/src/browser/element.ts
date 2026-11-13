@@ -173,3 +173,109 @@ export function stableElement(
     frame = requestAnimationFrame(inspect)
   })
 }
+
+// The mark a task leaves on the page for the user to follow: a cursor that
+// travels to where the task points, and a ring where it presses. It takes no
+// input, and it changes inside its own shadow tree, where the page's scripts
+// do not watch.
+export function pointCursor(
+  tag: string,
+  color: string,
+  x: number,
+  y: number,
+  press: boolean,
+  travelMs: number,
+): Promise<boolean> {
+  const SVG = 'http://www.w3.org/2000/svg'
+  // Where the arrow's tip sits in its drawing.
+  const TIP_X = 4
+  const TIP_Y = 2
+  const RING_MS = 450
+  // How long past its travel time a cursor that never arrives is waited for.
+  const LATE_MS = 100
+  let host = document.documentElement.querySelector<HTMLElement>(
+    `:scope > ${tag}`,
+  )
+  if (!host?.shadowRoot) {
+    host?.remove()
+    host = document.createElement(tag)
+    host.setAttribute('aria-hidden', 'true')
+    const sheet = new CSSStyleSheet()
+    sheet.replaceSync(
+      ':host{all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;overflow:hidden;contain:strict}' +
+        '#layer{position:absolute;inset:0}' +
+        '#arrow,#ring{position:absolute;left:0;top:0}' +
+        '#arrow{width:24px;height:24px;filter:drop-shadow(0 1px 2px rgb(0 0 0/.35))}' +
+        '#ring{width:32px;height:32px;margin:-16px 0 0 -16px;box-sizing:border-box;border-radius:50%;border:2px solid;opacity:0}',
+    )
+    const tree = host.attachShadow({ mode: 'open' })
+    tree.adoptedStyleSheets = [sheet]
+    const layer = document.createElement('div')
+    layer.id = 'layer'
+    const ring = document.createElement('div')
+    ring.id = 'ring'
+    ring.style.borderColor = color
+    const arrow = document.createElementNS(SVG, 'svg')
+    arrow.id = 'arrow'
+    arrow.setAttribute('viewBox', '0 0 24 24')
+    const shape = document.createElementNS(SVG, 'path')
+    shape.setAttribute('d', 'M4 2v17l4.6-4.1 3 6.7 2.7-1.2-3-6.6h6.2z')
+    shape.setAttribute('fill', color)
+    shape.setAttribute('stroke', '#fff')
+    shape.setAttribute('stroke-width', '1.5')
+    shape.setAttribute('stroke-linejoin', 'round')
+    arrow.append(shape)
+    layer.append(ring, arrow)
+    tree.append(layer)
+    document.documentElement.append(host)
+  }
+  const tree = host.shadowRoot!
+  const layer = tree.getElementById('layer') as HTMLElement
+  const arrow = tree.getElementById('arrow') as unknown as SVGElement
+  const ring = tree.getElementById('ring') as HTMLElement
+  layer.style.visibility = ''
+  const at = `translate(${x}px, ${y}px)`
+  const to = `translate(${x - TIP_X}px, ${y - TIP_Y}px)`
+  const from = arrow.style.transform || to
+  arrow.style.transform = to
+  ring.style.transform = at
+  const travel =
+    from === to || matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 0
+      : travelMs
+  const arrived = travel
+    ? Promise.race([
+        arrow.animate([{ transform: from }, { transform: to }], {
+          duration: travel,
+          easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+        }).finished,
+        new Promise((resolve) => setTimeout(resolve, travel + LATE_MS)),
+      ])
+    : Promise.resolve()
+  return arrived.then(() => {
+    if (press)
+      ring.animate(
+        [
+          { opacity: 0.7, transform: `${at} scale(0.3)` },
+          { opacity: 0, transform: `${at} scale(1.4)` },
+        ],
+        { duration: RING_MS, easing: 'ease-out' },
+      )
+    return true
+  })
+}
+
+// Takes the cursor out of sight, as while the page is captured, or shows it
+// again. Says whether the page has one.
+export function hideCursor(tag: string, hidden: boolean): boolean {
+  const layer = document.documentElement
+    .querySelector(`:scope > ${tag}`)
+    ?.shadowRoot?.getElementById('layer')
+  if (!layer) return false
+  layer.style.visibility = hidden ? 'hidden' : ''
+  return true
+}
+
+export function removeCursor(tag: string) {
+  document.documentElement.querySelector(`:scope > ${tag}`)?.remove()
+}

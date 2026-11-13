@@ -533,6 +533,90 @@ test('tabs a task works in are gathered in a green Tinfoil group until it stops'
   }
 })
 
+test('a cursor on the page shows where the task points, out of what it captures, until the task stops', async () => {
+  const { page, tabId } = await startFixture('/?cursor')
+  const tip = () =>
+    page.evaluate(() => {
+      const host = document.querySelector('tinfoil-cursor')
+      const arrow = host?.shadowRoot?.getElementById('arrow')
+      if (!host || !arrow) return null
+      const box = arrow.getBoundingClientRect()
+      return {
+        x: box.left + 4,
+        y: box.top + 2,
+        takesInput: getComputedStyle(host).pointerEvents !== 'none',
+      }
+    })
+  const center = async (selector: string) => {
+    const box = (await page.locator(selector).boundingBox())!
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  }
+  const read = await execute({ action: 'read', tabId })
+  expect(await tip()).toBeNull()
+  await execute({ action: 'click', tabId, ref: ref(read.text, 'Save') })
+  await expect(page.locator('output').first()).toHaveText('Saved Before')
+  const save = await center('#save')
+  const onSave = (await tip())!
+  expect(onSave.takesInput).toBe(false)
+  expect(Math.abs(onSave.x - save.x)).toBeLessThan(1)
+  expect(Math.abs(onSave.y - save.y)).toBeLessThan(1)
+
+  // A capture leaves the cursor out, so one taken with the cursor on the
+  // button still matches the page after the cursor has left for the canvas.
+  await page.locator('#canvas').evaluate((canvas) =>
+    canvas.addEventListener('click', () => {
+      document.title = 'Canvas clicked'
+    }),
+  )
+  const canvas = await center('#canvas')
+  let clicked = false
+  for (
+    let observation = 0;
+    observation < MAX_SNAPSHOT_OBSERVATIONS && !clicked;
+    observation++
+  ) {
+    const current = await execute({ action: 'read', tabId })
+    await execute({ action: 'hover', tabId, ref: ref(current.text, 'Save') })
+    const shot = await worker.evaluate(
+      (id) => browserTest.attempt({ action: 'screenshot', tabId: id }),
+      tabId,
+    )
+    if (!shot.ok) {
+      expect(shot.code).toBe('PAGE_CHANGED')
+      continue
+    }
+    const info = JSON.parse(shot.result.text) as {
+      screenshotId: string
+      width: number
+      height: number
+    }
+    const viewport = await page.evaluate(() => ({
+      width: innerWidth,
+      height: innerHeight,
+    }))
+    const result = await worker.evaluate(
+      (action) => browserTest.attempt(action),
+      {
+        action: 'click',
+        tabId,
+        screenshotId: info.screenshotId,
+        x: (canvas.x * info.width) / viewport.width,
+        y: (canvas.y * info.height) / viewport.height,
+      } as BrowserAction,
+    )
+    if (result.ok) clicked = true
+    else expect(result.code).toBe('STALE_SCREENSHOT')
+  }
+  expect(clicked).toBe(true)
+  await expect(page).toHaveTitle('Canvas clicked')
+  const onCanvas = (await tip())!
+  expect(Math.abs(onCanvas.x - canvas.x)).toBeLessThan(1)
+  expect(Math.abs(onCanvas.y - canvas.y)).toBeLessThan(1)
+
+  await worker.evaluate(() => browserTest.stop())
+  expect(await tip()).toBeNull()
+})
+
 test('a task can visit more tabs than it keeps attached and releases every attachment when stopped', async () => {
   const { page, tabId } = await startFixture('/?many-tabs-0')
   const extra: Page[] = []

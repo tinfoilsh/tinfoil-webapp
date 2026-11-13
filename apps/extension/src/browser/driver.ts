@@ -4,8 +4,11 @@ import type { Protocol } from 'devtools-protocol'
 import type { ProtocolMapping } from 'devtools-protocol/types/protocol-mapping'
 import {
   chooseOption,
+  hideCursor,
   includesHit,
   inspectElement,
+  pointCursor,
+  removeCursor,
   selectText,
   stableElement,
   stableViewport,
@@ -17,6 +20,10 @@ const PROTOCOL_VERSION = '1.3'
 // The tab group that gathers the tabs a task works in.
 const TASK_GROUP_TITLE = 'Tinfoil'
 const TASK_GROUP_COLOR = 'green'
+// The cursor that shows the user where a task points on a page.
+const CURSOR_TAG = 'tinfoil-cursor'
+const CURSOR_COLOR = '#004444'
+const CURSOR_TRAVEL_MS = 200
 const MAX_ATTACHED_TABS = 8
 const MAX_NODES = 300
 const MAX_SCANNED_NODES = 2000
@@ -56,6 +63,7 @@ const KEY_CODES = {
 } as const
 
 type Session = chrome.debugger.DebuggerSession
+type Point = { x: number; y: number }
 type Target = { session: Session; parent?: Session }
 type Reference = {
   target: Target
@@ -79,6 +87,8 @@ type Page = {
   ready: boolean
   // Told whenever the main frame's navigation moves on.
   waiters: Set<() => void>
+  // Where the task last pointed on the page, which its cursor shows.
+  cursor?: Point
   screenshot?: {
     id: string
     generation: string
@@ -323,8 +333,9 @@ export class BrowserDriver {
     if (this.pages.has(tabId)) return
     if (this.pages.size >= MAX_ATTACHED_TABS) {
       const oldest = this.pages.keys().next().value!
+      const left = this.pages.get(oldest)
       this.pages.delete(oldest)
-      await chrome.debugger.detach({ tabId: oldest })
+      await this.leave(oldest, left)
     }
     this.check()
     await chrome.debugger.attach({ tabId }, PROTOCOL_VERSION)
@@ -365,6 +376,95 @@ export class BrowserDriver {
     } catch {
       // A document replaced as it was asked says so in its events.
       this.check()
+    }
+  }
+
+  // Gives a page back: without the task's cursor, and no longer controlled.
+  private async leave(tabId: number, page: Page | undefined) {
+    if (page?.cursor)
+      await chrome.debugger
+        .sendCommand({ tabId }, 'Runtime.evaluate', {
+          expression: `(${removeCursor.toString()})(${JSON.stringify(CURSOR_TAG)})`,
+        })
+        .catch(() => undefined)
+    await chrome.debugger.detach({ tabId })
+  }
+
+  // Shows the user where the task points, and says whether the cursor
+  // showed. The task goes on the same without it.
+  private async pointCursor(
+    root: Session,
+    page: Page,
+    point: Point,
+    press: boolean,
+  ): Promise<boolean> {
+    try {
+      const shown = await this.send(root, 'Runtime.evaluate', {
+        expression: `(${pointCursor.toString()})(${JSON.stringify(CURSOR_TAG)}, ${JSON.stringify(CURSOR_COLOR)}, ${point.x}, ${point.y}, ${press}, ${CURSOR_TRAVEL_MS})`,
+        awaitPromise: true,
+        returnByValue: true,
+      })
+      page.cursor = point
+      return shown.result.value === true
+    } catch {
+      this.check()
+      return false
+    }
+  }
+
+  // Moves the cursor to an element the task types in or chooses from, where
+  // it can be pointed at.
+  private async pointAt(root: Session, page: Page, target: Reference) {
+    let point: Point
+    try {
+      point = await this.point(target)
+    } catch (cause) {
+      this.check()
+      if (cause instanceof BrowserError) return
+      throw cause
+    }
+    await this.pointCursor(root, page, point, false)
+  }
+
+  // Where an action's input goes, once the cursor has shown the user. The
+  // page had time to change while the cursor travelled, so the point is
+  // found again before it is used.
+  private async aimed(
+    root: Session,
+    page: Page,
+    press: boolean,
+    locate: () => Promise<Point>,
+  ): Promise<Point> {
+    const aim = await this.beforeInput(locate)
+    if (!(await this.pointCursor(root, page, aim, press))) return aim
+    return this.beforeInput(locate)
+  }
+
+  // Captures the page without the task's cursor, which is no part of what
+  // the page shows.
+  private async capture(
+    root: Session,
+    page: Page,
+    parameters: Protocol.Page.CaptureScreenshotRequest,
+  ) {
+    const hide = async (hidden: boolean) => {
+      if (!page.cursor) return false
+      try {
+        const answer = await this.send(root, 'Runtime.evaluate', {
+          expression: `(${hideCursor.toString()})(${JSON.stringify(CURSOR_TAG)}, ${hidden})`,
+          returnByValue: true,
+        })
+        return answer.result.value === true
+      } catch {
+        this.check()
+        return false
+      }
+    }
+    const hidden = await hide(true)
+    try {
+      return await this.send(root, 'Page.captureScreenshot', parameters)
+    } finally {
+      if (hidden) await hide(false)
     }
   }
 
@@ -926,7 +1026,7 @@ export class BrowserDriver {
       )
   }
 
-  private async point(entry: Reference): Promise<{ x: number; y: number }> {
+  private async point(entry: Reference): Promise<Point> {
     const { target, backendId } = entry
     const quads = await this.send(target.session, 'DOM.getContentQuads', {
       backendNodeId: backendId,
@@ -1029,7 +1129,7 @@ export class BrowserDriver {
         scale,
       },
     }
-    const shot = await this.send(root, 'Page.captureScreenshot', parameters)
+    const shot = await this.capture(root, page, parameters)
     const after = (await this.send(root, 'Page.getLayoutMetrics'))
       .cssVisualViewport
     if (JSON.stringify(after) !== JSON.stringify(viewport)) {
@@ -1113,10 +1213,7 @@ export class BrowserDriver {
         'STALE_SCREENSHOT',
         'The viewport changed. Take a fresh screenshot or use an element reference.',
       )
-    if (
-      (await this.send(root, 'Page.captureScreenshot', shot.parameters))
-        .data !== shot.image
-    )
+    if ((await this.capture(root, page, shot.parameters)).data !== shot.image)
       throw new BrowserError(
         'STALE_SCREENSHOT',
         'The visible page changed. Take a fresh screenshot or use an element reference.',
@@ -1131,11 +1228,7 @@ export class BrowserDriver {
     }
   }
 
-  private async mouse(
-    root: Session,
-    point: { x: number; y: number },
-    click: boolean,
-  ) {
+  private async mouse(root: Session, point: Point, click: boolean) {
     await this.send(root, 'Input.dispatchMouseEvent', {
       type: 'mouseMoved',
       ...point,
@@ -1173,7 +1266,13 @@ export class BrowserDriver {
   // stands whatever becomes of the observation.
   private async observed(id: number): Promise<BrowserResult> {
     try {
-      return await this.read(id)
+      const result = await this.read(id)
+      // The cursor stays where the task last pointed on a page it has since
+      // replaced.
+      const page = this.pages.get(id)
+      if (page?.cursor)
+        await this.pointCursor({ tabId: id }, page, page.cursor, false)
+      return result
     } catch (cause) {
       this.check()
       return {
@@ -1355,12 +1454,11 @@ export class BrowserDriver {
           action.screenshotId &&
           (action.action === 'click' || action.action === 'hover')
         ) {
-          const point = await this.beforeInput(() =>
+          const click = action.action === 'click'
+          const point = await this.aimed(root, page, click, () =>
             this.coordinatePoint(id, page, action),
           )
-          await this.dispatched(() =>
-            this.mouse(root, point, action.action === 'click'),
-          )
+          await this.dispatched(() => this.mouse(root, point, click))
           break
         }
         const target = await this.beforeInput(() =>
@@ -1369,11 +1467,13 @@ export class BrowserDriver {
         const session = target.target.session
         try {
           if (action.action === 'click' || action.action === 'hover') {
-            const point = await this.beforeInput(() => this.point(target))
-            await this.dispatched(() =>
-              this.mouse(root, point, action.action === 'click'),
+            const click = action.action === 'click'
+            const point = await this.aimed(root, page, click, () =>
+              this.point(target),
             )
+            await this.dispatched(() => this.mouse(root, point, click))
           } else if (action.action === 'fill') {
+            await this.pointAt(root, page, target)
             await this.beforeInput(async () => {
               await this.send(session, 'DOM.focus', {
                 backendNodeId: target.backendId,
@@ -1399,6 +1499,7 @@ export class BrowserDriver {
               }),
             )
           } else if (action.action === 'select') {
+            await this.pointAt(root, page, target)
             const selected = await this.dispatched(() =>
               this.send(session, 'Runtime.callFunctionOn', {
                 objectId: target.objectId,
@@ -1416,6 +1517,7 @@ export class BrowserDriver {
             const pressed = action.key
             if (!pressed)
               throw new BrowserError('MISSING_KEY', 'Specify a supported key.')
+            await this.pointAt(root, page, target)
             await this.beforeInput(() =>
               this.send(session, 'DOM.focus', {
                 backendNodeId: target.backendId,
@@ -1454,15 +1556,12 @@ export class BrowserDriver {
     this.closed = true
     chrome.debugger.onEvent.removeListener(this.onEvent)
     chrome.debugger.onDetach.removeListener(this.onDetach)
-    const tabs = [...this.pages.keys()]
-    const waiters = [...this.pages.values()].flatMap((page) => [
-      ...page.waiters,
-    ])
+    const pages = [...this.pages]
     this.pages.clear()
-    for (const moved of waiters) moved()
+    for (const [, page] of pages) for (const moved of [...page.waiters]) moved()
     await this.release()
     await Promise.allSettled(
-      tabs.map((tabId) => chrome.debugger.detach({ tabId })),
+      pages.map(([tabId, page]) => this.leave(tabId, page)),
     )
   }
 }
