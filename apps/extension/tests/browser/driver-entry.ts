@@ -3,12 +3,10 @@ import { BrowserDriver } from '../../src/browser/driver'
 import { BrowserError } from '../../src/browser/errors'
 
 let task: { driver: BrowserDriver; abort: AbortController } | undefined
-// Starts a task on a tab. Its pages lie as they are, wherever the tests run,
-// unless a test has them swell.
-export async function start(url: string, swells = false) {
+export async function start(url: string) {
   await stop()
   const abort = new AbortController()
-  const driver = new BrowserDriver(abort.signal, () => abort.abort(), swells)
+  const driver = new BrowserDriver(abort.signal, () => abort.abort())
   task = { driver, abort }
   try {
     const tab = (await chrome.tabs.query({})).find((tab) => tab.url === url)
