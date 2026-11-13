@@ -19,6 +19,7 @@
     "./model-selector-trigger-label": "./src/model-selector-trigger-label.tsx",
     "./StepMarkdown": "./src/StepMarkdown.tsx",
     "./stepped-slider": "./src/stepped-slider.tsx",
+    "./texture-grid": "./src/texture-grid.tsx",
     "./StreamingMarkdown": "./src/StreamingMarkdown.tsx",
     "./StreamingTracerDot": "./src/StreamingTracerDot.tsx",
     "./ThoughtProcess": "./src/ThoughtProcess.tsx",
