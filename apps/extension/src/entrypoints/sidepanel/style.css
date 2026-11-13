@@ -245,11 +245,6 @@ input:focus-visible {
   color: hsl(var(--content-muted));
   font-size: 10px;
 }
-.browser-access {
-  font-size: 12px;
-  padding: 9px 4px;
-  color: hsl(var(--content-secondary));
-}
 .working-tab {
   display: flex;
   flex-direction: column;

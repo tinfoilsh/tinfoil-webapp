@@ -291,7 +291,6 @@ function ChatPanel({
             <span className="shortcut">Alt+Shift+S</span>
           </div>
         )}
-        <div className="browser-access">All web tabs available</div>
         {busy && view.workingTab && (
           <div className="working-tab" role="status">
             <span>Working in</span>
