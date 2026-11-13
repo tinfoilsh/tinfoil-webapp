@@ -331,8 +331,6 @@ export class TaskController {
       ],
     }
     this.task = task
-    await this.save(task)
-    this.checkGeneration(generation)
     this.launch(task, turn)
   }
 
@@ -366,6 +364,7 @@ export class TaskController {
     })
     try {
       await this.save(task)
+      signal.throwIfAborted()
       const access = turn?.browser ?? task.receipt?.browser
       if (task.receipt) this.client.locate(task.id, task.receipt.instance)
       let next = turn

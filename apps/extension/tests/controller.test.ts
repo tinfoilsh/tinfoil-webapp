@@ -249,6 +249,50 @@ test('a message shows in its chat as soon as it is sent, until the chat the serv
   expect(done.task?.state.messages).toEqual([stored])
 })
 
+test.each(['stop', 'dispose'] as const)(
+  '%s during the first save leaves the message visibly interrupted without sending it',
+  async (action) => {
+    const { controller, store } = setup()
+    await controller.initialize()
+    const saved = Promise.withResolvers<string>()
+    const release = Promise.withResolvers<void>()
+    const put = store.put.bind(store)
+    vi.spyOn(store, 'put').mockImplementationOnce(async (task) => {
+      await put(task)
+      saved.resolve(task.id)
+      await release.promise
+    })
+    client.events.mockImplementation(async function* (
+      _path: string,
+      turn: Turn,
+    ) {
+      yield started(turn)
+      yield ended(turn)
+    })
+    const sending = controller.command(send).catch((cause) => cause)
+    const id = await saved.promise
+    const before = await store.get('alice', id)
+    expect(before?.state.messages).toEqual([
+      {
+        id: expect.any(String),
+        role: 'user',
+        content: send.content,
+        createdAt: expect.any(String),
+      },
+    ])
+
+    const stopped = controller[action]()
+    release.resolve()
+    await Promise.all([sending, stopped])
+
+    expect(client.events).not.toHaveBeenCalled()
+    const after = await store.get('alice', id)
+    expect(after?.state.messages).toEqual(before?.state.messages)
+    expect(after?.phase).toBe('interrupted')
+    expect(after?.error).toBe('Task stopped. Check the page before continuing.')
+  },
+)
+
 test('a task stored in a phase it cannot rest in opens as interrupted', async () => {
   const { controller, until, store } = setup()
   const stored = {
