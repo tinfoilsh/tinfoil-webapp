@@ -23,11 +23,26 @@ const TASK_GROUP_TITLE = 'Tinfoil'
 const TASK_GROUP_COLOR = 'green'
 // The cursor that shows the user where a task points on a page.
 const CURSOR_TAG = 'tinfoil-cursor'
-// How the task's mark on a page looks: Deep Teal, with a lighter glow that
-// shows where it does not.
+// How the task's mark on a page looks: Deep Teal with a lighter glow that
+// shows where it does not, and a page swollen enough to be seen and no more.
 const MARK_LOOK = {
   ink: '#004444',
   glow: '#A8C7D1',
+  bulge: 0.03,
+}
+// Whether this browser draws its pages with a graphics processor. One that
+// draws them in software redraws a swollen page too slowly for the task's
+// cursor and its scrolling to be followed.
+let hardware: boolean | undefined
+function drawnByHardware(): boolean {
+  if (hardware === undefined) {
+    const context = new OffscreenCanvas(1, 1).getContext('webgl', {
+      failIfMajorPerformanceCaveat: true,
+    })
+    hardware = context !== null
+    context?.getExtension('WEBGL_lose_context')?.loseContext()
+  }
+  return hardware
 }
 // How long the cursor takes to reach a point: in proportion to how far it
 // is, and never so little that the user cannot follow it.
@@ -294,6 +309,8 @@ export class BrowserDriver {
   constructor(
     private readonly signal: AbortSignal,
     private readonly interrupted: (message: string) => void,
+    // The pages the task works in swell toward the user.
+    private readonly swells: boolean = drawnByHardware(),
   ) {
     chrome.debugger.onEvent.addListener(this.onEvent)
     chrome.debugger.onDetach.addListener(this.onDetach)
@@ -534,7 +551,7 @@ export class BrowserDriver {
     }
     try {
       const shown = await this.send(root, 'Runtime.evaluate', {
-        expression: `(${markPage.toString()})(${JSON.stringify(CURSOR_TAG)}, ${JSON.stringify(MARK_LOOK)}, ${JSON.stringify(this.id)}, ${JSON.stringify(pointed ?? null)})`,
+        expression: `(${markPage.toString()})(${JSON.stringify(CURSOR_TAG)}, ${JSON.stringify({ ...MARK_LOOK, bulge: this.swells ? MARK_LOOK.bulge : 0 })}, ${JSON.stringify(this.id)}, ${JSON.stringify(pointed ?? null)})`,
         awaitPromise: true,
         returnByValue: true,
       })

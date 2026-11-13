@@ -220,15 +220,19 @@ export function glideIntoView(
 }
 
 // The mark a task leaves on the tab it works in, for the user to follow: a
-// glow around the edge of the page, and, once the task points at something,
-// a cursor that travels there and pulses where it presses. The mark takes no
-// input from the page it lies over, and it changes inside its own shadow
-// tree, where the page's scripts do not watch.
+// glow around the edge of the page, a slight swelling of the page as through
+// a lens, and, once the task points at something, a cursor that travels
+// there and pulses where it presses. The mark takes no input from the page
+// it lies over, and it changes inside its own shadow tree, where the page's
+// scripts do not watch.
 export function markPage(
   tag: string,
   look: {
     ink: string
     glow: string
+    // How much larger the middle of the page is drawn than its corners, or
+    // nothing where the page is left as it lies.
+    bulge: number
   },
   // The task the mark is of.
   task: string,
@@ -252,6 +256,10 @@ export function markPage(
   const PULSE_MS = 450
   // How long past its travel time a cursor that never arrives is waited for.
   const LATE_MS = 100
+  // How finely the page's swelling is charted. It changes evenly across the
+  // page, so a small chart is stretched over it.
+  const SWELL_CHART_PX = 128
+  const SWELL_MS = 500
   let host = document.documentElement.querySelector<HTMLElement>(
     `:scope > ${tag}`,
   )
@@ -266,7 +274,9 @@ export function markPage(
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(
       ':host{all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;overflow:hidden;contain:strict}' +
-        '#layer{position:absolute;inset:0}' +
+        '#layer,#under,#lens,#over{position:absolute;inset:0}' +
+        '#optics{position:absolute}' +
+        '#lens[data-on]{backdrop-filter:url(#swelling)}' +
         // A line and a glow in each of two shades, so that one of them shows
         // on a page of any color.
         `#glow{position:absolute;inset:0;box-shadow:inset 0 0 0 2px ${look.ink},inset 0 0 0 3px ${look.glow},inset 0 0 20px 4px ${look.ink},inset 0 0 48px 10px ${look.glow};animation:breathe 2.4s ease-in-out infinite alternate}` +
@@ -299,10 +309,10 @@ export function markPage(
       element.append(...parts)
       return element
     }
-    tree.append(
+    const layer = part(
+      'layer',
       part(
-        'layer',
-        part('glow'),
+        'under',
         part('pulse'),
         part('ring'),
         shape(
@@ -317,7 +327,115 @@ export function markPage(
           }),
         ),
       ),
+      part('over', part('glow')),
     )
+    tree.append(layer)
+    // The page swells under a lens that redraws what lies behind it, each
+    // point from one nearer the middle of the page. The cursor lies behind
+    // the lens, so it stays on what it points at; the glow lies before it,
+    // where it is drawn as it is.
+    if (look.bulge) {
+      const lens = part('lens')
+      const chart = shape('feImage', {
+        x: 0,
+        y: 0,
+        preserveAspectRatio: 'none',
+        result: 'chart',
+      })
+      const swell = shape('animate', {
+        id: 'swell',
+        attributeName: 'scale',
+        from: 0,
+        dur: `${SWELL_MS}ms`,
+        begin: 'indefinite',
+        calcMode: 'spline',
+        keyTimes: '0;1',
+        keySplines: '0.2 0 0.2 1',
+      })
+      const shift = shape(
+        'feDisplacementMap',
+        {
+          in: 'SourceGraphic',
+          in2: 'chart',
+          scale: 0,
+          xChannelSelector: 'R',
+          yChannelSelector: 'G',
+        },
+        swell,
+      )
+      const swelling = shape(
+        'filter',
+        {
+          id: 'swelling',
+          filterUnits: 'userSpaceOnUse',
+          x: 0,
+          y: 0,
+          // The chart's channels are distances, to be read as they are drawn.
+          'color-interpolation-filters': 'sRGB',
+        },
+        chart,
+        shift,
+      )
+      const drawn = document.createElement('canvas')
+      drawn.width = SWELL_CHART_PX
+      drawn.height = SWELL_CHART_PX
+      // Charts the swelling for the size the page has. The red and the green
+      // of the chart say how far to the side and how far up or down a point
+      // is drawn from, as parts of the one distance the filter moves a point
+      // by: farthest about the middle of the page, and nowhere at its
+      // corners, so that nothing is drawn from beyond its edge.
+      const fit = () => {
+        const { width, height } = lens.getBoundingClientRect()
+        const context = drawn.getContext('2d')
+        if (!width || !height || !context) return
+        const reach = Math.max(width, height)
+        const pixels = context.createImageData(SWELL_CHART_PX, SWELL_CHART_PX)
+        for (let row = 0; row < SWELL_CHART_PX; row++)
+          for (let column = 0; column < SWELL_CHART_PX; column++) {
+            const x = ((column + 0.5) / SWELL_CHART_PX) * 2 - 1
+            const y = ((row + 0.5) / SWELL_CHART_PX) * 2 - 1
+            const swollen = 1 - (x * x + y * y) / 2
+            const at = (row * SWELL_CHART_PX + column) * 4
+            pixels.data[at] = 255 * (0.5 - (x * swollen * width) / reach / 2)
+            pixels.data[at + 1] =
+              255 * (0.5 - (y * swollen * height) / reach / 2)
+            pixels.data[at + 3] = 255
+          }
+        context.putImageData(pixels, 0, 0)
+        for (const sized of [swelling, chart]) {
+          sized.setAttribute('width', String(width))
+          sized.setAttribute('height', String(height))
+        }
+        chart.setAttribute('href', drawn.toDataURL())
+        const farthest = String(look.bulge * reach)
+        shift.setAttribute('scale', farthest)
+        swell.setAttribute('to', farthest)
+      }
+      // A page may refuse the pictures made on it, and the chart with them,
+      // which would leave the lens to shift the whole page aside. So the
+      // page swells only once it has loaded one such picture, and not for a
+      // user who asked for less motion, as it sways what scrolls beneath it.
+      const allowed = new Image()
+      allowed.addEventListener('load', () => {
+        if (
+          !created.isConnected ||
+          matchMedia('(prefers-reduced-motion: reduce)').matches
+        )
+          return
+        fit()
+        new ResizeObserver((_, observer) => {
+          if (created.isConnected) fit()
+          else observer.disconnect()
+        }).observe(lens)
+        lens.toggleAttribute('data-on', true)
+        ;(swell as SVGAnimationElement).beginElement()
+      })
+      allowed.src = drawn.toDataURL()
+      layer.firstElementChild?.after(lens)
+      tree.prepend(
+        shape('svg', { id: 'optics', width: 0, height: 0 }, swelling),
+      )
+    }
     document.documentElement.append(created)
   }
   const tree = host.shadowRoot!
@@ -391,17 +509,23 @@ export function markPage(
 // brings it back. Says whether the page has one.
 export function hideMark(tag: string, hidden: boolean): boolean {
   const FADE_MS = 200
-  const layer = document.documentElement
-    .querySelector(`:scope > ${tag}`)
-    ?.shadowRoot?.getElementById('layer')
-  if (!layer) return false
+  const tree = document.documentElement.querySelector(
+    `:scope > ${tag}`,
+  )?.shadowRoot
+  const layer = tree?.getElementById('layer')
+  if (!tree || !layer) return false
   layer.style.visibility = hidden ? 'hidden' : ''
   // It comes back gently, where it left at once to be out of the capture.
-  if (!hidden && !matchMedia('(prefers-reduced-motion: reduce)').matches)
-    layer.animate([{ opacity: 0 }, { opacity: 1 }], {
-      duration: FADE_MS,
-      easing: 'ease-out',
-    })
+  // The page swells again by degrees of its own: a lens that faded in would
+  // have nothing behind it to redraw until it had.
+  if (!hidden && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    for (const id of ['under', 'over'])
+      tree.getElementById(id)?.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: FADE_MS,
+        easing: 'ease-out',
+      })
+    tree.querySelector<SVGAnimationElement>('#swell')?.beginElement()
+  }
   return true
 }
 

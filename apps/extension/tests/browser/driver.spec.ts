@@ -33,6 +33,11 @@ const PLACES_ON_THE_WAY = 5
 // deadline; one the browser stopped drawing produces a few at most.
 const DRAWN_FRAMES = 20
 const DRAWN_FRAMES_DEADLINE_MS = 2_000
+// How far a line down a picture of the page stands from straight, as a part
+// of the picture's width: at most this far where the page is drawn as it
+// lies, and at least this far where the page is swollen.
+const STRAIGHT = 0.0005
+const BOWED = 0.002
 let server: Server
 let origin: string
 let context: BrowserContext
@@ -66,6 +71,11 @@ test.beforeAll(async () => {
     }
     if (request.url === '/next') {
       response.end('<h1>Next page</h1>')
+      return
+    }
+    if (request.url === '/guarded') {
+      response.setHeader('Content-Security-Policy', "img-src 'self'")
+      response.end('<!doctype html><title>Guarded</title><h1>Guarded</h1>')
       return
     }
     if (request.url === '/links') {
@@ -155,13 +165,13 @@ test.afterEach(async () => {
   }
 })
 
-async function startFixture(suffix = '') {
+async function startFixture(suffix = '', swells = false) {
   const page = await context.newPage()
   fixturePage = page
   await page.goto(`${origin}${suffix}`)
   const tabId = await worker.evaluate(
-    (url) => browserTest.start(url),
-    page.url(),
+    ({ url, swells }) => browserTest.start(url, swells),
+    { url: page.url(), swells },
   )
   return { page, tabId }
 }
@@ -210,6 +220,47 @@ function ref(text: string, name: string) {
 }
 const execute = (action: BrowserAction) =>
   worker.evaluate((action) => browserTest.execute(action), action)
+
+// How far the magenta line down a picture of the page bows away from the
+// picture's middle at half its height, as a part of the picture's width.
+function bowOfLine(data: string, type: string): Promise<number> {
+  return worker.evaluate(
+    async ({ data, type }) => {
+      const picture = await createImageBitmap(
+        new Blob(
+          [Uint8Array.from(atob(data), (character) => character.charCodeAt(0))],
+          { type },
+        ),
+      )
+      const canvas = new OffscreenCanvas(picture.width, picture.height)
+      const context = canvas.getContext('2d')!
+      context.drawImage(picture, 0, 0)
+      const [above, middle, below] = [0.1, 0.5, 0.9].map((height) => {
+        const row = context.getImageData(
+          0,
+          Math.round(height * (picture.height - 1)),
+          picture.width,
+          1,
+        ).data
+        let sum = 0
+        let count = 0
+        for (let x = 0; x < picture.width; x++)
+          if (
+            row[x * 4] > 160 &&
+            row[x * 4 + 1] < 110 &&
+            row[x * 4 + 2] > 160
+          ) {
+            sum += x
+            count++
+          }
+        if (!count) throw new Error('The picture shows no line')
+        return sum / count / picture.width
+      })
+      return (above + below) / 2 - middle
+    },
+    { data, type },
+  )
+}
 
 test('real debugger actions edit fields, click, select, reject stale refs and stop', async () => {
   const { page, tabId } = await startFixture()
@@ -813,6 +864,100 @@ test('a tab the task works in glows around its edge, for as long as the task wor
   } finally {
     await next.close()
   }
+})
+
+test('a page the task works in swells toward the user, though never in what the task captures of it', async () => {
+  const { page, tabId } = await startFixture('/?swollen', true)
+  // A line straight down the page, to the left of its middle.
+  const drawLine = (on: Page) =>
+    on.evaluate(() => {
+      const line = document.createElement('div')
+      line.style.cssText =
+        'position:fixed;left:15%;top:0;bottom:0;width:6px;background:#f0f'
+      document.body.append(line)
+    })
+  await drawLine(page)
+  const bowOnScreen = async () =>
+    bowOfLine((await page.screenshot()).toString('base64'), 'image/png')
+  expect(Math.abs(await bowOnScreen())).toBeLessThan(STRAIGHT)
+
+  // On the page the line bows outward, as the middle of the page is drawn
+  // larger than its corners.
+  await execute({ action: 'read', tabId })
+  await expect.poll(bowOnScreen).toBeGreaterThan(BOWED)
+
+  // The task is shown the page as it lies, and the page swells again once
+  // it has been.
+  const captured = await execute({ action: 'screenshot', tabId })
+  expect(Math.abs(await bowOfLine(captured.image!, 'image/jpeg'))).toBeLessThan(
+    STRAIGHT,
+  )
+  // What the task presses by its place in that picture is pressed where the
+  // page has it, which the page still shows as the picture did.
+  const picture = JSON.parse(captured.text) as {
+    screenshotId: string
+    width: number
+    height: number
+  }
+  const save = (await page.locator('#save').boundingBox())!
+  const viewport = await page.evaluate(() => ({
+    width: innerWidth,
+    height: innerHeight,
+  }))
+  await execute({
+    action: 'click',
+    tabId,
+    screenshotId: picture.screenshotId,
+    x: ((save.x + save.width / 2) * picture.width) / viewport.width,
+    y: ((save.y + save.height / 2) * picture.height) / viewport.height,
+  })
+  await expect(page.locator('output').first()).toHaveText('Saved Before')
+  await expect.poll(bowOnScreen).toBeGreaterThan(BOWED)
+
+  await worker.evaluate(() => browserTest.stop())
+  expect(Math.abs(await bowOnScreen())).toBeLessThan(STRAIGHT)
+
+  // A browser that draws its pages too slowly for it puts no lens on them.
+  await worker.evaluate((url) => browserTest.start(url, false), page.url())
+  await execute({ action: 'read', tabId })
+  expect(
+    await page.evaluate(() => {
+      const tree = document.querySelector('tinfoil-cursor')!.shadowRoot!
+      return {
+        marked: tree.getElementById('glow') !== null,
+        lens: tree.getElementById('lens') !== null,
+      }
+    }),
+  ).toEqual({ marked: true, lens: false })
+})
+
+test('a page that refuses pictures made on it is marked, and left to lie as it does', async () => {
+  const { page, tabId } = await startFixture('/guarded', true)
+  // The page says so when it refuses the picture the mark tries it with.
+  await page.evaluate(() => {
+    ;(globalThis as { refused?: Promise<string> }).refused = new Promise(
+      (resolve) =>
+        document.addEventListener(
+          'securitypolicyviolation',
+          (event) => resolve(event.effectiveDirective),
+          { once: true },
+        ),
+    )
+  })
+  await execute({ action: 'read', tabId })
+  expect(
+    await page.evaluate(
+      () => (globalThis as { refused?: Promise<string> }).refused,
+    ),
+  ).toBe('img-src')
+  const mark = await page.evaluate(() => {
+    const tree = document.querySelector('tinfoil-cursor')!.shadowRoot!
+    return {
+      marked: tree.getElementById('glow') !== null,
+      lens: getComputedStyle(tree.getElementById('lens')!).backdropFilter,
+    }
+  })
+  expect(mark).toEqual({ marked: true, lens: 'none' })
 })
 
 test('a task can visit more tabs than it keeps attached and releases every attachment when stopped', async () => {
