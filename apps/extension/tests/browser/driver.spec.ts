@@ -792,10 +792,18 @@ test('a tab the task works in says so around its edge, and in a notice that stop
   }) => [box.x + box.width / 2, box.y + box.height / 2] as const
   const stops = () => worker.evaluate(() => browserTest.stops())
   expect(await mark()).toBeNull()
+  // A mark a task before this one left on the page, as it drew it, is not
+  // taken for this task's.
+  await page.evaluate(() => {
+    const left = document.createElement('tinfoil-cursor')
+    left.attachShadow({ mode: 'open' }).append(document.createElement('div'))
+    document.documentElement.append(left)
+  })
 
   // The mark is there from the task's first look at the page, before it has
   // pointed at anything.
   await execute({ action: 'read', tabId })
+  expect(await page.locator('tinfoil-cursor').count()).toBe(1)
   const shown = (await mark())!
   expect(shown.glow).toEqual(shown.page)
   expect(shown.says).toContain('Al is working here')

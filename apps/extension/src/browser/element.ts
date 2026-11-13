@@ -267,11 +267,14 @@ export function markPage(
   let host = document.documentElement.querySelector<HTMLElement>(
     `:scope > ${tag}`,
   )
-  if (!host?.shadowRoot) {
+  // A mark another task left on the page is not this task's to show: it is
+  // drawn as that task drew it, and reaches no one.
+  if (!host?.shadowRoot || host.dataset.binding !== binding) {
     host?.remove()
     const created = document.createElement(tag)
     host = created
     created.setAttribute('aria-hidden', 'true')
+    created.dataset.binding = binding
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(
       ':host{all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;overflow:hidden;contain:strict}' +
@@ -350,10 +353,16 @@ export function markPage(
     // presses on one of its controls is taken here instead, by where it
     // lands; a press the task announced is the page's.
     const controls = { stop, move }
+    // The mark listens to the page for as long as it is on it.
+    const listening = new AbortController()
+    const heard = { capture: true, signal: listening.signal }
     const pressed = (event: MouseEvent): keyof typeof controls | undefined => {
+      if (!created.isConnected) {
+        listening.abort()
+        return undefined
+      }
       if (
         !event.isTrusted ||
-        !created.isConnected ||
         layer.style.visibility === 'hidden' ||
         (Math.abs(event.clientX - Number(created.dataset.pressX)) < 1 &&
           Math.abs(event.clientY - Number(created.dataset.pressY)) < 1)
@@ -386,12 +395,10 @@ export function markPage(
           event.preventDefault()
           event.stopImmediatePropagation()
           if (type !== 'click') return
-          const reach = (globalThis as Record<string, unknown>)[
-            created.dataset.binding ?? ''
-          ]
+          const reach = (globalThis as Record<string, unknown>)[binding]
           if (typeof reach === 'function') reach(control)
         },
-        true,
+        heard,
       )
     addEventListener(
       'pointermove',
@@ -400,14 +407,13 @@ export function markPage(
         stop.toggleAttribute('data-hover', over === 'stop')
         move.toggleAttribute('data-hover', over === 'move')
       },
-      true,
+      heard,
     )
     document.documentElement.append(created)
   }
   const tree = host.shadowRoot!
   const layer = tree.getElementById('layer') as HTMLElement
   layer.style.visibility = ''
-  host.dataset.binding = binding
   tree.getElementById('notice')?.toggleAttribute('data-below', below)
   // The press the task is about to make, which the notice leaves to the page.
   if (point?.press) {
