@@ -11,6 +11,7 @@ import {
 import { createStore } from '@/services/harness/store'
 import { logError, logWarning } from '@/utils/error-handling'
 import { bytesToHex } from '@noble/hashes/utils.js'
+import type { StoredDictationSegment } from '@tinfoil/chat-client/dictation'
 import { deletedChatsTracker } from './deleted-chats-tracker'
 
 export interface Chat extends Omit<ChatType, 'createdAt'> {
@@ -29,19 +30,7 @@ export interface SaveChatResult {
   isLocalOnly: boolean
 }
 
-// A stretch of dictation kept until its text reaches the composer of the
-// chat it was dictated in: its recording until it is transcribed, then its
-// text.
-export interface StoredDictationSegment {
-  id: string
-  chatId: string
-  dictationId: string
-  index: number
-  startedAt: number
-  mimeType: string
-  audio?: ArrayBuffer
-  text?: string
-}
+export type { StoredDictationSegment }
 
 interface StoredAttachmentPayload {
   id: string
