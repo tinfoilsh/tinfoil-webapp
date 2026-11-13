@@ -54,6 +54,12 @@ npm exec --workspace=apps/extension -- playwright install chromium
 npm run test:browser --workspace=apps/extension
 ```
 
+The extension's icons in `apps/extension/public/icon` are rendered from `apps/extension/assets/icon.svg`:
+
+```bash
+for size in 16 32 48 128; do rsvg-convert -w $size -h $size apps/extension/assets/icon.svg -o apps/extension/public/icon/$size.png; done
+```
+
 The production-mode folder is `apps/extension/.output/chrome-mv3`. Reload its extension card after rebuilding. CI publishes that folder as the `tinfoil-browser-chrome` artifact; its public configuration comes from the `EXTENSION_CLERK_PUBLISHABLE_KEY`, `EXTENSION_CLERK_FRONTEND_API`, `EXTENSION_WEBAPP_URL`, and `EXTENSION_HARNESS_URL` repository variables.
 
 ## Releases

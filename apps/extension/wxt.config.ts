@@ -6,6 +6,8 @@ const DEVELOPMENT_PUBLIC_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArJZtiYh4iQtdvIJgJUvqw4wJAolhd+achnJAR2HMBuXJhqkGU0BLP1RYyLs/3fa4LLDWDIoOHl8dTw0E2F93WQBTAVX/tpxP1LfAZw+fOTyXnamS1OGWBhjW1GxqmkiTxWSoxtc1tqmCwJfvS0PnteJ0F9j9GUcnLf19xXZkUnwkT/BaS53+oS/NRkke2wYGcWUlOfzOgTD/LSFeVqRE67H2xU4CUq9iLjZpQ6/F8WNTqtLFOH6JZzKI+xuu6Xzbdo68Gv3g0YFAJ1DTYhzYQvmO7W4SKyHIMhwxtdQ3nh1t/8nE0KsxGGh/TGn4q09q8DvXjdkpSPuWqmCYHWIGnwIDAQAB'
 const LOCAL_WEBAPP_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 const MODEL_ICONS = 'model-icons'
+// The logo on a tile of its own, which shows on a toolbar of any color.
+const ICON_SIZES = [16, 32, 48, 128]
 
 export default defineConfig({
   srcDir: 'src',
@@ -16,9 +18,6 @@ export default defineConfig({
     'build:publicAssets'(wxt, files) {
       const webPublic = path.resolve(wxt.config.root, '../../public')
       for (const name of [
-        'favicon-16x16.png',
-        'favicon-32x32.png',
-        'android-chrome-192x192.png',
         'icons/chevron-right.svg',
         'logo-green.svg',
         'logo-white.svg',
@@ -74,11 +73,9 @@ export default defineConfig({
       ],
       host_permissions: [...origins],
       action: { default_title: 'Open Tinfoil' },
-      icons: {
-        16: 'favicon-16x16.png',
-        32: 'favicon-32x32.png',
-        192: 'android-chrome-192x192.png',
-      },
+      icons: Object.fromEntries(
+        ICON_SIZES.map((size) => [size, `icon/${size}.png`]),
+      ),
       commands: {
         'stop-task': {
           suggested_key: { default: 'Alt+Shift+S' },
