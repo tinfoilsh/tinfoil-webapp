@@ -579,7 +579,6 @@ html[data-chat-font='dyslexic'] {
   right: 0;
   height: var(--app-height, 100dvh);
   max-height: var(--app-height, 100dvh);
-  min-height: -webkit-fill-available;
   overscroll-behavior: none;
 }
 

@@ -163,23 +163,6 @@ type ChatSidebarProps = {
 
 const MOBILE_BREAKPOINT = 1024 // Same as in chat-interface.tsx
 
-// Prevent pinch-zoom on mobile Safari while the chat UI is mounted.
-function usePreventZoom() {
-  useEffect(() => {
-    const viewportMeta = document.createElement('meta')
-    viewportMeta.name = 'viewport'
-    viewportMeta.content =
-      'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'
-    document.head.appendChild(viewportMeta)
-
-    return () => {
-      if (viewportMeta.parentNode === document.head) {
-        document.head.removeChild(viewportMeta)
-      }
-    }
-  }, [])
-}
-
 export const ChatSidebar = memo(function ChatSidebar({
   hasMore: hasMoreRemote = false,
   isLoadingChats = false,
@@ -388,9 +371,6 @@ export const ChatSidebar = memo(function ChatSidebar({
   const [visibleCloudChatCount, setVisibleCloudChatCount] = useState<number>(
     PAGINATION.CHATS_PER_PAGE,
   )
-
-  // Apply zoom prevention for mobile
-  usePreventZoom()
 
   // Persist active tab selection to sessionStorage
   useEffect(() => {
