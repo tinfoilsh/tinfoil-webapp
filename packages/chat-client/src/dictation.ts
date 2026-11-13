@@ -124,23 +124,16 @@ function meter(stream: MediaStream): Meter {
   }
 }
 
-// Whether a recording that failed to transcribe is worth sending again
-// unasked: not one the chat service refused for a reason that waiting does
-// not change.
-export function transcribesLater(error: unknown): boolean {
-  if (!(error instanceof HarnessError)) return true
-  const { action } = error.detail
-  return action === ERROR_ACTIONS.retry || action === ERROR_ACTIONS.wait
-}
-
 // How long to wait before transcribing a recording again after an attempt
 // failed, or undefined when it waits for the user instead.
 function retryDelay(error: unknown, retries: number): number | undefined {
-  if (retries >= DICTATION.RETRY_DELAYS_MS.length || !transcribesLater(error))
-    return undefined
+  if (retries >= DICTATION.RETRY_DELAYS_MS.length) return undefined
   const delay = DICTATION.RETRY_DELAYS_MS[retries]
   if (!(error instanceof HarnessError)) return delay
-  return Math.max(delay, (error.detail.retryAfter ?? 0) * MS_PER_SECOND)
+  const { action, retryAfter } = error.detail
+  if (action !== ERROR_ACTIONS.retry && action !== ERROR_ACTIONS.wait)
+    return undefined
+  return Math.max(delay, (retryAfter ?? 0) * MS_PER_SECOND)
 }
 
 const order = (a: Segment, b: Segment) =>

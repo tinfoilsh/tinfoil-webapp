@@ -1,7 +1,8 @@
 import { useUser } from '@clerk/chrome-extension'
-import { Dictation, transcribesLater } from '@tinfoil/chat-client/dictation'
+import { Dictation } from '@tinfoil/chat-client/dictation'
 import { logError } from '@tinfoil/chat-client/logging'
 import { DEFAULT_EFFORT } from '@tinfoil/chat-client/models'
+import { unanswered } from '@tinfoil/chat-client/protocol'
 import { Button } from '@tinfoil/chat-ui/button'
 import { Composer, type ComposerHandle } from '@tinfoil/chat-ui/composer'
 import { DictationButton } from '@tinfoil/chat-ui/dictation-button'
@@ -160,16 +161,22 @@ export function ChatPanel({
 
   // Dictation is transcribed by the worker, over the connection it verified,
   // and ends with the panel.
+  // Why a recording was last not transcribed, which is said once one is
+  // given up on, so that the user can put it right.
+  const transcriptionFailure = useRef('')
   const dictation = useMemo(
     () =>
       new Dictation(async (audio, signal) => {
         try {
           return await connection.transcribe(audio, signal)
         } catch (cause) {
-          // A recording that will not be tried again says why, so that the
-          // user can put it right.
-          if (!transcribesLater(cause) && cause instanceof Error)
-            setError(cause.message)
+          if (cause instanceof DOMException && cause.name === 'TimeoutError')
+            transcriptionFailure.current = unanswered().message
+          else if (
+            cause instanceof Error &&
+            !(cause instanceof DOMException && cause.name === 'AbortError')
+          )
+            transcriptionFailure.current = cause.message
           throw cause
         }
       }),
@@ -219,6 +226,11 @@ export function ChatPanel({
     else needMicrophone()
   }
   const recordingStream = speech.isRecording ? speech.state.stream : null
+  const abandonedRecordings = speech.state.failed
+  useEffect(() => {
+    if (abandonedRecordings > 0 && transcriptionFailure.current)
+      setError(transcriptionFailure.current)
+  }, [abandonedRecordings])
   useEffect(() => {
     const element = scroll.current
     if (following.current && element) element.scrollTop = element.scrollHeight
@@ -441,8 +453,14 @@ export function ChatPanel({
               <DictationNotice
                 retrying={speech.state.retrying}
                 failed={speech.state.failed}
-                onRetry={() => dictation.retry()}
-                onDiscard={() => dictation.discard()}
+                onRetry={() => {
+                  setError('')
+                  dictation.retry()
+                }}
+                onDiscard={() => {
+                  setError('')
+                  dictation.discard()
+                }}
                 className="mb-3"
               />
             }
