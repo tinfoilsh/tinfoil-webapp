@@ -11,7 +11,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
     content: z.string().trim().min(1).max(MAX_PROMPT_CHARS),
     model: z.string().max(100),
     effort: z.enum(['low', 'medium', 'high']),
-    confirmActions: z.boolean(),
+    autoIntelligence: z.string().max(100).optional(),
   }),
   z.object({ kind: z.literal('resume') }),
   z.object({ kind: z.literal('pause') }),
@@ -38,7 +38,7 @@ export interface View {
     phase: TaskPhase
     model: string
     effort: 'low' | 'medium' | 'high'
-    confirmActions: boolean
+    autoIntelligence?: string
     error?: string
   }
   pending?: BrowserToolRequest & { preview: string }

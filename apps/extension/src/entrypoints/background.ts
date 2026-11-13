@@ -9,6 +9,7 @@ import {
 } from '../config'
 import { TaskController, errorText } from '../controller'
 import { toWorkerSchema, type ToPanel } from '../messages'
+import { reviewActions } from '../settings'
 import { TaskStore } from '../storage'
 
 export default defineBackground(() => {
@@ -101,6 +102,7 @@ export default defineBackground(() => {
           message.owner,
           store,
           (view) => send({ type: 'state', view }),
+          () => reviewActions.getValue(),
         )
         current = { controller, port }
         const ready = previous

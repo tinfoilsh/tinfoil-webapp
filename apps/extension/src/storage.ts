@@ -23,7 +23,8 @@ export interface Task {
   lastPrompt: string
   model: string
   effort: 'low' | 'medium' | 'high'
-  confirmActions: boolean
+  // How hard the router's choice of model works, when the model is Auto.
+  autoIntelligence?: string
   error?: string
   receipt?: {
     runId: string

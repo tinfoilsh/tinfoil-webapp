@@ -34,6 +34,7 @@ function setup() {
   const views: View[] = []
   const observers = new Set<(view: View) => void>()
   let actions = 0
+  let reviewActions = false
   let workingOn!: (tab: TabInfo | undefined) => Promise<void>
   const browser = {
     execute: async () => ({ text: `Saved ${++actions}` }),
@@ -49,6 +50,7 @@ function setup() {
       views.push(structuredClone(view))
       for (const observe of observers) observe(view)
     },
+    async () => reviewActions,
     (_signal, _interrupted, onTab) => {
       workingOn = onTab
       return browser
@@ -79,6 +81,9 @@ function setup() {
     until,
     browser,
     actions: () => actions,
+    setReviewActions: (value: boolean) => {
+      reviewActions = value
+    },
     workingOn: (tab: TabInfo) => workingOn(tab),
   }
 }
@@ -130,11 +135,11 @@ function ended(turn: Turn, cancelled = false): Frame {
     },
   }
 }
-function browserRequest(turn: Turn): Frame {
+function browserRequest(turn: Turn, executionId = 'execution'): Frame {
   const event: BrowserToolRequest = {
     type: 'BROWSER_TOOL_REQUEST',
     executorId: turn.browser!.executorId,
-    executionId: 'execution',
+    executionId,
     toolCallId: 'click',
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     operation: { action: 'click', tabId: 1, ref: 'ref' },
@@ -146,7 +151,6 @@ const send = {
   content: 'Save the form',
   model: MODEL,
   effort: 'low' as const,
-  confirmActions: false,
 }
 
 test('local chats return the saved harness record intact on the next turn', async () => {
@@ -262,8 +266,60 @@ test('reconnecting after a lost browser-result acknowledgment does not click twi
   )
 })
 
+test('actions run unreviewed until review is turned on, and a waiting action stays until it is decided', async () => {
+  const { controller, until, actions, setReviewActions } = setup()
+  let reachSecond!: () => void
+  const beforeSecond = new Promise<void>((resolve) => {
+    reachSecond = resolve
+  })
+  let turnOn!: () => void
+  const reviewOn = new Promise<void>((resolve) => {
+    turnOn = resolve
+  })
+  client.events.mockImplementation(async function* (_path: string, turn: Turn) {
+    yield started(turn)
+    yield browserRequest(turn, 'first')
+    reachSecond()
+    await reviewOn
+    yield browserRequest(turn, 'second')
+    yield browserRequest(turn, 'third')
+    yield ended(turn)
+  })
+  answerPosts({
+    '/v1/threads/browser/result': () => ({ accepted: true }),
+  })
+  await controller.initialize()
+  await controller.command(send)
+  await beforeSecond
+  expect(actions()).toBe(1)
+
+  setReviewActions(true)
+  turnOn()
+  const review = await until((view) => !!view.pending)
+  expect(review.pending?.executionId).toBe('second')
+  expect(review.task?.phase).toBe('review')
+  expect(actions()).toBe(1)
+
+  setReviewActions(false)
+  expect(actions()).toBe(1)
+  await controller.command({
+    kind: 'review',
+    executionId: 'second',
+    allow: true,
+  })
+  const done = await until((view) => view.task?.phase === 'completed')
+  expect(done.pending).toBeUndefined()
+  expect(actions()).toBe(3)
+  expect(
+    client.post.mock.calls
+      .filter(([path]) => path === '/v1/threads/browser/result')
+      .map(([, input]) => (input as { executionId: string }).executionId),
+  ).toEqual(['first', 'second', 'third'])
+})
+
 test('stopping during review prevents execution and collects the canceled thread', async () => {
-  const { controller, until, actions, store } = setup()
+  const { controller, until, actions, store, setReviewActions } = setup()
+  setReviewActions(true)
   let turn!: Turn
   client.events.mockImplementation(async function* (path: string, input: Turn) {
     if (path === '/v1/threads/follow') {
@@ -279,7 +335,7 @@ test('stopping during review prevents execution and collects the canceled thread
     '/v1/threads/cancel': () => ({ cancelled: true }),
   })
   await controller.initialize()
-  await controller.command({ ...send, confirmActions: true })
+  await controller.command(send)
   const review = await until((view) => !!view.pending)
   expect(review.pending?.preview).toBe('Click Save on the selected tab')
   await controller.command({ kind: 'stop' })

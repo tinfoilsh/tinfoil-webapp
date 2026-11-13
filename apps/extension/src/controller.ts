@@ -62,6 +62,8 @@ export class TaskController {
     private readonly owner: string,
     private readonly store: TaskStore,
     private readonly publish: (view: View) => void,
+    // Whether an action that changes a page waits for the user's approval.
+    private readonly reviewActions: () => Promise<boolean>,
     private readonly createBrowser: CreateBrowser = (
       signal,
       interrupted,
@@ -126,7 +128,7 @@ export class TaskController {
         phase: task.phase,
         model: task.model,
         effort: task.effort,
-        confirmActions: task.confirmActions,
+        autoIntelligence: task.autoIntelligence,
         error:
           task.error ||
           (this.reconnecting
@@ -203,7 +205,7 @@ export class TaskController {
               content: `${RESUME_PROMPT}\n\nOriginal request: ${this.task.lastPrompt}`,
               model: this.task.model,
               effort: this.task.effort,
-              confirmActions: this.task.confirmActions,
+              autoIntelligence: this.task.autoIntelligence,
             },
             generation,
             this.task.lastPrompt,
@@ -281,12 +283,11 @@ export class TaskController {
         lastPrompt: '',
         model: DEFAULT_MODEL,
         effort: 'medium',
-        confirmActions: true,
       } satisfies Task)
     task.lastPrompt = lastPrompt
     task.model = input.model
     task.effort = input.effort
-    task.confirmActions = input.confirmActions
+    task.autoIntelligence = input.autoIntelligence
     task.error = undefined
     task.receipt = undefined
     this.task = task
@@ -304,6 +305,9 @@ export class TaskController {
       options: {
         model: input.model,
         reasoningEffort: input.effort,
+        ...(input.autoIntelligence
+          ? { autoIntelligence: input.autoIntelligence }
+          : {}),
         webSearch: false,
         genUI: false,
         locale: navigator.language,
@@ -493,7 +497,11 @@ export class TaskController {
       receipt.runId,
       request.executionId,
     )
-    if (!previous && task.confirmActions && changesPage(request.operation)) {
+    if (
+      !previous &&
+      changesPage(request.operation) &&
+      (await this.reviewActions())
+    ) {
       const preview = await driver.describe(request.operation)
       signal.throwIfAborted()
       const allow = await new Promise<boolean>((resolve, reject) => {

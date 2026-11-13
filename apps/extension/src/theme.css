@@ -1,0 +1,70 @@
+/* The web app's fonts, under the family names its styles refer to. */
+@font-face {
+  font-family: 'aeonik';
+  src: url('../../../src/fonts/aeonik-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  ascent-override: 90%;
+}
+@font-face {
+  font-family: 'aeonik';
+  src: url('../../../src/fonts/aeonik-regularitalic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+  ascent-override: 90%;
+}
+@font-face {
+  font-family: 'aeonik';
+  src: url('../../../src/fonts/aeonik-semibold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  ascent-override: 90%;
+}
+@font-face {
+  font-family: 'aeonik';
+  src: url('../../../src/fonts/aeonik-semibolditalic.woff2') format('woff2');
+  font-weight: 600;
+  font-style: italic;
+  font-display: swap;
+  ascent-override: 90%;
+}
+@font-face {
+  font-family: 'aeonik';
+  src: url('../../../src/fonts/aeonik-bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  ascent-override: 90%;
+}
+@font-face {
+  font-family: 'aeonik';
+  src: url('../../../src/fonts/aeonik-bolditalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+  ascent-override: 90%;
+}
+@font-face {
+  font-family: 'aeonikFono';
+  src: url('../../../src/fonts/aeonikfono-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'aeonikFono';
+  src: url('../../../src/fonts/aeonikfono-medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'aeonikFono';
+  src: url('../../../src/fonts/aeonikfono-bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}

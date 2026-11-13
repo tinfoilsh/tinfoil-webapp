@@ -1,380 +1,42 @@
-import {
-  ClerkProvider,
-  UserButton,
-  useAuth,
-  useClerk,
-} from '@clerk/chrome-extension'
+import { ClerkProvider, useAuth, useClerk } from '@clerk/chrome-extension'
 import { logError } from '@tinfoil/chat-client/logging'
 import { Button } from '@tinfoil/chat-ui/button'
-import {
-  isImeComposition,
-  isSubmitShortcut,
-} from '@tinfoil/chat-ui/keyboard-utils'
 import {
   StrictMode,
   useCallback,
   useEffect,
-  useMemo,
-  useRef,
   useState,
-  useSyncExternalStore,
+  type ReactNode,
 } from 'react'
 import { createRoot } from 'react-dom/client'
-import '../../../../../src/styles/tailwind.css'
 import {
   CLERK_FRONTEND_API,
   CLERK_PUBLISHABLE_KEY,
-  DEFAULT_MODEL,
-  HARNESS_URL,
   WEB_SIGN_IN_URL,
 } from '../../config'
-import { MessageView } from '../../message-view'
-import type { Command } from '../../messages'
-import { PanelConnection } from '../../panel-connection'
+import { ChatPanel } from '../../panel/chat-panel'
+import { Logo } from '../../ui/logo'
+import '../../ui/styles'
+import { useDarkMode } from '../../ui/theme'
 import { sessionToken, watchWebSession } from '../../web-session'
-import './style.css'
 
-const SUGGESTIONS = [
-  'Summarize the current page',
-  'Compare these tabs and make a table',
-  'Help me fill out this form',
-]
-
-function ChatPanel({
-  owner,
-  getToken,
+// What the panel shows in place of the chat: opening, signing in, or setup.
+function Notice({
+  isDarkMode,
+  children,
 }: {
-  owner: string
-  getToken: (options?: { skipCache?: boolean }) => Promise<string | null>
+  isDarkMode: boolean
+  children: ReactNode
 }) {
-  const connection = useMemo(
-    () => new PanelConnection(owner, getToken),
-    [owner, getToken],
-  )
-  const view = useSyncExternalStore(connection.subscribe, connection.snapshot)
-  const [input, setInput] = useState('')
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
-  const [modelChoice, setModel] = useState<string>()
-  const [effort, setEffort] = useState<'low' | 'medium' | 'high'>('medium')
-  const [confirmActions, setConfirmActions] = useState(true)
-  const [historyOpen, setHistoryOpen] = useState(false)
-  const scroll = useRef<HTMLDivElement>(null)
-  const following = useRef(true)
-  const task = view.task
-  const busy = !!task && ['running', 'review', 'paused'].includes(task.phase)
-  const models = view.session?.models.filter((model) => !model.deprecated) || []
-  const model =
-    modelChoice ||
-    task?.model ||
-    models.find((m) => m.id === DEFAULT_MODEL)?.id ||
-    models[0]?.id ||
-    DEFAULT_MODEL
-  const selectedModel = models.find((m) => m.id === model)
-
-  useEffect(() => connection.connect(), [connection])
-  useEffect(() => {
-    const element = scroll.current
-    if (following.current && element) element.scrollTop = element.scrollHeight
-  }, [task?.state.messages, task?.phase, view.pending])
-
-  const command = async (value: Command) => {
-    setError('')
-    try {
-      await connection.command(value)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The command failed.')
-    }
-  }
-  const submit = async () => {
-    const content = input.trim()
-    if (!content || sending) return
-    setSending(true)
-    setError('')
-    try {
-      await connection.command({
-        kind: 'send',
-        content,
-        model,
-        effort,
-        confirmActions,
-      })
-      setInput('')
-      following.current = true
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Could not send the message.',
-      )
-    } finally {
-      setSending(false)
-    }
-  }
-
   return (
-    <div className="app">
-      <header className="header">
-        <div>
-          <strong className="brand">tinfoil</strong>
-          <span className="beta">BROWSER BETA</span>
-        </div>
-        <div className="header-actions">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setHistoryOpen(!historyOpen)}
-            aria-expanded={historyOpen}
-          >
-            History
-          </Button>
-          <Button
-            variant="solid"
-            size="sm"
-            onClick={() => void command({ kind: 'new' })}
-          >
-            New
-          </Button>
-          <UserButton />
-        </div>
-      </header>
-      <div className="privacy-strip">
-        <span className={view.verified ? 'verified-dot' : 'pending-dot'} />
-        {view.verified ? 'Attested connection' : 'Connecting privately…'}
-        <span>History stays here</span>
-      </div>
-      {historyOpen && (
-        <section className="history">
-          <h2>Local chats</h2>
-          {view.tasks.length ? (
-            view.tasks.map((item) => (
-              <div key={item.id} className="history-row">
-                <button
-                  onClick={() => {
-                    void command({ kind: 'select', id: item.id })
-                    setHistoryOpen(false)
-                  }}
-                >
-                  {item.title}
-                </button>
-                <button
-                  aria-label={`Delete ${item.title}`}
-                  onClick={() => void command({ kind: 'delete', id: item.id })}
-                >
-                  Delete
-                </button>
-              </div>
-            ))
-          ) : (
-            <p>No saved chats yet.</p>
-          )}
-        </section>
-      )}
-      <div
-        className="conversation"
-        ref={scroll}
-        onScroll={() => {
-          const el = scroll.current
-          if (el)
-            following.current =
-              el.scrollHeight - el.scrollTop - el.clientHeight < 80
-        }}
-      >
-        {!task?.state.messages.length && (
-          <div className="welcome">
-            <div className="welcome-symbol" aria-hidden>
-              tf
-            </div>
-            <h1>
-              Your browser.
-              <br />
-              Privately.
-            </h1>
-            <p>
-              Ask about a page or let Tinfoil help you get something done.
-              Tinfoil can use all your open web tabs.
-            </p>
-            <div className="suggestions">
-              {SUGGESTIONS.map((text) => (
-                <button key={text} onClick={() => setInput(text)}>
-                  {text}
-                  <span aria-hidden>↗</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {task?.state.messages.map((message, index, all) => (
-          <MessageView
-            key={message.id}
-            message={message}
-            streaming={busy && index === all.length - 1}
-          />
-        ))}
-        {busy && (
-          <div role="status" className="task-status">
-            {task.phase === 'review'
-              ? 'Waiting for your review'
-              : task.phase === 'paused'
-                ? 'Paused'
-                : 'Working…'}
-          </div>
-        )}
-        {view.pending && (
-          <section className="review-card">
-            <h2>Review browser action</h2>
-            <p>{view.pending.preview}</p>
-            <pre>{JSON.stringify(view.pending.operation, null, 2)}</pre>
-            <div className="controls">
-              <Button
-                variant="solid"
-                onClick={() =>
-                  void command({
-                    kind: 'review',
-                    executionId: view.pending!.executionId,
-                    allow: true,
-                  })
-                }
-              >
-                Allow action
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  void command({
-                    kind: 'review',
-                    executionId: view.pending!.executionId,
-                    allow: false,
-                  })
-                }
-              >
-                Decline
-              </Button>
-            </div>
-          </section>
-        )}
-        {(error || view.error || task?.error) && (
-          <div className="notice" role="alert">
-            {error || view.error || task?.error}
-          </div>
-        )}
-        {task?.phase === 'interrupted' && (
-          <Button
-            variant="outline"
-            onClick={() => void command({ kind: 'resume' })}
-          >
-            Resume task
-          </Button>
-        )}
-      </div>
-      <footer className="composer-area">
-        {busy && (
-          <div className="controls">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                void command(
-                  task.phase === 'paused'
-                    ? { kind: 'resume' }
-                    : { kind: 'pause' },
-                )
-              }
-            >
-              {task.phase === 'paused' ? 'Resume' : 'Pause'}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void command({ kind: 'stop' })}
-            >
-              Stop / take over
-            </Button>
-            <span className="shortcut">Alt+Shift+S</span>
-          </div>
-        )}
-        {busy && view.workingTab && (
-          <div className="working-tab" role="status">
-            <span>Working in</span>
-            <strong title={view.workingTab.url}>
-              {view.workingTab.title || new URL(view.workingTab.url).hostname}
-            </strong>
-          </div>
-        )}
-        <label className="review-toggle">
-          <input
-            type="checkbox"
-            checked={confirmActions}
-            disabled={busy}
-            onChange={(e) => setConfirmActions(e.target.checked)}
-          />
-          Review actions before execution
-        </label>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault()
-            void submit()
-          }}
-          className="composer"
-        >
-          <textarea
-            disabled={sending}
-            aria-label="Message Tinfoil"
-            placeholder={
-              busy ? 'Give another instruction…' : 'What would you like to do?'
-            }
-            value={input}
-            rows={3}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(event) => {
-              if (!isImeComposition(event) && isSubmitShortcut(event, false)) {
-                event.preventDefault()
-                void submit()
-              }
-            }}
-          />
-          <div className="composer-toolbar">
-            <select
-              aria-label="Model"
-              value={model}
-              disabled={busy}
-              onChange={(e) => setModel(e.target.value)}
-            >
-              {models.map((m) => (
-                <option value={m.id} key={m.id}>
-                  {m.shortLabel || m.label}
-                </option>
-              ))}
-            </select>
-            {selectedModel?.reasoning?.effort && (
-              <select
-                aria-label="Reasoning effort"
-                value={effort}
-                disabled={busy}
-                onChange={(e) => setEffort(e.target.value as typeof effort)}
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            )}
-            <Button
-              variant="solid"
-              type="submit"
-              size="sm"
-              disabled={sending || !input.trim() || !view.session}
-            >
-              {sending ? 'Starting…' : busy ? 'Update task' : 'Send'}
-            </Button>
-          </div>
-        </form>
-        <div className="footer-note">
-          {new URL(HARNESS_URL).host} · Chats are saved in this extension.
-        </div>
-      </footer>
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-surface-chat-background px-8 py-10 text-center text-content-primary">
+      <Logo className="h-8 w-auto" dark={isDarkMode} />
+      {children}
     </div>
   )
 }
 
-function SignedInApp() {
+function SignedInApp({ isDarkMode }: { isDarkMode: boolean }) {
   const { isLoaded, userId } = useAuth()
   const clerk = useClerk()
   const [signInError, setSignInError] = useState(false)
@@ -401,15 +63,16 @@ function SignedInApp() {
   )
   if (!isLoaded)
     return (
-      <div className="setup" role="status">
-        Opening Tinfoil…
-      </div>
+      <Notice isDarkMode={isDarkMode}>
+        <p role="status" className="text-sm text-content-secondary">
+          Opening Tinfoil…
+        </p>
+      </Notice>
     )
   if (!userId)
     return (
-      <div className="setup">
-        <h1>Tinfoil Browser</h1>
-        <p>
+      <Notice isDarkMode={isDarkMode}>
+        <p className="text-balance text-sm leading-relaxed text-content-secondary">
           Sign in on Tinfoil’s website. This panel will update automatically.
         </p>
         <Button asChild variant="solid">
@@ -421,33 +84,36 @@ function SignedInApp() {
           Refresh sign-in
         </Button>
         {signInError && (
-          <p role="alert">Could not refresh sign-in. Please try again.</p>
+          <p role="alert" className="text-sm text-destructive">
+            Could not refresh sign-in. Please try again.
+          </p>
         )}
-      </div>
+      </Notice>
     )
-  return <ChatPanel key={userId} owner={userId} getToken={getToken} />
+  return (
+    <ChatPanel
+      key={userId}
+      owner={userId}
+      getToken={getToken}
+      isDarkMode={isDarkMode}
+    />
+  )
 }
 
 function App() {
-  useEffect(() => {
-    const media = matchMedia('(prefers-color-scheme: dark)')
-    const update = () =>
-      document.documentElement.classList.toggle('dark', media.matches)
-    update()
-    media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
-  }, [])
+  const isDarkMode = useDarkMode()
   if (!CLERK_PUBLISHABLE_KEY || !CLERK_FRONTEND_API)
     return (
-      <div className="setup">
-        <h1>Tinfoil Browser</h1>
-        <p>
+      <Notice isDarkMode={isDarkMode}>
+        <p className="text-sm leading-relaxed text-content-secondary [overflow-wrap:anywhere]">
           Set <code>WXT_CLERK_PUBLISHABLE_KEY</code> and{' '}
           <code>WXT_CLERK_FRONTEND_API</code> in{' '}
           <code>apps/extension/.env</code>, then reload the extension.
         </p>
-        <p>The development commands are in DEVELOPMENT.md.</p>
-      </div>
+        <p className="text-sm text-content-secondary">
+          The development commands are in DEVELOPMENT.md.
+        </p>
+      </Notice>
     )
   const url = chrome.runtime.getURL('sidepanel.html')
   return (
@@ -458,7 +124,7 @@ function App() {
       telemetry={{ disabled: true }}
       afterSignOutUrl={url}
     >
-      <SignedInApp />
+      <SignedInApp isDarkMode={isDarkMode} />
     </ClerkProvider>
   )
 }

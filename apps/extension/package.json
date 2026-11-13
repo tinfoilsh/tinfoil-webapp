@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@clerk/chrome-extension": "3.1.105",
+    "@headlessui/react": "^2.1.1",
     "@tinfoil/chat-client": "*",
     "@tinfoil/chat-ui": "*",
     "@tinfoilsh/tinfoil-icons": "^2.6.0",
