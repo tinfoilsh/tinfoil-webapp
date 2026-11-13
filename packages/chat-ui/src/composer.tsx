@@ -392,6 +392,7 @@ export function Composer({
   const isCompact = Boolean(hasMessages)
   const hasSubmittableContent = Boolean(input.trim()) || hasAttachedContent
   const showStopAction = busy && !hasSubmittableContent
+  const hasFooterControls = Boolean(footerUsage || modelSelectorButton)
 
   return (
     <div className="flex flex-col gap-2">
@@ -551,11 +552,21 @@ export function Composer({
 
       {hasMessages && (
         <div className="flex items-center justify-between gap-4 px-3 md:px-6">
-          <p className="text-xs text-content-muted">{AI_DISCLAIMER}</p>
-          <div className="hidden items-center gap-2 md:flex">
-            {footerUsage}
-            {modelSelectorButton}
-          </div>
+          {/* With nothing beside it, the disclaimer sits in the middle. */}
+          <p
+            className={cn(
+              'text-xs text-content-muted',
+              !hasFooterControls && 'flex-1 text-balance text-center',
+            )}
+          >
+            {AI_DISCLAIMER}
+          </p>
+          {hasFooterControls && (
+            <div className="hidden items-center gap-2 md:flex">
+              {footerUsage}
+              {modelSelectorButton}
+            </div>
+          )}
         </div>
       )}
     </div>
