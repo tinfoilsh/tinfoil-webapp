@@ -133,6 +133,31 @@ function ended(turn: Turn, cancelled = false): Frame {
     },
   }
 }
+// Scripts a run that asks for one browser action and is stopped by it: its
+// stream fails if it is read past the request, and its cancellation is
+// answered and followed to the run's end. Holds the turn the run began with.
+function stoppedByRequest(
+  reason: string,
+  prepare: (request: BrowserToolRequest) => void = () => {},
+) {
+  const run: { turn?: Turn } = {}
+  client.events.mockImplementation(async function* (path: string, input: Turn) {
+    if (path === '/v1/threads/follow') {
+      yield ended(run.turn!, true)
+      return
+    }
+    run.turn = input
+    yield started(input)
+    const frame = browserRequest(input)
+    prepare(frame.event as BrowserToolRequest)
+    yield frame
+    throw new Error(reason)
+  })
+  answerPosts({
+    '/v1/threads/cancel': () => ({ cancelled: true }),
+  })
+  return run
+}
 function browserRequest(turn: Turn, executionId = 'execution'): Frame {
   const event: BrowserToolRequest = {
     type: 'BROWSER_TOOL_REQUEST',
@@ -327,20 +352,7 @@ test('actions run unreviewed until review is turned on, and a waiting action sta
 test('a review setting that cannot be read stops the task before it acts', async () => {
   const { controller, until, actions, setReviewActions } = setup()
   setReviewActions(new Error('Storage unavailable'))
-  let turn!: Turn
-  client.events.mockImplementation(async function* (path: string, input: Turn) {
-    if (path === '/v1/threads/follow') {
-      yield ended(turn, true)
-      return
-    }
-    turn = input
-    yield started(turn)
-    yield browserRequest(turn)
-    throw new Error('An unreadable setting must end the stream')
-  })
-  answerPosts({
-    '/v1/threads/cancel': () => ({ cancelled: true }),
-  })
+  const run = stoppedByRequest('An unreadable setting must end the stream')
   await controller.initialize()
   await controller.command(send)
   const final = await until((view) => view.task?.phase === 'interrupted')
@@ -391,20 +403,7 @@ test('a turn on Auto works at a level the session offers, its default when none 
 test('stopping during review prevents execution and collects the canceled thread', async () => {
   const { controller, until, actions, store, setReviewActions } = setup()
   setReviewActions(true)
-  let turn!: Turn
-  client.events.mockImplementation(async function* (path: string, input: Turn) {
-    if (path === '/v1/threads/follow') {
-      yield ended(turn, true)
-      return
-    }
-    turn = input
-    yield started(turn)
-    yield browserRequest(turn)
-    throw new Error('Review should have stopped this stream')
-  })
-  answerPosts({
-    '/v1/threads/cancel': () => ({ cancelled: true }),
-  })
+  const run = stoppedByRequest('Review should have stopped this stream')
   await controller.initialize()
   await controller.command(send)
   const review = await until((view) => !!view.pending)
@@ -420,22 +419,12 @@ test('stopping during review prevents execution and collects the canceled thread
 
 test('an expired browser operation is canceled before dispatch', async () => {
   const { controller, until, actions } = setup()
-  let turn!: Turn
-  client.events.mockImplementation(async function* (path: string, input: Turn) {
-    if (path === '/v1/threads/follow') {
-      yield ended(turn, true)
-      return
-    }
-    turn = input
-    yield started(turn)
-    const frame = browserRequest(turn)
-    ;(frame.event as BrowserToolRequest).expiresAt = '2020-01-01T00:00:00Z'
-    yield frame
-    throw new Error('An expired operation must end the stream')
-  })
-  answerPosts({
-    '/v1/threads/cancel': () => ({ cancelled: true }),
-  })
+  const run = stoppedByRequest(
+    'An expired operation must end the stream',
+    (request) => {
+      request.expiresAt = '2020-01-01T00:00:00Z'
+    },
+  )
   await controller.initialize()
   await controller.command(send)
   await until((view) => view.task?.phase === 'interrupted' && !view.pending)
@@ -444,7 +433,7 @@ test('an expired browser operation is canceled before dispatch', async () => {
     client.post.mock.calls
       .filter(([path]) => path === '/v1/threads/cancel')
       .map(([, input]) => input),
-  ).toEqual([{ threadId: turn.threadId, runId: 'run' }])
+  ).toEqual([{ threadId: run.turn?.threadId, runId: 'run' }])
   expect(
     client.post.mock.calls.some(
       ([path]) => path === '/v1/threads/browser/result',
@@ -534,20 +523,7 @@ test('an uncertain mutation stops the run instead of becoming a retryable tool r
     await execute()
     throw outcomeUnknown(new Error('Connection lost after click'))
   }
-  let turn!: Turn
-  client.events.mockImplementation(async function* (path: string, input: Turn) {
-    if (path === '/v1/threads/follow') {
-      yield ended(turn, true)
-      return
-    }
-    turn = input
-    yield started(turn)
-    yield browserRequest(turn)
-    throw new Error('An uncertain mutation must end the stream')
-  })
-  answerPosts({
-    '/v1/threads/cancel': () => ({ cancelled: true }),
-  })
+  const run = stoppedByRequest('An uncertain mutation must end the stream')
   await controller.initialize()
   await controller.command(send)
   const final = await until((view) => view.task?.phase === 'interrupted')
