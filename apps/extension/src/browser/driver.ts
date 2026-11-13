@@ -9,8 +9,8 @@ import {
   stableElement,
   stableViewport,
 } from './element'
-import { BrowserError } from './errors'
-import { actionSchema, changesPage, webURL } from './schema'
+import { BrowserError, outcomeUnknown } from './errors'
+import { actionSchema, webURL } from './schema'
 
 const PROTOCOL_VERSION = '1.3'
 const MAX_ATTACHED_TABS = 8
@@ -30,6 +30,16 @@ const WAIT_TIMEOUT_MS = 3_000
 const ELEMENT_GROUP = 'tinfoil-elements'
 const QUAD_TOLERANCE = 0.5
 const MAX_ELEMENT_OBSERVATIONS = 3
+// How long an observation waits for a navigation to reach a parsed document
+// before it reads what the page shows so far.
+const NAVIGATION_SETTLE_TIMEOUT_MS = 10_000
+const MAX_OBSERVATION_ATTEMPTS = 3
+const STILL_LOADING_NOTE =
+  '[The page was still loading when it was read. Read it again before acting.]'
+const SAME_DOCUMENT_NAVIGATIONS: ReadonlySet<string> = new Set([
+  'sameDocument',
+  'historySameDocument',
+])
 const KEY_CODES = {
   Enter: 13,
   Tab: 9,
@@ -55,6 +65,16 @@ type Page = {
   targets: Map<string, Target>
   refs: Map<string, Reference>
   generation: string
+  // The main frame and the loader of its document.
+  mainFrame?: string
+  loaderId?: string
+  // A navigation of the main frame to another document has begun and has
+  // neither committed nor ended.
+  pending: boolean
+  // The main frame's document has been parsed.
+  ready: boolean
+  // Told whenever the main frame's navigation moves on.
+  waiters: Set<() => void>
   screenshot?: {
     id: string
     generation: string
@@ -86,14 +106,7 @@ export class BrowserDriver {
     const page =
       source.tabId === undefined ? undefined : this.pages.get(source.tabId)
     if (!page) return
-    if (
-      method === 'Page.frameNavigated' ||
-      method === 'Page.frameDetached' ||
-      method === 'DOM.documentUpdated'
-    ) {
-      page.refs.clear()
-      page.generation = crypto.randomUUID()
-    }
+    this.followNavigation(page, source.sessionId === undefined, method, params)
     if (method === 'Target.attachedToTarget') {
       const event = params as Protocol.Target.AttachedToTargetEvent
       if (event.targetInfo.type !== 'iframe') return
@@ -105,6 +118,7 @@ export class BrowserDriver {
       void this.enable(target).catch(() => {
         if (
           this.pages.get(source.tabId!) === page &&
+          page.targets.get(event.sessionId) === target &&
           !this.closed &&
           !this.signal.aborted
         )
@@ -129,7 +143,9 @@ export class BrowserDriver {
       this.pages.has(source.tabId) &&
       !this.closed
     ) {
+      const page = this.pages.get(source.tabId)
       this.pages.delete(source.tabId)
+      for (const moved of [...(page?.waiters ?? [])]) moved()
       if (source.tabId === this.currentTabId) {
         this.currentTabId = undefined
         this.interrupted(
@@ -152,6 +168,92 @@ export class BrowserDriver {
     this.signal.throwIfAborted()
     if (this.closed)
       throw new BrowserError('STOPPED', 'Browser control has stopped.')
+  }
+
+  // Follows the main frame's navigations, and drops what a document that
+  // went away leaves behind. Only a new main document outdates an observation
+  // of the page: frames within it come and go while it is read.
+  private followNavigation(
+    page: Page,
+    root: boolean,
+    method: string,
+    params?: object,
+  ) {
+    const dropFrame = (frameId: string) => {
+      for (const [ref, entry] of page.refs)
+        if (entry.frameId === frameId) page.refs.delete(ref)
+    }
+    const moved = () => {
+      for (const waiter of [...page.waiters]) waiter()
+    }
+    switch (method) {
+      case 'Page.frameRequestedNavigation': {
+        const event = params as Protocol.Page.FrameRequestedNavigationEvent
+        if (
+          root &&
+          event.frameId === page.mainFrame &&
+          event.disposition === 'currentTab'
+        )
+          page.pending = true
+        break
+      }
+      case 'Page.frameStartedNavigating': {
+        const event = params as Protocol.Page.FrameStartedNavigatingEvent
+        if (
+          root &&
+          event.frameId === page.mainFrame &&
+          !SAME_DOCUMENT_NAVIGATIONS.has(event.navigationType)
+        )
+          page.pending = true
+        break
+      }
+      case 'Page.frameNavigated': {
+        const { frame, type } = params as Protocol.Page.FrameNavigatedEvent
+        if (!root || frame.parentId) {
+          dropFrame(frame.id)
+          break
+        }
+        page.mainFrame = frame.id
+        page.loaderId = frame.loaderId
+        page.pending = false
+        // A document restored from the back/forward cache is already parsed.
+        page.ready = type === 'BackForwardCacheRestore'
+        page.refs.clear()
+        page.generation = crypto.randomUUID()
+        moved()
+        break
+      }
+      case 'Page.frameDetached':
+        dropFrame((params as Protocol.Page.FrameDetachedEvent).frameId)
+        break
+      case 'Page.domContentEventFired':
+      case 'Page.loadEventFired':
+        if (!root) break
+        page.ready = true
+        moved()
+        break
+      case 'Page.frameStoppedLoading':
+        if (
+          !root ||
+          (params as Protocol.Page.FrameStoppedLoadingEvent).frameId !==
+            page.mainFrame
+        )
+          break
+        page.pending = false
+        page.ready = true
+        moved()
+        break
+      case 'Page.navigatedWithinDocument':
+        if (
+          !root ||
+          (params as Protocol.Page.NavigatedWithinDocumentEvent).frameId !==
+            page.mainFrame
+        )
+          break
+        page.pending = false
+        moved()
+        break
+    }
   }
 
   private async send<K extends keyof ProtocolMapping.Commands>(
@@ -183,6 +285,7 @@ export class BrowserDriver {
       throw new BrowserError(
         'COMMAND_FAILED',
         `Chrome could not perform ${method}. Read the page again or take over.`,
+        { cause },
       )
     }
   }
@@ -210,16 +313,80 @@ export class BrowserDriver {
     this.check()
     await chrome.debugger.attach({ tabId }, PROTOCOL_VERSION)
     const root: Target = { session: { tabId } }
-    this.pages.set(tabId, {
+    const page: Page = {
       targets: new Map([['', root]]),
       refs: new Map(),
       generation: crypto.randomUUID(),
-    })
+      pending: false,
+      ready: false,
+      waiters: new Set(),
+    }
+    this.pages.set(tabId, page)
     if (this.closed || this.signal.aborted) {
       await chrome.debugger.detach({ tabId })
       this.check()
     }
     await this.enable(root)
+    // The page's events are followed from here on, so what it was doing when
+    // control began is asked of it: a navigation yet to commit, and whether
+    // its document is parsed.
+    const { frame } = (await this.send(root.session, 'Page.getFrameTree'))
+      .frameTree
+    page.mainFrame ??= frame.id
+    page.loaderId ??= frame.loaderId
+    const tab = await chrome.tabs.get(tabId)
+    if (tab.pendingUrl) page.pending = true
+    if (tab.status === 'complete') {
+      page.ready = true
+      return
+    }
+    try {
+      const state = await this.send(root.session, 'Runtime.evaluate', {
+        expression: 'document.readyState',
+        returnByValue: true,
+      })
+      if (state.result.value !== 'loading') page.ready = true
+    } catch {
+      // A document replaced as it was asked says so in its events.
+      this.check()
+    }
+  }
+
+  // Waits for a navigation the main frame has begun to reach a parsed
+  // document, and says whether it did before the deadline.
+  private async settled(id: number, page: Page): Promise<boolean> {
+    // A round trip through the page delivers the events its last input
+    // caused, a navigation it requested among them.
+    try {
+      await this.send({ tabId: id }, 'Page.getFrameTree')
+    } catch {
+      this.check()
+    }
+    const isSettled = () => !page.pending && page.ready
+    if (isSettled()) return true
+    return new Promise<boolean>((resolve, reject) => {
+      const finish = () => {
+        clearTimeout(deadline)
+        page.waiters.delete(moved)
+        this.signal.removeEventListener('abort', aborted)
+      }
+      const moved = () => {
+        const released = this.closed || this.pages.get(id) !== page
+        if (!released && !isSettled()) return
+        finish()
+        resolve(!released)
+      }
+      const aborted = () => {
+        finish()
+        reject(this.signal.reason)
+      }
+      const deadline = setTimeout(() => {
+        finish()
+        resolve(false)
+      }, NAVIGATION_SETTLE_TIMEOUT_MS)
+      page.waiters.add(moved)
+      this.signal.addEventListener('abort', aborted, { once: true })
+    })
   }
 
   private async page(tabId: number | undefined): Promise<[number, Page]> {
@@ -244,15 +411,27 @@ export class BrowserDriver {
       )
     }
     const url = webURL(tab.pendingUrl || tab.url || '')
-    await this.attach(id)
-    this.check()
-    const page = this.pages.get(id)!
-    this.pages.delete(id)
-    this.pages.set(id, page)
-    await chrome.tabs.update(id, { active: true })
-    this.check()
-    await chrome.windows.update(tab.windowId, { focused: true })
-    await this.send({ tabId: id }, 'Page.bringToFront')
+    let page: Page
+    try {
+      await this.attach(id)
+      this.check()
+      page = this.pages.get(id)!
+      this.pages.delete(id)
+      this.pages.set(id, page)
+      await chrome.tabs.update(id, { active: true })
+      this.check()
+      await chrome.windows.update(tab.windowId, { focused: true })
+      await this.send({ tabId: id }, 'Page.bringToFront')
+    } catch (cause) {
+      this.check()
+      if (cause instanceof BrowserError && cause.code !== 'COMMAND_FAILED')
+        throw cause
+      throw new BrowserError(
+        'TAB_UNAVAILABLE',
+        'This tab could not be controlled. List the tabs again.',
+        { cause },
+      )
+    }
     this.currentTabId = id
     await this.workingOn({ id, title: tab.title || '', url, active: true })
     this.check()
@@ -296,10 +475,53 @@ export class BrowserDriver {
 
   async read(tabId?: number, query?: string): Promise<BrowserResult> {
     const [id, page] = await this.page(tabId)
+    for (let attempt = 1; ; attempt++) {
+      const settled = await this.settled(id, page)
+      try {
+        const result = await this.snapshot(id, page, query)
+        // A document on its way out is not what the page goes on to show.
+        if (!page.pending)
+          return settled
+            ? result
+            : { text: `${result.text}\n${STILL_LOADING_NOTE}` }
+      } catch (cause) {
+        this.check()
+        if (
+          attempt >= MAX_OBSERVATION_ATTEMPTS ||
+          !(cause instanceof BrowserError) ||
+          !['PAGE_CHANGED', 'COMMAND_FAILED'].includes(cause.code)
+        )
+          throw cause
+        continue
+      }
+      if (attempt >= MAX_OBSERVATION_ATTEMPTS)
+        throw new BrowserError(
+          'PAGE_CHANGED',
+          'The page kept navigating while it was read. Read it again.',
+        )
+    }
+  }
+
+  // What the page shows now. A main document that is replaced while it is
+  // read outdates what was read of it.
+  private async snapshot(
+    id: number,
+    page: Page,
+    query?: string,
+  ): Promise<BrowserResult> {
     const generation = crypto.randomUUID()
     page.generation = generation
     page.refs.clear()
-    const tab = await chrome.tabs.get(id)
+    let tab: chrome.tabs.Tab
+    try {
+      tab = await chrome.tabs.get(id)
+    } catch (cause) {
+      throw new BrowserError(
+        'TAB_UNAVAILABLE',
+        'This tab is no longer available. List the tabs again.',
+        { cause },
+      )
+    }
     const lines = [
       `Tab ${id}: ${tab.title || ''}`,
       `URL: ${tab.url || ''}`,
@@ -310,10 +532,20 @@ export class BrowserDriver {
     const filter = query?.toLocaleLowerCase()
     const seen = new Set<string>()
     for (const target of page.targets.values()) {
-      const viewport = (
-        await this.send(target.session, 'Page.getLayoutMetrics')
-      ).cssLayoutViewport
-      const tree = await this.send(target.session, 'Page.getFrameTree')
+      let viewport: Protocol.Page.LayoutViewport
+      let tree: Protocol.Page.GetFrameTreeResponse
+      try {
+        viewport = (await this.send(target.session, 'Page.getLayoutMetrics'))
+          .cssLayoutViewport
+        tree = await this.send(target.session, 'Page.getFrameTree')
+      } catch (cause) {
+        this.check()
+        // A frame in another process can go away at any time; the page's
+        // own document cannot be read around.
+        if (!target.parent) throw cause
+        lines.push('[Frame unavailable; it may need a new observation.]')
+        continue
+      }
       const visit = async (frame: Protocol.Page.FrameTree) => {
         if (count >= MAX_NODES || seen.has(frame.frame.id)) return
         let nodes: Protocol.Accessibility.AXNode[]
@@ -848,6 +1080,47 @@ export class BrowserDriver {
     }
   }
 
+  // Delivers an action's input. A failure once it has begun leaves the
+  // action's outcome unknown, unless the browser names what it refused.
+  private async dispatched<T>(deliver: () => Promise<T>): Promise<T> {
+    try {
+      return await deliver()
+    } catch (cause) {
+      this.check()
+      if (cause instanceof BrowserError && cause.code !== 'COMMAND_FAILED')
+        throw cause
+      throw outcomeUnknown(cause)
+    }
+  }
+
+  // What the page shows after an action's input was delivered. The action
+  // stands whatever becomes of the observation.
+  private async observed(id: number): Promise<BrowserResult> {
+    try {
+      return await this.read(id)
+    } catch (cause) {
+      this.check()
+      return {
+        text: `The action was performed, but the page could not be read afterwards${cause instanceof BrowserError ? `: ${cause.message}` : '.'}`,
+      }
+    }
+  }
+
+  // Waits until the viewport holds still, so input lands where it was aimed.
+  private async stableViewport(root: Session) {
+    await this.send(root, 'Page.bringToFront')
+    const ready = await this.send(root, 'Runtime.evaluate', {
+      expression: `(${stableViewport.toString()})(${STABLE_GEOMETRY_FRAMES}, ${GEOMETRY_SETTLE_TIMEOUT_MS})`,
+      awaitPromise: true,
+      returnByValue: true,
+    })
+    if (ready.result.value !== true)
+      throw new BrowserError(
+        'ELEMENT_UNAVAILABLE',
+        'The viewport is moving. Read the page again once it settles.',
+      )
+  }
+
   async execute(input: BrowserAction): Promise<BrowserResult> {
     const parsed = actionSchema.safeParse(input)
     if (!parsed.success)
@@ -858,47 +1131,56 @@ export class BrowserDriver {
       return { text: JSON.stringify(await this.tabs()) }
     if (action.action === 'open') {
       const url = webURL(action.url || '')
-      const tab = await chrome.tabs.create({ url, active: true })
+      const tab = await this.dispatched(() =>
+        chrome.tabs.create({ url, active: true }),
+      )
       this.created.add(tab.id!)
-      return this.read(tab.id)
+      return this.observed(tab.id!)
     }
     const [id, page] = await this.page(action.tabId)
     const root: Session = { tabId: id }
-    if (changesPage(action)) {
-      await this.send(root, 'Page.bringToFront')
-      const ready = await this.send(root, 'Runtime.evaluate', {
-        expression: `(${stableViewport.toString()})(${STABLE_GEOMETRY_FRAMES}, ${GEOMETRY_SETTLE_TIMEOUT_MS})`,
-        awaitPromise: true,
-        returnByValue: true,
-      })
-      if (ready.result.value !== true)
-        throw new BrowserError(
-          'ELEMENT_UNAVAILABLE',
-          'The viewport is moving. Read the page again once it settles.',
-        )
-    }
     if (action.action === 'read') return this.read(id, action.text)
     if (action.action === 'screenshot') return this.screenshot(id, page)
-    if (
-      (action.action === 'click' || action.action === 'hover') &&
-      action.screenshotId
-    ) {
-      await this.mouse(
-        root,
-        await this.coordinatePoint(id, page, action),
-        action.action === 'click',
-      )
-      return this.read(id)
-    }
     switch (action.action) {
-      case 'navigate':
-        await this.send(root, 'Page.navigate', {
-          url: webURL(action.url || ''),
-        })
+      case 'navigate': {
+        const url = webURL(action.url || '')
+        // The navigation is pending from here, whichever of its events and
+        // its answer arrives first.
+        page.pending = true
+        let navigation: Protocol.Page.NavigateResponse
+        try {
+          navigation = await this.dispatched(() =>
+            this.send(root, 'Page.navigate', { url }),
+          )
+        } catch (cause) {
+          page.pending = false
+          throw cause
+        }
+        if (navigation.isDownload) {
+          page.pending = false
+          throw new BrowserError(
+            'DOWNLOAD_STARTED',
+            'The address started a download instead of opening a page.',
+          )
+        }
+        if (navigation.errorText) {
+          page.pending = false
+          throw new BrowserError(
+            'NAVIGATION_FAILED',
+            `The page could not be opened (${navigation.errorText}).`,
+          )
+        }
+        // Only a navigation to another document has a commit to wait for,
+        // which may have arrived ahead of this answer.
+        if (!navigation.loaderId || navigation.loaderId === page.loaderId)
+          page.pending = false
         break
+      }
       case 'back':
       case 'forward': {
-        const history = await this.send(root, 'Page.getNavigationHistory')
+        const history = await this.beforeInput(() =>
+          this.send(root, 'Page.getNavigationHistory'),
+        )
         const next =
           history.entries[
             history.currentIndex + (action.action === 'back' ? -1 : 1)
@@ -909,9 +1191,17 @@ export class BrowserDriver {
             'There is no page in that direction.',
           )
         webURL(next.url)
-        await this.send(root, 'Page.navigateToHistoryEntry', {
-          entryId: next.id,
-        })
+        page.pending = true
+        try {
+          await this.dispatched(() =>
+            this.send(root, 'Page.navigateToHistoryEntry', {
+              entryId: next.id,
+            }),
+          )
+        } catch (cause) {
+          page.pending = false
+          throw cause
+        }
         break
       }
       case 'switch':
@@ -923,14 +1213,17 @@ export class BrowserDriver {
             'Only tabs created by this task can be closed.',
           )
         this.pages.delete(id)
-        await chrome.tabs.remove(id)
+        await this.dispatched(() => chrome.tabs.remove(id))
         this.created.delete(id)
         this.currentTabId = undefined
         await this.workingOn(undefined)
         return { text: `Closed tab ${id}.` }
       case 'scroll': {
-        const viewport = (await this.send(root, 'Page.getLayoutMetrics'))
-          .cssLayoutViewport
+        const viewport = await this.beforeInput(async () => {
+          await this.stableViewport(root)
+          return (await this.send(root, 'Page.getLayoutMetrics'))
+            .cssLayoutViewport
+        })
         let point = {
           x: viewport.clientWidth / 2,
           y: viewport.clientHeight / 2,
@@ -941,61 +1234,91 @@ export class BrowserDriver {
           )
           point = await this.beforeInput(() => this.point(target))
         }
-        await this.send(root, 'Input.dispatchMouseEvent', {
-          type: 'mouseWheel',
-          ...point,
-          deltaX: 0,
-          deltaY:
-            action.direction === 'up' ? -SCROLL_DISTANCE : SCROLL_DISTANCE,
-        })
+        await this.dispatched(() =>
+          this.send(root, 'Input.dispatchMouseEvent', {
+            type: 'mouseWheel',
+            ...point,
+            deltaX: 0,
+            deltaY:
+              action.direction === 'up' ? -SCROLL_DISTANCE : SCROLL_DISTANCE,
+          }),
+        )
         break
       }
       case 'wait':
-        await this.send(root, 'Runtime.evaluate', {
-          expression: `new Promise(resolve => { const observer = new MutationObserver(() => done()); const timer = setTimeout(done, ${WAIT_TIMEOUT_MS}); function done() { observer.disconnect(); clearTimeout(timer); resolve(true); } observer.observe(document, {subtree:true, childList:true, attributes:true, characterData:true}); })`,
-          awaitPromise: true,
-          returnByValue: true,
-        })
-        break
+        try {
+          await this.send(root, 'Runtime.evaluate', {
+            expression: `new Promise(resolve => { const observer = new MutationObserver(() => done()); const timer = setTimeout(done, ${WAIT_TIMEOUT_MS}); function done() { observer.disconnect(); clearTimeout(timer); resolve(true); } observer.observe(document, {subtree:true, childList:true, attributes:true, characterData:true}); })`,
+            awaitPromise: true,
+            returnByValue: true,
+          })
+        } catch (cause) {
+          // A document replaced while it was watched is a change too.
+          this.check()
+          if (
+            !(cause instanceof BrowserError) ||
+            cause.code !== 'COMMAND_FAILED'
+          )
+            throw cause
+        }
+        return this.read(id)
       default: {
+        await this.beforeInput(() => this.stableViewport(root))
+        if (
+          action.screenshotId &&
+          (action.action === 'click' || action.action === 'hover')
+        ) {
+          const point = await this.beforeInput(() =>
+            this.coordinatePoint(id, page, action),
+          )
+          await this.dispatched(() =>
+            this.mouse(root, point, action.action === 'click'),
+          )
+          break
+        }
         const target = await this.beforeInput(() =>
           this.element(page, action.ref),
         )
+        const session = target.target.session
         try {
           if (action.action === 'click' || action.action === 'hover') {
             const point = await this.beforeInput(() => this.point(target))
-            await this.mouse(root, point, action.action === 'click')
-          } else if (action.action === 'fill') {
-            await this.send(target.target.session, 'DOM.focus', {
-              backendNodeId: target.backendId,
-            })
-            const selected = await this.send(
-              target.target.session,
-              'Runtime.callFunctionOn',
-              {
-                objectId: target.objectId,
-                functionDeclaration: selectText.toString(),
-                returnByValue: true,
-              },
+            await this.dispatched(() =>
+              this.mouse(root, point, action.action === 'click'),
             )
-            if (selected.result.value !== true)
-              throw new BrowserError(
-                'NOT_EDITABLE',
-                'This element is not an editable field.',
+          } else if (action.action === 'fill') {
+            await this.beforeInput(async () => {
+              await this.send(session, 'DOM.focus', {
+                backendNodeId: target.backendId,
+              })
+              const selected = await this.send(
+                session,
+                'Runtime.callFunctionOn',
+                {
+                  objectId: target.objectId,
+                  functionDeclaration: selectText.toString(),
+                  returnByValue: true,
+                },
               )
-            await this.send(target.target.session, 'Input.insertText', {
-              text: action.text || '',
+              if (selected.result.value !== true)
+                throw new BrowserError(
+                  'NOT_EDITABLE',
+                  'This element is not an editable field.',
+                )
             })
+            await this.dispatched(() =>
+              this.send(session, 'Input.insertText', {
+                text: action.text || '',
+              }),
+            )
           } else if (action.action === 'select') {
-            const selected = await this.send(
-              target.target.session,
-              'Runtime.callFunctionOn',
-              {
+            const selected = await this.dispatched(() =>
+              this.send(session, 'Runtime.callFunctionOn', {
                 objectId: target.objectId,
                 functionDeclaration: chooseOption.toString(),
                 arguments: [{ value: action.text || '' }],
                 returnByValue: true,
-              },
+              }),
             )
             if (selected.result.value !== true)
               throw new BrowserError(
@@ -1003,37 +1326,41 @@ export class BrowserDriver {
                 'Choose an enabled option value from a select element.',
               )
           } else if (action.action === 'press') {
-            if (!action.key)
+            const pressed = action.key
+            if (!pressed)
               throw new BrowserError('MISSING_KEY', 'Specify a supported key.')
-            await this.send(target.target.session, 'DOM.focus', {
-              backendNodeId: target.backendId,
-            })
+            await this.beforeInput(() =>
+              this.send(session, 'DOM.focus', {
+                backendNodeId: target.backendId,
+              }),
+            )
             const key = {
-              key: action.key,
-              code: action.key,
-              windowsVirtualKeyCode: KEY_CODES[action.key],
+              key: pressed,
+              code: pressed,
+              windowsVirtualKeyCode: KEY_CODES[pressed],
             }
-            await this.send(target.target.session, 'Input.dispatchKeyEvent', {
-              type: 'keyDown',
-              ...key,
-              ...(action.key === 'Enter' ? { text: '\r' } : {}),
-            })
-            await this.send(target.target.session, 'Input.dispatchKeyEvent', {
-              type: 'keyUp',
-              ...key,
+            await this.dispatched(async () => {
+              await this.send(session, 'Input.dispatchKeyEvent', {
+                type: 'keyDown',
+                ...key,
+                ...(pressed === 'Enter' ? { text: '\r' } : {}),
+              })
+              await this.send(session, 'Input.dispatchKeyEvent', {
+                type: 'keyUp',
+                ...key,
+              })
             })
           }
         } finally {
+          // The frame an element was in may be gone once it was acted on.
           if (!this.signal.aborted && !this.closed)
-            await this.send(
-              target.target.session,
-              'Runtime.releaseObjectGroup',
-              { objectGroup: ELEMENT_GROUP },
-            )
+            await this.send(session, 'Runtime.releaseObjectGroup', {
+              objectGroup: ELEMENT_GROUP,
+            }).catch(() => this.check())
         }
       }
     }
-    return this.read(id)
+    return this.observed(id)
   }
 
   async dispose() {
@@ -1041,7 +1368,11 @@ export class BrowserDriver {
     chrome.debugger.onEvent.removeListener(this.onEvent)
     chrome.debugger.onDetach.removeListener(this.onDetach)
     const tabs = [...this.pages.keys()]
+    const waiters = [...this.pages.values()].flatMap((page) => [
+      ...page.waiters,
+    ])
     this.pages.clear()
+    for (const moved of waiters) moved()
     await Promise.allSettled(
       tabs.map((tabId) => chrome.debugger.detach({ tabId })),
     )

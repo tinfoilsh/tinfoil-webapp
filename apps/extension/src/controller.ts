@@ -14,7 +14,12 @@ import type {
   Turn,
 } from '@tinfoil/chat-client/types'
 import { BrowserDriver, type TabInfo } from './browser/driver'
-import { BrowserError, browserFailure } from './browser/errors'
+import {
+  BrowserError,
+  browserFailure,
+  OUTCOME_UNKNOWN,
+  outcomeUnknown,
+} from './browser/errors'
 import { changesPage } from './browser/schema'
 import {
   DEFAULT_MODEL,
@@ -539,16 +544,14 @@ export class TaskController {
           return await driver.execute(request.operation)
         } catch (cause) {
           signal.throwIfAborted()
+          // The browser says when an action's input may have reached the
+          // page. Any other failure it names came before that, and the model
+          // can act on it.
           if (
             changesPage(request.operation) &&
-            (!(cause instanceof BrowserError) ||
-              ['COMMAND_FAILED', 'PAGE_CHANGED'].includes(cause.code))
-          ) {
-            throw new BrowserError(
-              'OUTCOME_UNKNOWN',
-              'The action may have completed, but its result could not be verified. Check the page before continuing.',
-            )
-          }
+            (!(cause instanceof BrowserError) || cause.code === OUTCOME_UNKNOWN)
+          )
+            throw outcomeUnknown(cause)
           return { text: JSON.stringify(browserFailure(cause)) }
         }
       },

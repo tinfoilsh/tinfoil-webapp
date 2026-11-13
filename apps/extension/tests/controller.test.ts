@@ -11,7 +11,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { client, signIn, testSession } from '../../../tests/harness-fixture'
 import { storedThread } from '../../../tests/services/harness/thread-fixture'
 import type { TabInfo } from '../src/browser/driver'
-import { BrowserError } from '../src/browser/errors'
+import { BrowserError, outcomeUnknown } from '../src/browser/errors'
 import { TaskController } from '../src/controller'
 import type { View } from '../src/messages'
 import { TaskStore } from '../src/storage'
@@ -420,12 +420,48 @@ test('stop cancels a send queued behind initialization', async () => {
   expect(client.events).not.toHaveBeenCalled()
 })
 
+test('a failure before an action is delivered is answered to the model, and the run goes on', async () => {
+  const { controller, until, browser } = setup()
+  let attempts = 0
+  browser.execute = async () => {
+    if (++attempts === 1)
+      throw new BrowserError('PAGE_CHANGED', 'The page navigated. Read it.')
+    return { text: 'Saved on the second try' }
+  }
+  client.events.mockImplementation(async function* (_path: string, turn: Turn) {
+    yield started(turn)
+    yield browserRequest(turn, 'first')
+    yield browserRequest(turn, 'second')
+    yield ended(turn)
+  })
+  answerPosts({
+    '/v1/threads/browser/result': () => ({ accepted: true }),
+  })
+  await controller.initialize()
+  await controller.command(send)
+  const final = await until((view) => view.task?.phase === 'completed')
+  expect(final.task?.error).toBeUndefined()
+  expect(
+    client.post.mock.calls
+      .filter(([path]) => path === '/v1/threads/browser/result')
+      .map(([, input]) => (input as { result: { text: string } }).result),
+  ).toEqual([
+    {
+      text: JSON.stringify({
+        error: 'PAGE_CHANGED',
+        message: 'The page navigated. Read it.',
+      }),
+    },
+    { text: 'Saved on the second try' },
+  ])
+})
+
 test('an uncertain mutation stops the run instead of becoming a retryable tool result', async () => {
   const { controller, until, browser, actions, store } = setup()
   const execute = browser.execute
   browser.execute = async () => {
     await execute()
-    throw new BrowserError('COMMAND_FAILED', 'Connection lost after click')
+    throw outcomeUnknown(new Error('Connection lost after click'))
   }
   let turn!: Turn
   client.events.mockImplementation(async function* (path: string, input: Turn) {

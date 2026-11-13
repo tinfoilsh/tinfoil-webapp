@@ -26,6 +26,21 @@ let context: BrowserContext
 let worker: Worker
 let profile: string
 let fixturePage: Page | undefined
+// The next request for the held page, which the test releases. Held whole,
+// the page it replaces stays until then; held after its start, its document
+// commits when the request arrives and is parsed only once released.
+let held:
+  { arrived: () => void; released: Promise<void>; started: boolean } | undefined
+function holdNextPage(started: boolean) {
+  let release!: () => void
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const arrived = new Promise<void>((resolve) => {
+    held = { arrived: resolve, released, started }
+  })
+  return { arrived, release }
+}
 
 test.beforeAll(async () => {
   server = createServer((request, response) => {
@@ -38,6 +53,26 @@ test.beforeAll(async () => {
     }
     if (request.url === '/next') {
       response.end('<h1>Next page</h1>')
+      return
+    }
+    if (request.url === '/links') {
+      response.end(
+        '<!doctype html><title>Links</title><a href="/held">Technology</a><a href="#details">Details</a><h2 id="details">Details section</h2>',
+      )
+      return
+    }
+    if (request.url === '/held') {
+      const pending = held
+      held = undefined
+      const start =
+        '<!doctype html><title>Technology</title><h1>Technology</h1>'
+      if (pending?.started !== false) response.write(start)
+      pending?.arrived()
+      void (pending?.released ?? Promise.resolve()).then(() =>
+        response.end(
+          `${pending?.started === false ? start : ''}<button onclick="document.title='Late clicked'">Late button</button>`,
+        ),
+      )
       return
     }
     if (request.url === '/form') {
@@ -223,6 +258,117 @@ test('shadow DOM and cross-origin frames expose usable references', async () => 
   await expect(page.frameLocator('iframe').nth(1).locator('output')).toHaveText(
     'Frame saved',
   )
+})
+
+test('a click that navigates is answered with the page it leads to, not the one it leaves', async () => {
+  const { page, tabId } = await startFixture('/links')
+  const read = await execute({ action: 'read', tabId })
+  const next = holdNextPage(false)
+  try {
+    const clicked = worker.evaluate((action) => browserTest.attempt(action), {
+      action: 'click',
+      tabId,
+      ref: ref(read.text, 'Technology'),
+    } satisfies BrowserAction)
+    await next.arrived
+    next.release()
+    const result = await clicked
+    if (!result.ok) throw new Error(`The click failed with ${result.code}`)
+    expect(result.result.text).toContain(`URL: ${origin}/held`)
+    expect(result.result.text).toContain('heading "Technology"')
+    expect(result.result.text).not.toContain('still loading')
+    // What the observation names on the new page can be acted on.
+    await execute({
+      action: 'click',
+      tabId,
+      ref: ref(result.result.text, 'Late button'),
+    })
+    await expect(page).toHaveTitle('Late clicked')
+  } finally {
+    next.release()
+  }
+})
+
+test('navigating, going back and forward, and opening a tab are each answered with the page they arrive at', async () => {
+  const { page, tabId } = await startFixture('/links')
+  const next = holdNextPage(true)
+  try {
+    const navigated = execute({
+      action: 'navigate',
+      tabId,
+      url: `${origin}/held`,
+    })
+    await next.arrived
+    next.release()
+    const arrived = (await navigated).text
+    expect(arrived).toContain(`URL: ${origin}/held`)
+    expect(arrived).toContain('button "Late button"')
+  } finally {
+    next.release()
+  }
+  const back = (await execute({ action: 'back', tabId })).text
+  expect(back).toContain(`URL: ${origin}/links`)
+  expect(back).toContain('link "Technology"')
+  const forward = (await execute({ action: 'forward', tabId })).text
+  expect(forward).toContain(`URL: ${origin}/held`)
+  expect(forward).toContain('button "Late button"')
+  await expect(page).toHaveURL(`${origin}/held`)
+
+  const opened = (await execute({ action: 'open', url: `${origin}/next` })).text
+  expect(opened).toContain(`URL: ${origin}/next`)
+  expect(opened).toContain('heading "Next page"')
+  const openedId = Number(opened.match(/^Tab (\d+):/)?.[1])
+  expect(openedId).not.toBe(tabId)
+  expect((await execute({ action: 'close', tabId: openedId })).text).toBe(
+    `Closed tab ${openedId}.`,
+  )
+
+  // An address that cannot be reached is a failure the model can act on.
+  expect(
+    await worker.evaluate((action) => browserTest.attempt(action), {
+      action: 'navigate',
+      tabId,
+      url: 'http://127.0.0.1:1/',
+    } satisfies BrowserAction),
+  ).toEqual({ ok: false, code: 'NAVIGATION_FAILED' })
+})
+
+test('a link within the page is followed without waiting for another document', async () => {
+  const { page, tabId } = await startFixture('/links')
+  const read = await execute({ action: 'read', tabId })
+  const followed = (
+    await execute({
+      action: 'click',
+      tabId,
+      ref: ref(read.text, 'Details'),
+    })
+  ).text
+  await expect(page).toHaveURL(`${origin}/links#details`)
+  expect(followed).toContain(`URL: ${origin}/links#details`)
+  expect(followed).toContain('heading "Details section"')
+  expect(followed).not.toContain('still loading')
+})
+
+test('a frame that navigates outdates what was read inside it, not the page around it', async () => {
+  const { page, tabId } = await startFixture('/?frame-navigation')
+  const read = await execute({ action: 'read', tabId })
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const frame = document.querySelector('iframe')!
+        frame.addEventListener('load', () => resolve(), { once: true })
+        frame.src = '/next'
+      }),
+  )
+  expect(
+    await worker.evaluate((action) => browserTest.attempt(action), {
+      action: 'click',
+      tabId,
+      ref: ref(read.text, 'Save frame'),
+    } satisfies BrowserAction),
+  ).toEqual({ ok: false, code: 'STALE_ELEMENT' })
+  await execute({ action: 'click', tabId, ref: ref(read.text, 'Save') })
+  await expect(page.locator('output').first()).toHaveText('Saved Before')
 })
 
 test('unavailable tabs and arbitrary code cannot be executed', async () => {
