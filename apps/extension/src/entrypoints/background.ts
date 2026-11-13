@@ -101,7 +101,7 @@ export default defineBackground(() => {
     const tokens = new Map<
       string,
       {
-        resolve: (token: string | null) => void
+        resolve: (token: string | null, failed?: boolean) => void
         reject: (cause: unknown) => void
       }
     >()
@@ -122,8 +122,18 @@ export default defineBackground(() => {
           reject(new Error('Sign-in did not respond. Reopen the panel.'))
         }, TOKEN_TIMEOUT_MS)
         tokens.set(id, {
-          resolve: (token) => {
+          resolve: (token, failed) => {
             clearTimeout(timer)
+            // A sign-in the panel could not ask about may answer the next
+            // time, where one that has ended will not.
+            if (failed) {
+              reject(
+                new Error(
+                  'Your sign-in could not be confirmed. Check your connection and try again.',
+                ),
+              )
+              return
+            }
             lastToken = token
             if (token) resolve(token)
             else reject(signedOut())
@@ -154,7 +164,7 @@ export default defineBackground(() => {
       }
       const message = parsed.data
       if (message.type === 'token') {
-        tokens.get(message.id)?.resolve(message.token)
+        tokens.get(message.id)?.resolve(message.token, message.failed)
         tokens.delete(message.id)
         return
       }

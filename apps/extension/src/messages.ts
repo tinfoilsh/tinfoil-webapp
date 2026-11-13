@@ -74,7 +74,10 @@ export const toWorkerSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('token'),
     id: z.string(),
+    // No token when the sign-in has ended, or, as failed says, when it
+    // could not be asked about.
     token: z.string().nullable(),
+    failed: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('command'),

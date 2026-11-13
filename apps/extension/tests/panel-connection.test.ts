@@ -13,6 +13,8 @@ type Sent = {
   id?: string
   audio?: string
   mimeType?: string
+  token?: string | null
+  failed?: boolean
 }
 // What the panel sent over its latest connection, and the worker's side of
 // that connection.
@@ -57,8 +59,8 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function connected() {
-  const connection = new PanelConnection('alice', async () => 'token')
+function connected(token: () => Promise<string | null> = async () => 'token') {
+  const connection = new PanelConnection('alice', token)
   const close = connection.connect()
   return { connection, close }
 }
@@ -192,5 +194,31 @@ test('a panel out of sight connects again only once it is looked at', async () =
   // Looking at it again later connects no second time.
   document.dispatchEvent(new Event('visibilitychange'))
   expect(connections).toBe(2)
+  close()
+})
+
+test('a sign-in that could not be asked about is told apart from one that has ended', async () => {
+  let token: () => Promise<string | null> = async () => null
+  const { close } = connected(() => token())
+  const answered = () =>
+    vi.waitFor(() => {
+      const reply = sent.find((message) => message.type === 'token')
+      if (!reply) throw new Error('No token was answered')
+      return reply
+    })
+  answer({ type: 'token', id: 'ended' })
+  expect(await answered()).toEqual({ type: 'token', id: 'ended', token: null })
+
+  sent = []
+  token = async () => {
+    throw new TypeError('Failed to fetch')
+  }
+  answer({ type: 'token', id: 'unknown' })
+  expect(await answered()).toEqual({
+    type: 'token',
+    id: 'unknown',
+    token: null,
+    failed: true,
+  })
   close()
 })

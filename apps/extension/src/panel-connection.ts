@@ -107,6 +107,8 @@ export class PanelConnection {
           else pending?.reject(new Error(message.error))
         }
         if (message.type === 'token') {
+          // A sign-in that has ended answers with no token. One that could
+          // not be asked about says so, as it may answer the next time.
           void this.token({ skipCache: message.skipCache }).then(
             (token) => {
               if (this.port === port)
@@ -114,7 +116,12 @@ export class PanelConnection {
             },
             () => {
               if (this.port === port)
-                port.postMessage({ type: 'token', id: message.id, token: null })
+                port.postMessage({
+                  type: 'token',
+                  id: message.id,
+                  token: null,
+                  failed: true,
+                })
             },
           )
         }
