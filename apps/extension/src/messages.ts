@@ -75,7 +75,12 @@ export const requestEnvelopeSchema = z.object({
 
 export const toWorkerSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ping') }),
-  z.object({ type: z.literal('hello'), owner: z.string().min(1).max(200) }),
+  z.object({
+    type: z.literal('hello'),
+    owner: z.string().min(1).max(200),
+    // The chat a panel that lost its connection was showing.
+    shown: z.string().min(1).max(200).optional(),
+  }),
   z.object({
     type: z.literal('token'),
     id: z.string(),

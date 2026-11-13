@@ -78,13 +78,20 @@ export class TaskController {
       new BrowserDriver(signal, interrupted),
   ) {}
 
-  initialize(after: Promise<void> = Promise.resolve()): Promise<void> {
-    const pending = this.transitions.then(() => after).then(() => this.load())
+  // Opens on a new chat, or on the chat a panel that lost its connection was
+  // showing, for it to go on in.
+  initialize(
+    after: Promise<void> = Promise.resolve(),
+    shown?: string,
+  ): Promise<void> {
+    const pending = this.transitions
+      .then(() => after)
+      .then(() => this.load(shown))
     this.transitions = pending.catch(() => undefined)
     return pending
   }
 
-  private async load() {
+  private async load(shown?: string) {
     const tasks = await this.store.list(this.owner)
     for (const summary of tasks) {
       this.summaries.set(summary.id, {
@@ -101,9 +108,7 @@ export class TaskController {
         await this.store.put(task)
       }
     }
-    this.task = tasks[0]
-      ? await this.store.get(this.owner, tasks[0].id)
-      : undefined
+    this.task = shown ? await this.store.get(this.owner, shown) : undefined
     await this.emit()
     try {
       this.session = await this.client.post<Session>(ROUTES.session, {})

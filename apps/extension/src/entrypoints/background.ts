@@ -220,7 +220,7 @@ export default defineBackground(() => {
               // It has closed its connection already.
             }
           })
-        void controller.initialize(closing).catch((cause) =>
+        void controller.initialize(closing, message.shown).catch((cause) =>
           send({
             type: 'state',
             view: { tasks: [], verified: false, error: errorText(cause) },

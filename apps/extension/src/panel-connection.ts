@@ -161,7 +161,13 @@ export class PanelConnection {
             unsettled ? PANEL_RECONNECT_DELAYS_MS[unsettled - 1] : 0,
           )
       })
-      port.postMessage({ type: 'hello', owner: this.owner })
+      // A panel that lost its connection goes on in the chat it shows.
+      const shown = this.view.task?.id
+      port.postMessage({
+        type: 'hello',
+        owner: this.owner,
+        ...(shown ? { shown } : {}),
+      })
     }
     open()
     return () => {

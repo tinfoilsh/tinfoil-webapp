@@ -221,11 +221,47 @@ test('a task stored in a phase it cannot rest in opens as interrupted', async ()
   }
   // A phase an earlier build stored, which this one no longer has.
   await store.put({ ...stored, phase: 'paused' as never })
-  await controller.initialize()
+  await controller.initialize(undefined, 'task')
   const view = await until((view) => !!view.session)
   expect(view.task).toMatchObject({ id: 'task', phase: 'interrupted' })
   expect(view.task?.error).toContain('This task was interrupted')
   expect((await store.get('alice', 'task'))?.phase).toBe('interrupted')
+})
+
+test('a panel opens on a new chat, and one that lost its connection goes on in the chat it showed', async () => {
+  const { controller, until, store } = setup()
+  const stored = {
+    owner: 'alice',
+    state: initialChat(),
+    phase: 'completed' as const,
+    lastPrompt: 'Save the form',
+    model: MODEL,
+    effort: 'low' as const,
+  }
+  await store.put({ ...stored, id: 'older', title: 'Older', updatedAt: 1 })
+  await store.put({ ...stored, id: 'latest', title: 'Latest', updatedAt: 2 })
+  await controller.initialize()
+  const opened = await until((view) => !!view.session)
+  expect(opened.task).toBeUndefined()
+  expect(opened.tasks.map((task) => task.id)).toEqual(['latest', 'older'])
+
+  // The chat it was showing need not be the one last written to.
+  const again = setup()
+  await again.store.put({
+    ...stored,
+    id: 'older',
+    title: 'Older',
+    updatedAt: 1,
+  })
+  await again.store.put({
+    ...stored,
+    id: 'latest',
+    title: 'Latest',
+    updatedAt: 2,
+  })
+  await again.controller.initialize(undefined, 'older')
+  const resumed = await again.until((view) => !!view.session)
+  expect(resumed.task).toMatchObject({ id: 'older', title: 'Older' })
 })
 
 test('every turn offers the browser to the model and answers what it asks of it', async () => {

@@ -1,4 +1,5 @@
 import { ERROR_ACTIONS, ERROR_CODES } from '@tinfoil/chat-client/protocol'
+import { initialChat } from '@tinfoil/chat-client/reducer'
 import { HarnessError } from '@tinfoil/chat-client/sse'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { PANEL_RECONNECT_DELAYS_MS, PANEL_SETTLED_MS } from '../src/config'
@@ -162,12 +163,27 @@ test('a connection the worker closed is made again, and what waited on the old o
   expect(connection.snapshot().error).toBeUndefined()
 
   // The worker it started is heard as the one before was.
-  const view = {
+  const view: View = {
     ...STATE,
     tasks: [{ id: 'task', title: 'Kept', updatedAt: 1 }],
+    task: {
+      id: 'task',
+      title: 'Kept',
+      state: initialChat(),
+      phase: 'completed',
+      model: 'gpt-oss-120b',
+      effort: 'low',
+      captures: [],
+    },
   }
   answer({ type: 'state', view })
   expect(connection.snapshot()).toEqual(view)
+
+  // A panel showing a chat when its worker is stopped asks the next worker
+  // for that chat, where one newly opened asks for none.
+  disconnect()
+  await vi.waitFor(() => expect(connections).toBe(3))
+  expect(sent).toEqual([{ type: 'hello', owner: 'alice', shown: 'task' }])
   close()
 })
 
