@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./button": "./src/button.tsx",
+    "./chat-row": "./src/chat-row.ts",
     "./composer": "./src/composer.tsx",
     "./delete-confirmation": "./src/delete-confirmation.tsx",
     "./format-duration": "./src/format-duration.ts",

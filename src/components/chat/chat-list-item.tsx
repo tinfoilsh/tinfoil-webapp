@@ -4,6 +4,13 @@ import { canRequestChatPin } from '@/components/chat/favorite-view'
 import { DEFAULT_CHAT_TITLE } from '@/constants/chat'
 import { isPlainPrimaryClick } from '@/utils/navigation'
 import {
+  CHAT_ROW_ACTIONS_CLASS_NAME,
+  CHAT_ROW_SELECT_CLASS_NAME,
+  CHAT_ROW_TITLE_CLASS_NAME,
+  chatRowActionClassName,
+  chatRowClassName,
+} from '@tinfoil/chat-ui/chat-row'
+import {
   TfBoxCheckmark,
   TfBoxX,
   TfFlagFilled,
@@ -126,8 +133,7 @@ function ChatSelectionControl({
   onSelect: () => void
   children: React.ReactNode
 }) {
-  const className =
-    'min-w-0 flex-1 cursor-pointer rounded-md pr-2 text-left after:absolute after:inset-0 after:rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong'
+  const className = CHAT_ROW_SELECT_CLASS_NAME
   const ariaCurrent = isSelected ? 'page' : undefined
 
   if (href) {
@@ -342,16 +348,9 @@ export function ChatListItem({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       className={cn(
-        'group relative flex w-full items-center justify-between rounded-lg border border-transparent px-3 py-2 text-left text-sm transition-colors hover:border-border-subtle',
+        chatRowClassName(isSelected, isDarkMode),
         isDraggable && 'cursor-grab',
         isDragging && 'opacity-50',
-        isSelected
-          ? isDarkMode
-            ? 'bg-surface-chat text-white'
-            : 'bg-gray-200 text-content-primary'
-          : isDarkMode
-            ? 'text-content-secondary hover:bg-surface-chat'
-            : 'text-content-secondary hover:bg-surface-sidebar',
       )}
     >
       {isEditing ? (
@@ -402,7 +401,7 @@ export function ChatListItem({
             <span className="flex items-center gap-1.5">
               <RedactedText
                 active={shouldRedactTitle}
-                className="truncate font-aeonik-fono text-sm font-medium text-content-primary"
+                className={CHAT_ROW_TITLE_CLASS_NAME}
               >
                 {isAnimating ? (
                   <TypingAnimation
@@ -459,7 +458,7 @@ export function ChatListItem({
       )}
 
       {!isEditing && (
-        <div className="flex flex-shrink-0 items-center gap-1.5 [&_button]:relative [&_button]:z-10">
+        <div className={CHAT_ROW_ACTIONS_CLASS_NAME}>
           <div className="pointer-events-none hidden items-center opacity-0 transition-opacity md:flex md:w-0 md:overflow-hidden md:group-focus-within:pointer-events-auto md:group-focus-within:w-auto md:group-focus-within:opacity-100 md:group-hover:pointer-events-auto md:group-hover:w-auto md:group-hover:opacity-100">
             {showDesktopPinAction && canTogglePin && onTogglePin && (
               <button
@@ -489,12 +488,7 @@ export function ChatListItem({
             {hasRealTitle && (
               <button
                 type="button"
-                className={cn(
-                  'mr-1 rounded p-1 transition-colors',
-                  isDarkMode
-                    ? 'text-content-muted hover:bg-surface-chat hover:text-white'
-                    : 'text-content-muted hover:bg-surface-sidebar hover:text-content-secondary',
-                )}
+                className={cn('mr-1', chatRowActionClassName(isDarkMode))}
                 onClick={handleStartEdit}
                 aria-label="Rename chat"
                 title="Rename"
@@ -505,12 +499,7 @@ export function ChatListItem({
             {!chat.isBlankChat && (
               <button
                 type="button"
-                className={cn(
-                  'rounded p-1 transition-colors',
-                  isDarkMode
-                    ? 'text-content-muted hover:bg-surface-chat hover:text-white'
-                    : 'text-content-muted hover:bg-surface-sidebar hover:text-content-secondary',
-                )}
+                className={chatRowActionClassName(isDarkMode)}
                 onClick={handleRequestDelete}
                 aria-label="Delete chat"
                 title="Delete"
