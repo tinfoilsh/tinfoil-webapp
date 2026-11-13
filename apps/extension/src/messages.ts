@@ -51,6 +51,8 @@ export type ToPanel =
   | { type: 'state'; view: View }
   | { type: 'token'; id: string; skipCache?: boolean }
   | { type: 'result'; id: string; error?: string }
+  // Another panel has taken this one's place with the worker.
+  | { type: 'replaced' }
   // A recording's text, or why it has none: in the chat service's own words
   // where it was the one to refuse.
   | { type: 'transcript'; id: string; text: string }

@@ -192,10 +192,17 @@ export default defineBackground(() => {
           () => reviewActions.getValue(),
         )
         current = { controller, port }
+        // A panel whose place is taken is told so, as it would otherwise
+        // connect again and take it back.
         if (previous)
-          void close(previous.controller).finally(() =>
-            previous.port.disconnect(),
-          )
+          void close(previous.controller).finally(() => {
+            try {
+              previous.port.postMessage({ type: 'replaced' } satisfies ToPanel)
+              previous.port.disconnect()
+            } catch {
+              // It has closed its connection already.
+            }
+          })
         void controller.initialize(closing).catch((cause) =>
           send({
             type: 'state',

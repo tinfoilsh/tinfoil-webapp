@@ -1,7 +1,7 @@
 import { ERROR_ACTIONS, ERROR_CODES } from '@tinfoil/chat-client/protocol'
 import { HarnessError } from '@tinfoil/chat-client/sse'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { PANEL_RECONNECT_DELAYS_MS } from '../src/config'
+import { PANEL_RECONNECT_DELAYS_MS, PANEL_SETTLED_MS } from '../src/config'
 import type { ToPanel, View } from '../src/messages'
 import { PanelConnection } from '../src/panel-connection'
 
@@ -138,7 +138,9 @@ test('a recording given up on or cut off by the worker is not left waiting', asy
   const cutOff = connection.transcribe(recording()).catch((cause) => cause)
   await requested()
   disconnect()
-  expect(await cutOff).toEqual(new Error('The extension disconnected.'))
+  expect(await cutOff).toEqual(
+    new Error('The extension restarted before it answered. Try again.'),
+  )
   close()
   await expect(connection.transcribe(recording())).rejects.toThrow(
     'Reopen the panel to reconnect.',
@@ -152,7 +154,9 @@ test('a connection the worker closed is made again, and what waited on the old o
   const waiting = connection.command({ kind: 'new' }).catch((cause) => cause)
   // The browser stopped the worker.
   disconnect()
-  expect(await waiting).toEqual(new Error('The extension disconnected.'))
+  expect(await waiting).toEqual(
+    new Error('The extension restarted before it answered. Try again.'),
+  )
   await vi.waitFor(() => expect(connections).toBe(2))
   expect(sent).toEqual([{ type: 'hello', owner: 'alice' }])
   expect(connection.snapshot().error).toBeUndefined()
@@ -175,6 +179,49 @@ test('a worker that only ever closes the connection is given up on, and the pane
   // The first connection, and one after each wait.
   expect(connections).toBe(PANEL_RECONNECT_DELAYS_MS.length + 1)
   expect(connection.snapshot().error).toContain('Reopen the panel')
+  close()
+})
+
+test('a worker that says what it holds and then closes, again and again, is given up on too', async () => {
+  vi.useFakeTimers()
+  onConnect = () => {
+    answer({ type: 'state', view: STATE })
+    disconnect()
+  }
+  const { connection, close } = connected()
+  await vi.runAllTimersAsync()
+  expect(connections).toBe(PANEL_RECONNECT_DELAYS_MS.length + 1)
+  expect(connection.snapshot().error).toContain('Reopen the panel')
+  close()
+})
+
+test('a connection that lasted is made again at once, however often the worker is stopped', async () => {
+  vi.useFakeTimers()
+  const { connection, close } = connected()
+  const stops = PANEL_RECONNECT_DELAYS_MS.length * 2
+  for (let stop = 1; stop <= stops; stop++) {
+    answer({ type: 'state', view: STATE })
+    await vi.advanceTimersByTimeAsync(PANEL_SETTLED_MS)
+    disconnect()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(connections).toBe(stop + 1)
+  }
+  expect(connection.snapshot().error).toBeUndefined()
+  close()
+})
+
+test('a panel whose place another one took leaves it the worker, and says where Tinfoil is open', async () => {
+  vi.useFakeTimers()
+  const { connection, close } = connected()
+  answer({ type: 'state', view: STATE })
+  const waiting = connection.command({ kind: 'new' }).catch((cause) => cause)
+  answer({ type: 'replaced' })
+  disconnect()
+  await vi.runAllTimersAsync()
+  expect(connections).toBe(1)
+  expect(connection.snapshot().error).toContain('open in another window')
+  // What it was waiting on is answered with the same reason.
+  expect(await waiting).toEqual(new Error(connection.snapshot().error))
   close()
 })
 

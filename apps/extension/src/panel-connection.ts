@@ -3,8 +3,17 @@ import {
   PANEL_HEARTBEAT_MS,
   PANEL_PORT,
   PANEL_RECONNECT_DELAYS_MS,
+  PANEL_SETTLED_MS,
 } from './config'
 import type { Command, ToPanel, View } from './messages'
+
+const CONNECTION_CLOSED =
+  'The extension connection closed. Reopen the panel to reconnect.'
+const OPEN_ELSEWHERE =
+  'Tinfoil Chrome is open in another window. Reopen this panel to use it here.'
+// What a request is answered with when the worker stopped before it could
+// answer: the panel connects again, and the request can be made again.
+const WORKER_STOPPED = 'The extension restarted before it answered. Try again.'
 
 // A recording as the text it crosses to the worker in.
 function base64(audio: Blob): Promise<string> {
@@ -51,16 +60,12 @@ export class PanelConnection {
   // closed is made again.
   connect() {
     let closed = false
-    // The connections made since the worker last sent word of itself.
-    let unanswered = 0
+    // How many connections in a row closed soon after they were made, as
+    // those to a worker that cannot run do.
+    let unsettled = 0
     let waiting: ReturnType<typeof setTimeout> | undefined
     let leave = () => {}
-    const lost = () =>
-      this.update({
-        ...this.view,
-        error:
-          'The extension connection closed. Reopen the panel to reconnect.',
-      })
+    const lost = (error: string) => this.update({ ...this.view, error })
     const open = () => {
       document.removeEventListener('visibilitychange', open)
       if (closed) return
@@ -70,10 +75,11 @@ export class PanelConnection {
       } catch {
         // The extension this panel belongs to is gone, as once it has been
         // reloaded.
-        lost()
+        lost(CONNECTION_CLOSED)
         return
       }
-      unanswered++
+      const opened = Date.now()
+      let replaced = false
       const heartbeat = setInterval(
         () => port.postMessage({ type: 'ping' }),
         PANEL_HEARTBEAT_MS,
@@ -84,10 +90,8 @@ export class PanelConnection {
         port.disconnect()
       }
       port.onMessage.addListener((message: ToPanel) => {
-        if (message.type === 'state') {
-          unanswered = 0
-          this.update(message.view)
-        }
+        if (message.type === 'state') this.update(message.view)
+        if (message.type === 'replaced') replaced = true
         if (message.type === 'result') {
           const pending = this.pending.get(message.id)
           this.pending.delete(message.id)
@@ -133,10 +137,18 @@ export class PanelConnection {
         void chrome.runtime.lastError
         if (this.port !== port) return
         this.port = undefined
-        this.abandon(new Error('The extension disconnected.'))
+        // The panel that took this one's place keeps it, until this one is
+        // opened again.
+        if (replaced) {
+          this.abandon(new Error(OPEN_ELSEWHERE))
+          if (!closed) lost(OPEN_ELSEWHERE)
+          return
+        }
+        this.abandon(new Error(WORKER_STOPPED))
         if (closed) return
-        if (unanswered > PANEL_RECONNECT_DELAYS_MS.length) {
-          lost()
+        unsettled = Date.now() - opened < PANEL_SETTLED_MS ? unsettled + 1 : 0
+        if (unsettled > PANEL_RECONNECT_DELAYS_MS.length) {
+          lost(CONNECTION_CLOSED)
           return
         }
         // A panel out of sight waits to be looked at, as it would only wake
@@ -144,7 +156,10 @@ export class PanelConnection {
         if (document.visibilityState === 'hidden')
           document.addEventListener('visibilitychange', open)
         else
-          waiting = setTimeout(open, PANEL_RECONNECT_DELAYS_MS[unanswered - 1])
+          waiting = setTimeout(
+            open,
+            unsettled ? PANEL_RECONNECT_DELAYS_MS[unsettled - 1] : 0,
+          )
       })
       port.postMessage({ type: 'hello', owner: this.owner })
     }
