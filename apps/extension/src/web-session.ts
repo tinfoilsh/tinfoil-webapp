@@ -4,6 +4,15 @@ import type { GetToken } from '@tinfoil/chat-client/client'
 const CLIENT_COOKIE = '__client'
 const CLIENT_UPDATED_COOKIE = '__client_uat'
 const DEV_BROWSER_COOKIE = '__clerk_db_jwt'
+const ACCOUNT_CHANNEL = 'tinfoil-account'
+
+// Tells the extension's other pages that this one changed who is signed in,
+// which nothing else tells them at once.
+export function announceAccountChange() {
+  const channel = new BroadcastChannel(ACCOUNT_CHANNEL)
+  channel.postMessage(null)
+  channel.close()
+}
 
 export async function sessionToken(
   clerk: Pick<ReturnType<typeof useClerk>, 'session' | 'user'>,
@@ -63,6 +72,8 @@ export function watchWebSession(
   const visible = () => {
     if (document.visibilityState === 'visible') void refresh()
   }
+  const announced = new BroadcastChannel(ACCOUNT_CHANNEL)
+  announced.addEventListener('message', () => void refresh())
   chrome.cookies.onChanged.addListener(cookieChanged)
   window.addEventListener('focus', visible)
   document.addEventListener('visibilitychange', visible)
@@ -71,6 +82,7 @@ export function watchWebSession(
     refresh,
     dispose() {
       disposed = true
+      announced.close()
       chrome.cookies.onChanged.removeListener(cookieChanged)
       window.removeEventListener('focus', visible)
       document.removeEventListener('visibilitychange', visible)

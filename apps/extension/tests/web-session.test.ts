@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { sessionToken, watchWebSession } from '../src/web-session'
+import {
+  announceAccountChange,
+  sessionToken,
+  watchWebSession,
+} from '../src/web-session'
 
 type CookieListener = Parameters<typeof chrome.cookies.onChanged.addListener>[0]
 const listeners = new Set<CookieListener>()
@@ -111,6 +115,44 @@ test('only the configured host auth cookies and visible panel events refresh the
   document.dispatchEvent(new Event('visibilitychange'))
   await sync.refresh()
   expect(reload).toHaveBeenCalledTimes(2)
+})
+
+test('an account change another extension page announces refreshes the session until the page closes', async () => {
+  const reads: string[] = []
+  const watch = (page: string) => {
+    let seen = held<void>()
+    const sync = watchWebSession(
+      FRONTEND,
+      async () => {
+        reads.push(page)
+        seen.resolve()
+      },
+      () => {},
+    )
+    dispose.push(sync.dispose)
+    return {
+      sync,
+      next: () => {
+        seen = held<void>()
+        return seen.promise
+      },
+    }
+  }
+  const panel = watch('panel')
+  const settings = watch('settings')
+  const panelRead = panel.next()
+  let settingsRead = settings.next()
+  announceAccountChange()
+  await Promise.all([panelRead, settingsRead])
+  expect(reads.sort()).toEqual(['panel', 'settings'])
+
+  // A page that has closed reads nothing more; the one still open, which
+  // hears the same announcement, shows that it was delivered.
+  panel.sync.dispose()
+  settingsRead = settings.next()
+  announceAccountChange()
+  await settingsRead
+  expect(reads.sort()).toEqual(['panel', 'settings', 'settings'])
 })
 
 test('a failed reload can recover and closing the panel drops queued work and late results', async () => {
