@@ -7,6 +7,8 @@ import { useReloadHold } from '@/services/reload-when-updated'
 import { dictation } from '@/services/speech/dictation'
 import { logError } from '@/utils/error-handling'
 import { Composer, type ComposerHandle } from '@tinfoil/chat-ui/composer'
+import { DictationButton } from '@tinfoil/chat-ui/dictation-button'
+import { useDictation } from '@tinfoil/chat-ui/use-dictation'
 import {
   TfAttachment,
   TfBoxCheckmark,
@@ -19,21 +21,11 @@ import {
 } from '@tinfoilsh/tinfoil-icons'
 import {
   TfFolderAnimated,
-  TfMicrophoneAnimated,
   TfPlusAnimated,
-  TfStopAnimated,
   TfToolsAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import type { FormEvent, RefObject } from 'react'
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react'
-import { PiSpinner } from 'react-icons/pi'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import {
   COMPACTING_LABEL,
   COMPACT_LABEL,
@@ -143,32 +135,41 @@ export const ChatInput = memo(function ChatInput({
   const composerRef = useRef<ComposerHandle>(null)
 
   // --- Speech-to-text state ---
-  const dictationState = useSyncExternalStore(
-    dictation.subscribe,
-    dictation.getSnapshot,
-    dictation.getServerSnapshot,
+  const reportRecordingError = useCallback(
+    (err: unknown) => {
+      toast({
+        title: 'Recording Error',
+        description:
+          err instanceof Error
+            ? err.message
+            : 'Could not start recording. Please make sure you have granted microphone permissions.',
+        variant: 'destructive',
+        position: 'top-right',
+      })
+    },
+    [toast],
   )
-  const isRecording = dictationState.status === 'recording'
-  const isTranscribing = dictationState.status === 'transcribing'
+  const {
+    state: dictationState,
+    isRecording,
+    isTranscribing,
+    announcement: audioStatus,
+    start: startRecording,
+    stop: stopRecording,
+  } = useDictation({
+    dictation,
+    chatId,
+    input,
+    setInput,
+    composer: composerRef,
+    segmentSeconds: session?.composer.dictationSegmentSeconds,
+    persist: !isTemporaryMode,
+    onError: reportRecordingError,
+  })
   // A reload cuts off the recording under way, and the text of one being
   // transcribed has yet to reach the composer.
   useReloadHold(isRecording || isTranscribing)
   const recordingStream = dictationState.stream
-  // The draft as dictated text is added to it, which can happen more than
-  // once before the composer renders again.
-  const draftRef = useRef(input)
-  useEffect(() => {
-    draftRef.current = input
-  }, [input])
-
-  // Leaving the composer or its chat closes the microphone if it opened it,
-  // as another composer can stay mounted while hidden; what was recorded is
-  // still transcribed and waits for the chat it was dictated in.
-  const [dictationOwner] = useState(() => Symbol('dictation'))
-  useEffect(
-    () => () => dictation.stop(dictationOwner),
-    [dictationOwner, chatId],
-  )
 
   // --- Input options menu state (the "+" button) ---
   const [isInputMenuOpen, setIsInputMenuOpen] = useState(false)
@@ -250,16 +251,6 @@ export const ChatInput = memo(function ChatInput({
     !api.userId &&
     !isTemporaryMode &&
     !!processedDocuments?.some((doc) => doc.attachment?.type === 'image')
-  const recordingButtonLabel = isTranscribing
-    ? 'Transcribing audio'
-    : isRecording
-      ? 'Stop recording'
-      : 'Start recording'
-  const audioStatus = isTranscribing
-    ? 'Transcribing audio'
-    : isRecording
-      ? 'Recording audio'
-      : ''
   useEffect(() => {
     const region = uploadStatusRef.current
     if (!region) return
@@ -305,52 +296,6 @@ export const ChatInput = memo(function ChatInput({
       fileInputRef.current.click()
     }
   }
-
-  const stopRecording = useCallback(() => dictation.stop(), [])
-
-  // The chat's dictated text joins the end of the draft as each recording is
-  // transcribed.
-  useEffect(
-    () =>
-      dictation.listen(chatId, (text) => {
-        const draft = draftRef.current.trim()
-        const next = draft ? `${draft} ${text}` : text
-        draftRef.current = next
-        setInput(next)
-        if (dictation.getSnapshot().status === 'recording') return
-        // Focus the textarea so the user can edit or send the transcription,
-        // then explicitly resize after React commits the new value to the DOM.
-        // The layout effect should handle this, but mobile Safari can report
-        // stale scrollHeight for programmatic value changes.
-        composerRef.current?.focus()
-        requestAnimationFrame(() => {
-          composerRef.current?.resize()
-        })
-      }),
-    [chatId, setInput],
-  )
-
-  const startRecording = useCallback(async () => {
-    if (!session) return
-    try {
-      await dictation.start({
-        owner: dictationOwner,
-        chatId,
-        segmentSeconds: session.composer.dictationSegmentSeconds,
-        persist: !isTemporaryMode,
-      })
-    } catch (err) {
-      toast({
-        title: 'Recording Error',
-        description:
-          err instanceof Error
-            ? err.message
-            : 'Could not start recording. Please make sure you have granted microphone permissions.',
-        variant: 'destructive',
-        position: 'top-right',
-      })
-    }
-  }, [session, isTemporaryMode, toast, dictationOwner, chatId])
 
   // Handle paste event for images and long text detection
   const handlePaste = useCallback(
@@ -824,37 +769,11 @@ export const ChatInput = memo(function ChatInput({
       trailingControls={
         <>
           {isPremium && transcriptionAvailable && (
-            <button
-              type="button"
-              onClick={isRecording ? stopRecording : startRecording}
-              className={cn(
-                'disabled:opacity-50',
-                isRecording
-                  ? 'flex h-10 w-10 animate-pulse items-center justify-center rounded-full bg-red-500 text-white md:h-8 md:w-8'
-                  : 'rounded-lg bg-transparent p-2.5 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary md:p-1.5',
-              )}
-              style={{ WebkitTapHighlightColor: 'transparent' }}
-              title={recordingButtonLabel}
-              aria-label={recordingButtonLabel}
-              disabled={isTranscribing}
-            >
-              {isRecording ? (
-                <TfStopAnimated
-                  className="h-6 w-6 md:h-5 md:w-5"
-                  aria-hidden="true"
-                />
-              ) : isTranscribing ? (
-                <PiSpinner
-                  className="h-6 w-6 animate-spin text-current md:h-5 md:w-5"
-                  aria-hidden="true"
-                />
-              ) : (
-                <TfMicrophoneAnimated
-                  className="h-6 w-6 md:h-4 md:w-4"
-                  aria-hidden="true"
-                />
-              )}
-            </button>
+            <DictationButton
+              status={dictationState.status}
+              onStart={startRecording}
+              onStop={stopRecording}
+            />
           )}
         </>
       }

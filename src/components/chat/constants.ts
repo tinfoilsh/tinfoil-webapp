@@ -1,3 +1,5 @@
+import { RECORDING_WAVEFORM_CONSTANTS } from '@tinfoil/chat-ui/recording-waveform'
+
 export const CONSTANTS = {
   MOBILE_BREAKPOINT: 768,
   INPUT_MIN_HEIGHT: '28px',
@@ -9,19 +11,7 @@ export const CONSTANTS = {
   CHAT_INPUT_FADE_HEIGHT_PX: 80,
   CHAT_INPUT_FADE_SOLID_AT_PX: 72,
   SINGLE_SIDEBAR_BREAKPOINT: 1024, // Below this width, only one sidebar can be open at a time
-  // Live recording waveform: a new amplitude bar is appended at this rate
-  // and the strip scrolls left by one bar each time.
-  RECORDING_WAVEFORM_SAMPLE_INTERVAL_MS: 50,
-  RECORDING_WAVEFORM_BAR_WIDTH_PX: 2,
-  RECORDING_WAVEFORM_BAR_GAP_PX: 2,
-  RECORDING_WAVEFORM_HEIGHT_PX: 28,
-  // Bars never shrink below this so silence still reads as a flat line.
-  RECORDING_WAVEFORM_MIN_BAR_HEIGHT_PX: 2,
-  // Typical speech peaks well below full scale; amplitudes are scaled by this
-  // factor so a normal speaking voice fills most of the strip height.
-  RECORDING_WAVEFORM_GAIN: 3,
-  // Smaller FFT sizes give lower-latency time-domain samples for the meter.
-  RECORDING_WAVEFORM_FFT_SIZE: 512,
+  ...RECORDING_WAVEFORM_CONSTANTS,
   // Copy button timeout in milliseconds (2 seconds)
   COPY_TIMEOUT_MS: 2000,
   // Gap between a message's overflow menu trigger and the dropdown
