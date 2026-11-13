@@ -42,7 +42,7 @@ test.beforeAll(async () => {
     }
     if (request.url === '/form') {
       response.end(
-        '<label>Card<input name="autocomplete" autocomplete="section-payment cc-number" value="sensitive-card"></label><label>Locked<input readonly value="fixed"></label><div id="closed"></div><output></output><script>const root=document.querySelector("#closed").attachShadow({mode:"closed"});root.innerHTML="<button>Closed button</button>";root.querySelector("button").onclick=()=>document.querySelector("output").textContent="Closed clicked"</script>',
+        '<label>Card<input name="autocomplete" autocomplete="section-payment cc-number" value="sensitive-card"></label><label>Locked<input readonly value="fixed"></label><label>Count<input type="number" value="12"></label><label>Draft<input value="clear me"></label><div id="closed"></div><output></output><script>const root=document.querySelector("#closed").attachShadow({mode:"closed"});root.innerHTML="<button>Closed button</button>";root.querySelector("button").onclick=()=>document.querySelector("output").textContent="Closed clicked"</script>',
       )
       return
     }
@@ -358,4 +358,66 @@ test('form observations protect payment values and actions handle readonly and c
   })
   await expect(page.locator('output')).toHaveText('Closed clicked')
   await expect(page.getByLabel('Locked')).toHaveValue('fixed')
+  const current = await execute({ action: 'read', tabId })
+  const filled = await execute({
+    action: 'fill',
+    tabId,
+    ref: ref(current.text, 'Count'),
+    text: '34',
+  })
+  await expect(page.getByLabel('Count')).toHaveValue('34')
+  await execute({
+    action: 'fill',
+    tabId,
+    ref: ref(filled.text, 'Draft'),
+    text: '',
+  })
+  await expect(page.getByLabel('Draft')).toHaveValue('')
+})
+
+test('a parent-page overlay prevents clicking an iframe control', async () => {
+  const { page, tabId } = await startFixture('/?overlay')
+  const observed = await execute({ action: 'read', tabId })
+  const buttons = observed.text
+    .split('\n')
+    .filter((line) => line.includes('button "Save frame"'))
+  expect(buttons).toHaveLength(2)
+  await page.evaluate(() => {
+    const overlay = document.createElement('button')
+    overlay.textContent = 'Overlay'
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999'
+    overlay.onclick = () => {
+      document.querySelector('output')!.textContent = 'Wrong target clicked'
+    }
+    document.body.append(overlay)
+  })
+  for (const button of buttons) {
+    const target = button.match(/^\[([^\]]+)\]/)![1]
+    await expect(
+      execute({ action: 'click', tabId, ref: target }),
+    ).rejects.toThrow('covered')
+  }
+  await expect(page.locator('output').first()).toHaveText('')
+  await expect(page.frameLocator('iframe').nth(0).locator('output')).toHaveText(
+    '',
+  )
+  await expect(page.frameLocator('iframe').nth(1).locator('output')).toHaveText(
+    '',
+  )
+})
+
+test('a hidden reference fails before input rather than reporting an uncertain action', async () => {
+  const { page, tabId } = await startFixture('/?hidden')
+  const observation = await execute({ action: 'read', tabId })
+  const target = ref(observation.text, 'Save')
+  await page.locator('#save').evaluate((button) => {
+    button.style.display = 'none'
+  })
+  const result = await worker.evaluate(
+    (action) => browserTest.attempt(action),
+    { action: 'click', tabId, ref: target } as BrowserAction,
+  )
+  expect(result).toEqual({ ok: false, code: 'ELEMENT_UNAVAILABLE' })
+  expect(await page.locator('#save').getAttribute('data-clicks')).toBeNull()
+  await expect(page.locator('output').first()).toHaveText('')
 })

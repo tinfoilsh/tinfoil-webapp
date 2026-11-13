@@ -9,8 +9,10 @@ export function inspectElement(this: Element) {
     /(?:^|\s)(?:cc-|one-time-code|current-password|new-password)/i.test(
       this.getAttribute('autocomplete') || '',
     )
-  const x = Math.max(0, Math.min(innerWidth - 1, box.left + box.width / 2))
-  const y = Math.max(0, Math.min(innerHeight - 1, box.top + box.height / 2))
+  const centerX = box.left + box.width / 2
+  const centerY = box.top + box.height / 2
+  const x = Math.max(0, Math.min(innerWidth - 1, centerX))
+  const y = Math.max(0, Math.min(innerHeight - 1, centerY))
   let hit = this.ownerDocument.elementFromPoint(x, y)
   const roots: ShadowRoot[] = []
   for (
@@ -40,6 +42,11 @@ export function inspectElement(this: Element) {
   }
   return {
     connected: this.isConnected,
+    inViewport:
+      centerX >= 0 &&
+      centerX < innerWidth &&
+      centerY >= 0 &&
+      centerY < innerHeight,
     visible:
       box.width > 0 &&
       box.height > 0 &&
@@ -49,6 +56,16 @@ export function inspectElement(this: Element) {
     disabled: this.matches(':disabled, [aria-disabled="true"]'),
     sensitive,
   }
+}
+
+export function includesHit(this: Element, node: Node | null): boolean {
+  for (let current = node; current;) {
+    if (current === this) return true
+    const root = current.getRootNode()
+    current =
+      current.parentNode || (root instanceof ShadowRoot ? root.host : null)
+  }
+  return false
 }
 
 export function selectText(this: Element): boolean {

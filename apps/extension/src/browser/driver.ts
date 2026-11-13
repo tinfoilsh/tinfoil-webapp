@@ -4,6 +4,7 @@ import type { ProtocolMapping } from 'devtools-protocol/types/protocol-mapping'
 import { MAX_TABS } from '../config'
 import {
   chooseOption,
+  includesHit,
   inspectElement,
   selectText,
   stableElement,
@@ -27,6 +28,8 @@ const GEOMETRY_SETTLE_TIMEOUT_MS = 2_000
 const SCROLL_DISTANCE = 600
 const WAIT_TIMEOUT_MS = 3_000
 const ELEMENT_GROUP = 'tinfoil-elements'
+const QUAD_TOLERANCE = 0.5
+const MAX_ELEMENT_OBSERVATIONS = 3
 const KEY_CODES = {
   Enter: 13,
   Tab: 9,
@@ -42,6 +45,7 @@ type Session = chrome.debugger.DebuggerSession
 type Target = { session: Session; parent?: Session }
 type Reference = {
   target: Target
+  frameId: string
   backendId: number
   role: string
   name: string
@@ -359,6 +363,7 @@ export class BrowserDriver {
           if (actionable)
             page.refs.set(ref, {
               target,
+              frameId: frame.frame.id,
               backendId: node.backendDOMNodeId!,
               role,
               name,
@@ -401,6 +406,19 @@ export class BrowserDriver {
     return { text: lines.join('\n').slice(0, MAX_PAGE_CHARS) }
   }
 
+  private async beforeInput<T>(prepare: () => Promise<T>): Promise<T> {
+    try {
+      return await prepare()
+    } catch (cause) {
+      if (cause instanceof BrowserError && cause.code === 'COMMAND_FAILED')
+        throw new BrowserError(
+          'ELEMENT_UNAVAILABLE',
+          'The target changed or became unavailable before input. Read the page again.',
+        )
+      throw cause
+    }
+  }
+
   private async element(page: Page, ref: string | undefined) {
     const entry = ref ? page.refs.get(ref) : undefined
     if (!entry || entry.generation !== page.generation)
@@ -408,9 +426,6 @@ export class BrowserDriver {
         'STALE_ELEMENT',
         'Read the page again to obtain a current element reference.',
       )
-    await this.send(entry.target.session, 'DOM.scrollIntoViewIfNeeded', {
-      backendNodeId: entry.backendId,
-    })
     const resolved = await this.send(entry.target.session, 'DOM.resolveNode', {
       backendNodeId: entry.backendId,
       objectGroup: ELEMENT_GROUP,
@@ -421,25 +436,44 @@ export class BrowserDriver {
         'STALE_ELEMENT',
         'The element is no longer available.',
       )
-    const settled = await this.send(
-      entry.target.session,
-      'Runtime.callFunctionOn',
-      {
-        objectId,
-        functionDeclaration: stableElement.toString(),
-        arguments: [
-          { value: STABLE_GEOMETRY_FRAMES },
-          { value: GEOMETRY_SETTLE_TIMEOUT_MS },
-        ],
-        awaitPromise: true,
-        returnByValue: true,
-      },
-    )
-    if (settled.result.value !== true)
-      throw new BrowserError(
-        'ELEMENT_UNAVAILABLE',
-        'The element moved or disappeared. Read the page again.',
+    let state: ReturnType<typeof inspectElement> | undefined
+    for (let attempt = 0; attempt < MAX_ELEMENT_OBSERVATIONS; attempt++) {
+      await this.send(entry.target.session, 'DOM.scrollIntoViewIfNeeded', {
+        backendNodeId: entry.backendId,
+      })
+      const settled = await this.send(
+        entry.target.session,
+        'Runtime.callFunctionOn',
+        {
+          objectId,
+          functionDeclaration: stableElement.toString(),
+          arguments: [
+            { value: STABLE_GEOMETRY_FRAMES },
+            { value: GEOMETRY_SETTLE_TIMEOUT_MS },
+          ],
+          awaitPromise: true,
+          returnByValue: true,
+        },
       )
+      if (settled.result.value !== true)
+        throw new BrowserError(
+          'ELEMENT_UNAVAILABLE',
+          'The element moved or disappeared. Read the page again.',
+        )
+      const inspected = await this.send(
+        entry.target.session,
+        'Runtime.callFunctionOn',
+        {
+          objectId,
+          functionDeclaration: inspectElement.toString(),
+          returnByValue: true,
+        },
+      )
+      state = inspected.exceptionDetails
+        ? undefined
+        : (inspected.result.value as ReturnType<typeof inspectElement>)
+      if (!state?.connected || !state.visible || state.inViewport) break
+    }
     const current = await this.send(
       entry.target.session,
       'Accessibility.getPartialAXTree',
@@ -457,21 +491,10 @@ export class BrowserDriver {
         'STALE_ELEMENT',
         'The target changed. Read the page again.',
       )
-    const inspected = await this.send(
-      entry.target.session,
-      'Runtime.callFunctionOn',
-      {
-        objectId,
-        functionDeclaration: inspectElement.toString(),
-        returnByValue: true,
-      },
-    )
-    const state = inspected.result.value as
-      ReturnType<typeof inspectElement> | undefined
     if (
-      inspected.exceptionDetails ||
       !state?.connected ||
       !state.visible ||
+      !state.inViewport ||
       state.covered ||
       state.disabled
     )
@@ -492,10 +515,53 @@ export class BrowserDriver {
     return { ...entry, objectId }
   }
 
-  private async point(
-    target: Target,
-    backendId: number,
-  ): Promise<{ x: number; y: number }> {
+  private async hitAt(session: Session, x: number, y: number) {
+    const viewport = (await this.send(session, 'Page.getLayoutMetrics'))
+      .cssLayoutViewport
+    return this.send(session, 'DOM.getNodeForLocation', {
+      x: Math.round(x + viewport.pageX),
+      y: Math.round(y + viewport.pageY),
+      includeUserAgentShadowDOM: true,
+    })
+  }
+
+  private async assertHit(entry: Reference, x: number, y: number) {
+    const session = entry.target.session
+    const hit = await this.hitAt(session, x, y)
+    if (hit.frameId !== entry.frameId)
+      throw new BrowserError(
+        'ELEMENT_UNAVAILABLE',
+        'The element is covered by another frame or page element.',
+      )
+    if (hit.backendNodeId === entry.backendId) return
+    const target = await this.send(session, 'DOM.resolveNode', {
+      backendNodeId: entry.backendId,
+      objectGroup: ELEMENT_GROUP,
+    })
+    const actual = await this.send(session, 'DOM.resolveNode', {
+      backendNodeId: hit.backendNodeId,
+      objectGroup: ELEMENT_GROUP,
+    })
+    if (!target.object.objectId || !actual.object.objectId)
+      throw new BrowserError(
+        'ELEMENT_UNAVAILABLE',
+        'The element is no longer available.',
+      )
+    const contains = await this.send(session, 'Runtime.callFunctionOn', {
+      objectId: target.object.objectId,
+      functionDeclaration: includesHit.toString(),
+      arguments: [{ objectId: actual.object.objectId }],
+      returnByValue: true,
+    })
+    if (contains.result.value !== true)
+      throw new BrowserError(
+        'ELEMENT_UNAVAILABLE',
+        'The element is covered by another page element.',
+      )
+  }
+
+  private async point(entry: Reference): Promise<{ x: number; y: number }> {
+    const { target, backendId } = entry
     const quads = await this.send(target.session, 'DOM.getContentQuads', {
       backendNodeId: backendId,
     })
@@ -507,6 +573,7 @@ export class BrowserDriver {
       )
     let x = (q[0] + q[2] + q[4] + q[6]) / 4
     let y = (q[1] + q[3] + q[5] + q[7]) / 4
+    await this.assertHit(entry, x, y)
     let current = target
     while (current.parent) {
       const child = await this.send(current.session, 'Page.getFrameTree')
@@ -518,6 +585,14 @@ export class BrowserDriver {
           backendNodeId: owner.backendNodeId,
         })
       ).model.content
+      if (
+        Math.abs(box[0] + box[4] - box[2] - box[6]) > QUAD_TOLERANCE ||
+        Math.abs(box[1] + box[5] - box[3] - box[7]) > QUAD_TOLERANCE
+      )
+        throw new BrowserError(
+          'UNSUPPORTED_LAYOUT',
+          'Use a fresh screenshot for this perspective-transformed frame.',
+        )
       const viewport = (
         await this.send(current.session, 'Page.getLayoutMetrics')
       ).cssLayoutViewport
@@ -530,6 +605,16 @@ export class BrowserDriver {
         ((box[3] - box[1]) * x) / viewport.clientWidth +
         ((box[7] - box[1]) * y) / viewport.clientHeight
       x = nextX
+      const hit = await this.hitAt(current.parent, x, y)
+      if (
+        hit.backendNodeId !== owner.backendNodeId &&
+        hit.frameId !== child.frameTree.frame.id &&
+        hit.frameId !== entry.frameId
+      )
+        throw new BrowserError(
+          'ELEMENT_UNAVAILABLE',
+          'The frame is covered by another page element.',
+        )
       current = this.pages
         .get(target.session.tabId!)!
         .targets.get(current.parent.sessionId || '')!
@@ -798,8 +883,10 @@ export class BrowserDriver {
           y: viewport.clientHeight / 2,
         }
         if (action.ref) {
-          const target = await this.element(page, action.ref)
-          point = await this.point(target.target, target.backendId)
+          const target = await this.beforeInput(() =>
+            this.element(page, action.ref),
+          )
+          point = await this.beforeInput(() => this.point(target))
         }
         await this.send(root, 'Input.dispatchMouseEvent', {
           type: 'mouseWheel',
@@ -818,10 +905,12 @@ export class BrowserDriver {
         })
         break
       default: {
-        const target = await this.element(page, action.ref)
+        const target = await this.beforeInput(() =>
+          this.element(page, action.ref),
+        )
         try {
           if (action.action === 'click' || action.action === 'hover') {
-            const point = await this.point(target.target, target.backendId)
+            const point = await this.beforeInput(() => this.point(target))
             await this.mouse(root, point, action.action === 'click')
           } else if (action.action === 'fill') {
             await this.send(target.target.session, 'DOM.focus', {
