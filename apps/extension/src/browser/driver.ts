@@ -122,9 +122,7 @@ export class BrowserDriver {
   // of its own tab in a window that shows it; one the user has turned away
   // from works on where they are not looking, and no other window's tab
   // changes for it.
-  private shown: { windowId?: number; index?: number; active: boolean } = {
-    active: true,
-  }
+  private shown: { windowId?: number; active: boolean } = { active: true }
   private closed = false
   private readonly onEvent = (
     source: Session,
@@ -583,18 +581,20 @@ export class BrowserDriver {
   }
 
   // Where the tab the task works in is, and whether its window shows it.
+  // A tab that is gone leaves what was last seen of it, which says no more
+  // where a tab can go: its window may be gone with it.
   private async lastShown() {
     if (this.currentTabId !== undefined)
       try {
         const { windowId, index, active } = await chrome.tabs.get(
           this.currentTabId,
         )
-        this.shown = { windowId, index, active }
+        this.shown = { windowId, active }
+        return { ...this.shown, beside: { windowId, index: index + 1 } }
       } catch {
-        // A tab that is gone leaves what was last seen of it.
         this.check()
       }
-    return this.shown
+    return { ...this.shown, beside: undefined }
   }
 
   // Marks a tab the task works in by gathering it in the task's tab group.
@@ -1340,14 +1340,9 @@ export class BrowserDriver {
       const url = webURL(action.url || '')
       // The tab opens beside the one the task works in, in front only where
       // that one was.
-      const { windowId, index, active } = await this.lastShown()
+      const { active, beside } = await this.lastShown()
       const tab = await this.dispatched(() =>
-        chrome.tabs.create({
-          url,
-          active,
-          ...(windowId === undefined ? {} : { windowId }),
-          ...(index === undefined ? {} : { index: index + 1 }),
-        }),
+        chrome.tabs.create({ url, active, ...beside }),
       )
       this.created.add(tab.id!)
       return this.observed(tab.id!)

@@ -507,14 +507,26 @@ test('a task works on in its tab after the user leaves it, without pulling them 
 test('a task the user watches takes them along to the tab it moves to', async () => {
   const { tabId } = await startFixture('/?watched')
   await execute({ action: 'read', tabId })
-  const opened = (await execute({ action: 'open', url: `${origin}/next` })).text
-  const openedId = Number(opened.match(/^Tab (\d+):/)?.[1])
+  const open = async (path: string) => {
+    const opened = (await execute({ action: 'open', url: `${origin}${path}` }))
+      .text
+    expect(opened).toContain(`URL: ${origin}${path}`)
+    return Number(opened.match(/^Tab (\d+):/)?.[1])
+  }
   const active = (id: number) =>
     worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, id)
+  const openedId = await open('/next')
   expect(await active(openedId)).toBe(true)
   await execute({ action: 'switch', tabId })
   expect(await active(tabId)).toBe(true)
+
+  // The task goes on opening tabs after the one it worked in has gone,
+  // window and all.
+  await worker.evaluate((id) => chrome.windows.create({ tabId: id }), openedId)
+  await execute({ action: 'switch', tabId: openedId })
   await execute({ action: 'close', tabId: openedId })
+  const laterId = await open('/form')
+  await execute({ action: 'close', tabId: laterId })
 })
 
 test('tabs a task works in are gathered in a green Tinfoil group until it stops', async () => {
