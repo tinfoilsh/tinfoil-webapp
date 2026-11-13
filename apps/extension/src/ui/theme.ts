@@ -8,7 +8,9 @@ function subscribe(changed: () => void) {
   return () => media.removeEventListener('change', changed)
 }
 
-// Whether the browser's color scheme is dark, which the page follows.
+// Whether the browser's color scheme is dark, which the page follows. The
+// theme is named on the document both ways the web app's styles and
+// components read it.
 export function useDarkMode(): boolean {
   const dark = useSyncExternalStore(
     subscribe,
@@ -16,6 +18,7 @@ export function useDarkMode(): boolean {
   )
   useLayoutEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light'
   }, [dark])
   return dark
 }

@@ -1,13 +1,6 @@
-import { ClerkProvider, useAuth, useClerk } from '@clerk/chrome-extension'
-import { logError } from '@tinfoil/chat-client/logging'
+import { ClerkProvider } from '@clerk/chrome-extension'
 import { Button } from '@tinfoil/chat-ui/button'
-import {
-  StrictMode,
-  useCallback,
-  useEffect,
-  useState,
-  type ReactNode,
-} from 'react'
+import { StrictMode, useCallback, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   CLERK_FRONTEND_API,
@@ -18,7 +11,8 @@ import { ChatPanel } from '../../panel/chat-panel'
 import { Logo } from '../../ui/logo'
 import '../../ui/styles'
 import { useDarkMode } from '../../ui/theme'
-import { sessionToken, watchWebSession } from '../../web-session'
+import { useWebSession } from '../../ui/web-session'
+import { sessionToken } from '../../web-session'
 
 // What the panel shows in place of the chat: opening, signing in, or setup.
 function Notice({
@@ -37,26 +31,7 @@ function Notice({
 }
 
 function SignedInApp({ isDarkMode }: { isDarkMode: boolean }) {
-  const { isLoaded, userId } = useAuth()
-  const clerk = useClerk()
-  const [signInError, setSignInError] = useState(false)
-  useEffect(() => {
-    if (!isLoaded) return
-    const sync = watchWebSession(
-      CLERK_FRONTEND_API,
-      async () => {
-        const client = await clerk.client.reload()
-        if ((clerk.session?.id ?? null) !== client.lastActiveSessionId)
-          await clerk.setActive({ session: client.lastActiveSessionId })
-      },
-      (cause) => {
-        setSignInError(cause !== null)
-        if (cause !== null) logError('Unable to refresh website sign-in', cause)
-      },
-    )
-    void sync.refresh()
-    return sync.dispose
-  }, [clerk, isLoaded])
+  const { isLoaded, userId, clerk, signInError } = useWebSession()
   const getToken = useCallback(
     (options?: { skipCache?: boolean }) => sessionToken(clerk, userId, options),
     [clerk, userId],

@@ -1,17 +1,13 @@
 import { useUser } from '@clerk/chrome-extension'
-import {
-  DEFAULT_EFFORT,
-  findSelectableModel,
-  type ReasoningEffort,
-} from '@tinfoil/chat-client/models'
+import { logError } from '@tinfoil/chat-client/logging'
+import { DEFAULT_EFFORT } from '@tinfoil/chat-client/models'
 import { Button } from '@tinfoil/chat-ui/button'
 import { Composer } from '@tinfoil/chat-ui/composer'
 import { timeOfDayGreeting } from '@tinfoil/chat-ui/greeting'
-import { LoadingDots } from '@tinfoil/chat-ui/LoadingDots'
 import { StepDetails, StepHeader } from '@tinfoil/chat-ui/WorkStep'
+import { TfSetting } from '@tinfoilsh/tinfoil-icons'
 import {
   TfChat2Animated,
-  TfLockLockedAnimated,
   TfRefreshTwoArrowsAnimated,
   TfWriting2Animated,
 } from '@tinfoilsh/tinfoil-icons/animated'
@@ -24,14 +20,19 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
-import { DEFAULT_MODEL, MAX_PROMPT_CHARS } from '../config'
+import { MAX_PROMPT_CHARS } from '../config'
 import { MessageView } from '../message-view'
 import type { Command, View } from '../messages'
+import { turnModel } from '../model-choice'
 import { PanelConnection } from '../panel-connection'
+import {
+  chosenAutoLevel,
+  chosenEffort,
+  chosenModel,
+  useSetting,
+} from '../settings'
 import { Logo } from '../ui/logo'
-import { AccountMenu } from './account-menu'
 import { ChatsModal } from './chats-modal'
-import { ModelPicker } from './model-picker'
 
 const SUGGESTIONS = [
   'Summarize the current page',
@@ -128,9 +129,9 @@ export function ChatPanel({
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
-  const [modelChoice, setModel] = useState<string>()
-  const [effortChoice, setEffort] = useState<ReasoningEffort>()
-  const [autoChoice, setAutoIntelligence] = useState<string>()
+  const [model] = useSetting(chosenModel)
+  const [effort] = useSetting(chosenEffort)
+  const [autoLevel] = useSetting(chosenAutoLevel)
   const [chatsOpen, setChatsOpen] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const scroll = useRef<HTMLDivElement>(null)
@@ -139,22 +140,6 @@ export function ChatPanel({
   const messages = task?.state.messages ?? []
   const hasMessages = messages.length > 0
   const busy = !!task && ['running', 'review'].includes(task.phase)
-  const models = view.session?.models ?? []
-  const autoLevels = view.session?.auto.levels ?? []
-  const offered = (id: string | undefined) =>
-    models.find((entry) => entry.id === id && !entry.deprecated)?.id
-  const model =
-    modelChoice ||
-    task?.model ||
-    offered(DEFAULT_MODEL) ||
-    offered(view.session?.defaultModel) ||
-    DEFAULT_MODEL
-  const effort = effortChoice ?? task?.effort ?? DEFAULT_EFFORT
-  // A level the session no longer offers gives way to its default.
-  const level = autoChoice ?? task?.autoIntelligence
-  const autoIntelligence = autoLevels.some((entry) => entry.id === level)
-    ? level!
-    : (view.session?.auto.default ?? '')
   const problem = error || view.error || task?.error
 
   useEffect(() => connection.connect(), [connection])
@@ -186,11 +171,8 @@ export function ChatPanel({
       await connection.command({
         kind: 'send',
         content,
-        model,
-        effort,
-        ...(findSelectableModel(model, models)?.auto
-          ? { autoIntelligence }
-          : {}),
+        effort: effort ?? DEFAULT_EFFORT,
+        ...turnModel(view.session, { model, autoLevel }),
       })
       setInput('')
       following.current = true
@@ -208,27 +190,6 @@ export function ChatPanel({
       <header className="flex flex-none items-center justify-between gap-2 border-b border-border-subtle bg-surface-chat-background px-4 py-2.5">
         <Logo className="h-6 w-auto" dark={isDarkMode} />
         <div className="flex flex-none items-center gap-2">
-          {view.verified ? (
-            <span
-              role="img"
-              aria-label="Privacy verified"
-              title="Privacy verified"
-              className="flex items-center px-1 text-content-muted"
-            >
-              <TfLockLockedAnimated className="h-4 w-4" aria-hidden="true" />
-            </span>
-          ) : (
-            !view.error && (
-              <span
-                role="status"
-                aria-label="Verifying privacy"
-                title="Verifying privacy"
-                className="flex items-center px-1"
-              >
-                <LoadingDots size="small" />
-              </span>
-            )
-          )}
           <button
             type="button"
             className={HEADER_BUTTON_CLASS_NAME}
@@ -248,7 +209,19 @@ export function ChatPanel({
           >
             <TfChat2Animated className="h-4 w-4" aria-hidden="true" />
           </button>
-          <AccountMenu />
+          <button
+            type="button"
+            className={HEADER_BUTTON_CLASS_NAME}
+            aria-label="Settings"
+            title="Settings"
+            onClick={() => {
+              chrome.runtime
+                .openOptionsPage()
+                .catch((cause) => logError('Unable to open settings', cause))
+            }}
+          >
+            <TfSetting className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
       </header>
 
@@ -373,21 +346,6 @@ export function ChatPanel({
             }
             hasMessages={hasMessages}
             locked={sending}
-            modelSelectorButton={
-              models.length > 0 && (
-                <ModelPicker
-                  models={models}
-                  autoLevels={autoLevels}
-                  selectedModel={model}
-                  onSelect={setModel}
-                  reasoningEffort={effort}
-                  onEffortChange={setEffort}
-                  autoIntelligence={autoIntelligence}
-                  onAutoIntelligenceChange={setAutoIntelligence}
-                  isDarkMode={isDarkMode}
-                />
-              )
-            }
           />
         </form>
       </div>

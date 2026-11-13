@@ -61,7 +61,7 @@ export function ModelPicker({
   }, [isOpen])
 
   return (
-    <div className="relative">
+    <div className="relative flex-none">
       <button
         ref={trigger}
         type="button"
@@ -69,12 +69,8 @@ export function ModelPicker({
         aria-haspopup="menu"
         aria-expanded={isOpen}
         aria-label={`Current model ${selectedModelLabel(selectedModel, models, autoLevels, autoIntelligence) ?? ''}`}
-        onClick={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          setIsOpen((value) => !value)
-        }}
-        className="flex items-center gap-1 py-1.5 text-content-secondary transition-colors hover:text-content-primary"
+        onClick={() => setIsOpen((value) => !value)}
+        className="flex items-center gap-2 rounded-lg border border-border-subtle px-3 py-1.5 font-aeonik-fono text-content-primary transition-colors hover:bg-surface-chat [&_span]:text-sm"
       >
         <ModelSelectorTriggerLabel
           selectedModel={selectedModel}
@@ -96,6 +92,7 @@ export function ModelPicker({
           isDarkMode={isDarkMode}
           models={models}
           autoLevels={autoLevels}
+          preferredPosition="below"
           reasoningEffort={reasoningEffort}
           onEffortChange={onEffortChange}
           autoIntelligence={autoIntelligence}

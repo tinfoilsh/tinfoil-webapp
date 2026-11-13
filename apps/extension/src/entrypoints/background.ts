@@ -12,8 +12,9 @@ import {
   commandEnvelopeSchema,
   toWorkerSchema,
   type ToPanel,
+  type View,
 } from '../messages'
-import { reviewActions } from '../settings'
+import { catalog, privacyVerified, reviewActions } from '../settings'
 import { TaskStore } from '../storage'
 
 export default defineBackground(() => {
@@ -28,6 +29,10 @@ export default defineBackground(() => {
       .setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })
       .catch((cause) => logError('Unable to restrict extension storage', cause))
   })
+  // No panel has verified the service for a worker that is starting.
+  void privacyVerified
+    .setValue(false)
+    .catch((cause) => logError('Unable to share the session', cause))
   chrome.commands.onCommand.addListener((command) => {
     if (command === 'stop-task')
       void current?.controller
@@ -49,6 +54,26 @@ export default defineBackground(() => {
     }
     let disconnected = false
     let lastToken: string | null = null
+    // What the settings page shows of this panel's session: the models it
+    // offers and whether the service was verified, written as they change.
+    let shared: Pick<View, 'session' | 'verified'> = { verified: false }
+    const share = (view: View) => {
+      if (view.session === shared.session && view.verified === shared.verified)
+        return
+      shared = { session: view.session, verified: view.verified }
+      void Promise.all([
+        privacyVerified.setValue(view.verified),
+        ...(view.session
+          ? [
+              catalog.setValue({
+                models: view.session.models,
+                auto: view.session.auto,
+                defaultModel: view.session.defaultModel,
+              }),
+            ]
+          : []),
+      ]).catch((cause) => logError('Unable to share the session', cause))
+    }
     let controller: TaskController | undefined
     const tokens = new Map<
       string,
@@ -115,7 +140,10 @@ export default defineBackground(() => {
           new HarnessClient(HARNESS_URL, getToken, undefined, CONTROLPLANE_URL),
           message.owner,
           store,
-          (view) => send({ type: 'state', view }),
+          (view) => {
+            send({ type: 'state', view })
+            if (!disconnected) share(view)
+          },
           () => reviewActions.getValue(),
         )
         current = { controller, port }
@@ -144,6 +172,10 @@ export default defineBackground(() => {
     })
     port.onDisconnect.addListener(() => {
       disconnected = true
+      if (current?.port === port)
+        void privacyVerified
+          .setValue(false)
+          .catch((cause) => logError('Unable to share the session', cause))
       for (const token of tokens.values()) token.resolve(lastToken)
       tokens.clear()
       if (current?.port === port) current = undefined
