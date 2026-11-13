@@ -1,3 +1,4 @@
+import { logError } from '@tinfoil/chat-client/logging'
 import type { BrowserAction, BrowserResult } from '@tinfoil/chat-client/types'
 import type { Protocol } from 'devtools-protocol'
 import type { ProtocolMapping } from 'devtools-protocol/types/protocol-mapping'
@@ -13,6 +14,9 @@ import { BrowserError, outcomeUnknown } from './errors'
 import { actionSchema, webURL } from './schema'
 
 const PROTOCOL_VERSION = '1.3'
+// The tab group that gathers the tabs a task works in.
+const TASK_GROUP_TITLE = 'Tinfoil'
+const TASK_GROUP_COLOR = 'green'
 const MAX_ATTACHED_TABS = 8
 const MAX_NODES = 300
 const MAX_SCANNED_NODES = 2000
@@ -96,7 +100,14 @@ export type TabInfo = {
 export class BrowserDriver {
   private readonly pages = new Map<number, Page>()
   private readonly created = new Set<number>()
+  // The task's tab group in each window, and the tabs gathered in one.
+  private readonly groups = new Map<number, number>()
+  private readonly grouped = new Map<number, number>()
   private currentTabId?: number
+  // Whether the user was looking at the tab the task last worked in. A task
+  // they watch takes them along to the tab it moves to; one they have left
+  // works on where they are not looking.
+  private watched = true
   private closed = false
   private readonly onEvent = (
     source: Session,
@@ -290,6 +301,12 @@ export class BrowserDriver {
   }
 
   private async enable(target: Target) {
+    // A page under control acts as focused and visible wherever its tab and
+    // window are, so the task never has to bring them to the front.
+    if (!target.parent)
+      await this.send(target.session, 'Emulation.setFocusEmulationEnabled', {
+        enabled: true,
+      })
     await this.send(target.session, 'Page.enable')
     await this.send(target.session, 'DOM.enable')
     await this.send(target.session, 'Accessibility.enable')
@@ -417,10 +434,8 @@ export class BrowserDriver {
       page = this.pages.get(id)!
       this.pages.delete(id)
       this.pages.set(id, page)
-      await chrome.tabs.update(id, { active: true })
-      this.check()
-      await chrome.windows.update(tab.windowId, { focused: true })
-      await this.send({ tabId: id }, 'Page.bringToFront')
+      if (id !== this.currentTabId && (await this.followed()))
+        await chrome.tabs.update(id, { active: true })
     } catch (cause) {
       this.check()
       if (cause instanceof BrowserError && cause.code !== 'COMMAND_FAILED')
@@ -432,7 +447,72 @@ export class BrowserDriver {
       )
     }
     this.currentTabId = id
+    await this.gather(tab)
+    this.check()
     return [id, page]
+  }
+
+  // Whether the user still looks at the tab the task works in.
+  private async followed(): Promise<boolean> {
+    if (this.currentTabId !== undefined)
+      try {
+        this.watched = (await chrome.tabs.get(this.currentTabId)).active
+      } catch {
+        // A tab that is gone leaves what was last seen of it.
+        this.check()
+      }
+    return this.watched
+  }
+
+  // Marks a tab the task works in by gathering it in the task's tab group.
+  // A tab the user keeps in a group of their own stays there.
+  private async gather(tab: chrome.tabs.Tab) {
+    const id = tab.id
+    if (
+      id === undefined ||
+      this.grouped.has(id) ||
+      tab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE
+    )
+      return
+    try {
+      const existing = this.groups.get(tab.windowId)
+      let group: number | undefined
+      if (existing !== undefined)
+        try {
+          group = await chrome.tabs.group({ tabIds: id, groupId: existing })
+        } catch {
+          // The user closed the group, so the task starts another.
+          this.groups.delete(tab.windowId)
+        }
+      if (group === undefined) {
+        group = await chrome.tabs.group({
+          tabIds: id,
+          createProperties: { windowId: tab.windowId },
+        })
+        await chrome.tabGroups.update(group, {
+          title: TASK_GROUP_TITLE,
+          color: TASK_GROUP_COLOR,
+        })
+        this.groups.set(tab.windowId, group)
+      }
+      this.grouped.set(id, group)
+    } catch (cause) {
+      logError('Unable to group a tab the task works in', cause)
+    }
+  }
+
+  // Returns the tabs the task gathered to the tab strip, unless the user has
+  // since moved them elsewhere.
+  private async release() {
+    const gathered = [...this.grouped]
+    this.grouped.clear()
+    this.groups.clear()
+    await Promise.allSettled(
+      gathered.map(async ([id, group]) => {
+        if ((await chrome.tabs.get(id)).groupId === group)
+          await chrome.tabs.ungroup(id)
+      }),
+    )
   }
 
   async tabs(): Promise<TabInfo[]> {
@@ -914,7 +994,6 @@ export class BrowserDriver {
     attempt = 1,
   ): Promise<BrowserResult> {
     const root = { tabId: id }
-    await this.send(root, 'Page.bringToFront')
     const ready = await this.send(root, 'Runtime.evaluate', {
       expression: `(${stableViewport.toString()})(${STABLE_GEOMETRY_FRAMES}, ${GEOMETRY_SETTLE_TIMEOUT_MS})`,
       awaitPromise: true,
@@ -1105,7 +1184,6 @@ export class BrowserDriver {
 
   // Waits until the viewport holds still, so input lands where it was aimed.
   private async stableViewport(root: Session) {
-    await this.send(root, 'Page.bringToFront')
     const ready = await this.send(root, 'Runtime.evaluate', {
       expression: `(${stableViewport.toString()})(${STABLE_GEOMETRY_FRAMES}, ${GEOMETRY_SETTLE_TIMEOUT_MS})`,
       awaitPromise: true,
@@ -1128,8 +1206,19 @@ export class BrowserDriver {
       return { text: JSON.stringify(await this.tabs()) }
     if (action.action === 'open') {
       const url = webURL(action.url || '')
+      // The tab opens beside the one the task works in, in front only while
+      // the user watches the task.
+      const active = await this.followed()
+      let beside: { windowId: number; index: number } | undefined
+      if (this.currentTabId !== undefined)
+        try {
+          const current = await chrome.tabs.get(this.currentTabId)
+          beside = { windowId: current.windowId, index: current.index + 1 }
+        } catch {
+          this.check()
+        }
       const tab = await this.dispatched(() =>
-        chrome.tabs.create({ url, active: true }),
+        chrome.tabs.create({ url, active, ...beside }),
       )
       this.created.add(tab.id!)
       return this.observed(tab.id!)
@@ -1209,9 +1298,11 @@ export class BrowserDriver {
             'TAB_NOT_CREATED',
             'Only tabs created by this task can be closed.',
           )
+        await this.followed()
         this.pages.delete(id)
         await this.dispatched(() => chrome.tabs.remove(id))
         this.created.delete(id)
+        this.grouped.delete(id)
         this.currentTabId = undefined
         return { text: `Closed tab ${id}.` }
       case 'scroll': {
@@ -1369,6 +1460,7 @@ export class BrowserDriver {
     ])
     this.pages.clear()
     for (const moved of waiters) moved()
+    await this.release()
     await Promise.allSettled(
       tabs.map((tabId) => chrome.debugger.detach({ tabId })),
     )

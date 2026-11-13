@@ -64,7 +64,14 @@ export default defineConfig({
         'Private chat and browser actions with attested Tinfoil models.',
       minimum_chrome_version: '142',
       key: process.env.WXT_EXTENSION_PUBLIC_KEY || DEVELOPMENT_PUBLIC_KEY,
-      permissions: ['cookies', 'debugger', 'sidePanel', 'storage', 'tabs'],
+      permissions: [
+        'cookies',
+        'debugger',
+        'sidePanel',
+        'storage',
+        'tabGroups',
+        'tabs',
+      ],
       host_permissions: [...origins],
       action: { default_title: 'Open Tinfoil' },
       icons: {

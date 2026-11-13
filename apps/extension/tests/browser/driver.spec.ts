@@ -384,7 +384,7 @@ test('unavailable tabs and arbitrary code cannot be executed', async () => {
   )
 })
 
-test('all web tabs are available as they open and the tab the task works in is brought to the front', async () => {
+test('all web tabs are available as they open, and working in one leaves the focused window alone', async () => {
   const { page, tabId } = await startFixture('/?all-tabs')
   const otherURL = `${origin}/?another-window`
   const opened = context.waitForEvent('page')
@@ -400,7 +400,11 @@ test('all web tabs are available as they open and the tab the task works in is b
   const restricted = await worker.evaluate(() =>
     chrome.tabs.create({ url: 'chrome://version', active: false }),
   )
+  const focusedWindow = () =>
+    worker.evaluate(async () => (await chrome.windows.getLastFocused()).id)
   try {
+    const focused = await focusedWindow()
+    expect(focused).not.toBe(otherWindow.id)
     const listed = JSON.parse((await execute({ action: 'tabs' })).text) as {
       id: number
       url: string
@@ -418,17 +422,8 @@ test('all web tabs are available as they open and the tab the task works in is b
     ).rejects.toThrow('HTTP or HTTPS')
     const read = await execute({ action: 'read', tabId: otherId })
     expect(read.text).toContain(`URL: ${otherURL}`)
-    expect(
-      await worker.evaluate(
-        async () => (await chrome.windows.getLastFocused()).id,
-      ),
-    ).toBe(otherWindow.id)
-    const current = await worker.evaluate(
-      async () =>
-        (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]
-          .id,
-    )
-    expect(current).toBe(otherId)
+    expect(await focusedWindow()).toBe(focused)
+    // A tab the task has moved on from can close without stopping it.
     await execute({ action: 'read', tabId })
     await other.close()
     expect((await execute({ action: 'read', tabId })).text).toContain(
@@ -437,6 +432,104 @@ test('all web tabs are available as they open and the tab the task works in is b
   } finally {
     await other.close()
     await worker.evaluate((id) => chrome.tabs.remove(id), restricted.id!)
+  }
+})
+
+test('a task works on in its tab after the user leaves it, without pulling them back', async () => {
+  const { page, tabId } = await startFixture('/?left-behind')
+  const read = await execute({ action: 'read', tabId })
+  const elsewhere = await context.newPage()
+  try {
+    await elsewhere.goto(`${origin}/next`)
+    await elsewhere.bringToFront()
+    const front = () =>
+      worker.evaluate(async (id) => {
+        const { windowId } = await chrome.tabs.get(id)
+        return (await chrome.tabs.query({ active: true, windowId }))[0].url
+      }, tabId)
+    expect(await front()).toBe(`${origin}/next`)
+    const filled = await execute({
+      action: 'fill',
+      tabId,
+      ref: ref(read.text, 'Name'),
+      text: 'Typed unseen',
+    })
+    await execute({ action: 'click', tabId, ref: ref(filled.text, 'Save') })
+    await expect(page.locator('output').first()).toHaveText(
+      'Saved Typed unseen',
+    )
+    expect((await execute({ action: 'screenshot', tabId })).image).toBeTruthy()
+    expect(await front()).toBe(`${origin}/next`)
+
+    // A tab the task opens while the user is elsewhere opens behind theirs.
+    const opened = (await execute({ action: 'open', url: `${origin}/form` }))
+      .text
+    expect(opened).toContain(`URL: ${origin}/form`)
+    expect(await front()).toBe(`${origin}/next`)
+    const openedId = Number(opened.match(/^Tab (\d+):/)?.[1])
+    await execute({ action: 'close', tabId: openedId })
+  } finally {
+    await elsewhere.close()
+  }
+})
+
+test('a task the user watches takes them along to the tab it moves to', async () => {
+  const { tabId } = await startFixture('/?watched')
+  await execute({ action: 'read', tabId })
+  const opened = (await execute({ action: 'open', url: `${origin}/next` })).text
+  const openedId = Number(opened.match(/^Tab (\d+):/)?.[1])
+  const active = (id: number) =>
+    worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, id)
+  expect(await active(openedId)).toBe(true)
+  await execute({ action: 'switch', tabId })
+  expect(await active(tabId)).toBe(true)
+  await execute({ action: 'close', tabId: openedId })
+})
+
+test('tabs a task works in are gathered in a green Tinfoil group until it stops', async () => {
+  const { tabId } = await startFixture('/?grouped-task')
+  const pages = [await context.newPage(), await context.newPage()]
+  const tabOf = (url: string) =>
+    worker.evaluate(
+      async (url) =>
+        (await chrome.tabs.query({})).find((tab) => tab.url === url)!.id!,
+      url,
+    )
+  const groupOf = (id: number) =>
+    worker.evaluate(async (id) => {
+      const { groupId } = await chrome.tabs.get(id)
+      if (groupId === chrome.tabGroups.TAB_GROUP_ID_NONE) return null
+      const { title, color } = await chrome.tabGroups.get(groupId)
+      return { groupId, title, color }
+    }, id)
+  try {
+    await pages[0].goto(`${origin}/?grouped-second`)
+    await pages[1].goto(`${origin}/?grouped-own`)
+    const secondId = await tabOf(pages[0].url())
+    const ownId = await tabOf(pages[1].url())
+    await worker.evaluate(async (id) => {
+      const groupId = await chrome.tabs.group({ tabIds: id })
+      await chrome.tabGroups.update(groupId, { title: 'Mine', color: 'blue' })
+    }, ownId)
+    expect(await groupOf(tabId)).toBeNull()
+
+    await execute({ action: 'read', tabId })
+    const group = await groupOf(tabId)
+    expect(group).toMatchObject({ title: 'Tinfoil', color: 'green' })
+    // A tab the task has not worked in is left where it is.
+    expect(await groupOf(secondId)).toBeNull()
+    await execute({ action: 'read', tabId: secondId })
+    expect(await groupOf(secondId)).toEqual(group)
+    // A tab in a group of the user's own stays in it.
+    await execute({ action: 'read', tabId: ownId })
+    expect(await groupOf(ownId)).toMatchObject({ title: 'Mine', color: 'blue' })
+
+    await worker.evaluate(() => browserTest.stop())
+    expect(await groupOf(tabId)).toBeNull()
+    expect(await groupOf(secondId)).toBeNull()
+    expect(await groupOf(ownId)).toMatchObject({ title: 'Mine', color: 'blue' })
+  } finally {
+    await Promise.all(pages.map((tab) => tab.close()))
   }
 })
 
