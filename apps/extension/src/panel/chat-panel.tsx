@@ -234,7 +234,7 @@ export function ChatPanel({
         onClose={() => setChatsOpen(false)}
         chats={view.tasks}
         currentId={task?.id}
-        runningId={busy ? task?.id : undefined}
+        runningId={task?.phase === 'running' ? task.id : undefined}
         onSelect={(id) => {
           void command({ kind: 'select', id })
           setChatsOpen(false)
