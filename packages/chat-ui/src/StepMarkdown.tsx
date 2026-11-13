@@ -12,27 +12,18 @@ const STEP_COMPONENTS: Components = {
   p: ({ children }: { children?: React.ReactNode }) => (
     <p className="mb-1.5 break-words last:mb-0">{children}</p>
   ),
+  // A block's code shows as its block does; code within a line shows as a
+  // chip.
   pre: ({ children }: { children?: React.ReactNode }) => (
-    <pre className="my-1.5 overflow-x-auto rounded-md border border-border-subtle bg-surface-chat p-2.5 font-mono text-[11px] text-content-primary">
+    <pre className="my-1.5 overflow-x-auto rounded-md border border-border-subtle bg-surface-chat p-2.5 font-mono text-[11px] text-content-primary [&>code]:block [&>code]:break-all [&>code]:rounded-none [&>code]:border-0 [&>code]:bg-transparent [&>code]:p-0">
       {children}
     </pre>
   ),
-  code: ({
-    inline,
-    children,
-  }: {
-    inline?: boolean
-    children?: React.ReactNode
-  }) =>
-    inline ? (
-      <code className="inline break-words rounded border border-border-subtle bg-surface-chat px-1 py-0.5 align-baseline font-mono text-[11px] text-content-primary">
-        {children}
-      </code>
-    ) : (
-      <code className="block break-all font-mono text-[11px] text-content-primary">
-        {children}
-      </code>
-    ),
+  code: ({ children }: { children?: React.ReactNode }) => (
+    <code className="inline break-words rounded border border-border-subtle bg-surface-chat px-1 py-0.5 align-baseline font-mono text-[11px] text-content-primary">
+      {children}
+    </code>
+  ),
   a: ({ children, href }: any) => {
     if (href?.startsWith('#cite-')) {
       const tildeIndex = href.indexOf('~')
