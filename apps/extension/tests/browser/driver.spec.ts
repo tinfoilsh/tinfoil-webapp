@@ -221,6 +221,28 @@ function ref(text: string, name: string) {
 const execute = (action: BrowserAction) =>
   worker.evaluate((action) => browserTest.execute(action), action)
 
+// The middle of an element of the page.
+async function middleOf(page: Page, selector: string) {
+  const box = (await page.locator(selector).boundingBox())!
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+}
+
+// Where a point of the page lies in a picture of its viewport.
+async function inPicture(
+  page: Page,
+  picture: { width: number; height: number },
+  point: { x: number; y: number },
+) {
+  const viewport = await page.evaluate(() => ({
+    width: innerWidth,
+    height: innerHeight,
+  }))
+  return {
+    x: (point.x * picture.width) / viewport.width,
+    y: (point.y * picture.height) / viewport.height,
+  }
+}
+
 // How far the magenta line down a picture of the page bows away from the
 // picture's middle at half its height, as a part of the picture's width.
 function bowOfLine(data: string, type: string): Promise<number> {
@@ -716,10 +738,6 @@ test('a cursor on the page shows where the task points, out of what it captures,
         takesInput: getComputedStyle(host).pointerEvents !== 'none',
       }
     }, CURSOR_TIP)
-  const center = async (selector: string) => {
-    const box = (await page.locator(selector).boundingBox())!
-    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-  }
   const read = await execute({ action: 'read', tabId })
   expect(await tip()).toBeNull()
   const saved = await execute({
@@ -728,14 +746,14 @@ test('a cursor on the page shows where the task points, out of what it captures,
     ref: ref(read.text, 'Save'),
   })
   await expect(page.locator('output').first()).toHaveText('Saved Before')
-  const save = await center('#save')
+  const save = await middleOf(page, '#save')
   const onSave = (await tip())!
   expect(onSave.takesInput).toBe(false)
   expect(Math.abs(onSave.x - save.x)).toBeLessThan(1)
   expect(Math.abs(onSave.y - save.y)).toBeLessThan(1)
 
   // The cursor is seen on its way to the next place the task points.
-  const shadow = await center('#shadow button')
+  const shadow = await middleOf(page, '#shadow button')
   const path = await sampled(
     page,
     `document.querySelector('tinfoil-cursor').shadowRoot.getElementById('arrow').getBoundingClientRect().left + ${CURSOR_TIP.x}`,
@@ -758,7 +776,7 @@ test('a cursor on the page shows where the task points, out of what it captures,
       document.title = 'Canvas clicked'
     }),
   )
-  const canvas = await center('#canvas')
+  const canvas = await middleOf(page, '#canvas')
   let clicked = false
   for (
     let observation = 0;
@@ -780,18 +798,13 @@ test('a cursor on the page shows where the task points, out of what it captures,
       width: number
       height: number
     }
-    const viewport = await page.evaluate(() => ({
-      width: innerWidth,
-      height: innerHeight,
-    }))
     const result = await worker.evaluate(
       (action) => browserTest.attempt(action),
       {
         action: 'click',
         tabId,
         screenshotId: info.screenshotId,
-        x: (canvas.x * info.width) / viewport.width,
-        y: (canvas.y * info.height) / viewport.height,
+        ...(await inPicture(page, info, canvas)),
       } as BrowserAction,
     )
     if (result.ok) clicked = true
@@ -899,17 +912,11 @@ test('a page the task works in swells toward the user, though never in what the 
     width: number
     height: number
   }
-  const save = (await page.locator('#save').boundingBox())!
-  const viewport = await page.evaluate(() => ({
-    width: innerWidth,
-    height: innerHeight,
-  }))
   await execute({
     action: 'click',
     tabId,
     screenshotId: picture.screenshotId,
-    x: ((save.x + save.width / 2) * picture.width) / viewport.width,
-    y: ((save.y + save.height / 2) * picture.height) / viewport.height,
+    ...(await inPicture(page, picture, await middleOf(page, '#save'))),
   })
   await expect(page.locator('output').first()).toHaveText('Saved Before')
   await expect.poll(bowOnScreen).toBeGreaterThan(BOWED)
@@ -1093,13 +1100,7 @@ test('coordinate actions use the captured viewport and reject changed screenshot
     await expect(page.locator('output').first()).toHaveText('')
     expect(await page.locator('#save').getAttribute('data-clicks')).toBeNull()
     const info = await capture()
-    const box = (await page.locator('#save').boundingBox())!
-    const viewport = await page.evaluate(() => ({
-      width: innerWidth,
-      height: innerHeight,
-    }))
-    x = ((box.x + box.width / 2) * info.width) / viewport.width
-    y = ((box.y + box.height / 2) * info.height) / viewport.height
+    ;({ x, y } = await inPicture(page, info, await middleOf(page, '#save')))
     const result = await worker.evaluate(
       (action) => browserTest.attempt(action),
       {
