@@ -120,6 +120,8 @@ export class PanelConnection {
     return new Promise<string>((resolve, reject) => {
       const aborted = () => {
         this.transcripts.delete(id)
+        // The worker gives the recording up too.
+        if (this.port === port) port.postMessage({ type: 'cancel', id })
         reject(signal?.reason)
       }
       signal?.addEventListener('abort', aborted, { once: true })

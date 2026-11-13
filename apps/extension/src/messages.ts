@@ -88,4 +88,6 @@ export const toWorkerSchema = z.discriminatedUnion('type', [
     audio: z.string().min(1).max(MAX_RECORDING_CHARS),
     mimeType: z.string().min(1).max(100),
   }),
+  // The panel no longer waits for the recording's text.
+  z.object({ type: z.literal('cancel'), id: z.string() }),
 ])

@@ -82,6 +82,9 @@ export default defineBackground(() => {
       ]).catch((cause) => logError('Unable to share the session', cause))
     }
     let controller: TaskController | undefined
+    // The recordings being transcribed for this panel, to give up when it
+    // does.
+    const transcribing = new Map<string, AbortController>()
     const tokens = new Map<
       string,
       {
@@ -179,32 +182,40 @@ export default defineBackground(() => {
             send({ type: 'result', id: message.id, error: errorText(cause) }),
         )
       } else if (message.type === 'transcribe') {
-        void (
-          controller
-            ? controller.transcribe(
-                new File(
-                  [
-                    Uint8Array.from(atob(message.audio), (byte) =>
-                      byte.charCodeAt(0),
-                    ),
-                  ],
-                  DICTATION.FILE_NAME,
-                  { type: message.mimeType },
-                ),
-              )
-            : Promise.reject(new Error('Sign in first.'))
-        ).then(
-          (text) => send({ type: 'transcript', id: message.id, text }),
-          (cause) =>
-            send({
-              type: 'transcript',
-              id: message.id,
-              error: errorText(cause),
-              ...(cause instanceof HarnessError
-                ? { refusal: { detail: cause.detail, status: cause.status } }
-                : {}),
-            }),
-        )
+        const { id, audio, mimeType } = message
+        const given = new AbortController()
+        transcribing.set(id, given)
+        // A recording that cannot be read is answered like any other
+        // failure.
+        void Promise.resolve()
+          .then(() => {
+            if (!controller) throw new Error('Sign in first.')
+            return controller.transcribe(
+              new File(
+                [Uint8Array.from(atob(audio), (byte) => byte.charCodeAt(0))],
+                DICTATION.FILE_NAME,
+                { type: mimeType },
+              ),
+              given.signal,
+            )
+          })
+          .then(
+            (text) => send({ type: 'transcript', id, text }),
+            (cause) =>
+              send({
+                type: 'transcript',
+                id,
+                error: errorText(cause),
+                ...(cause instanceof HarnessError
+                  ? { refusal: { detail: cause.detail, status: cause.status } }
+                  : {}),
+              }),
+          )
+          .finally(() => {
+            if (transcribing.get(id) === given) transcribing.delete(id)
+          })
+      } else if (message.type === 'cancel') {
+        transcribing.get(message.id)?.abort()
       }
     })
     port.onDisconnect.addListener(() => {
@@ -215,6 +226,8 @@ export default defineBackground(() => {
           .catch((cause) => logError('Unable to share the session', cause))
       for (const token of tokens.values()) token.resolve(lastToken)
       tokens.clear()
+      for (const given of transcribing.values()) given.abort()
+      transcribing.clear()
       if (current?.port === port) current = undefined
       void controller
         ?.dispose()

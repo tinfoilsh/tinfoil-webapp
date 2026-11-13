@@ -103,7 +103,8 @@ test('a recording given up on or cut off by the worker is not left waiting', asy
   const reason = new DOMException('Timed out', 'TimeoutError')
   giveUp.abort(reason)
   expect(await abandoned).toBe(reason)
-  // Its late answer is dropped.
+  // The worker is told to give it up too, and its late answer is dropped.
+  expect(sent).toContainEqual({ type: 'cancel', id: first.id })
   answer({ type: 'transcript', id: first.id, text: 'too late' })
 
   sent = []
