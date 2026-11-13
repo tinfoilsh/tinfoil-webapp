@@ -1,7 +1,6 @@
 import type { ChatState } from '@tinfoil/chat-client/reducer'
 import type { BrowserToolRequest, Session } from '@tinfoil/chat-client/types'
 import { z } from 'zod'
-import type { TabInfo } from './browser/driver'
 import { MAX_PROMPT_CHARS } from './config'
 import type { TaskPhase } from './storage'
 
@@ -14,7 +13,6 @@ export const commandSchema = z.discriminatedUnion('kind', [
     autoIntelligence: z.string().max(100).optional(),
   }),
   z.object({ kind: z.literal('resume') }),
-  z.object({ kind: z.literal('pause') }),
   z.object({ kind: z.literal('stop') }),
   z.object({
     kind: z.literal('review'),
@@ -42,7 +40,6 @@ export interface View {
     error?: string
   }
   pending?: BrowserToolRequest & { preview: string }
-  workingTab?: TabInfo
   error?: string
 }
 

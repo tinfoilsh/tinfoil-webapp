@@ -13,7 +13,7 @@ import type {
   Session,
   Turn,
 } from '@tinfoil/chat-client/types'
-import { BrowserDriver, type TabInfo } from './browser/driver'
+import { BrowserDriver } from './browser/driver'
 import {
   BrowserError,
   browserFailure,
@@ -40,7 +40,6 @@ type BrowserExecutor = Pick<BrowserDriver, 'execute' | 'describe' | 'dispose'>
 type CreateBrowser = (
   signal: AbortSignal,
   interrupted: (message: string) => void,
-  workingOn: (tab: TabInfo | undefined) => Promise<void>,
 ) => BrowserExecutor
 
 export class TaskController {
@@ -49,7 +48,6 @@ export class TaskController {
   private verified = false
   private error?: string
   private active?: { abort: AbortController; done: Promise<void> }
-  private gate?: { resume: () => void; reject: (error: unknown) => void }
   private review?: {
     request: BrowserToolRequest
     preview: string
@@ -57,7 +55,6 @@ export class TaskController {
   }
   private disposed = false
   private reconnecting = false
-  private workingTab?: TabInfo
   private generation = 0
   private transitions: Promise<void> = Promise.resolve()
   private readonly summaries = new Map<string, View['tasks'][number]>()
@@ -69,11 +66,8 @@ export class TaskController {
     private readonly publish: (view: View) => void,
     // Whether an action that changes a page waits for the user's approval.
     private readonly reviewActions: () => Promise<boolean>,
-    private readonly createBrowser: CreateBrowser = (
-      signal,
-      interrupted,
-      workingOn,
-    ) => new BrowserDriver(signal, interrupted, workingOn),
+    private readonly createBrowser: CreateBrowser = (signal, interrupted) =>
+      new BrowserDriver(signal, interrupted),
   ) {}
 
   initialize(after: Promise<void> = Promise.resolve()): Promise<void> {
@@ -90,7 +84,7 @@ export class TaskController {
         title: summary.title,
         updatedAt: summary.updatedAt,
       })
-      if (['running', 'review', 'paused'].includes(summary.phase)) {
+      if (['running', 'review'].includes(summary.phase)) {
         const task = await this.store.get(this.owner, summary.id)
         if (!task) continue
         task.phase = 'interrupted'
@@ -144,7 +138,6 @@ export class TaskController {
         ...this.review.request,
         preview: this.review.preview,
       },
-      workingTab: this.workingTab,
     })
   }
 
@@ -162,8 +155,7 @@ export class TaskController {
   command(command: Command): Promise<void> {
     if (command.kind === 'stop') return this.stop()
     const generation = this.generation
-    if (command.kind === 'pause' || command.kind === 'review')
-      return this.handle(command, generation)
+    if (command.kind === 'review') return this.handle(command, generation)
     const pending = this.transitions.then(() =>
       this.handle(command, generation),
     )
@@ -185,13 +177,6 @@ export class TaskController {
         await this.begin(command, generation, command.content)
         return
       case 'resume':
-        if (this.active && this.task?.phase === 'paused') {
-          this.task.phase = 'running'
-          this.gate?.resume()
-          this.gate = undefined
-          await this.save(this.task)
-          return
-        }
         if (this.active) {
           if (
             !this.task ||
@@ -216,12 +201,6 @@ export class TaskController {
             this.task.lastPrompt,
           )
         return
-      case 'pause':
-        if (this.active && this.task) {
-          this.task.phase = 'paused'
-          await this.save(this.task)
-        }
-        return
       case 'stop':
         await this.stopActive()
         return
@@ -230,8 +209,7 @@ export class TaskController {
           throw new Error('That action is no longer awaiting review.')
         this.review.resolve(command.allow)
         this.review = undefined
-        if (this.task && this.task.phase !== 'paused')
-          this.task.phase = 'running'
+        if (this.task) this.task.phase = 'running'
         await this.emit()
         return
       case 'new':
@@ -331,14 +309,12 @@ export class TaskController {
       abort.signal,
       AbortSignal.timeout(TASK_TIMEOUT_MS),
     ])
-    this.workingTab = undefined
     task.phase = 'running'
     task.error = undefined
     const active = { abort, done: Promise.resolve() }
     this.active = active
     active.done = this.run(task, signal, turn).finally(async () => {
       this.review = undefined
-      this.gate = undefined
       if (this.active === active) this.active = undefined
       await this.save(task)
     })
@@ -349,19 +325,11 @@ export class TaskController {
   }
 
   private async run(task: Task, signal: AbortSignal, turn?: Turn) {
-    const driver = this.createBrowser(
-      signal,
-      (message) => {
-        if (signal.aborted) return
-        task.error = message
-        this.active?.abort.abort()
-      },
-      async (tab) => {
-        if (signal.aborted) return
-        this.workingTab = tab
-        await this.emit()
-      },
-    )
+    const driver = this.createBrowser(signal, (message) => {
+      if (signal.aborted) return
+      task.error = message
+      this.active?.abort.abort()
+    })
     try {
       await this.save(task)
       const access = turn?.browser ?? task.receipt?.browser
@@ -427,7 +395,6 @@ export class TaskController {
       await driver.dispose()
       if (task.receipt) await this.cancelAndCollect(task)
     } finally {
-      this.workingTab = undefined
       await driver.dispose()
       if (!task.receipt) await this.store.clearActions(this.owner, task.id)
     }
@@ -496,7 +463,7 @@ export class TaskController {
         'WRONG_EXECUTOR',
         'The browser action belongs to a different executor.',
       )
-    await this.waitForResume(task, signal)
+    signal.throwIfAborted()
     const previous = await this.store.action(
       this.owner,
       receipt.runId,
@@ -532,7 +499,6 @@ export class TaskController {
           'You declined the action. The task was stopped.',
         )
     }
-    await this.waitForResume(task, signal)
     const result = await this.store.executeOnce(
       this.owner,
       task.id,
@@ -568,23 +534,6 @@ export class TaskController {
       },
       signal,
     )
-  }
-
-  private async waitForResume(task: Task, signal: AbortSignal) {
-    signal.throwIfAborted()
-    if (task.phase !== 'paused') return
-    await new Promise<void>((resolve, reject) => {
-      const aborted = () => reject(signal.reason)
-      signal.addEventListener('abort', aborted, { once: true })
-      this.gate = {
-        resume: () => {
-          signal.removeEventListener('abort', aborted)
-          resolve()
-        },
-        reject,
-      }
-    })
-    signal.throwIfAborted()
   }
 
   private async cancelAndCollect(task: Task) {

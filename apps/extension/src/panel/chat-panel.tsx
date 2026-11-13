@@ -43,7 +43,6 @@ const WELCOME_INPUT_MIN_HEIGHT = '36px'
 // How close to its end the conversation is scrolled for it to follow a reply
 // as it grows.
 const FOLLOW_THRESHOLD_PX = 80
-const STOP_SHORTCUT = 'Alt+Shift+S'
 const HEADER_BUTTON_CLASS_NAME =
   'flex items-center justify-center rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary'
 const NOTICE_BUTTON_CLASS_NAME =
@@ -111,66 +110,6 @@ function ReviewCard({
   )
 }
 
-// What the task under way is doing, and where, with pausing and stopping it.
-function TaskStatus({
-  phase,
-  workingTab,
-  onPause,
-  onResume,
-  onStop,
-}: {
-  phase: NonNullable<View['task']>['phase']
-  workingTab: View['workingTab']
-  onPause: () => void
-  onResume: () => void
-  onStop: () => void
-}) {
-  const paused = phase === 'paused'
-  const title = paused
-    ? 'Paused'
-    : phase === 'review'
-      ? 'Waiting for your review'
-      : workingTab
-        ? `Working in ${workingTab.title || new URL(workingTab.url).hostname}`
-        : 'Working'
-  return (
-    <div
-      role="status"
-      className="mb-2 flex items-center gap-2 rounded-2xl border border-border-subtle bg-surface-chat px-3 py-2 shadow-sm"
-    >
-      {phase === 'running' && (
-        <span className="flex h-6 shrink-0 items-center" aria-hidden="true">
-          <LoadingDots size="small" />
-        </span>
-      )}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <p
-          className="truncate text-sm font-medium text-content-primary"
-          title={workingTab?.url}
-        >
-          {title}
-        </p>
-        {workingTab && !paused && (
-          <p className="truncate text-xs text-content-secondary">
-            {new URL(workingTab.url).hostname}
-          </p>
-        )}
-      </div>
-      <Button variant="outline" size="sm" onClick={paused ? onResume : onPause}>
-        {paused ? 'Resume' : 'Pause'}
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onStop}
-        title={`Stop the task (${STOP_SHORTCUT})`}
-      >
-        Stop
-      </Button>
-    </div>
-  )
-}
-
 export function ChatPanel({
   owner,
   getToken,
@@ -199,7 +138,7 @@ export function ChatPanel({
   const task = view.task
   const messages = task?.state.messages ?? []
   const hasMessages = messages.length > 0
-  const busy = !!task && ['running', 'review', 'paused'].includes(task.phase)
+  const busy = !!task && ['running', 'review'].includes(task.phase)
   const models = view.session?.models ?? []
   const autoLevels = view.session?.auto.levels ?? []
   const offered = (id: string | undefined) =>
@@ -412,15 +351,6 @@ export function ChatPanel({
                   allow,
                 })
               }
-            />
-          )}
-          {busy && (
-            <TaskStatus
-              phase={task.phase}
-              workingTab={view.workingTab}
-              onPause={() => void command({ kind: 'pause' })}
-              onResume={() => void command({ kind: 'resume' })}
-              onStop={() => void command({ kind: 'stop' })}
             />
           )}
           <Composer

@@ -10,7 +10,6 @@ import 'fake-indexeddb/auto'
 import { afterEach, expect, test, vi } from 'vitest'
 import { client, signIn, testSession } from '../../../tests/harness-fixture'
 import { storedThread } from '../../../tests/services/harness/thread-fixture'
-import type { TabInfo } from '../src/browser/driver'
 import { BrowserError, outcomeUnknown } from '../src/browser/errors'
 import { TaskController } from '../src/controller'
 import type { View } from '../src/messages'
@@ -35,7 +34,6 @@ function setup() {
   const observers = new Set<(view: View) => void>()
   let actions = 0
   let reviewActions = false
-  let workingOn!: (tab: TabInfo | undefined) => Promise<void>
   const browser = {
     execute: async () => ({ text: `Saved ${++actions}` }),
     describe: async () => 'Click Save on the selected tab',
@@ -51,10 +49,7 @@ function setup() {
       for (const observe of observers) observe(view)
     },
     async () => reviewActions,
-    (_signal, _interrupted, onTab) => {
-      workingOn = onTab
-      return browser
-    },
+    () => browser,
   )
   const until = (test: (view: View) => boolean) =>
     new Promise<View>((resolve) => {
@@ -84,7 +79,6 @@ function setup() {
     setReviewActions: (value: boolean) => {
       reviewActions = value
     },
-    workingOn: (tab: TabInfo) => workingOn(tab),
   }
 }
 
@@ -184,23 +178,9 @@ test('local chats return the saved harness record intact on the next turn', asyn
   expect(client.post.mock.calls.map(([path]) => path)).toEqual(['/v1/session'])
 })
 
-test('browser access is automatic and the working tab is published until the run ends', async () => {
-  const { controller, until, browser, workingOn } = setup()
-  const tab: TabInfo = {
-    id: 12,
-    title: 'Current article',
-    url: 'https://example.com/article',
-    active: true,
-  }
-  let finish!: () => void
-  const observed = new Promise<void>((resolve) => {
-    finish = resolve
-  })
-  browser.execute = async () => {
-    await workingOn(tab)
-    await observed
-    return { text: 'Article read' }
-  }
+test('every turn offers the browser to the model and answers what it asks of it', async () => {
+  const { controller, until, browser } = setup()
+  browser.execute = async () => ({ text: 'Article read' })
   let sent!: Turn
   client.events.mockImplementation(async function* (_path: string, turn: Turn) {
     sent = turn
@@ -213,20 +193,22 @@ test('browser access is automatic and the working tab is published until the run
   })
   await controller.initialize()
   await controller.command(send)
-  const working = await until((view) => !!view.workingTab)
+  await until((view) => view.task?.phase === 'completed')
   expect(sent.browser?.executorId).toMatch(/^[0-9a-f-]{36}$/)
   expect(sent.browser?.token).toMatch(/^[0-9a-f]{64}$/)
-  expect(working.workingTab).toEqual(tab)
-  finish()
-  const done = await until(
-    (view) => view.task?.phase === 'completed' && !view.workingTab,
-  )
-  expect(done.workingTab).toBeUndefined()
   expect(
     client.post.mock.calls
       .filter(([path]) => path === '/v1/threads/browser/result')
       .map(([, input]) => input),
-  ).toEqual([expect.objectContaining({ result: { text: 'Article read' } })])
+  ).toEqual([
+    {
+      threadId: sent.threadId,
+      runId: 'run',
+      ...sent.browser,
+      executionId: 'execution',
+      result: { text: 'Article read' },
+    },
+  ])
 })
 
 test('reconnecting after a lost browser-result acknowledgment does not click twice', async () => {

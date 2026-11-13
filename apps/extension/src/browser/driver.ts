@@ -158,7 +158,6 @@ export class BrowserDriver {
   constructor(
     private readonly signal: AbortSignal,
     private readonly interrupted: (message: string) => void,
-    private readonly workingOn: (tab: TabInfo | undefined) => Promise<void>,
   ) {
     chrome.debugger.onEvent.addListener(this.onEvent)
     chrome.debugger.onDetach.addListener(this.onDetach)
@@ -410,7 +409,7 @@ export class BrowserDriver {
         'This tab is no longer available. List the tabs again.',
       )
     }
-    const url = webURL(tab.pendingUrl || tab.url || '')
+    webURL(tab.pendingUrl || tab.url || '')
     let page: Page
     try {
       await this.attach(id)
@@ -433,8 +432,6 @@ export class BrowserDriver {
       )
     }
     this.currentTabId = id
-    await this.workingOn({ id, title: tab.title || '', url, active: true })
-    this.check()
     return [id, page]
   }
 
@@ -1216,7 +1213,6 @@ export class BrowserDriver {
         await this.dispatched(() => chrome.tabs.remove(id))
         this.created.delete(id)
         this.currentTabId = undefined
-        await this.workingOn(undefined)
         return { text: `Closed tab ${id}.` }
       case 'scroll': {
         const viewport = await this.beforeInput(async () => {

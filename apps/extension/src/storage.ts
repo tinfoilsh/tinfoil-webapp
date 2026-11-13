@@ -11,7 +11,7 @@ const DATABASE_NAME = 'tinfoil-browser'
 const DATABASE_VERSION = 3
 
 export type TaskPhase =
-  'idle' | 'running' | 'paused' | 'review' | 'interrupted' | 'completed'
+  'idle' | 'running' | 'review' | 'interrupted' | 'completed'
 export interface Task {
   id: string
   owner: string

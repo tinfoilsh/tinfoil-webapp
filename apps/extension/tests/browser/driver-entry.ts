@@ -1,19 +1,12 @@
 import type { BrowserAction } from '@tinfoil/chat-client/types'
-import { BrowserDriver, type TabInfo } from '../../src/browser/driver'
+import { BrowserDriver } from '../../src/browser/driver'
 import { BrowserError } from '../../src/browser/errors'
 
 let task: { driver: BrowserDriver; abort: AbortController } | undefined
-let workingTab: TabInfo | undefined
 export async function start(url: string) {
   await stop()
   const abort = new AbortController()
-  const driver = new BrowserDriver(
-    abort.signal,
-    () => abort.abort(),
-    async (tab) => {
-      workingTab = tab
-    },
-  )
+  const driver = new BrowserDriver(abort.signal, () => abort.abort())
   task = { driver, abort }
   try {
     const tab = (await chrome.tabs.query({})).find((tab) => tab.url === url)
@@ -37,13 +30,8 @@ export async function attempt(action: BrowserAction) {
   }
 }
 export async function stop() {
-  workingTab = undefined
   const previous = task
   task = undefined
   previous?.abort.abort()
   await previous?.driver.dispose()
-}
-
-export function currentTab() {
-  return workingTab
 }

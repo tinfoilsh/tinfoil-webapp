@@ -384,7 +384,7 @@ test('unavailable tabs and arbitrary code cannot be executed', async () => {
   )
 })
 
-test('all web tabs are available as they open and the working tab is brought to the front', async () => {
+test('all web tabs are available as they open and the tab the task works in is brought to the front', async () => {
   const { page, tabId } = await startFixture('/?all-tabs')
   const otherURL = `${origin}/?another-window`
   const opened = context.waitForEvent('page')
@@ -418,12 +418,6 @@ test('all web tabs are available as they open and the working tab is brought to 
     ).rejects.toThrow('HTTP or HTTPS')
     const read = await execute({ action: 'read', tabId: otherId })
     expect(read.text).toContain(`URL: ${otherURL}`)
-    expect(await worker.evaluate(() => browserTest.currentTab())).toEqual({
-      id: otherId,
-      title: 'Browser fixture',
-      url: otherURL,
-      active: true,
-    })
     expect(
       await worker.evaluate(
         async () => (await chrome.windows.getLastFocused()).id,
@@ -436,12 +430,6 @@ test('all web tabs are available as they open and the working tab is brought to 
     )
     expect(current).toBe(otherId)
     await execute({ action: 'read', tabId })
-    expect(await worker.evaluate(() => browserTest.currentTab())).toEqual({
-      id: tabId,
-      title: 'Browser fixture',
-      url: page.url(),
-      active: true,
-    })
     await other.close()
     expect((await execute({ action: 'read', tabId })).text).toContain(
       `URL: ${page.url()}`,
