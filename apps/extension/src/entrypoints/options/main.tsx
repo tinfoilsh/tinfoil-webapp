@@ -13,7 +13,7 @@ import { useWebSession } from '../../ui/web-session'
 function SignedSettings() {
   const { isLoaded, signOut } = useWebSession()
   const { user } = useUser()
-  if (!isLoaded) return <SettingsPage />
+  if (!isLoaded) return <SettingsPage account="loading" />
   const email = user?.primaryEmailAddress?.emailAddress
   return (
     <SettingsPage
@@ -28,7 +28,7 @@ function SignedSettings() {
               email,
               signOut,
             }
-          : null
+          : 'signed-out'
       }
     />
   )
@@ -36,7 +36,8 @@ function SignedSettings() {
 
 function App() {
   // The settings that need no account work before sign-in is set up.
-  if (!CLERK_PUBLISHABLE_KEY || !CLERK_FRONTEND_API) return <SettingsPage />
+  if (!CLERK_PUBLISHABLE_KEY || !CLERK_FRONTEND_API)
+    return <SettingsPage account="unconfigured" />
   return (
     <ClerkProvider
       publishableKey={CLERK_PUBLISHABLE_KEY}

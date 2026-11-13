@@ -9,6 +9,7 @@ import {
 } from '../../config'
 import { ChatPanel } from '../../panel/chat-panel'
 import { Logo } from '../../ui/logo'
+import { SignInSetup } from '../../ui/sign-in-setup'
 import '../../ui/styles'
 import { useDarkMode } from '../../ui/theme'
 import { useWebSession } from '../../ui/web-session'
@@ -81,9 +82,7 @@ function App() {
     return (
       <Notice isDarkMode={isDarkMode}>
         <p className="text-sm leading-relaxed text-content-secondary [overflow-wrap:anywhere]">
-          Set <code>WXT_CLERK_PUBLISHABLE_KEY</code> and{' '}
-          <code>WXT_CLERK_FRONTEND_API</code> in{' '}
-          <code>apps/extension/.env</code>, then reload the extension.
+          <SignInSetup />
         </p>
         <p className="text-sm text-content-secondary">
           The development commands are in DEVELOPMENT.md.

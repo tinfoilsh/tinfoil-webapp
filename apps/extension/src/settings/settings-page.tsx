@@ -31,6 +31,7 @@ import {
   useSetting,
 } from '../settings'
 import { Logo } from '../ui/logo'
+import { SignInSetup } from '../ui/sign-in-setup'
 import { useDarkMode } from '../ui/theme'
 import { ModelPicker } from './model-picker'
 
@@ -56,14 +57,17 @@ const CARD_CLASS_NAME =
   'rounded-lg border border-border-subtle bg-white p-4 dark:bg-surface-sidebar'
 const DETAIL_CLASS_NAME = 'font-aeonik-fono text-xs text-content-muted'
 
-// The account the extension is signed in to, once that is known: null while
-// it is signed out.
-export type Account = {
-  user: AvatarUser
-  name: string
-  email?: string
-  signOut: () => Promise<void>
-}
+// The account the extension is signed in to, or why it has none to show.
+export type Account =
+  | {
+      user: AvatarUser
+      name: string
+      email?: string
+      signOut: () => Promise<void>
+    }
+  | 'loading'
+  | 'signed-out'
+  | 'unconfigured'
 
 function subscribeToHash(changed: () => void) {
   addEventListener('hashchange', changed)
@@ -112,9 +116,16 @@ function Setting({
   )
 }
 
-function AccountSection({ account }: { account: Account | null }) {
+function AccountSection({ account }: { account: Account }) {
   const [signingOut, setSigningOut] = useState(false)
-  if (!account)
+  if (account === 'loading') return null
+  if (account === 'unconfigured')
+    return (
+      <div className={CARD_CLASS_NAME}>
+        <Setting label="Sign-in is not set up" detail={<SignInSetup />} />
+      </div>
+    )
+  if (account === 'signed-out')
     return (
       <div className={CARD_CLASS_NAME}>
         <Setting
@@ -354,9 +365,10 @@ function ShortcutsSection() {
   )
 }
 
-export function SettingsPage({ account }: { account?: Account | null }) {
+export function SettingsPage({ account }: { account: Account }) {
   const isDarkMode = useDarkMode()
   const section = useSection()
+  const signedIn = typeof account === 'object' ? account : undefined
   return (
     <div className="flex min-h-dvh flex-col bg-surface-sidebar font-aeonik text-content-primary md:flex-row">
       <div className="flex flex-none flex-col border-b border-border-subtle md:w-56 md:border-b-0 md:border-r">
@@ -379,8 +391,8 @@ export function SettingsPage({ account }: { account?: Account | null }) {
                   : 'text-content-secondary hover:bg-surface-chat/50',
               )}
             >
-              {id === 'account' && account ? (
-                <UserAvatar user={account.user} size={NAV_AVATAR_SIZE_PX} />
+              {id === 'account' && signedIn ? (
+                <UserAvatar user={signedIn.user} size={NAV_AVATAR_SIZE_PX} />
               ) : (
                 <Icon className="h-4 w-4 md:h-5 md:w-5" aria-hidden="true" />
               )}
@@ -399,9 +411,7 @@ export function SettingsPage({ account }: { account?: Account | null }) {
         <div className="relative flex-1 p-6">
           <TextureGrid />
           <main className="relative z-10 min-w-0 max-w-3xl space-y-6">
-            {section.id === 'account' && account !== undefined && (
-              <AccountSection account={account} />
-            )}
+            {section.id === 'account' && <AccountSection account={account} />}
             {section.id === 'model' && <ModelSection isDarkMode={isDarkMode} />}
             {section.id === 'permissions' && <PermissionsSection />}
             {section.id === 'privacy' && <PrivacySection />}
