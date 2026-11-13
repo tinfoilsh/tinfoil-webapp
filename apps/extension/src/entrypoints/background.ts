@@ -35,7 +35,12 @@ const signedOut = () =>
 export default defineBackground(() => {
   const store = new TaskStore()
   let current:
-    { controller: TaskController; port: chrome.runtime.Port } | undefined
+    | {
+        controller: TaskController
+        port: chrome.runtime.Port
+        leave: () => Promise<void>
+      }
+    | undefined
   // The controllers still closing, which the next one waits for: two would
   // otherwise load and save the same tasks at once.
   let closing: Promise<void> = Promise.resolve()
@@ -156,6 +161,18 @@ export default defineBackground(() => {
         send({ type: 'token', id, skipCache: options?.skipCache })
       })
     }
+    // Ends what the worker does for this panel, which has gone or whose place
+    // another has taken: it is sent nothing more, what waited on it is
+    // settled, and its tasks are closed with the sign-in it last gave.
+    const leave = async () => {
+      disconnected = true
+      for (const token of tokens.values()) token.resolve(lastToken)
+      tokens.clear()
+      for (const given of transcribing.values()) given.abort()
+      transcribing.clear()
+      if (controller) await close(controller)
+      lastToken = null
+    }
     port.onMessage.addListener((raw: unknown) => {
       const parsed = toWorkerSchema.safeParse(raw)
       if (!parsed.success) {
@@ -191,11 +208,11 @@ export default defineBackground(() => {
           },
           () => reviewActions.getValue(),
         )
-        current = { controller, port }
+        current = { controller, port, leave }
         // A panel whose place is taken is told so, as it would otherwise
         // connect again and take it back.
         if (previous)
-          void close(previous.controller).finally(() => {
+          void previous.leave().then(() => {
             try {
               previous.port.postMessage({ type: 'replaced' } satisfies ToPanel)
               previous.port.disconnect()
@@ -257,21 +274,13 @@ export default defineBackground(() => {
       }
     })
     port.onDisconnect.addListener(() => {
-      disconnected = true
-      if (current?.port === port)
+      if (current?.port === port) {
         void privacyVerified
           .setValue(false)
           .catch((cause) => logError('Unable to share the session', cause))
-      for (const token of tokens.values()) token.resolve(lastToken)
-      tokens.clear()
-      for (const given of transcribing.values()) given.abort()
-      transcribing.clear()
-      if (current?.port === port) current = undefined
-      if (controller)
-        void close(controller).finally(() => {
-          lastToken = null
-        })
-      else lastToken = null
+        current = undefined
+      }
+      void leave()
     })
   })
 })
