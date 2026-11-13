@@ -1,5 +1,5 @@
 import { useUser } from '@clerk/chrome-extension'
-import { Dictation } from '@tinfoil/chat-client/dictation'
+import { Dictation, transcribesLater } from '@tinfoil/chat-client/dictation'
 import { logError } from '@tinfoil/chat-client/logging'
 import { DEFAULT_EFFORT } from '@tinfoil/chat-client/models'
 import { Button } from '@tinfoil/chat-ui/button'
@@ -162,7 +162,17 @@ export function ChatPanel({
   // and ends with the panel.
   const dictation = useMemo(
     () =>
-      new Dictation((audio, signal) => connection.transcribe(audio, signal)),
+      new Dictation(async (audio, signal) => {
+        try {
+          return await connection.transcribe(audio, signal)
+        } catch (cause) {
+          // A recording that will not be tried again says why, so that the
+          // user can put it right.
+          if (!transcribesLater(cause) && cause instanceof Error)
+            setError(cause.message)
+          throw cause
+        }
+      }),
     [connection],
   )
   useEffect(() => () => dictation.reset(), [dictation])

@@ -1,6 +1,7 @@
 import { HarnessClient } from '@tinfoil/chat-client/client'
 import { DICTATION } from '@tinfoil/chat-client/dictation-constants'
 import { logError } from '@tinfoil/chat-client/logging'
+import { ERROR_ACTIONS, ERROR_CODES } from '@tinfoil/chat-client/protocol'
 import { HarnessError } from '@tinfoil/chat-client/sse'
 import { defineBackground } from 'wxt/utils/define-background'
 import {
@@ -18,6 +19,18 @@ import {
 } from '../messages'
 import { catalog, privacyVerified, reviewActions } from '../settings'
 import { TaskStore } from '../storage'
+
+// Why a request fails when the panel has no sign-in to make it with, which
+// no number of attempts changes.
+const signedOut = () =>
+  new HarnessError(
+    {
+      code: ERROR_CODES.unauthenticated,
+      action: ERROR_ACTIONS.reauthenticate,
+      message: 'Sign in again to continue.',
+    },
+    401,
+  )
 
 export default defineBackground(() => {
   const store = new TaskStore()
@@ -99,8 +112,7 @@ export default defineBackground(() => {
       skipCache?: boolean
     }): Promise<string | null> => {
       if (disconnected) {
-        if (!lastToken || options?.skipCache)
-          throw new Error('Sign in again to continue.')
+        if (!lastToken || options?.skipCache) throw signedOut()
         return lastToken
       }
       const id = crypto.randomUUID()
@@ -114,7 +126,7 @@ export default defineBackground(() => {
             clearTimeout(timer)
             lastToken = token
             if (token) resolve(token)
-            else reject(new Error('Sign in again to continue.'))
+            else reject(signedOut())
           },
           reject: (cause) => {
             clearTimeout(timer)
@@ -189,7 +201,7 @@ export default defineBackground(() => {
         // failure.
         void Promise.resolve()
           .then(() => {
-            if (!controller) throw new Error('Sign in first.')
+            if (!controller) throw signedOut()
             return controller.transcribe(
               new File(
                 [Uint8Array.from(atob(audio), (byte) => byte.charCodeAt(0))],
