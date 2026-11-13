@@ -114,10 +114,14 @@ export class BrowserDriver {
   private readonly groups = new Map<number, number>()
   private readonly grouped = new Map<number, number>()
   private currentTabId?: number
-  // Whether the user was looking at the tab the task last worked in. A task
-  // they watch takes them along to the tab it moves to; one they have left
-  // works on where they are not looking.
-  private watched = true
+  // Where the task last worked: the window, the place beside its tab, and
+  // whether that tab was the one the window showed. A task takes the place
+  // of its own tab in a window that shows it; one the user has turned away
+  // from works on where they are not looking, and no other window's tab
+  // changes for it.
+  private shown: { windowId?: number; index?: number; active: boolean } = {
+    active: true,
+  }
   private closed = false
   private readonly onEvent = (
     source: Session,
@@ -534,8 +538,14 @@ export class BrowserDriver {
       page = this.pages.get(id)!
       this.pages.delete(id)
       this.pages.set(id, page)
-      if (id !== this.currentTabId && (await this.followed()))
-        await chrome.tabs.update(id, { active: true })
+      if (id !== this.currentTabId) {
+        const shown = await this.lastShown()
+        if (
+          shown.active &&
+          (shown.windowId === undefined || shown.windowId === tab.windowId)
+        )
+          await chrome.tabs.update(id, { active: true })
+      }
     } catch (cause) {
       this.check()
       if (cause instanceof BrowserError && cause.code !== 'COMMAND_FAILED')
@@ -552,16 +562,19 @@ export class BrowserDriver {
     return [id, page]
   }
 
-  // Whether the user still looks at the tab the task works in.
-  private async followed(): Promise<boolean> {
+  // Where the tab the task works in is, and whether its window shows it.
+  private async lastShown() {
     if (this.currentTabId !== undefined)
       try {
-        this.watched = (await chrome.tabs.get(this.currentTabId)).active
+        const { windowId, index, active } = await chrome.tabs.get(
+          this.currentTabId,
+        )
+        this.shown = { windowId, index, active }
       } catch {
         // A tab that is gone leaves what was last seen of it.
         this.check()
       }
-    return this.watched
+    return this.shown
   }
 
   // Marks a tab the task works in by gathering it in the task's tab group.
@@ -1305,19 +1318,16 @@ export class BrowserDriver {
       return { text: JSON.stringify(await this.tabs()) }
     if (action.action === 'open') {
       const url = webURL(action.url || '')
-      // The tab opens beside the one the task works in, in front only while
-      // the user watches the task.
-      const active = await this.followed()
-      let beside: { windowId: number; index: number } | undefined
-      if (this.currentTabId !== undefined)
-        try {
-          const current = await chrome.tabs.get(this.currentTabId)
-          beside = { windowId: current.windowId, index: current.index + 1 }
-        } catch {
-          this.check()
-        }
+      // The tab opens beside the one the task works in, in front only where
+      // that one was.
+      const { windowId, index, active } = await this.lastShown()
       const tab = await this.dispatched(() =>
-        chrome.tabs.create({ url, active, ...beside }),
+        chrome.tabs.create({
+          url,
+          active,
+          ...(windowId === undefined ? {} : { windowId }),
+          ...(index === undefined ? {} : { index: index + 1 }),
+        }),
       )
       this.created.add(tab.id!)
       return this.observed(tab.id!)
@@ -1397,7 +1407,7 @@ export class BrowserDriver {
             'TAB_NOT_CREATED',
             'Only tabs created by this task can be closed.',
           )
-        await this.followed()
+        await this.lastShown()
         this.pages.delete(id)
         await this.dispatched(() => chrome.tabs.remove(id))
         this.created.delete(id)

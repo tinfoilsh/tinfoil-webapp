@@ -423,8 +423,29 @@ test('all web tabs are available as they open, and working in one leaves the foc
     const read = await execute({ action: 'read', tabId: otherId })
     expect(read.text).toContain(`URL: ${otherURL}`)
     expect(await focusedWindow()).toBe(focused)
+    // The task leaves another window's tab as the user has it: its own tab
+    // there stays behind the one they brought forward.
+    const { windowId } = await worker.evaluate(
+      (id) => chrome.tabs.get(id),
+      tabId,
+    )
+    const forward = await worker.evaluate(
+      ({ windowId, url }) =>
+        chrome.tabs.create({ windowId, url, active: true }),
+      { windowId, url: `${origin}/next` },
+    )
+    try {
+      await execute({ action: 'read', tabId })
+      expect(
+        await worker.evaluate(
+          async (id) => (await chrome.tabs.get(id)).active,
+          tabId,
+        ),
+      ).toBe(false)
+    } finally {
+      await worker.evaluate((id) => chrome.tabs.remove(id), forward.id!)
+    }
     // A tab the task has moved on from can close without stopping it.
-    await execute({ action: 'read', tabId })
     await other.close()
     expect((await execute({ action: 'read', tabId })).text).toContain(
       `URL: ${page.url()}`,
