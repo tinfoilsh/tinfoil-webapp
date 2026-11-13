@@ -33,6 +33,17 @@ const UNKNOWN_ACTION = {
   running: 'Using the browser',
   done: 'Used the browser',
 }
+// What a reply's first step in a page says while it runs: the task connects
+// to the page before it acts there.
+const CONNECTING_LABEL = 'Connecting to the page'
+// The actions that work in no page, or go to one and say where.
+const ELSEWHERE_ACTIONS: ReadonlySet<BrowserAction['action']> = new Set([
+  'tabs',
+  'navigate',
+  'open',
+  'switch',
+  'close',
+])
 const ACTION_LIST = new Intl.ListFormat('en', {
   style: 'long',
   type: 'conjunction',
@@ -78,6 +89,19 @@ export function describeBrowserStep(args: string | undefined): BrowserStepView {
   return { ...labels, detail }
 }
 
+// The step of a reply's timeline that connects the task to a page: its first
+// in a browser the reply has not yet gone anywhere in.
+export function connectingStep(timeline: TimelineBlock[]): string | undefined {
+  for (const block of timeline) {
+    if (block.type !== 'tool_call' || block.name !== BROWSER_TOOL) continue
+    const parsed = actionSchema.safeParse(parsedJSON(block.arguments ?? ''))
+    if (!parsed.success) return undefined
+    if (parsed.data.action === 'tabs') continue
+    return ELSEWHERE_ACTIONS.has(parsed.data.action) ? undefined : block.id
+  }
+  return undefined
+}
+
 // Why a browser step failed, as the extension answered its call.
 export function browserStepFailure(result: unknown): string | undefined {
   const text =
@@ -112,12 +136,16 @@ function resultText(result: unknown): string {
 function BrowserStepLabel({
   view,
   running,
+  connects = false,
   failure,
 }: {
   view: BrowserStepView
   running: boolean
+  connects?: boolean
   failure?: string
 }) {
+  if (running && connects)
+    return <span className="font-medium">{CONNECTING_LABEL}</span>
   return (
     <span>
       <span className="font-medium">{running ? view.running : view.done}</span>
@@ -149,10 +177,13 @@ function CaptureThumbnail({ src, more = 0 }: { src: string; more?: number }) {
 export function BrowserStep({
   block,
   running,
+  connects = false,
   inGroup = false,
 }: {
   block: TimelineBlock
   running: boolean
+  // The step is the one that connects the task to a page.
+  connects?: boolean
   // A step of a group shows its details in the group's box.
   inGroup?: boolean
 }) {
@@ -166,7 +197,12 @@ export function BrowserStep({
     <div>
       <StepHeader
         label={
-          <BrowserStepLabel view={view} running={running} failure={failure} />
+          <BrowserStepLabel
+            view={view}
+            running={running}
+            connects={connects}
+            failure={failure}
+          />
         }
         extra={capture && <CaptureThumbnail src={capture} />}
         isRunning={running}
@@ -201,6 +237,8 @@ export type WorkBlock = {
   block: TimelineBlock
   // The reply is still thinking in this block, or still taking its action.
   running: boolean
+  // The block is the step that connects the task to a page.
+  connects?: boolean
 }
 
 const actionsNoun = (count: number) =>
@@ -233,6 +271,7 @@ function liveLabel(blocks: WorkBlock[], isDarkMode: boolean): ReactNode {
       <BrowserStepLabel
         view={describeBrowserStep(last.block.arguments)}
         running
+        connects={last.connects}
       />
     )
   return <span className="font-medium">Working</span>
@@ -282,7 +321,7 @@ export function WorkSteps({
         isExpanded={isExpanded}
         boxClassName="divide-y divide-border-subtle"
       >
-        {blocks.map(({ block, running }) => (
+        {blocks.map(({ block, running, connects }) => (
           <div key={block.id} className="px-3 py-1">
             {block.type === 'thinking' ? (
               <ThoughtProcess
@@ -294,7 +333,12 @@ export function WorkSteps({
                 inGroup
               />
             ) : (
-              <BrowserStep block={block} running={running} inGroup />
+              <BrowserStep
+                block={block}
+                running={running}
+                connects={connects}
+                inGroup
+              />
             )}
           </div>
         ))}

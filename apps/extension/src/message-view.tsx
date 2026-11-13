@@ -14,6 +14,7 @@ import remarkGfm from 'remark-gfm'
 import {
   BROWSER_TOOL,
   BrowserStep,
+  connectingStep,
   WorkSteps,
   type WorkBlock,
 } from './browser-steps'
@@ -67,6 +68,7 @@ const isInvisible = (block: TimelineBlock, running: boolean) =>
 // browser steps between that text.
 function segments(timeline: TimelineBlock[], streaming: boolean): Segment[] {
   const shown: Segment[] = []
+  const connecting = connectingStep(timeline)
   timeline.forEach((block, index) => {
     const last = streaming && index === timeline.length - 1
     // A reply thinks only in its last block, and a browser step runs until
@@ -82,14 +84,10 @@ function segments(timeline: TimelineBlock[], streaming: boolean): Segment[] {
     }
     // A block of a type or a tool this client does not know has no view.
     if (!isWork(block)) return
+    const work = { block, running, connects: block.id === connecting }
     const previous = shown[shown.length - 1]
-    if (previous?.kind === 'work') previous.blocks.push({ block, running })
-    else
-      shown.push({
-        kind: 'work',
-        key: `work-${block.id}`,
-        blocks: [{ block, running }],
-      })
+    if (previous?.kind === 'work') previous.blocks.push(work)
+    else shown.push({ kind: 'work', key: `work-${block.id}`, blocks: [work] })
   })
   return shown
 }
@@ -183,7 +181,11 @@ export function MessageView({
                 startedAt={only.block.startedAt}
               />
             ) : (
-              <BrowserStep block={only.block} running={only.running} />
+              <BrowserStep
+                block={only.block}
+                running={only.running}
+                connects={only.connects}
+              />
             )}
           </div>
         )

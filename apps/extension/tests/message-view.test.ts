@@ -231,6 +231,63 @@ test('a step shows the picture it took of the page, and a run of steps its lates
   ])
 })
 
+test('the first step a reply takes in a page says it connects to the page, for as long as it runs', () => {
+  const step = (id: string, action: object, result?: string) => ({
+    id,
+    type: 'tool_call',
+    name: 'browser_action',
+    arguments: JSON.stringify(action),
+    ...(result === undefined ? {} : { result: { text: result } }),
+  })
+  const tabs = step('tabs', { action: 'tabs' }, '[]')
+  const view = render(
+    show(
+      { ...REPLY, timeline: [tabs, step('read', { action: 'read' })] },
+      true,
+    ),
+  )
+  const live = () => screen.getAllByRole('button')[0]
+  expect(live()).toHaveAccessibleName(/^Connecting to the page/)
+
+  // Once connected, the step says what it did, and the next what it does.
+  view.rerender(
+    show(
+      {
+        ...REPLY,
+        timeline: [
+          tabs,
+          step('read', { action: 'read' }, 'Page'),
+          step('click', { action: 'click', ref: 'e4' }),
+        ],
+      },
+      true,
+    ),
+  )
+  expect(live()).toHaveAccessibleName(/^Clicking/)
+  fireEvent.click(live())
+  expect(screen.getByRole('button', { name: 'Read the page' })).toBeVisible()
+
+  // A reply that first goes to a page says where it goes instead, and what
+  // it then does there.
+  view.rerender(
+    show(
+      {
+        ...REPLY,
+        timeline: [
+          step(
+            'go',
+            { action: 'navigate', url: 'https://example.com/' },
+            'URL: https://example.com/',
+          ),
+          step('read', { action: 'read' }),
+        ],
+      },
+      true,
+    ),
+  )
+  expect(live()).toHaveAccessibleName(/^Reading the page/)
+})
+
 test('a question shows as the user wrote it', () => {
   render(
     show({
