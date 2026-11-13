@@ -48,8 +48,6 @@ type BrowserExecutor = Pick<BrowserDriver, 'execute' | 'describe' | 'dispose'>
 type CreateBrowser = (
   signal: AbortSignal,
   interrupted: (message: string) => void,
-  // The user stopped the task from the page it works in.
-  stopped: () => void,
 ) => BrowserExecutor
 
 export class TaskController {
@@ -76,11 +74,8 @@ export class TaskController {
     private readonly publish: (view: View) => void,
     // Whether an action that changes a page waits for the user's approval.
     private readonly reviewActions: () => Promise<boolean>,
-    private readonly createBrowser: CreateBrowser = (
-      signal,
-      interrupted,
-      stopped,
-    ) => new BrowserDriver(signal, interrupted, stopped),
+    private readonly createBrowser: CreateBrowser = (signal, interrupted) =>
+      new BrowserDriver(signal, interrupted),
   ) {}
 
   initialize(after: Promise<void> = Promise.resolve()): Promise<void> {
@@ -345,17 +340,11 @@ export class TaskController {
   }
 
   private async run(task: Task, signal: AbortSignal, turn?: Turn) {
-    const driver = this.createBrowser(
-      signal,
-      (message) => {
-        if (signal.aborted) return
-        task.error = message
-        this.active?.abort.abort()
-      },
-      () => {
-        this.stop().catch((cause) => logError('Unable to stop task', cause))
-      },
-    )
+    const driver = this.createBrowser(signal, (message) => {
+      if (signal.aborted) return
+      task.error = message
+      this.active?.abort.abort()
+    })
     try {
       await this.save(task)
       const access = turn?.browser ?? task.receipt?.browser

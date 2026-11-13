@@ -3,20 +3,10 @@ import { BrowserDriver } from '../../src/browser/driver'
 import { BrowserError } from '../../src/browser/errors'
 
 let task: { driver: BrowserDriver; abort: AbortController } | undefined
-// How often the user stopped the task from a page it works in.
-let stopped = 0
-export const stops = () => stopped
 export async function start(url: string) {
   await stop()
-  stopped = 0
   const abort = new AbortController()
-  const driver = new BrowserDriver(
-    abort.signal,
-    () => abort.abort(),
-    () => {
-      stopped++
-    },
-  )
+  const driver = new BrowserDriver(abort.signal, () => abort.abort())
   task = { driver, abort }
   try {
     const tab = (await chrome.tabs.query({})).find((tab) => tab.url === url)

@@ -756,24 +756,17 @@ test('a cursor on the page shows where the task points, out of what it captures,
   expect(await tip()).toBeNull()
 })
 
-test('a tab the task works in says so around its edge, and in a notice that stops the task', async () => {
+test('a tab the task works in glows around its edge, for as long as the task works there', async () => {
   const { page, tabId } = await startFixture('/?marked')
   const mark = (of: Page = page) =>
     of.evaluate(() => {
       const tree = document.querySelector('tinfoil-cursor')?.shadowRoot
       if (!tree) return null
-      const box = (id: string) => {
-        const { x, y, width, height } = tree
-          .getElementById(id)!
-          .getBoundingClientRect()
-        return { x, y, width, height }
-      }
+      const { x, y, width, height } = tree
+        .getElementById('glow')!
+        .getBoundingClientRect()
       return {
-        glow: box('glow'),
-        notice: box('notice'),
-        stop: box('stop'),
-        move: box('move'),
-        says: tree.getElementById('notice')!.textContent,
+        glow: { x, y, width, height },
         pointing:
           getComputedStyle(tree.getElementById('arrow')!).display !== 'none',
         page: {
@@ -784,13 +777,6 @@ test('a tab the task works in says so around its edge, and in a notice that stop
         },
       }
     })
-  const middle = (box: {
-    x: number
-    y: number
-    width: number
-    height: number
-  }) => [box.x + box.width / 2, box.y + box.height / 2] as const
-  const stops = () => worker.evaluate(() => browserTest.stops())
   expect(await mark()).toBeNull()
   // A mark a task before this one left on the page, as it drew it, is not
   // taken for this task's.
@@ -806,39 +792,7 @@ test('a tab the task works in says so around its edge, and in a notice that stop
   expect(await page.locator('tinfoil-cursor').count()).toBe(1)
   const shown = (await mark())!
   expect(shown.glow).toEqual(shown.page)
-  expect(shown.says).toContain('Al is working here')
   expect(shown.pointing).toBe(false)
-
-  // What the task presses beneath the notice reaches the page, as though the
-  // notice were not there.
-  await page.evaluate(({ x, y, width, height }) => {
-    const beneath = document.createElement('button')
-    beneath.textContent = 'Beneath'
-    beneath.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:${width}px;height:${height}px`
-    beneath.onclick = () => {
-      document.title = `${document.title} pressed`
-    }
-    document.body.append(beneath)
-  }, shown.stop)
-  const read = await execute({ action: 'read', tabId })
-  await execute({ action: 'click', tabId, ref: ref(read.text, 'Beneath') })
-  await expect(page).toHaveTitle('Browser fixture pressed')
-  expect(await stops()).toBe(0)
-
-  // What the user presses on Stop stops the task, and is kept from the page.
-  await page.mouse.click(...middle(shown.stop))
-  await expect.poll(stops).toBe(1)
-  await expect(page).toHaveTitle('Browser fixture pressed')
-
-  // The notice moves out of the user's way, to the bottom of the page.
-  await page.mouse.click(...middle(shown.move))
-  await expect
-    .poll(async () => {
-      const moved = (await mark())!
-      return moved.page.height - (moved.notice.y + moved.notice.height)
-    })
-    .toBe(0)
-  expect(await stops()).toBe(1)
 
   // The mark goes with the task to the tab it works in next, and leaves
   // with the task.
@@ -852,7 +806,8 @@ test('a tab the task works in says so around its edge, and in a notice that stop
     )
     await execute({ action: 'read', tabId: nextId })
     expect(await mark()).toBeNull()
-    expect((await mark(next))!.says).toContain('Al is working here')
+    const moved = (await mark(next))!
+    expect(moved.glow).toEqual(moved.page)
     await worker.evaluate(() => browserTest.stop())
     expect(await mark(next)).toBeNull()
   } finally {

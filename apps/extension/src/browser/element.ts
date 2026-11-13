@@ -220,28 +220,18 @@ export function glideIntoView(
 }
 
 // The mark a task leaves on the tab it works in, for the user to follow: a
-// glow around the edge of the page, a notice that says the task is at work
-// there and stops it, and, once the task points at something, a cursor that
-// travels there and pulses where it presses. The mark takes no input from
-// the page it lies over, and it changes inside its own shadow tree, where
-// the page's scripts do not watch.
+// glow around the edge of the page, and, once the task points at something,
+// a cursor that travels there and pulses where it presses. The mark takes no
+// input from the page it lies over, and it changes inside its own shadow
+// tree, where the page's scripts do not watch.
 export function markPage(
   tag: string,
   look: {
     ink: string
     glow: string
-    paper: string
-    action: string
-    actionHover: string
-    actionInk: string
-    label: string
-    stop: string
   },
-  // The function the page calls to reach the task: to stop it, or to move
-  // its notice out of the way.
-  binding: string,
-  // The notice sits at the bottom of the page, where the user moved it.
-  below: boolean,
+  // The task the mark is of.
+  task: string,
   point: {
     x: number
     y: number
@@ -252,8 +242,6 @@ export function markPage(
   } | null,
 ): Promise<boolean> {
   const SVG = 'http://www.w3.org/2000/svg'
-  const LOGO =
-    'M825.24,610.01l-579.29,176.68L10.37,602.06,235.81,23.4l589.43,586.61ZM146.55,564.75l122.82,96.26,341.7-104.2L278.57,225.89l-132.02,338.86Z'
   const CURSOR_PX = 36
   // Where the arrow's tip sits in its drawing, which is 24 units across.
   const TIP_X = (CURSOR_PX * 4) / 24
@@ -268,13 +256,13 @@ export function markPage(
     `:scope > ${tag}`,
   )
   // A mark another task left on the page is not this task's to show: it is
-  // drawn as that task drew it, and reaches no one.
-  if (!host?.shadowRoot || host.dataset.binding !== binding) {
+  // drawn as that task drew it.
+  if (!host?.shadowRoot || host.dataset.task !== task) {
     host?.remove()
     const created = document.createElement(tag)
     host = created
     created.setAttribute('aria-hidden', 'true')
-    created.dataset.binding = binding
+    created.dataset.task = task
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(
       ':host{all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;overflow:hidden;contain:strict}' +
@@ -284,17 +272,6 @@ export function markPage(
         `#glow{position:absolute;inset:0;box-shadow:inset 0 0 0 2px ${look.ink},inset 0 0 0 3px ${look.glow},inset 0 0 20px 4px ${look.ink},inset 0 0 48px 10px ${look.glow};animation:breathe 2.4s ease-in-out infinite alternate}` +
         '@keyframes breathe{from{opacity:.5}to{opacity:1}}' +
         '@media (prefers-reduced-motion:reduce){#glow{animation:none}}' +
-        `#notice{position:absolute;left:50%;top:0;transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:8px 10px 8px 14px;border-radius:0 0 14px 14px;background:${look.ink};color:${look.paper};font:600 14px/1 system-ui,-apple-system,"Segoe UI",sans-serif;white-space:nowrap;box-shadow:0 4px 16px rgb(0 0 0/.25)}` +
-        '#notice[data-below]{top:auto;bottom:0;border-radius:14px 14px 0 0}' +
-        '#logo{width:16px;height:16px;flex:none}' +
-        '#move,#stop{display:flex;align-items:center;justify-content:center;flex:none;border-radius:8px}' +
-        '#move{width:26px;height:26px;background:rgb(255 255 255/.14)}' +
-        '#move[data-hover]{background:rgb(255 255 255/.28)}' +
-        '#move svg{width:14px;height:14px}' +
-        '#notice[data-below] #move svg{transform:rotate(180deg)}' +
-        `#stop{gap:7px;height:28px;padding:0 11px;background:${look.action};color:${look.actionInk}}` +
-        `#stop[data-hover]{background:${look.actionHover}}` +
-        '#stop::before{content:"";width:9px;height:9px;border-radius:2px;background:currentColor}' +
         '#arrow,#ring,#pulse{position:absolute;left:0;top:0}' +
         // The cursor is not shown before the task has pointed. It is left out
         // rather than hidden, so that it is out of sight with the layer.
@@ -305,124 +282,47 @@ export function markPage(
     )
     const tree = created.attachShadow({ mode: 'open' })
     tree.adoptedStyleSheets = [sheet]
-    const drawing = (id: string, viewBox: string, path: string) => {
-      const svg = document.createElementNS(SVG, 'svg')
-      svg.id = id
-      svg.setAttribute('viewBox', viewBox)
-      const shape = document.createElementNS(SVG, 'path')
-      shape.setAttribute('d', path)
-      svg.append(shape)
-      return { svg, shape }
-    }
-    const part = (id: string) => {
+    const part = (id: string, ...parts: Element[]) => {
       const element = document.createElement('div')
       element.id = id
+      element.append(...parts)
       return element
     }
-    const layer = part('layer')
-    const notice = part('notice')
-    const logo = drawing('logo', '0 0 836 810', LOGO)
-    logo.shape.setAttribute('fill', 'currentColor')
-    const label = document.createElement('span')
-    label.textContent = look.label
-    const move = part('move')
-    const turn = drawing('', '0 0 24 24', 'M12 5v14m0 0-6-6m6 6 6-6')
-    turn.shape.setAttribute('fill', 'none')
-    turn.shape.setAttribute('stroke', 'currentColor')
-    turn.shape.setAttribute('stroke-width', '2')
-    turn.shape.setAttribute('stroke-linecap', 'round')
-    turn.shape.setAttribute('stroke-linejoin', 'round')
-    move.append(turn.svg)
-    const stop = part('stop')
-    stop.textContent = look.stop
-    notice.append(logo.svg, label, move, stop)
-    const arrow = drawing(
-      'arrow',
-      '0 0 24 24',
-      'M4 2v17l4.6-4.1 3 6.7 2.7-1.2-3-6.6h6.2z',
-    )
-    arrow.shape.setAttribute('fill', look.ink)
-    arrow.shape.setAttribute('stroke', '#fff')
-    arrow.shape.setAttribute('stroke-width', '1.5')
-    arrow.shape.setAttribute('stroke-linejoin', 'round')
-    layer.append(part('glow'), notice, part('pulse'), part('ring'), arrow.svg)
-    tree.append(layer)
-
-    // The notice lets every press through to the page beneath, the task's
-    // own among them, so it is never in the task's way. What the user
-    // presses on one of its controls is taken here instead, by where it
-    // lands; a press the task announced is the page's.
-    const controls = { stop, move }
-    // The mark listens to the page for as long as it is on it.
-    const listening = new AbortController()
-    const heard = { capture: true, signal: listening.signal }
-    const pressed = (event: MouseEvent): keyof typeof controls | undefined => {
-      if (!created.isConnected) {
-        listening.abort()
-        return undefined
-      }
-      if (
-        !event.isTrusted ||
-        layer.style.visibility === 'hidden' ||
-        (Math.abs(event.clientX - Number(created.dataset.pressX)) < 1 &&
-          Math.abs(event.clientY - Number(created.dataset.pressY)) < 1)
-      )
-        return undefined
-      for (const name of ['stop', 'move'] as const) {
-        const box = controls[name].getBoundingClientRect()
-        if (
-          event.clientX >= box.left &&
-          event.clientX <= box.right &&
-          event.clientY >= box.top &&
-          event.clientY <= box.bottom
-        )
-          return name
-      }
-      return undefined
+    const shape = (
+      name: string,
+      attributes: Record<string, string | number>,
+      ...parts: Element[]
+    ) => {
+      const element = document.createElementNS(SVG, name)
+      for (const [attribute, value] of Object.entries(attributes))
+        element.setAttribute(attribute, String(value))
+      element.append(...parts)
+      return element
     }
-    for (const type of [
-      'pointerdown',
-      'mousedown',
-      'pointerup',
-      'mouseup',
-      'click',
-    ] as const)
-      addEventListener(
-        type,
-        (event) => {
-          const control = pressed(event)
-          if (!control) return
-          event.preventDefault()
-          event.stopImmediatePropagation()
-          if (type !== 'click') return
-          const reach = (globalThis as Record<string, unknown>)[binding]
-          if (typeof reach === 'function') reach(control)
-        },
-        heard,
-      )
-    addEventListener(
-      'pointermove',
-      (event) => {
-        const over = pressed(event)
-        stop.toggleAttribute('data-hover', over === 'stop')
-        move.toggleAttribute('data-hover', over === 'move')
-      },
-      heard,
+    tree.append(
+      part(
+        'layer',
+        part('glow'),
+        part('pulse'),
+        part('ring'),
+        shape(
+          'svg',
+          { id: 'arrow', viewBox: '0 0 24 24' },
+          shape('path', {
+            d: 'M4 2v17l4.6-4.1 3 6.7 2.7-1.2-3-6.6h6.2z',
+            fill: look.ink,
+            stroke: '#fff',
+            'stroke-width': 1.5,
+            'stroke-linejoin': 'round',
+          }),
+        ),
+      ),
     )
     document.documentElement.append(created)
   }
   const tree = host.shadowRoot!
   const layer = tree.getElementById('layer') as HTMLElement
   layer.style.visibility = ''
-  tree.getElementById('notice')?.toggleAttribute('data-below', below)
-  // The press the task is about to make, which the notice leaves to the page.
-  if (point?.press) {
-    host.dataset.pressX = String(point.x)
-    host.dataset.pressY = String(point.y)
-  } else {
-    delete host.dataset.pressX
-    delete host.dataset.pressY
-  }
   if (!point) return Promise.resolve(true)
   const { x, y, press, minTravelMs, maxTravelMs, pxPerMs } = point
   const arrow = tree.getElementById('arrow') as unknown as SVGElement

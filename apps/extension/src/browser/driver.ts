@@ -23,18 +23,11 @@ const TASK_GROUP_TITLE = 'Tinfoil'
 const TASK_GROUP_COLOR = 'green'
 // The cursor that shows the user where a task points on a page.
 const CURSOR_TAG = 'tinfoil-cursor'
-// How the task's mark on a page looks and reads: Deep Teal with a lighter
-// glow that shows where it does not, and the stop control in the colors of
-// a primary action.
+// How the task's mark on a page looks: Deep Teal, with a lighter glow that
+// shows where it does not.
 const MARK_LOOK = {
   ink: '#004444',
   glow: '#A8C7D1',
-  paper: '#F9F8F6',
-  action: '#E6CCA8',
-  actionHover: '#DDBB8C',
-  actionInk: '#05252E',
-  label: 'Al is working here',
-  stop: 'Stop',
 }
 // How long the cursor takes to reach a point: in proportion to how far it
 // is, and never so little that the user cannot follow it.
@@ -191,11 +184,9 @@ type Page = {
   ready: boolean
   // Told whenever the main frame's navigation moves on.
   waiters: Set<() => void>
-  // The task has put its mark on the tab: the glow around its edge, the
-  // notice that it is at work there, and its cursor once it has pointed.
+  // The task has put its mark on the tab: the glow around its edge, and its
+  // cursor once it has pointed.
   marked: boolean
-  // The user moved the notice to the bottom of the page.
-  noticeBelow?: boolean
   // Where the task last pointed on the page, which its cursor shows.
   cursor?: Point
   screenshot?: {
@@ -240,16 +231,6 @@ export class BrowserDriver {
     const page =
       source.tabId === undefined ? undefined : this.pages.get(source.tabId)
     if (!page) return
-    if (method === 'Runtime.bindingCalled') {
-      const { name, payload } = params as Protocol.Runtime.BindingCalledEvent
-      if (name !== this.binding || source.sessionId !== undefined) return
-      if (payload === 'stop') this.stopped()
-      else if (payload === 'move') {
-        page.noticeBelow = !page.noticeBelow
-        void this.mark({ tabId: source.tabId }, page)
-      }
-      return
-    }
     this.followNavigation(page, source.sessionId === undefined, method, params)
     if (method === 'Target.attachedToTarget') {
       const event = params as Protocol.Target.AttachedToTargetEvent
@@ -306,15 +287,13 @@ export class BrowserDriver {
     }
   }
 
-  // The function a page calls to reach this task from the notice on it,
-  // under a name no page can know ahead of time.
-  private readonly binding = `tinfoil${crypto.randomUUID().replaceAll('-', '')}`
+  // What the task's marks on its pages are told by, from those a task
+  // before it left there.
+  private readonly id = crypto.randomUUID()
 
   constructor(
     private readonly signal: AbortSignal,
     private readonly interrupted: (message: string) => void,
-    // The user stopped the task from the page it works in.
-    private readonly stopped: () => void = () => {},
   ) {
     chrome.debugger.onEvent.addListener(this.onEvent)
     chrome.debugger.onDetach.addListener(this.onDetach)
@@ -452,9 +431,6 @@ export class BrowserDriver {
     // the browser does not show is still drawn while it is captured, which
     // the page's own animations otherwise bring to a halt on some platforms.
     if (!target.parent) {
-      await this.send(target.session, 'Runtime.addBinding', {
-        name: this.binding,
-      })
       await this.send(target.session, 'Emulation.setFocusEmulationEnabled', {
         enabled: true,
       })
@@ -558,7 +534,7 @@ export class BrowserDriver {
     }
     try {
       const shown = await this.send(root, 'Runtime.evaluate', {
-        expression: `(${markPage.toString()})(${JSON.stringify(CURSOR_TAG)}, ${JSON.stringify(MARK_LOOK)}, ${JSON.stringify(this.binding)}, ${page.noticeBelow === true}, ${JSON.stringify(pointed ?? null)})`,
+        expression: `(${markPage.toString()})(${JSON.stringify(CURSOR_TAG)}, ${JSON.stringify(MARK_LOOK)}, ${JSON.stringify(this.id)}, ${JSON.stringify(pointed ?? null)})`,
         awaitPromise: true,
         returnByValue: true,
       })
