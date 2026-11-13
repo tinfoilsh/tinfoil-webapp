@@ -1,5 +1,7 @@
 import { HarnessClient } from '@tinfoil/chat-client/client'
+import { DICTATION } from '@tinfoil/chat-client/dictation-constants'
 import { logError } from '@tinfoil/chat-client/logging'
+import { HarnessError } from '@tinfoil/chat-client/sse'
 import { defineBackground } from 'wxt/utils/define-background'
 import {
   CONTROLPLANE_URL,
@@ -9,7 +11,7 @@ import {
 } from '../config'
 import { TaskController, errorText } from '../controller'
 import {
-  commandEnvelopeSchema,
+  requestEnvelopeSchema,
   toWorkerSchema,
   type ToPanel,
   type View,
@@ -122,14 +124,17 @@ export default defineBackground(() => {
     port.onMessage.addListener((raw: unknown) => {
       const parsed = toWorkerSchema.safeParse(raw)
       if (!parsed.success) {
-        // A command the panel waits on is answered even when it is refused.
-        const refused = commandEnvelopeSchema.safeParse(raw)
-        if (refused.success)
-          send({
-            type: 'result',
-            id: refused.data.id,
-            error: 'That request could not be understood.',
-          })
+        // A request the panel waits on is answered even when it is refused.
+        const refused = requestEnvelopeSchema.safeParse(raw)
+        if (refused.success) {
+          const { id, type } = refused.data
+          const error = 'That request could not be understood.'
+          send(
+            type === 'command'
+              ? { type: 'result', id, error }
+              : { type: 'transcript', id, error },
+          )
+        }
         return
       }
       const message = parsed.data
@@ -172,6 +177,33 @@ export default defineBackground(() => {
           () => send({ type: 'result', id: message.id }),
           (cause) =>
             send({ type: 'result', id: message.id, error: errorText(cause) }),
+        )
+      } else if (message.type === 'transcribe') {
+        void (
+          controller
+            ? controller.transcribe(
+                new File(
+                  [
+                    Uint8Array.from(atob(message.audio), (byte) =>
+                      byte.charCodeAt(0),
+                    ),
+                  ],
+                  DICTATION.FILE_NAME,
+                  { type: message.mimeType },
+                ),
+              )
+            : Promise.reject(new Error('Sign in first.'))
+        ).then(
+          (text) => send({ type: 'transcript', id: message.id, text }),
+          (cause) =>
+            send({
+              type: 'transcript',
+              id: message.id,
+              error: errorText(cause),
+              ...(cause instanceof HarnessError
+                ? { refusal: { detail: cause.detail, status: cause.status } }
+                : {}),
+            }),
         )
       }
     })

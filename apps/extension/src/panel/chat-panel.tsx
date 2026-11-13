@@ -1,9 +1,14 @@
 import { useUser } from '@clerk/chrome-extension'
+import { Dictation } from '@tinfoil/chat-client/dictation'
 import { logError } from '@tinfoil/chat-client/logging'
 import { DEFAULT_EFFORT } from '@tinfoil/chat-client/models'
 import { Button } from '@tinfoil/chat-ui/button'
-import { Composer } from '@tinfoil/chat-ui/composer'
+import { Composer, type ComposerHandle } from '@tinfoil/chat-ui/composer'
+import { DictationButton } from '@tinfoil/chat-ui/dictation-button'
+import { DictationNotice } from '@tinfoil/chat-ui/dictation-notice'
 import { timeOfDayGreeting } from '@tinfoil/chat-ui/greeting'
+import { RecordingWaveform } from '@tinfoil/chat-ui/recording-waveform'
+import { useDictation } from '@tinfoil/chat-ui/use-dictation'
 import { StepDetails, StepHeader } from '@tinfoil/chat-ui/WorkStep'
 import { TfSetting } from '@tinfoilsh/tinfoil-icons'
 import {
@@ -12,6 +17,7 @@ import {
   TfWriting2Animated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -33,6 +39,7 @@ import {
   useSetting,
 } from '../settings'
 import { Logo } from '../ui/logo'
+import { MICROPHONE_SETTINGS_URL, microphonePermission } from '../ui/microphone'
 import { ChatsModal } from './chats-modal'
 
 const SUGGESTIONS = [
@@ -40,6 +47,10 @@ const SUGGESTIONS = [
   'Compare these tabs and make a table',
   'Help me fill out this form',
 ]
+// The chat a draft is dictated in before it has been sent as a task.
+const NEW_CHAT_ID = 'new'
+const MICROPHONE_NEEDED =
+  'Allow microphone access in settings, then start recording again.'
 const INPUT_MIN_HEIGHT = '28px'
 const WELCOME_INPUT_MIN_HEIGHT = '36px'
 // How close to its end the conversation is scrolled for it to follow a reply
@@ -136,6 +147,7 @@ export function ChatPanel({
   const [lastOffered] = useSetting(catalog)
   const [chatsOpen, setChatsOpen] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const composerRef = useRef<ComposerHandle>(null)
   const scroll = useRef<HTMLDivElement>(null)
   const following = useRef(true)
   const task = view.task
@@ -145,6 +157,58 @@ export function ChatPanel({
   const problem = error || view.error || task?.error
 
   useEffect(() => connection.connect(), [connection])
+
+  // Dictation is transcribed by the worker, over the connection it verified,
+  // and ends with the panel.
+  const dictation = useMemo(
+    () =>
+      new Dictation((audio, signal) => connection.transcribe(audio, signal)),
+    [connection],
+  )
+  useEffect(() => () => dictation.reset(), [dictation])
+  // Chrome asks for the microphone in a tab, never in a side panel, so a
+  // panel that was not given it sends the user to settings to give it.
+  const needMicrophone = useCallback(() => {
+    setError(MICROPHONE_NEEDED)
+    chrome.tabs
+      .create({ url: MICROPHONE_SETTINGS_URL })
+      .catch((cause) => logError('Unable to open settings', cause))
+  }, [])
+  const recordingFailed = useCallback(
+    (cause: unknown) => {
+      if (cause instanceof DOMException && cause.name === 'NotAllowedError')
+        needMicrophone()
+      else
+        setError(
+          cause instanceof Error ? cause.message : 'Could not start recording.',
+        )
+    },
+    [needMicrophone],
+  )
+  const speech = useDictation({
+    dictation,
+    chatId: task?.id ?? NEW_CHAT_ID,
+    input,
+    setInput,
+    composer: composerRef,
+    segmentSeconds: view.session?.composer.dictationSegmentSeconds,
+    persist: false,
+    onError: recordingFailed,
+  })
+  const startRecording = async () => {
+    setError('')
+    let permission: PermissionState
+    try {
+      permission = await microphonePermission()
+    } catch (cause) {
+      logError('Unable to read microphone permission', cause)
+      // The microphone itself says whether it may be opened.
+      permission = 'granted'
+    }
+    if (permission === 'granted') await speech.start()
+    else needMicrophone()
+  }
+  const recordingStream = speech.isRecording ? speech.state.stream : null
   useEffect(() => {
     const element = scroll.current
     if (following.current && element) element.scrollTop = element.scrollHeight
@@ -334,6 +398,7 @@ export function ChatPanel({
             />
           )}
           <Composer
+            ref={composerRef}
             input={input}
             setInput={setInput}
             onSubmit={() => void submit()}
@@ -345,7 +410,42 @@ export function ChatPanel({
               hasMessages ? INPUT_MIN_HEIGHT : WELCOME_INPUT_MIN_HEIGHT
             }
             hasMessages={hasMessages}
-            locked={sending}
+            locked={sending || speech.isRecording || speech.isTranscribing}
+            // While recording an empty draft, the textarea is hidden behind
+            // the live waveform. Nonempty drafts stay visible above it.
+            textareaHidden={Boolean(recordingStream && !input.trim())}
+            belowTextarea={
+              recordingStream && (
+                <RecordingWaveform
+                  stream={recordingStream}
+                  className="w-full"
+                  style={{
+                    minHeight: hasMessages
+                      ? INPUT_MIN_HEIGHT
+                      : WELCOME_INPUT_MIN_HEIGHT,
+                  }}
+                />
+              )
+            }
+            attachments={
+              <DictationNotice
+                retrying={speech.state.retrying}
+                failed={speech.state.failed}
+                onRetry={() => dictation.retry()}
+                onDiscard={() => dictation.discard()}
+                className="mb-3"
+              />
+            }
+            status={speech.announcement}
+            trailingControls={
+              view.session?.features.transcription && (
+                <DictationButton
+                  status={speech.state.status}
+                  onStart={() => void startRecording()}
+                  onStop={speech.stop}
+                />
+              )
+            }
           />
         </form>
       </div>

@@ -31,6 +31,7 @@ import {
   useSetting,
 } from '../settings'
 import { Logo } from '../ui/logo'
+import { requestMicrophone, useMicrophonePermission } from '../ui/microphone'
 import { SignInSetup } from '../ui/sign-in-setup'
 import { useDarkMode } from '../ui/theme'
 import { ModelPicker } from './model-picker'
@@ -48,6 +49,10 @@ const REVIEW_ACTIONS_LABEL = 'Review actions before execution'
 const ACCOUNT_AVATAR_SIZE_PX = 48
 const NAV_AVATAR_SIZE_PX = 20
 const SHORTCUTS_URL = 'chrome://extensions/shortcuts'
+// Where Chrome keeps what the extension is allowed, the microphone included.
+const SITE_SETTINGS_URL = `chrome://settings/content/siteDetails?site=${encodeURIComponent(`chrome-extension://${chrome.runtime.id}`)}`
+const ACTION_CLASS_NAME =
+  'flex-none rounded-lg bg-tinfoil-oak px-4 py-1.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:cursor-not-allowed disabled:opacity-50'
 // The command Chrome gives every extension for its toolbar button, which has
 // no description of its own.
 const COMMAND_LABELS: Record<string, string> = {
@@ -136,7 +141,7 @@ function AccountSection({ account }: { account: Account }) {
             href={WEB_SIGN_IN_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-none rounded-lg bg-tinfoil-oak px-4 py-1.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover"
+            className={ACTION_CLASS_NAME}
           >
             Sign in
           </a>
@@ -213,24 +218,87 @@ function ModelSection({ isDarkMode }: { isDarkMode: boolean }) {
   )
 }
 
+// The microphone, which dictating into the side panel needs. Chrome asks for
+// it here, as it does not ask in a side panel.
+function MicrophoneSetting() {
+  const permission = useMicrophonePermission()
+  const [asking, setAsking] = useState(false)
+  if (permission === undefined) return null
+  return (
+    <div className={CARD_CLASS_NAME}>
+      {permission === 'granted' ? (
+        <Setting
+          label="Microphone access is allowed"
+          detail="Use the microphone in the side panel to dictate a message. Your voice is transcribed by Tinfoil’s chat service and is not kept."
+        />
+      ) : permission === 'denied' ? (
+        <Setting
+          label="Microphone access is blocked"
+          detail="Dictating a message needs the microphone. Allow it for Tinfoil Chrome in Chrome’s settings."
+        >
+          <button
+            type="button"
+            className={ACTION_CLASS_NAME}
+            onClick={() => {
+              chrome.tabs
+                .create({ url: SITE_SETTINGS_URL })
+                .catch((cause) =>
+                  logError('Unable to open Chrome settings', cause),
+                )
+            }}
+          >
+            Open Chrome settings
+          </button>
+        </Setting>
+      ) : (
+        <Setting
+          label="Allow microphone access"
+          detail="Dictating a message in the side panel needs the microphone. Your voice is transcribed by Tinfoil’s chat service and is not kept."
+        >
+          <button
+            type="button"
+            className={ACTION_CLASS_NAME}
+            disabled={asking}
+            onClick={() => {
+              setAsking(true)
+              requestMicrophone()
+                .catch((cause) =>
+                  logError('Microphone access was not given', cause),
+                )
+                .finally(() => setAsking(false))
+            }}
+          >
+            Allow
+          </button>
+        </Setting>
+      )}
+    </div>
+  )
+}
+
 function PermissionsSection() {
   const [review, setReview] = useSetting(reviewActions)
   return (
-    <Group title="Browser actions">
-      <div className={CARD_CLASS_NAME}>
-        <Setting
-          label={REVIEW_ACTIONS_LABEL}
-          detail="Tinfoil asks before it clicks, types, or opens a page. When off, it acts as soon as it decides to."
-        >
-          <ToggleSwitch
-            aria-label={REVIEW_ACTIONS_LABEL}
-            checked={review ?? false}
-            disabled={review === undefined}
-            onChange={setReview}
-          />
-        </Setting>
-      </div>
-    </Group>
+    <>
+      <Group title="Browser actions">
+        <div className={CARD_CLASS_NAME}>
+          <Setting
+            label={REVIEW_ACTIONS_LABEL}
+            detail="Tinfoil asks before it clicks, types, or opens a page. When off, it acts as soon as it decides to."
+          >
+            <ToggleSwitch
+              aria-label={REVIEW_ACTIONS_LABEL}
+              checked={review ?? false}
+              disabled={review === undefined}
+              onChange={setReview}
+            />
+          </Setting>
+        </div>
+      </Group>
+      <Group title="Microphone">
+        <MicrophoneSetting />
+      </Group>
+    </>
   )
 }
 

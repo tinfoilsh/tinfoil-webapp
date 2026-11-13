@@ -1,7 +1,11 @@
 import type { ChatState } from '@tinfoil/chat-client/reducer'
-import type { BrowserToolRequest, Session } from '@tinfoil/chat-client/types'
+import type {
+  BrowserToolRequest,
+  HarnessErrorBody,
+  Session,
+} from '@tinfoil/chat-client/types'
 import { z } from 'zod'
-import { MAX_PROMPT_CHARS } from './config'
+import { MAX_PROMPT_CHARS, MAX_RECORDING_CHARS } from './config'
 import type { TaskPhase } from './storage'
 
 export const commandSchema = z.discriminatedUnion('kind', [
@@ -47,10 +51,20 @@ export type ToPanel =
   | { type: 'state'; view: View }
   | { type: 'token'; id: string; skipCache?: boolean }
   | { type: 'result'; id: string; error?: string }
+  // A recording's text, or why it has none: in the chat service's own words
+  // where it was the one to refuse.
+  | { type: 'transcript'; id: string; text: string }
+  | {
+      type: 'transcript'
+      id: string
+      error: string
+      refusal?: { detail: HarnessErrorBody; status?: number }
+    }
 
-// A command, whatever it asks, by the id its answer carries.
-export const commandEnvelopeSchema = z.object({
-  type: z.literal('command'),
+// A request the panel waits on, whatever it asks, by the id its answer
+// carries.
+export const requestEnvelopeSchema = z.object({
+  type: z.enum(['command', 'transcribe']),
   id: z.string(),
 })
 
@@ -66,5 +80,12 @@ export const toWorkerSchema = z.discriminatedUnion('type', [
     type: z.literal('command'),
     id: z.string(),
     command: commandSchema,
+  }),
+  z.object({
+    type: z.literal('transcribe'),
+    id: z.string(),
+    // The recording, in base64.
+    audio: z.string().min(1).max(MAX_RECORDING_CHARS),
+    mimeType: z.string().min(1).max(100),
   }),
 ])

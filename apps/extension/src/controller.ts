@@ -596,6 +596,16 @@ export class TaskController {
     }
   }
 
+  // Turns a recording into its text, which belongs to no task.
+  async transcribe(audio: File): Promise<string> {
+    const { text } = await this.client.upload<{ text: string }>(
+      ROUTES.transcriptions,
+      audio,
+      {},
+    )
+    return text
+  }
+
   async stop() {
     this.generation++
     await this.stopActive()
