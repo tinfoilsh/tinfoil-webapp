@@ -56,9 +56,14 @@ export default defineBackground(() => {
     let lastToken: string | null = null
     // What the settings page shows of this panel's session: the models it
     // offers and whether the service was verified, written as they change.
-    let shared: Pick<View, 'session' | 'verified'> = { verified: false }
+    // The first is always written, over what a panel before this one left.
+    let shared: Pick<View, 'session' | 'verified'> | undefined
     const share = (view: View) => {
-      if (view.session === shared.session && view.verified === shared.verified)
+      if (
+        shared &&
+        view.session === shared.session &&
+        view.verified === shared.verified
+      )
         return
       shared = { session: view.session, verified: view.verified }
       void Promise.all([
