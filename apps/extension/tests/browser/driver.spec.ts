@@ -20,6 +20,10 @@ declare global {
 }
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const MAX_SNAPSHOT_OBSERVATIONS = 10
+// A page that is drawn produces this many animation frames well within the
+// deadline; one the browser stopped drawing produces a few at most.
+const DRAWN_FRAMES = 20
+const DRAWN_FRAMES_DEADLINE_MS = 2_000
 let server: Server
 let origin: string
 let context: BrowserContext
@@ -478,7 +482,25 @@ test('a task works on in its tab after the user leaves it, without pulling them 
         const { windowId } = await chrome.tabs.get(id)
         return (await chrome.tabs.query({ active: true, windowId }))[0].url
       }, tabId)
+    // Whether the page goes on drawing frames, which its animation and the
+    // task's input both wait on.
+    const draws = () =>
+      page.evaluate(
+        ({ frames, deadlineMs }) =>
+          new Promise<boolean>((resolve) => {
+            const deadline = setTimeout(() => resolve(false), deadlineMs)
+            const next = (left: number) =>
+              requestAnimationFrame(() => {
+                if (left > 1) return next(left - 1)
+                clearTimeout(deadline)
+                resolve(true)
+              })
+            next(frames)
+          }),
+        { frames: DRAWN_FRAMES, deadlineMs: DRAWN_FRAMES_DEADLINE_MS },
+      )
     expect(await front()).toBe(`${origin}/next`)
+    expect(await draws()).toBe(true)
     const filled = await execute({
       action: 'fill',
       tabId,
@@ -490,6 +512,7 @@ test('a task works on in its tab after the user leaves it, without pulling them 
       'Saved Typed unseen',
     )
     expect((await execute({ action: 'screenshot', tabId })).image).toBeTruthy()
+    expect(await draws()).toBe(true)
     expect(await front()).toBe(`${origin}/next`)
 
     // A tab the task opens while the user is elsewhere opens behind theirs.
