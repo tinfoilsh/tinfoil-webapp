@@ -4,6 +4,7 @@ import type { Protocol } from 'devtools-protocol'
 import type { ProtocolMapping } from 'devtools-protocol/types/protocol-mapping'
 import {
   chooseOption,
+  glideIntoView,
   hideCursor,
   includesHit,
   inspectElement,
@@ -23,7 +24,11 @@ const TASK_GROUP_COLOR = 'green'
 // The cursor that shows the user where a task points on a page.
 const CURSOR_TAG = 'tinfoil-cursor'
 const CURSOR_COLOR = '#004444'
-const CURSOR_TRAVEL_MS = 200
+// How long the cursor takes to reach a point: in proportion to how far it
+// is, and never so little that the user cannot follow it.
+const CURSOR_MIN_TRAVEL_MS = 300
+const CURSOR_MAX_TRAVEL_MS = 700
+const CURSOR_PX_PER_MS = 1.5
 // How few of the frames a controlled page draws are sent to the extension,
 // which has no use for them.
 const DRAWN_FRAME_INTERVAL = 1000
@@ -40,6 +45,11 @@ const MAX_CAPTURE_ATTEMPTS = 3
 const STABLE_GEOMETRY_FRAMES = 3
 const GEOMETRY_SETTLE_TIMEOUT_MS = 2_000
 const SCROLL_DISTANCE = 600
+// A scroll is delivered as this many turns of the wheel, each drawn in a
+// frame of its own, so that the page is seen to move rather than jump.
+const SCROLL_TURNS = 24
+// How many frames without a scroll show that a page has come to rest.
+const SCROLL_REST_FRAMES = 6
 const WAIT_TIMEOUT_MS = 3_000
 const ELEMENT_GROUP = 'tinfoil-elements'
 const QUAD_TOLERANCE = 0.5
@@ -54,6 +64,19 @@ const SAME_DOCUMENT_NAVIGATIONS: ReadonlySet<string> = new Set([
   'sameDocument',
   'historySameDocument',
 ])
+// The turns of the wheel that make up one scroll, which sets off and comes
+// to rest gently.
+function wheelTurns(distance: number): number[] {
+  const travelled = (turn: number) => {
+    const progress = turn / SCROLL_TURNS
+    return Math.round(distance * progress * progress * (3 - 2 * progress))
+  }
+  return Array.from(
+    { length: SCROLL_TURNS },
+    (_, turn) => travelled(turn + 1) - travelled(turn),
+  ).filter((delta) => delta !== 0)
+}
+
 const KEY_CODES = {
   Enter: 13,
   Tab: 9,
@@ -422,7 +445,7 @@ export class BrowserDriver {
   ): Promise<boolean> {
     try {
       const shown = await this.send(root, 'Runtime.evaluate', {
-        expression: `(${pointCursor.toString()})(${JSON.stringify(CURSOR_TAG)}, ${JSON.stringify(CURSOR_COLOR)}, ${point.x}, ${point.y}, ${press}, ${CURSOR_TRAVEL_MS})`,
+        expression: `(${pointCursor.toString()})(${JSON.stringify(CURSOR_TAG)}, ${JSON.stringify(CURSOR_COLOR)}, ${point.x}, ${point.y}, ${press}, ${CURSOR_MIN_TRAVEL_MS}, ${CURSOR_MAX_TRAVEL_MS}, ${CURSOR_PX_PER_MS})`,
         awaitPromise: true,
         returnByValue: true,
       })
@@ -937,6 +960,19 @@ export class BrowserDriver {
       )
     let state: ReturnType<typeof inspectElement> | undefined
     for (let attempt = 0; attempt < MAX_ELEMENT_OBSERVATIONS; attempt++) {
+      // The element first glides into view for the user to follow. The
+      // browser then puts it there outright, which changes nothing where the
+      // glide arrived.
+      if (attempt === 0)
+        await this.send(entry.target.session, 'Runtime.callFunctionOn', {
+          objectId,
+          functionDeclaration: glideIntoView.toString(),
+          arguments: [
+            { value: SCROLL_REST_FRAMES },
+            { value: GEOMETRY_SETTLE_TIMEOUT_MS },
+          ],
+          awaitPromise: true,
+        })
       await this.send(entry.target.session, 'DOM.scrollIntoViewIfNeeded', {
         backendNodeId: entry.backendId,
       })
@@ -1435,25 +1471,31 @@ export class BrowserDriver {
           return (await this.send(root, 'Page.getLayoutMetrics'))
             .cssLayoutViewport
         })
-        let point = {
-          x: viewport.clientWidth / 2,
-          y: viewport.clientHeight / 2,
-        }
-        if (action.ref) {
-          const target = await this.beforeInput(() =>
-            this.element(page, action.ref),
-          )
-          point = await this.beforeInput(() => this.point(target))
-        }
-        await this.dispatched(() =>
-          this.send(root, 'Input.dispatchMouseEvent', {
-            type: 'mouseWheel',
-            ...point,
-            deltaX: 0,
-            deltaY:
-              action.direction === 'up' ? -SCROLL_DISTANCE : SCROLL_DISTANCE,
-          }),
+        const target = action.ref
+          ? await this.beforeInput(() => this.element(page, action.ref))
+          : undefined
+        const point = await this.aimed(root, page, false, async () =>
+          target
+            ? this.point(target)
+            : { x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 },
         )
+        await this.dispatched(async () => {
+          for (const deltaY of wheelTurns(
+            action.direction === 'up' ? -SCROLL_DISTANCE : SCROLL_DISTANCE,
+          ))
+            await this.send(root, 'Input.dispatchMouseEvent', {
+              type: 'mouseWheel',
+              ...point,
+              deltaX: 0,
+              deltaY,
+            })
+        })
+        // The page is read where the scroll leaves it, not on its way there.
+        try {
+          await this.stableViewport(root)
+        } catch {
+          this.check()
+        }
         break
       }
       case 'wait':

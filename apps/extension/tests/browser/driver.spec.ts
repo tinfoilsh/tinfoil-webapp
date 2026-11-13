@@ -6,7 +6,7 @@ import {
   type Page,
   type Worker,
 } from '@playwright/test'
-import type { BrowserAction } from '@tinfoil/chat-client/types'
+import type { BrowserAction, BrowserResult } from '@tinfoil/chat-client/types'
 import { build } from 'esbuild'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
@@ -20,6 +20,9 @@ declare global {
 }
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const MAX_SNAPSHOT_OBSERVATIONS = 10
+// A movement the user can follow is drawn at this many places at least
+// between where it sets off and where it arrives; a jump is drawn at none.
+const PLACES_ON_THE_WAY = 5
 // A page that is drawn produces this many animation frames well within the
 // deadline; one the browser stopped drawing produces a few at most.
 const DRAWN_FRAMES = 20
@@ -151,6 +154,40 @@ async function startFixture(suffix = '') {
     page.url(),
   )
   return { page, tabId }
+}
+
+// The values an expression took on the page, frame by frame, while an action
+// ran.
+async function sampled(
+  page: Page,
+  expression: string,
+  during: () => Promise<unknown>,
+): Promise<number[]> {
+  await page.evaluate(`(() => {
+    const seen = (globalThis.sampled = [])
+    const frame = () => {
+      if (globalThis.sampled !== seen) return
+      seen.push(${expression})
+      requestAnimationFrame(frame)
+    }
+    requestAnimationFrame(frame)
+  })()`)
+  await during()
+  return page.evaluate(() => {
+    const scope = globalThis as { sampled?: number[] }
+    const seen = scope.sampled ?? []
+    delete scope.sampled
+    return seen
+  })
+}
+
+// At how many places a movement was drawn on its way from one to another.
+function placesBetween(values: number[], from: number, to: number) {
+  return new Set(
+    values.filter(
+      (value) => value > Math.min(from, to) && value < Math.max(from, to),
+    ),
+  ).size
 }
 
 function ref(text: string, name: string) {
@@ -619,13 +656,34 @@ test('a cursor on the page shows where the task points, out of what it captures,
   }
   const read = await execute({ action: 'read', tabId })
   expect(await tip()).toBeNull()
-  await execute({ action: 'click', tabId, ref: ref(read.text, 'Save') })
+  const saved = await execute({
+    action: 'click',
+    tabId,
+    ref: ref(read.text, 'Save'),
+  })
   await expect(page.locator('output').first()).toHaveText('Saved Before')
   const save = await center('#save')
   const onSave = (await tip())!
   expect(onSave.takesInput).toBe(false)
   expect(Math.abs(onSave.x - save.x)).toBeLessThan(1)
   expect(Math.abs(onSave.y - save.y)).toBeLessThan(1)
+
+  // The cursor is seen on its way to the next place the task points.
+  const shadow = await center('#shadow button')
+  const path = await sampled(
+    page,
+    `document.querySelector('tinfoil-cursor').shadowRoot.getElementById('arrow').getBoundingClientRect().left + 4`,
+    () =>
+      execute({
+        action: 'hover',
+        tabId,
+        ref: ref(saved.text, 'Shadow button'),
+      }),
+  )
+  expect(Math.abs((await tip())!.x - shadow.x)).toBeLessThan(1)
+  expect(placesBetween(path, save.x, shadow.x)).toBeGreaterThanOrEqual(
+    PLACES_ON_THE_WAY,
+  )
 
   // A capture leaves the cursor out, so one taken with the cursor on the
   // button still matches the page after the cursor has left for the canvas.
@@ -833,11 +891,31 @@ test('long pages can be searched and offscreen targets are scrolled into view', 
   const visible = await execute({ action: 'read', tabId })
   expect(visible.text).toContain('button "Top"')
   expect(visible.text).not.toContain('button "Bottom"')
+  // The page is seen to move when the task scrolls it, and again when the
+  // task brings a target that is out of view into it.
+  const offset = () => page.evaluate(() => scrollY)
+  let scrolled!: BrowserResult
+  const scrolling = await sampled(page, 'scrollY', async () => {
+    scrolled = await execute({ action: 'scroll', tabId, direction: 'down' })
+  })
+  // The scroll is answered with the page as it left it.
+  expect(scrolled.text).not.toContain('button "Top"')
+  const scrolledTo = await offset()
+  expect(scrolledTo).toBeGreaterThan(0)
+  expect(placesBetween(scrolling, 0, scrolledTo)).toBeGreaterThanOrEqual(
+    PLACES_ON_THE_WAY,
+  )
   const found = await execute({ action: 'read', tabId, text: 'Bottom' })
-  await execute({ action: 'click', tabId, ref: ref(found.text, 'Bottom') })
+  const gliding = await sampled(page, 'scrollY', () =>
+    execute({ action: 'click', tabId, ref: ref(found.text, 'Bottom') }),
+  )
   await expect(
     page.getByRole('button', { name: 'Bottom saved' }),
   ).toBeInViewport()
+  expect(await offset()).toBeGreaterThan(scrolledTo)
+  expect(
+    placesBetween(gliding, scrolledTo, await offset()),
+  ).toBeGreaterThanOrEqual(PLACES_ON_THE_WAY)
 })
 
 test('form observations protect payment values and actions handle readonly and closed-shadow controls', async () => {

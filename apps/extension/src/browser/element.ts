@@ -174,6 +174,51 @@ export function stableElement(
   })
 }
 
+// Brings an element that is not wholly in view to the middle of it by
+// degrees, for the user to follow, and waits for the page to come to rest:
+// for no scroll to have happened in so many frames. An element in view is
+// left where it is.
+export function glideIntoView(
+  this: Element,
+  restFrames: number,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise((resolve) => {
+    let frame = 0
+    let atRest = 0
+    const scrolled = () => {
+      atRest = 0
+    }
+    const finish = () => {
+      clearTimeout(timer)
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      removeEventListener('scroll', scrolled, true)
+      resolve()
+    }
+    const timer = setTimeout(finish, timeoutMs)
+    const rest = () => {
+      if (++atRest > restFrames) finish()
+      else frame = requestAnimationFrame(rest)
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      observer.disconnect()
+      if (entry.intersectionRatio === 1) {
+        finish()
+        return
+      }
+      addEventListener('scroll', scrolled, true)
+      this.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'center',
+      })
+      frame = requestAnimationFrame(rest)
+    })
+    observer.observe(this)
+  })
+}
+
 // The mark a task leaves on the page for the user to follow: a cursor that
 // travels to where the task points, and a ring where it presses. It takes no
 // input, and it changes inside its own shadow tree, where the page's scripts
@@ -184,7 +229,9 @@ export function pointCursor(
   x: number,
   y: number,
   press: boolean,
-  travelMs: number,
+  minTravelMs: number,
+  maxTravelMs: number,
+  pxPerMs: number,
 ): Promise<boolean> {
   const SVG = 'http://www.w3.org/2000/svg'
   // Where the arrow's tip sits in its drawing.
@@ -236,22 +283,26 @@ export function pointCursor(
   layer.style.visibility = ''
   const at = `translate(${x}px, ${y}px)`
   const to = `translate(${x - TIP_X}px, ${y - TIP_Y}px)`
-  // The cursor travels only from a point it was at to another.
+  // The cursor travels only from a point it was at to another, for longer
+  // the farther it goes.
   const from = arrow.style.transform
-  const moved = arrow.dataset.x !== String(x) || arrow.dataset.y !== String(y)
+  const distance = Math.hypot(
+    x - Number(arrow.dataset.x),
+    y - Number(arrow.dataset.y),
+  )
   arrow.dataset.x = String(x)
   arrow.dataset.y = String(y)
   arrow.style.transform = to
   ring.style.transform = at
   const travel =
-    !from || !moved || matchMedia('(prefers-reduced-motion: reduce)').matches
+    !from || !distance || matchMedia('(prefers-reduced-motion: reduce)').matches
       ? 0
-      : travelMs
+      : Math.min(maxTravelMs, Math.max(minTravelMs, distance / pxPerMs))
   const arrived = travel
     ? Promise.race([
         arrow.animate([{ transform: from }, { transform: to }], {
           duration: travel,
-          easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+          easing: 'ease-in-out',
         }).finished,
         new Promise((resolve) => setTimeout(resolve, travel + LATE_MS)),
       ])
