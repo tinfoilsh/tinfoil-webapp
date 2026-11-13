@@ -1,6 +1,5 @@
 import {
   ClerkProvider,
-  SignIn,
   UserButton,
   useAuth,
   useClerk,
@@ -29,10 +28,12 @@ import remarkGfm from 'remark-gfm'
 import '../../../../../src/styles/tailwind.css'
 import { webURL } from '../../browser/schema'
 import {
+  CLERK_FRONTEND_API,
   CLERK_PUBLISHABLE_KEY,
   DEFAULT_MODEL,
   HARNESS_URL,
   MAX_TABS,
+  WEB_SIGN_IN_URL,
 } from '../../config'
 import type { Command } from '../../messages'
 import { PanelConnection } from '../../panel-connection'
@@ -550,8 +551,15 @@ function SignedInApp() {
     return (
       <div className="setup">
         <h1>Tinfoil Browser</h1>
-        <p>Sign in to use private models with your browser.</p>
-        <SignIn routing="hash" />
+        <p>
+          Sign in on Tinfoil’s website, then close and reopen this panel to
+          continue.
+        </p>
+        <Button asChild variant="solid">
+          <a href={WEB_SIGN_IN_URL} target="_blank" rel="noopener noreferrer">
+            Sign in to Tinfoil
+          </a>
+        </Button>
       </div>
     )
   return <ChatPanel key={userId} owner={userId} getToken={getToken} />
@@ -566,7 +574,7 @@ function App() {
     media.addEventListener('change', update)
     return () => media.removeEventListener('change', update)
   }, [])
-  if (!CLERK_PUBLISHABLE_KEY)
+  if (!CLERK_PUBLISHABLE_KEY || !CLERK_FRONTEND_API)
     return (
       <div className="setup">
         <h1>Tinfoil Browser</h1>
@@ -582,10 +590,10 @@ function App() {
   return (
     <ClerkProvider
       publishableKey={CLERK_PUBLISHABLE_KEY}
+      syncHost={CLERK_FRONTEND_API}
+      signInUrl={WEB_SIGN_IN_URL}
       telemetry={{ disabled: true }}
       afterSignOutUrl={url}
-      signInFallbackRedirectUrl={url}
-      signUpFallbackRedirectUrl={url}
     >
       <SignedInApp />
     </ClerkProvider>

@@ -28,6 +28,7 @@ export default defineConfig({
     const origins = new Set(['https://*.tinfoil.sh/*'])
     for (const value of [
       process.env.WXT_CLERK_FRONTEND_API,
+      process.env.WXT_WEBAPP_URL,
       process.env.WXT_HARNESS_URL,
       process.env.WXT_CONTROLPLANE_URL,
     ]) {
@@ -43,7 +44,7 @@ export default defineConfig({
         'Private chat and browser actions with attested Tinfoil models.',
       minimum_chrome_version: '142',
       key: process.env.WXT_EXTENSION_PUBLIC_KEY || DEVELOPMENT_PUBLIC_KEY,
-      permissions: ['debugger', 'sidePanel', 'storage', 'tabs'],
+      permissions: ['cookies', 'debugger', 'sidePanel', 'storage', 'tabs'],
       host_permissions: [...origins],
       action: { default_title: 'Open Tinfoil' },
       icons: {

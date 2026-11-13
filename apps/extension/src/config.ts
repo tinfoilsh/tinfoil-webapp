@@ -4,6 +4,11 @@ export const CONTROLPLANE_URL =
   import.meta.env.WXT_CONTROLPLANE_URL || 'https://api.tinfoil.sh'
 export const CLERK_PUBLISHABLE_KEY =
   import.meta.env.WXT_CLERK_PUBLISHABLE_KEY || ''
+export const CLERK_FRONTEND_API = import.meta.env.WXT_CLERK_FRONTEND_API || ''
+export const WEB_SIGN_IN_URL = new URL(
+  '/signin',
+  import.meta.env.WXT_WEBAPP_URL || 'https://chat.tinfoil.sh',
+).href
 export const PANEL_PORT = 'tinfoil-panel'
 export const TOKEN_TIMEOUT_MS = 30_000
 export const PANEL_HEARTBEAT_MS = 20_000

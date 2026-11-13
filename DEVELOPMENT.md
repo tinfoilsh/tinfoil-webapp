@@ -44,7 +44,7 @@ cp apps/extension/.env.example apps/extension/.env
 npm run dev:extension
 ```
 
-In `chrome://extensions`, enable Developer mode and load `apps/extension/.output/chrome-mv3-dev` as an unpacked extension. Use a persistent Chrome profile to keep local chats between sessions.
+In `chrome://extensions`, enable Developer mode and load `apps/extension/.output/chrome-mv3-dev` as an unpacked extension. Sign in on the website opened by the panel, then close and reopen the panel. Clerk shares the website's session through its [Sync Host integration](https://clerk.com/docs/guides/sessions/sync-host?sdk=chrome-extension); use the same Clerk instance and Chrome profile, and set `WXT_WEBAPP_URL` when testing against another webapp. Use a persistent Chrome profile to keep local chats between sessions.
 
 ```bash
 npm run build:extension
@@ -54,7 +54,7 @@ npm exec --workspace=apps/extension -- playwright install chromium
 npm run test:browser --workspace=apps/extension
 ```
 
-The production-mode folder is `apps/extension/.output/chrome-mv3`. Reload its extension card after rebuilding. CI publishes that folder as the `tinfoil-browser-chrome` artifact; its public configuration comes from the `EXTENSION_CLERK_PUBLISHABLE_KEY`, `EXTENSION_CLERK_FRONTEND_API`, and `EXTENSION_HARNESS_URL` repository variables.
+The production-mode folder is `apps/extension/.output/chrome-mv3`. Reload its extension card after rebuilding. CI publishes that folder as the `tinfoil-browser-chrome` artifact; its public configuration comes from the `EXTENSION_CLERK_PUBLISHABLE_KEY`, `EXTENSION_CLERK_FRONTEND_API`, `EXTENSION_WEBAPP_URL`, and `EXTENSION_HARNESS_URL` repository variables.
 
 ## Releases
 
