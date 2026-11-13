@@ -378,9 +378,6 @@ function ChatPanel({
 function SignedInApp() {
   const { isLoaded, userId } = useAuth()
   const clerk = useClerk()
-  const sessionSync = useRef<ReturnType<typeof watchWebSession> | undefined>(
-    undefined,
-  )
   const [signInError, setSignInError] = useState(false)
   useEffect(() => {
     if (!isLoaded) return
@@ -396,12 +393,8 @@ function SignedInApp() {
         if (cause !== null) logError('Unable to refresh website sign-in', cause)
       },
     )
-    sessionSync.current = sync
     void sync.refresh()
-    return () => {
-      sessionSync.current = undefined
-      sync.dispose()
-    }
+    return sync.dispose
   }, [clerk, isLoaded])
   const getToken = useCallback(
     (options?: { skipCache?: boolean }) => sessionToken(clerk, userId, options),
@@ -425,10 +418,7 @@ function SignedInApp() {
             Sign in to Tinfoil
           </a>
         </Button>
-        <Button
-          variant="ghost"
-          onClick={() => void sessionSync.current?.refresh()}
-        >
+        <Button variant="ghost" onClick={() => window.location.reload()}>
           Refresh sign-in
         </Button>
         {signInError && (
