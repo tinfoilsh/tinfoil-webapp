@@ -23,7 +23,6 @@ export interface Task {
   lastPrompt: string
   model: string
   effort: 'low' | 'medium' | 'high'
-  tabs: number[]
   confirmActions: boolean
   error?: string
   receipt?: {

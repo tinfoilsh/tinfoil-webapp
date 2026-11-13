@@ -21,13 +21,11 @@ import {
 } from 'react'
 import { createRoot } from 'react-dom/client'
 import '../../../../../src/styles/tailwind.css'
-import { webURL } from '../../browser/schema'
 import {
   CLERK_FRONTEND_API,
   CLERK_PUBLISHABLE_KEY,
   DEFAULT_MODEL,
   HARNESS_URL,
-  MAX_TABS,
   WEB_SIGN_IN_URL,
 } from '../../config'
 import { MessageView } from '../../message-view'
@@ -37,7 +35,7 @@ import { sessionToken, watchWebSession } from '../../web-session'
 import './style.css'
 
 const SUGGESTIONS = [
-  'Summarize the page I selected',
+  'Summarize the current page',
   'Compare these tabs and make a table',
   'Help me fill out this form',
 ]
@@ -57,13 +55,10 @@ function ChatPanel({
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
-  const [tabs, setTabs] = useState<chrome.tabs.Tab[]>([])
-  const [selected, setSelected] = useState<number[]>([])
   const [modelChoice, setModel] = useState<string>()
   const [effort, setEffort] = useState<'low' | 'medium' | 'high'>('medium')
   const [confirmActions, setConfirmActions] = useState(true)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [scopeOpen, setScopeOpen] = useState(true)
   const scroll = useRef<HTMLDivElement>(null)
   const following = useRef(true)
   const task = view.task
@@ -78,39 +73,6 @@ function ChatPanel({
   const selectedModel = models.find((m) => m.id === model)
 
   useEffect(() => connection.connect(), [connection])
-  useEffect(() => {
-    let active = true
-    const refresh = () => {
-      void chrome.tabs
-        .query({ currentWindow: true })
-        .then((all) => {
-          if (active)
-            setTabs(
-              all.filter((tab) => {
-                try {
-                  webURL(tab.url || '')
-                  return !!tab.id
-                } catch {
-                  return false
-                }
-              }),
-            )
-        })
-        .catch(() => {
-          if (active) setError('Could not read the tabs in this window.')
-        })
-    }
-    refresh()
-    chrome.tabs.onUpdated.addListener(refresh)
-    chrome.tabs.onRemoved.addListener(refresh)
-    chrome.tabs.onActivated.addListener(refresh)
-    return () => {
-      active = false
-      chrome.tabs.onUpdated.removeListener(refresh)
-      chrome.tabs.onRemoved.removeListener(refresh)
-      chrome.tabs.onActivated.removeListener(refresh)
-    }
-  }, [])
   useEffect(() => {
     const element = scroll.current
     if (following.current && element) element.scrollTop = element.scrollHeight
@@ -133,13 +95,11 @@ function ChatPanel({
       await connection.command({
         kind: 'send',
         content,
-        tabs: selected,
         model,
         effort,
         confirmActions,
       })
       setInput('')
-      setScopeOpen(false)
       following.current = true
     } catch (cause) {
       setError(
@@ -230,7 +190,7 @@ function ChatPanel({
             </h1>
             <p>
               Ask about a page or let Tinfoil help you get something done.
-              Choose the tabs it can use below.
+              Tinfoil can use all your open web tabs.
             </p>
             <div className="suggestions">
               {SUGGESTIONS.map((text) => (
@@ -299,9 +259,9 @@ function ChatPanel({
         {task?.phase === 'interrupted' && (
           <Button
             variant="outline"
-            onClick={() => void command({ kind: 'resume', tabs: selected })}
+            onClick={() => void command({ kind: 'resume' })}
           >
-            Resume with selected tabs
+            Resume task
           </Button>
         )}
       </div>
@@ -314,7 +274,7 @@ function ChatPanel({
               onClick={() =>
                 void command(
                   task.phase === 'paused'
-                    ? { kind: 'resume', tabs: selected }
+                    ? { kind: 'resume' }
                     : { kind: 'pause' },
                 )
               }
@@ -331,56 +291,24 @@ function ChatPanel({
             <span className="shortcut">Alt+Shift+S</span>
           </div>
         )}
-        <button
-          className="scope-toggle"
-          aria-expanded={scopeOpen}
-          onClick={() => setScopeOpen(!scopeOpen)}
-        >
-          {selected.length
-            ? `${selected.length} selected ${selected.length === 1 ? 'tab' : 'tabs'}`
-            : 'Select browser tabs'}
-          <span>{scopeOpen ? '−' : '+'}</span>
-        </button>
-        {scopeOpen && (
-          <div className="scope">
-            <p>
-              Only selected tabs and tabs opened by this task are available to
-              the agent.
-            </p>
-            {tabs.map((tab) => (
-              <label key={tab.id} className="tab-choice">
-                <input
-                  type="checkbox"
-                  checked={selected.includes(tab.id!)}
-                  disabled={
-                    busy ||
-                    (!selected.includes(tab.id!) && selected.length >= MAX_TABS)
-                  }
-                  onChange={(event) =>
-                    setSelected(
-                      event.target.checked
-                        ? [...selected, tab.id!]
-                        : selected.filter((id) => id !== tab.id),
-                    )
-                  }
-                />
-                <span>
-                  <strong>{tab.title}</strong>
-                  <small>{new URL(tab.url!).hostname}</small>
-                </span>
-              </label>
-            ))}
-            <label className="review-toggle">
-              <input
-                type="checkbox"
-                checked={confirmActions}
-                disabled={busy}
-                onChange={(e) => setConfirmActions(e.target.checked)}
-              />
-              Review actions before execution
-            </label>
+        <div className="browser-access">All web tabs available</div>
+        {busy && view.workingTab && (
+          <div className="working-tab" role="status">
+            <span>Working in</span>
+            <strong title={view.workingTab.url}>
+              {view.workingTab.title || new URL(view.workingTab.url).hostname}
+            </strong>
           </div>
         )}
+        <label className="review-toggle">
+          <input
+            type="checkbox"
+            checked={confirmActions}
+            disabled={busy}
+            onChange={(e) => setConfirmActions(e.target.checked)}
+          />
+          Review actions before execution
+        </label>
         <form
           onSubmit={(event) => {
             event.preventDefault()

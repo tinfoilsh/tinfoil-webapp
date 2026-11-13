@@ -225,17 +225,141 @@ test('shadow DOM and cross-origin frames expose usable references', async () => 
   )
 })
 
-test('unselected tabs and arbitrary code cannot be executed', async () => {
+test('unavailable tabs and arbitrary code cannot be executed', async () => {
   const { tabId } = await startFixture('/?scope')
   await expect(
     execute({ action: 'read', tabId: tabId + 1000 }),
-  ).rejects.toThrow('not selected')
+  ).rejects.toThrow('no longer available')
   await expect(
     execute({ action: 'navigate', tabId, url: 'javascript:alert(1)' }),
   ).rejects.toThrow('HTTP or HTTPS')
   await expect(execute({ action: 'close', tabId })).rejects.toThrow(
     'created by this task',
   )
+})
+
+test('all web tabs are available as they open and the working tab is brought to the front', async () => {
+  const { page, tabId } = await startFixture('/?all-tabs')
+  const otherURL = `${origin}/?another-window`
+  const opened = context.waitForEvent('page')
+  const otherWindow = await worker.evaluate(
+    (url) => chrome.windows.create({ url, focused: false }),
+    otherURL,
+  )
+  if (otherWindow?.id === undefined || !otherWindow.tabs?.[0]?.id)
+    throw new Error('The second browser window was not created')
+  const other = await opened
+  await other.waitForLoadState('domcontentloaded')
+  const otherId = otherWindow.tabs![0].id!
+  const restricted = await worker.evaluate(() =>
+    chrome.tabs.create({ url: 'chrome://version', active: false }),
+  )
+  try {
+    const listed = JSON.parse((await execute({ action: 'tabs' })).text) as {
+      id: number
+      url: string
+      active: boolean
+    }[]
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: tabId, url: page.url() }),
+        expect.objectContaining({ id: otherId, url: otherURL }),
+      ]),
+    )
+    expect(listed.some((tab) => tab.id === restricted.id)).toBe(false)
+    await expect(
+      execute({ action: 'read', tabId: restricted.id }),
+    ).rejects.toThrow('HTTP or HTTPS')
+    const read = await execute({ action: 'read', tabId: otherId })
+    expect(read.text).toContain(`URL: ${otherURL}`)
+    expect(await worker.evaluate(() => browserTest.currentTab())).toEqual({
+      id: otherId,
+      title: 'Browser fixture',
+      url: otherURL,
+      active: true,
+    })
+    expect(
+      await worker.evaluate(
+        async () => (await chrome.windows.getLastFocused()).id,
+      ),
+    ).toBe(otherWindow.id)
+    const current = await worker.evaluate(
+      async () =>
+        (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]
+          .id,
+    )
+    expect(current).toBe(otherId)
+    await execute({ action: 'read', tabId })
+    expect(await worker.evaluate(() => browserTest.currentTab())).toEqual({
+      id: tabId,
+      title: 'Browser fixture',
+      url: page.url(),
+      active: true,
+    })
+    await other.close()
+    expect((await execute({ action: 'read', tabId })).text).toContain(
+      `URL: ${page.url()}`,
+    )
+  } finally {
+    await other.close()
+    await worker.evaluate((id) => chrome.tabs.remove(id), restricted.id!)
+  }
+})
+
+test('a task can visit more tabs than it keeps attached and releases every attachment when stopped', async () => {
+  const { page, tabId } = await startFixture('/?many-tabs-0')
+  const extra: Page[] = []
+  const ids = [tabId]
+  const TAB_COUNT = 10
+  try {
+    for (let index = 1; index < TAB_COUNT; index++) {
+      const tab = await context.newPage()
+      extra.push(tab)
+      await tab.goto(`${origin}/?many-tabs-${index}`)
+      ids.push(
+        await worker.evaluate(
+          async (url) =>
+            (await chrome.tabs.query({})).find((tab) => tab.url === url)!.id!,
+          tab.url(),
+        ),
+      )
+    }
+    const listed = JSON.parse((await execute({ action: 'tabs' })).text) as {
+      id: number
+    }[]
+    expect(ids.every((id) => listed.some((tab) => tab.id === id))).toBe(true)
+    for (const id of ids)
+      expect((await execute({ action: 'read', tabId: id })).text).toContain(
+        `Tab ${id}: Browser fixture`,
+      )
+    const attached = () =>
+      worker.evaluate(async (ids) => {
+        const connected = await Promise.all(
+          ids.map(async (id) => {
+            try {
+              await chrome.debugger.sendCommand(
+                { tabId: id },
+                'Page.getFrameTree',
+              )
+              return id
+            } catch {
+              return null
+            }
+          }),
+        )
+        return connected.filter((id) => id !== null).sort()
+      }, ids)
+    expect(await attached()).toEqual(ids.slice(2).sort())
+    expect((await execute({ action: 'read', tabId })).text).toContain(
+      `URL: ${page.url()}`,
+    )
+    expect(await attached()).toEqual([...ids.slice(3), tabId].sort())
+    await worker.evaluate(() => browserTest.stop())
+    expect(await attached()).toEqual([])
+    await expect(page).toHaveURL(`${origin}/?many-tabs-0`)
+  } finally {
+    await Promise.all(extra.map((tab) => tab.close()))
+  }
 })
 
 test('coordinate actions use the captured viewport and reject changed screenshots', async () => {

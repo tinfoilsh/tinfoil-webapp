@@ -9,6 +9,7 @@ import 'fake-indexeddb/auto'
 import { afterEach, expect, test, vi } from 'vitest'
 import { client, signIn, testSession } from '../../../tests/harness-fixture'
 import { storedThread } from '../../../tests/services/harness/thread-fixture'
+import type { TabInfo } from '../src/browser/driver'
 import { BrowserError } from '../src/browser/errors'
 import { TaskController } from '../src/controller'
 import type { View } from '../src/messages'
@@ -32,8 +33,8 @@ function setup() {
   const views: View[] = []
   const observers = new Set<(view: View) => void>()
   let actions = 0
+  let workingOn!: (tab: TabInfo | undefined) => Promise<void>
   const browser = {
-    attach: async () => {},
     execute: async () => ({ text: `Saved ${++actions}` }),
     describe: async () => 'Click Save on the selected tab',
     dispose: async () => {},
@@ -47,7 +48,10 @@ function setup() {
       views.push(structuredClone(view))
       for (const observe of observers) observe(view)
     },
-    () => browser,
+    (_signal, _interrupted, onTab) => {
+      workingOn = onTab
+      return browser
+    },
   )
   const until = (test: (view: View) => boolean) =>
     new Promise<View>((resolve) => {
@@ -68,7 +72,14 @@ function setup() {
     await controller.dispose()
     await store.close()
   })
-  return { store, controller, until, browser, actions: () => actions }
+  return {
+    store,
+    controller,
+    until,
+    browser,
+    actions: () => actions,
+    workingOn: (tab: TabInfo) => workingOn(tab),
+  }
 }
 
 function started(turn: Turn): Frame {
@@ -120,7 +131,6 @@ function browserRequest(turn: Turn): Frame {
 const send = {
   kind: 'send' as const,
   content: 'Save the form',
-  tabs: [] as number[],
   model: MODEL,
   effort: 'low' as const,
   confirmActions: false,
@@ -157,6 +167,53 @@ test('local chats return the saved harness record intact on the next turn', asyn
   expect(client.post.mock.calls.map(([path]) => path)).toEqual(['/v1/session'])
 })
 
+test('browser access is automatic and the working tab is published until the run ends', async () => {
+  const { controller, until, browser, workingOn } = setup()
+  const tab: TabInfo = {
+    id: 12,
+    title: 'Current article',
+    url: 'https://example.com/article',
+    active: true,
+  }
+  let finish!: () => void
+  const observed = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  browser.execute = async () => {
+    await workingOn(tab)
+    await observed
+    return { text: 'Article read' }
+  }
+  let sent!: Turn
+  client.events.mockImplementation(async function* (_path: string, turn: Turn) {
+    sent = turn
+    yield started(turn)
+    yield browserRequest(turn)
+    yield ended(turn)
+  })
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/session') return session
+    if (path === '/v1/threads/browser/result') return { accepted: true }
+    throw new Error(`Unexpected path ${path}`)
+  })
+  await controller.initialize()
+  await controller.command(send)
+  const working = await until((view) => !!view.workingTab)
+  expect(sent.browser?.executorId).toMatch(/^[0-9a-f-]{36}$/)
+  expect(sent.browser?.token).toMatch(/^[0-9a-f]{64}$/)
+  expect(working.workingTab).toEqual(tab)
+  finish()
+  const done = await until(
+    (view) => view.task?.phase === 'completed' && !view.workingTab,
+  )
+  expect(done.workingTab).toBeUndefined()
+  expect(
+    client.post.mock.calls
+      .filter(([path]) => path === '/v1/threads/browser/result')
+      .map(([, input]) => input),
+  ).toEqual([expect.objectContaining({ result: { text: 'Article read' } })])
+})
+
 test('reconnecting after a lost browser-result acknowledgment does not click twice', async () => {
   const { controller, until, actions, store } = setup()
   let turn!: Turn
@@ -178,7 +235,7 @@ test('reconnecting after a lost browser-result acknowledgment does not click twi
     throw new Error(`Unexpected path ${path}`)
   })
   await controller.initialize()
-  await controller.command({ ...send, tabs: [1] })
+  await controller.command(send)
   const final = await until((view) => view.task?.phase === 'completed')
   expect(actions()).toBe(1)
   const results = client.post.mock.calls
@@ -215,7 +272,7 @@ test('stopping during review prevents execution and collects the canceled thread
     throw new Error(`Unexpected path ${path}`)
   })
   await controller.initialize()
-  await controller.command({ ...send, tabs: [1], confirmActions: true })
+  await controller.command({ ...send, confirmActions: true })
   const review = await until((view) => !!view.pending)
   expect(review.pending?.preview).toBe('Click Save on the selected tab')
   await controller.command({ kind: 'stop' })
@@ -248,7 +305,7 @@ test('an expired browser operation is canceled before dispatch', async () => {
     throw new Error(`Unexpected path ${path}`)
   })
   await controller.initialize()
-  await controller.command({ ...send, tabs: [1] })
+  await controller.command(send)
   await until((view) => view.task?.phase === 'interrupted' && !view.pending)
   expect(actions()).toBe(0)
   expect(
@@ -275,7 +332,7 @@ test('resuming repeatedly preserves the original task instead of nesting instruc
   await controller.command(send)
   await until((view) => sent.length === 1 && view.task?.phase === 'interrupted')
   for (const count of [2, 3]) {
-    await controller.command({ kind: 'resume', tabs: [] })
+    await controller.command({ kind: 'resume' })
     await until(
       (view) => sent.length === count && view.task?.phase === 'interrupted',
     )
@@ -326,7 +383,7 @@ test('an uncertain mutation stops the run instead of becoming a retryable tool r
     throw new Error(`Unexpected path ${path}`)
   })
   await controller.initialize()
-  await controller.command({ ...send, tabs: [1] })
+  await controller.command(send)
   const final = await until((view) => view.task?.phase === 'interrupted')
   expect(actions()).toBe(1)
   expect(final.task?.error).toContain('may have completed')

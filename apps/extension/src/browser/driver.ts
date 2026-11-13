@@ -1,7 +1,6 @@
 import type { BrowserAction, BrowserResult } from '@tinfoil/chat-client/types'
 import type { Protocol } from 'devtools-protocol'
 import type { ProtocolMapping } from 'devtools-protocol/types/protocol-mapping'
-import { MAX_TABS } from '../config'
 import {
   chooseOption,
   includesHit,
@@ -14,6 +13,7 @@ import { BrowserError } from './errors'
 import { actionSchema, changesPage, webURL } from './schema'
 
 const PROTOCOL_VERSION = '1.3'
+const MAX_ATTACHED_TABS = 8
 const MAX_NODES = 300
 const MAX_SCANNED_NODES = 2000
 const MAX_PAGE_CHARS = 16_000
@@ -66,11 +66,17 @@ type Page = {
     parameters: Protocol.Page.CaptureScreenshotRequest
   }
 }
-export type TabInfo = { id: number; title: string; url: string }
+export type TabInfo = {
+  id: number
+  title: string
+  url: string
+  active: boolean
+}
 
 export class BrowserDriver {
   private readonly pages = new Map<number, Page>()
   private readonly created = new Set<number>()
+  private currentTabId?: number
   private closed = false
   private readonly onEvent = (
     source: Session,
@@ -96,11 +102,16 @@ export class BrowserDriver {
         parent: source,
       }
       page.targets.set(event.sessionId, target)
-      void this.enable(target).catch(() =>
-        this.interrupted(
-          'A frame could not be inspected. Pause and select the tab again.',
-        ),
-      )
+      void this.enable(target).catch(() => {
+        if (
+          this.pages.get(source.tabId!) === page &&
+          !this.closed &&
+          !this.signal.aborted
+        )
+          this.interrupted(
+            'A frame could not be inspected. Pause and resume the task.',
+          )
+      })
     }
     if (method === 'Target.detachedFromTarget') {
       const event = params as Protocol.Target.DetachedFromTargetEvent
@@ -119,15 +130,19 @@ export class BrowserDriver {
       !this.closed
     ) {
       this.pages.delete(source.tabId)
-      this.interrupted(
-        'Browser control was disconnected. Select the tab again to continue.',
-      )
+      if (source.tabId === this.currentTabId) {
+        this.currentTabId = undefined
+        this.interrupted(
+          'Browser control was disconnected. Resume the task to continue.',
+        )
+      }
     }
   }
 
   constructor(
     private readonly signal: AbortSignal,
     private readonly interrupted: (message: string) => void,
+    private readonly workingOn: (tab: TabInfo | undefined) => Promise<void>,
   ) {
     chrome.debugger.onEvent.addListener(this.onEvent)
     chrome.debugger.onDetach.addListener(this.onDetach)
@@ -184,13 +199,15 @@ export class BrowserDriver {
     })
   }
 
-  async attach(tabId: number) {
+  private async attach(tabId: number) {
     this.check()
     if (this.pages.has(tabId)) return
-    if (this.pages.size >= MAX_TABS)
-      throw new BrowserError('TAB_LIMIT', 'The task has reached its tab limit.')
-    const tab = await chrome.tabs.get(tabId)
-    webURL(tab.url || '')
+    if (this.pages.size >= MAX_ATTACHED_TABS) {
+      const oldest = this.pages.keys().next().value!
+      this.pages.delete(oldest)
+      await chrome.debugger.detach({ tabId: oldest })
+    }
+    this.check()
     await chrome.debugger.attach({ tabId }, PROTOCOL_VERSION)
     const root: Target = { session: { tabId } }
     this.pages.set(tabId, {
@@ -207,23 +224,63 @@ export class BrowserDriver {
 
   private async page(tabId: number | undefined): Promise<[number, Page]> {
     this.check()
-    const id = tabId ?? this.pages.keys().next().value
-    const page = id === undefined ? undefined : this.pages.get(id)
-    if (id === undefined || !page)
+    const id =
+      tabId ??
+      this.currentTabId ??
+      (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]
+        ?.id
+    if (id === undefined)
       throw new BrowserError(
-        'TAB_NOT_SELECTED',
-        'This tab was not selected for the task.',
+        'TAB_UNAVAILABLE',
+        'Open a web page for the task to use.',
       )
-    webURL((await chrome.tabs.get(id)).url || '')
+    let tab: chrome.tabs.Tab
+    try {
+      tab = await chrome.tabs.get(id)
+    } catch {
+      throw new BrowserError(
+        'TAB_UNAVAILABLE',
+        'This tab is no longer available. List the tabs again.',
+      )
+    }
+    const url = webURL(tab.pendingUrl || tab.url || '')
+    await this.attach(id)
+    this.check()
+    const page = this.pages.get(id)!
+    this.pages.delete(id)
+    this.pages.set(id, page)
+    await chrome.tabs.update(id, { active: true })
+    this.check()
+    await chrome.windows.update(tab.windowId, { focused: true })
+    await this.send({ tabId: id }, 'Page.bringToFront')
+    this.currentTabId = id
+    await this.workingOn({ id, title: tab.title || '', url, active: true })
     this.check()
     return [id, page]
   }
 
   async tabs(): Promise<TabInfo[]> {
+    this.check()
+    const [all, focused] = await Promise.all([
+      chrome.tabs.query({}),
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }),
+    ])
+    this.check()
     const tabs: TabInfo[] = []
-    for (const id of this.pages.keys()) {
-      const tab = await chrome.tabs.get(id)
-      tabs.push({ id, title: tab.title || '', url: tab.url || '' })
+    for (const tab of all) {
+      if (tab.id === undefined) continue
+      let url: string
+      try {
+        url = webURL(tab.pendingUrl || tab.url || '')
+      } catch {
+        continue
+      }
+      tabs.push({
+        id: tab.id,
+        title: tab.title || '',
+        url,
+        active: tab.id === focused[0]?.id,
+      })
     }
     return tabs
   }
@@ -800,15 +857,9 @@ export class BrowserDriver {
     if (action.action === 'tabs')
       return { text: JSON.stringify(await this.tabs()) }
     if (action.action === 'open') {
-      if (this.pages.size >= MAX_TABS)
-        throw new BrowserError(
-          'TAB_LIMIT',
-          'The task has reached its tab limit.',
-        )
       const url = webURL(action.url || '')
       const tab = await chrome.tabs.create({ url, active: true })
       this.created.add(tab.id!)
-      await this.attach(tab.id!)
       return this.read(tab.id)
     }
     const [id, page] = await this.page(action.tabId)
@@ -864,7 +915,6 @@ export class BrowserDriver {
         break
       }
       case 'switch':
-        await chrome.tabs.update(id, { active: true })
         break
       case 'close':
         if (!this.created.has(id))
@@ -874,6 +924,9 @@ export class BrowserDriver {
           )
         this.pages.delete(id)
         await chrome.tabs.remove(id)
+        this.created.delete(id)
+        this.currentTabId = undefined
+        await this.workingOn(undefined)
         return { text: `Closed tab ${id}.` }
       case 'scroll': {
         const viewport = (await this.send(root, 'Page.getLayoutMetrics'))

@@ -12,7 +12,6 @@ export const WEB_SIGN_IN_URL = new URL(
 export const PANEL_PORT = 'tinfoil-panel'
 export const TOKEN_TIMEOUT_MS = 30_000
 export const PANEL_HEARTBEAT_MS = 20_000
-export const MAX_TABS = 8
 export const TASK_TIMEOUT_MS = 20 * 60_000
 export const DEFAULT_MODEL = 'kimi-k3-1-pro'
 export const RECONNECT_DELAYS_MS = [0, 1_000, 2_000, 4_000, 8_000, 15_000]

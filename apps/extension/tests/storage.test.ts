@@ -105,7 +105,6 @@ test('deleting local history removes its journal while preserving another accoun
     lastPrompt: 'Save this',
     model: 'gpt-oss-120b',
     effort: 'low' as const,
-    tabs: [],
     confirmActions: true,
   }
   for (const owner of ['alice', 'bob']) {

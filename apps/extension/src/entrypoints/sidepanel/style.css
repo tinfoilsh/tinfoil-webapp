@@ -245,41 +245,27 @@ input:focus-visible {
   color: hsl(var(--content-muted));
   font-size: 10px;
 }
-.scope-toggle {
-  display: flex;
-  justify-content: space-between;
-  width: 100%;
+.browser-access {
   font-size: 12px;
   padding: 9px 4px;
   color: hsl(var(--content-secondary));
 }
-.scope {
-  max-height: 200px;
-  overflow: auto;
-  font-size: 11px;
-  padding: 0 4px 10px;
-}
-.scope p {
-  margin-bottom: 8px;
-  color: hsl(var(--content-muted));
-}
-.tab-choice {
+.working-tab {
   display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 0;
-}
-.tab-choice span {
+  flex-direction: column;
+  gap: 4px;
+  border-left: 3px solid hsl(var(--link));
+  background: hsl(var(--surface-muted));
+  padding: 8px 10px;
+  font-size: 11px;
   min-width: 0;
 }
-.tab-choice strong {
-  display: block;
+.working-tab strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 400;
 }
-.tab-choice small {
+.working-tab span {
   color: hsl(var(--content-muted));
 }
 .review-toggle {
@@ -289,6 +275,8 @@ input:focus-visible {
   border-top: 1px solid hsl(var(--border-subtle));
   padding-top: 10px;
   margin-top: 6px;
+  margin-bottom: 10px;
+  font-size: 11px;
 }
 .composer {
   background: hsl(var(--surface-input));

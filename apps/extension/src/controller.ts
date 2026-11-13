@@ -13,7 +13,7 @@ import type {
   Session,
   Turn,
 } from '@tinfoil/chat-client/types'
-import { BrowserDriver } from './browser/driver'
+import { BrowserDriver, type TabInfo } from './browser/driver'
 import { BrowserError, browserFailure } from './browser/errors'
 import { changesPage } from './browser/schema'
 import {
@@ -31,13 +31,11 @@ const MAX_ACTION_WAIT_MS = 5 * 60_000
 const RESUME_PROMPT =
   'Continue my previous task. First observe the current browser state. Reconcile any action that may already have completed before taking another action.'
 
-type BrowserExecutor = Pick<
-  BrowserDriver,
-  'attach' | 'execute' | 'describe' | 'dispose'
->
+type BrowserExecutor = Pick<BrowserDriver, 'execute' | 'describe' | 'dispose'>
 type CreateBrowser = (
   signal: AbortSignal,
   interrupted: (message: string) => void,
+  workingOn: (tab: TabInfo | undefined) => Promise<void>,
 ) => BrowserExecutor
 
 export class TaskController {
@@ -54,6 +52,7 @@ export class TaskController {
   }
   private disposed = false
   private reconnecting = false
+  private workingTab?: TabInfo
   private generation = 0
   private transitions: Promise<void> = Promise.resolve()
   private readonly summaries = new Map<string, View['tasks'][number]>()
@@ -63,8 +62,11 @@ export class TaskController {
     private readonly owner: string,
     private readonly store: TaskStore,
     private readonly publish: (view: View) => void,
-    private readonly createBrowser: CreateBrowser = (signal, interrupted) =>
-      new BrowserDriver(signal, interrupted),
+    private readonly createBrowser: CreateBrowser = (
+      signal,
+      interrupted,
+      workingOn,
+    ) => new BrowserDriver(signal, interrupted, workingOn),
   ) {}
 
   initialize(after: Promise<void> = Promise.resolve()): Promise<void> {
@@ -124,7 +126,6 @@ export class TaskController {
         phase: task.phase,
         model: task.model,
         effort: task.effort,
-        tabs: task.tabs,
         confirmActions: task.confirmActions,
         error:
           task.error ||
@@ -136,6 +137,7 @@ export class TaskController {
         ...this.review.request,
         preview: this.review.preview,
       },
+      workingTab: this.workingTab,
     })
   }
 
@@ -193,13 +195,12 @@ export class TaskController {
           this.checkGeneration(generation)
         }
         if (!this.task) return
-        if (this.task.receipt) this.launch(this.task, command.tabs)
+        if (this.task.receipt) this.launch(this.task)
         else
           await this.begin(
             {
               kind: 'send',
               content: `${RESUME_PROMPT}\n\nOriginal request: ${this.task.lastPrompt}`,
-              tabs: command.tabs,
               model: this.task.model,
               effort: this.task.effort,
               confirmActions: this.task.confirmActions,
@@ -258,9 +259,9 @@ export class TaskController {
     }
     this.checkGeneration(generation)
     this.error = undefined
-    if (input.tabs.length && !this.session.features.browserTools)
+    if (!this.session.features.browserTools)
       throw new Error(
-        'This harness does not support browser tools yet. Configure a harness release with browserTools, or deselect tabs to chat.',
+        'This harness does not support browser tools yet. Configure a harness release with browserTools.',
       )
     if (
       !this.session.models.some(
@@ -280,7 +281,6 @@ export class TaskController {
         lastPrompt: '',
         model: DEFAULT_MODEL,
         effort: 'medium',
-        tabs: [],
         confirmActions: true,
       } satisfies Task)
     task.lastPrompt = lastPrompt
@@ -310,23 +310,19 @@ export class TaskController {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         cacheSecret: randomSecret(),
       },
-      ...(input.tabs.length
-        ? {
-            browser: { executorId: crypto.randomUUID(), token: randomSecret() },
-          }
-        : {}),
+      browser: { executorId: crypto.randomUUID(), token: randomSecret() },
     }
-    this.launch(task, input.tabs, turn)
+    this.launch(task, turn)
   }
 
-  private launch(task: Task, tabs: number[], turn?: Turn) {
+  private launch(task: Task, turn?: Turn) {
     if (this.active) throw new Error('Another task is running.')
     const abort = new AbortController()
     const signal = AbortSignal.any([
       abort.signal,
       AbortSignal.timeout(TASK_TIMEOUT_MS),
     ])
-    task.tabs = tabs
+    this.workingTab = undefined
     task.phase = 'running'
     task.error = undefined
     const active = { abort, done: Promise.resolve() }
@@ -344,19 +340,22 @@ export class TaskController {
   }
 
   private async run(task: Task, signal: AbortSignal, turn?: Turn) {
-    const driver = this.createBrowser(signal, (message) => {
-      if (signal.aborted) return
-      task.error = message
-      this.active?.abort.abort()
-    })
+    const driver = this.createBrowser(
+      signal,
+      (message) => {
+        if (signal.aborted) return
+        task.error = message
+        this.active?.abort.abort()
+      },
+      async (tab) => {
+        if (signal.aborted) return
+        this.workingTab = tab
+        await this.emit()
+      },
+    )
     try {
       await this.save(task)
       const access = turn?.browser ?? task.receipt?.browser
-      if (access) {
-        if (!task.tabs.length)
-          throw new Error('Select the tabs this task may control.')
-        for (const tab of task.tabs) await driver.attach(tab)
-      }
       if (task.receipt) this.client.locate(task.id, task.receipt.instance)
       let next = turn
       for (let attempt = 0; ; attempt++) {
@@ -419,6 +418,7 @@ export class TaskController {
       await driver.dispose()
       if (task.receipt) await this.cancelAndCollect(task)
     } finally {
+      this.workingTab = undefined
       await driver.dispose()
       if (!task.receipt) await this.store.clearActions(this.owner, task.id)
     }

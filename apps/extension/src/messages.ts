@@ -1,7 +1,7 @@
 import type { ChatState } from '@tinfoil/chat-client/reducer'
 import type { BrowserToolRequest, Session } from '@tinfoil/chat-client/types'
 import { z } from 'zod'
-import { selectedTabsSchema } from './browser/schema'
+import type { TabInfo } from './browser/driver'
 import { MAX_PROMPT_CHARS } from './config'
 import type { TaskPhase } from './storage'
 
@@ -9,12 +9,11 @@ export const commandSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('send'),
     content: z.string().trim().min(1).max(MAX_PROMPT_CHARS),
-    tabs: selectedTabsSchema,
     model: z.string().max(100),
     effort: z.enum(['low', 'medium', 'high']),
     confirmActions: z.boolean(),
   }),
-  z.object({ kind: z.literal('resume'), tabs: selectedTabsSchema }),
+  z.object({ kind: z.literal('resume') }),
   z.object({ kind: z.literal('pause') }),
   z.object({ kind: z.literal('stop') }),
   z.object({
@@ -39,11 +38,11 @@ export interface View {
     phase: TaskPhase
     model: string
     effort: 'low' | 'medium' | 'high'
-    tabs: number[]
     confirmActions: boolean
     error?: string
   }
   pending?: BrowserToolRequest & { preview: string }
+  workingTab?: TabInfo
   error?: string
 }
 

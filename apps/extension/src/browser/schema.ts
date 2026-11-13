@@ -1,6 +1,5 @@
 import type { BrowserAction } from '@tinfoil/chat-client/types'
 import { z } from 'zod'
-import { MAX_TABS } from '../config'
 import { BrowserError } from './errors'
 
 export const actionSchema = z
@@ -45,10 +44,6 @@ export const actionSchema = z
     y: z.number().finite().nonnegative().optional(),
   })
   .strict() satisfies z.ZodType<BrowserAction>
-
-export const selectedTabsSchema = z
-  .array(z.number().int().positive())
-  .max(MAX_TABS)
 
 export function webURL(value: string): string {
   const url = URL.canParse(value) ? new URL(value) : undefined
