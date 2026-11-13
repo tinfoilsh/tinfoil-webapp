@@ -59,7 +59,7 @@ export default defineConfig({
       origins.add(`${url.origin}/*`)
     }
     return {
-      name: 'Tinfoil Browser',
+      name: 'Tinfoil Chrome',
       description:
         'Private chat and browser actions with attested Tinfoil models.',
       minimum_chrome_version: '142',

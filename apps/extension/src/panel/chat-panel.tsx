@@ -285,7 +285,7 @@ export function ChatPanel({
             <h1 className="text-center text-2xl font-medium tracking-tight text-content-primary">
               {user?.firstName
                 ? timeOfDayGreeting(user.firstName)
-                : 'Tinfoil Browser'}
+                : 'Tinfoil Chrome'}
             </h1>
             <p className="mt-3 text-balance text-center text-sm leading-relaxed text-content-secondary">
               Ask about a page, or let Tinfoil get something done in your open
