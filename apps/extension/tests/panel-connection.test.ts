@@ -1,37 +1,60 @@
 import { ERROR_ACTIONS, ERROR_CODES } from '@tinfoil/chat-client/protocol'
 import { HarnessError } from '@tinfoil/chat-client/sse'
-import { beforeEach, expect, test, vi } from 'vitest'
-import type { ToPanel } from '../src/messages'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { PANEL_RECONNECT_DELAYS_MS } from '../src/config'
+import type { ToPanel, View } from '../src/messages'
 import { PanelConnection } from '../src/panel-connection'
 
 // Every byte value, which a recording is free to hold.
 const RECORDING = Uint8Array.from({ length: 256 }, (_, byte) => byte)
 
-type Sent = { type: string; id: string; audio?: string; mimeType?: string }
+type Sent = {
+  type: string
+  id?: string
+  audio?: string
+  mimeType?: string
+}
+// What the panel sent over its latest connection, and the worker's side of
+// that connection.
 let sent: Sent[]
 let answer: (message: ToPanel) => void
 let disconnect: () => void
+// How many connections the panel has made.
+let connections: number
+// What a worker does with a connection as it is made.
+let onConnect: () => void
 
 beforeEach(() => {
   sent = []
+  connections = 0
+  onConnect = () => {}
   vi.stubGlobal('chrome', {
     runtime: {
-      connect: () => ({
-        postMessage: (message: Sent) => sent.push(message),
-        disconnect: () => {},
-        onMessage: {
-          addListener: (listener: (message: ToPanel) => void) => {
-            answer = listener
+      connect: () => {
+        connections++
+        sent = []
+        const port = {
+          postMessage: (message: Sent) => sent.push(message),
+          disconnect: () => {},
+          onMessage: {
+            addListener: (listener: (message: ToPanel) => void) => {
+              answer = listener
+            },
           },
-        },
-        onDisconnect: {
-          addListener: (listener: () => void) => {
-            disconnect = listener
+          onDisconnect: {
+            addListener: (listener: () => void) => {
+              disconnect = listener
+            },
           },
-        },
-      }),
+        }
+        queueMicrotask(() => onConnect())
+        return port
+      },
     },
   })
+})
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 function connected() {
@@ -40,6 +63,8 @@ function connected() {
   return { connection, close }
 }
 
+const STATE: View = { tasks: [], verified: true }
+
 const recording = () =>
   new File([RECORDING], 'audio.webm', { type: 'audio/webm' })
 
@@ -47,8 +72,8 @@ const recording = () =>
 const requested = () =>
   vi.waitFor(() => {
     const request = sent.find((message) => message.type === 'transcribe')
-    if (!request) throw new Error('No recording was sent')
-    return request
+    if (!request?.id) throw new Error('No recording was sent')
+    return { ...request, id: request.id }
   })
 
 test('a recording reaches the worker whole and is answered with its text', async () => {
@@ -112,8 +137,60 @@ test('a recording given up on or cut off by the worker is not left waiting', asy
   await requested()
   disconnect()
   expect(await cutOff).toEqual(new Error('The extension disconnected.'))
+  close()
   await expect(connection.transcribe(recording())).rejects.toThrow(
     'Reopen the panel to reconnect.',
   )
+})
+
+test('a connection the worker closed is made again, and what waited on the old one is answered', async () => {
+  const { connection, close } = connected()
+  expect(sent).toEqual([{ type: 'hello', owner: 'alice' }])
+  answer({ type: 'state', view: STATE })
+  const waiting = connection.command({ kind: 'new' }).catch((cause) => cause)
+  // The browser stopped the worker.
+  disconnect()
+  expect(await waiting).toEqual(new Error('The extension disconnected.'))
+  await vi.waitFor(() => expect(connections).toBe(2))
+  expect(sent).toEqual([{ type: 'hello', owner: 'alice' }])
+  expect(connection.snapshot().error).toBeUndefined()
+
+  // The worker it started is heard as the one before was.
+  const view = {
+    ...STATE,
+    tasks: [{ id: 'task', title: 'Kept', updatedAt: 1 }],
+  }
+  answer({ type: 'state', view })
+  expect(connection.snapshot()).toEqual(view)
+  close()
+})
+
+test('a worker that only ever closes the connection is given up on, and the panel says so', async () => {
+  vi.useFakeTimers()
+  onConnect = () => disconnect()
+  const { connection, close } = connected()
+  await vi.runAllTimersAsync()
+  // The first connection, and one after each wait.
+  expect(connections).toBe(PANEL_RECONNECT_DELAYS_MS.length + 1)
+  expect(connection.snapshot().error).toContain('Reopen the panel')
+  close()
+})
+
+test('a panel out of sight connects again only once it is looked at', async () => {
+  vi.useFakeTimers()
+  const { close } = connected()
+  answer({ type: 'state', view: STATE })
+  const visibility = vi
+    .spyOn(document, 'visibilityState', 'get')
+    .mockReturnValue('hidden')
+  disconnect()
+  await vi.runAllTimersAsync()
+  expect(connections).toBe(1)
+  visibility.mockReturnValue('visible')
+  document.dispatchEvent(new Event('visibilitychange'))
+  expect(connections).toBe(2)
+  // Looking at it again later connects no second time.
+  document.dispatchEvent(new Event('visibilitychange'))
+  expect(connections).toBe(2)
   close()
 })

@@ -12,6 +12,9 @@ export const WEB_SIGN_IN_URL = new URL(
 export const PANEL_PORT = 'tinfoil-panel'
 export const TOKEN_TIMEOUT_MS = 30_000
 export const PANEL_HEARTBEAT_MS = 20_000
+// The waits before the panel connects again to a worker that closed its
+// connection without the panel having had any word from it.
+export const PANEL_RECONNECT_DELAYS_MS = [0, 500, 2_000, 5_000]
 export const TASK_TIMEOUT_MS = 20 * 60_000
 export const DEFAULT_MODEL = 'kimi-k3-1-pro'
 export const RECONNECT_DELAYS_MS = [0, 1_000, 2_000, 4_000, 8_000, 15_000]
