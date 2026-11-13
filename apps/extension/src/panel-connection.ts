@@ -10,7 +10,7 @@ import type { Command, ToPanel, View } from './messages'
 const CONNECTION_CLOSED =
   'The extension connection closed. Reopen the panel to reconnect.'
 const OPEN_ELSEWHERE =
-  'Tinfoil Chrome is open in another window. Reopen this panel to use it here.'
+  'Tinfoil is open in another window. Reopen this panel to use it here.'
 // What a request is answered with when the worker stopped before it could
 // answer: the panel connects again, and the request can be made again.
 const WORKER_STOPPED = 'The extension restarted before it answered. Try again.'

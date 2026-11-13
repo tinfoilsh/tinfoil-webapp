@@ -56,7 +56,7 @@ const ACTION_CLASS_NAME =
 // The command Chrome gives every extension for its toolbar button, which has
 // no description of its own.
 const COMMAND_LABELS: Record<string, string> = {
-  _execute_action: 'Open Tinfoil Chrome',
+  _execute_action: 'Open Tinfoil',
 }
 const CARD_CLASS_NAME =
   'rounded-lg border border-border-subtle bg-white p-4 dark:bg-surface-sidebar'
@@ -234,7 +234,7 @@ function MicrophoneSetting() {
       ) : permission === 'denied' ? (
         <Setting
           label="Microphone access is blocked"
-          detail="Dictating a message needs the microphone. Allow it for Tinfoil Chrome in Chrome’s settings."
+          detail="Dictating a message needs the microphone. Allow it for Tinfoil in Chrome’s settings."
         >
           <button
             type="button"

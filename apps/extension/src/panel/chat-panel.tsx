@@ -367,9 +367,7 @@ export function ChatPanel({
         ) : (
           <div className="flex min-h-full w-full flex-col items-center justify-center px-8 py-10">
             <h1 className="text-center text-2xl font-medium tracking-tight text-content-primary">
-              {user?.firstName
-                ? timeOfDayGreeting(user.firstName)
-                : 'Tinfoil Chrome'}
+              {user?.firstName ? timeOfDayGreeting(user.firstName) : 'Tinfoil'}
             </h1>
             <p className="mt-3 text-balance text-center text-sm leading-relaxed text-content-secondary">
               Ask about a page, or let Tinfoil get something done in your open
