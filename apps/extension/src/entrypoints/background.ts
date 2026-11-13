@@ -36,6 +36,16 @@ export default defineBackground(() => {
   const store = new TaskStore()
   let current:
     { controller: TaskController; port: chrome.runtime.Port } | undefined
+  // The controllers still closing, which the next one waits for: two would
+  // otherwise load and save the same tasks at once.
+  let closing: Promise<void> = Promise.resolve()
+  const close = (leaving: TaskController) => {
+    const closed = leaving
+      .dispose()
+      .catch((cause) => logError('Unable to close task', cause))
+    closing = Promise.all([closing, closed]).then(() => undefined)
+    return closed
+  }
   chrome.runtime.onInstalled.addListener(() => {
     void chrome.sidePanel
       .setPanelBehavior({ openPanelOnActionClick: true })
@@ -182,12 +192,11 @@ export default defineBackground(() => {
           () => reviewActions.getValue(),
         )
         current = { controller, port }
-        const ready = previous
-          ? previous.controller
-              .dispose()
-              .finally(() => previous.port.disconnect())
-          : Promise.resolve()
-        void controller.initialize(ready).catch((cause) =>
+        if (previous)
+          void close(previous.controller).finally(() =>
+            previous.port.disconnect(),
+          )
+        void controller.initialize(closing).catch((cause) =>
           send({
             type: 'state',
             view: { tasks: [], verified: false, error: errorText(cause) },
@@ -251,12 +260,11 @@ export default defineBackground(() => {
       for (const given of transcribing.values()) given.abort()
       transcribing.clear()
       if (current?.port === port) current = undefined
-      void controller
-        ?.dispose()
-        .catch((cause) => logError('Unable to close task', cause))
-        .finally(() => {
+      if (controller)
+        void close(controller).finally(() => {
           lastToken = null
         })
+      else lastToken = null
     })
   })
 })
