@@ -83,7 +83,7 @@ function ReviewCard({
       aria-label="Review browser action"
       className="mb-2 rounded-2xl border border-border-subtle bg-surface-chat px-3 py-2.5 shadow-sm"
     >
-      <p className="text-sm font-medium text-content-primary">
+      <p role="alert" className="text-sm font-medium text-content-primary">
         {pending.preview}
       </p>
       <StepHeader
