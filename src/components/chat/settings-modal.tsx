@@ -2530,6 +2530,7 @@ ${encryptionKey.replace('key_', '')}
                               </div>
                             </div>
                             <ToggleSwitch
+                              aria-label="Automatic PII Blocking"
                               checked={piiCheckEnabled}
                               onChange={setPiiCheckEnabled}
                             />
@@ -2556,6 +2557,7 @@ ${encryptionKey.replace('key_', '')}
                             </div>
                           </div>
                           <ToggleSwitch
+                            aria-label="Generative UI"
                             checked={genUIEnabled}
                             onChange={setGenUIEnabled}
                           />
