@@ -10,6 +10,10 @@ import { ModelSelectorTriggerLabel } from '@tinfoil/chat-ui/model-selector-trigg
 import { useEffect, useRef, useState } from 'react'
 
 const PICKER_SELECTOR = '[data-model-selector], [data-model-menu]'
+const BOXED_TRIGGER_CLASS_NAME =
+  'flex items-center gap-2 rounded-lg border border-border-subtle px-3 py-1.5 font-aeonik-fono text-content-primary transition-colors hover:bg-surface-chat [&_span]:text-sm'
+const SUBTLE_TRIGGER_CLASS_NAME =
+  'flex items-center gap-1 py-1.5 text-content-secondary transition-colors hover:text-content-primary'
 
 // The model a chat's next turn runs on, and how hard it works.
 export function ModelPicker({
@@ -22,6 +26,7 @@ export function ModelPicker({
   autoIntelligence,
   onAutoIntelligenceChange,
   isDarkMode,
+  subtle = false,
 }: {
   models: BaseModel[]
   autoLevels: readonly AutoIntelligenceLevel[]
@@ -32,6 +37,9 @@ export function ModelPicker({
   autoIntelligence: string
   onAutoIntelligenceChange: (level: string) => void
   isDarkMode: boolean
+  // The picker sits above a composer, as a line of text that opens upward,
+  // where one among settings is a control of its own that opens downward.
+  subtle?: boolean
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -70,7 +78,9 @@ export function ModelPicker({
         aria-expanded={isOpen}
         aria-label={`Current model ${selectedModelLabel(selectedModel, models, autoLevels, autoIntelligence) ?? ''}`}
         onClick={() => setIsOpen((value) => !value)}
-        className="flex items-center gap-2 rounded-lg border border-border-subtle px-3 py-1.5 font-aeonik-fono text-content-primary transition-colors hover:bg-surface-chat [&_span]:text-sm"
+        className={
+          subtle ? SUBTLE_TRIGGER_CLASS_NAME : BOXED_TRIGGER_CLASS_NAME
+        }
       >
         <ModelSelectorTriggerLabel
           selectedModel={selectedModel}
@@ -92,7 +102,7 @@ export function ModelPicker({
           isDarkMode={isDarkMode}
           models={models}
           autoLevels={autoLevels}
-          preferredPosition="below"
+          preferredPosition={subtle ? 'above' : 'below'}
           reasoningEffort={reasoningEffort}
           onEffortChange={onEffortChange}
           autoIntelligence={autoIntelligence}

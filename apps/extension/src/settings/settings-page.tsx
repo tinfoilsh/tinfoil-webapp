@@ -32,9 +32,9 @@ import {
 } from '../settings'
 import { Logo } from '../ui/logo'
 import { requestMicrophone, useMicrophonePermission } from '../ui/microphone'
+import { ModelPicker } from '../ui/model-picker'
 import { SignInSetup } from '../ui/sign-in-setup'
 import { useDarkMode } from '../ui/theme'
-import { ModelPicker } from './model-picker'
 
 const SECTIONS = [
   { id: 'account', label: 'Account', icon: TfPersonAnimated },

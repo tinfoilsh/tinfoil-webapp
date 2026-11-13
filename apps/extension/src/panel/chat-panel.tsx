@@ -43,6 +43,7 @@ import {
 import { TaskStore } from '../storage'
 import { Logo } from '../ui/logo'
 import { MICROPHONE_SETTINGS_URL, microphonePermission } from '../ui/microphone'
+import { ModelPicker } from '../ui/model-picker'
 import { ChatsModal } from './chats-modal'
 
 const SUGGESTIONS = [
@@ -149,9 +150,9 @@ export function ChatPanel({
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
-  const [model] = useSetting(chosenModel)
-  const [effort] = useSetting(chosenEffort)
-  const [autoLevel] = useSetting(chosenAutoLevel)
+  const [model, setModel] = useSetting(chosenModel)
+  const [effort, setEffort] = useSetting(chosenEffort)
+  const [autoLevel, setAutoLevel] = useSetting(chosenAutoLevel)
   const [lastOffered] = useSetting(catalog)
   const [chatsOpen, setChatsOpen] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -163,6 +164,10 @@ export function ChatPanel({
   const hasMessages = messages.length > 0
   const busy = !!task && ['running', 'review'].includes(task.phase)
   const problem = error || view.error || task?.error
+  // Before the session is known, the models are those the service last
+  // offered, which a turn is checked against again.
+  const offered = view.session ?? lastOffered
+  const turn = turnModel(offered, { model, autoLevel })
   const captures = useStoredCaptures(
     keptStore(),
     owner,
@@ -273,9 +278,7 @@ export function ChatPanel({
         kind: 'send',
         content,
         effort: effort ?? DEFAULT_EFFORT,
-        // A turn sent before the session is known is chosen from what the
-        // service last offered, which it is checked against again.
-        ...turnModel(view.session ?? lastOffered, { model, autoLevel }),
+        ...turn,
       })
       setInput('')
       following.current = true
@@ -438,6 +441,22 @@ export function ChatPanel({
                 })
               }
             />
+          )}
+          {offered && (
+            <div className="mb-2 flex justify-end px-3">
+              <ModelPicker
+                subtle
+                models={offered.models}
+                autoLevels={offered.auto.levels}
+                selectedModel={turn.model}
+                onSelect={setModel}
+                reasoningEffort={effort ?? DEFAULT_EFFORT}
+                onEffortChange={setEffort}
+                autoIntelligence={turn.autoIntelligence ?? offered.auto.default}
+                onAutoIntelligenceChange={setAutoLevel}
+                isDarkMode={isDarkMode}
+              />
+            </div>
           )}
           <Composer
             ref={composerRef}
