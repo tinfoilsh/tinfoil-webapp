@@ -39,7 +39,8 @@ export function ModelSelectorTriggerLabel({
 
   return (
     <>
-      {findSelectableModel(selectedModel, models)?.auto ? (
+      {findSelectableModel(selectedModel, models)?.auto &&
+      autoLevels.some((level) => level.id === autoIntelligence) ? (
         <span className="grid whitespace-nowrap text-right text-xs font-medium">
           {autoLevels.map((level) => {
             const isCurrent = level.id === autoIntelligence
