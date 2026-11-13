@@ -6,6 +6,7 @@ import { useHarness } from '@/services/harness/provider'
 import { useReloadHold } from '@/services/reload-when-updated'
 import { dictation } from '@/services/speech/dictation'
 import { logError } from '@/utils/error-handling'
+import { Composer, type ComposerHandle } from '@tinfoil/chat-ui/composer'
 import {
   TfAttachment,
   TfBoxCheckmark,
@@ -17,7 +18,6 @@ import {
   TfWebSearch,
 } from '@tinfoilsh/tinfoil-icons'
 import {
-  TfArrowUpAnimated,
   TfFolderAnimated,
   TfMicrophoneAnimated,
   TfPlusAnimated,
@@ -29,7 +29,6 @@ import {
   memo,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -44,31 +43,12 @@ import {
 import { DictationNotice } from './components/dictation-notice'
 import { FilePreview, imageDataUrl } from './components/file-preview'
 import { UnsavedImagesNotice } from './components/unsaved-images-notice'
-import { CONSTANTS } from './constants'
 import { useEnterToNewline } from './hooks/use-enter-to-newline'
 import { useListEditing } from './hooks/use-list-editing'
-import {
-  isImeComposition,
-  isMobileDevice,
-  isSubmitShortcut,
-} from './keyboard-utils'
 import type { PromptPreset } from './prompts/types'
 import { RecordingWaveform } from './recording-waveform'
 import type { ProcessedDocument } from './renderers/types'
 import type { LoadingState } from './types'
-
-// Tracks every mounted textarea per shared external ref so an unmounting
-// instance can hand the shared ref over to a surviving instance.
-const sharedTextareaRegistries = new WeakMap<object, Set<HTMLTextAreaElement>>()
-
-function getSharedTextareaRegistry(ref: object): Set<HTMLTextAreaElement> {
-  let registry = sharedTextareaRegistries.get(ref)
-  if (!registry) {
-    registry = new Set()
-    sharedTextareaRegistries.set(ref, registry)
-  }
-  return registry
-}
 
 type ChatInputProps = {
   // The chat the composer writes in, which dictation started here belongs
@@ -111,10 +91,6 @@ type ChatInputProps = {
 
 // Maximum number of characters displayed in the collapsed quote preview.
 const QUOTE_PREVIEW_MAX_LENGTH = 240
-
-// Wrapper the chat layout puts around the whole bottom input area, including
-// banners rendered outside this component.
-const INPUT_AREA_SELECTOR = '[data-chat-input-area]'
 
 const isDocumentSubmittable = (doc: ProcessedDocument) =>
   !doc.isUploading && !doc.isGeneratingDescription && !doc.isUnsupported
@@ -164,157 +140,7 @@ export const ChatInput = memo(function ChatInput({
       : undefined
   const enterToNewline = useEnterToNewline()
   const handleListKeyDown = useListEditing(input, setInput)
-  const [textareaResetNonce, setTextareaResetNonce] = useState(0)
-  const prevInputValueRef = useRef(input)
-  const shouldRemountOnClearRef = useRef(false)
-  const hasInitiallyFocusedRef = useRef(false)
-  const refocusAfterResetRef = useRef(false)
-
-  // Several ChatInput instances can be mounted at once (e.g. the centered
-  // welcome-screen input and the bottom input) while sharing one external
-  // `inputRef`, so the shared ref may point at another instance's textarea.
-  // Keep a private ref to this instance's own element and use it for all
-  // local reads and writes (resize, focus, blur).
-  const ownTextareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const attachTextareaRef = useCallback(
-    (el: HTMLTextAreaElement | null) => {
-      const registered = getSharedTextareaRegistry(inputRef)
-      if (el) {
-        ownTextareaRef.current = el
-        registered.add(el)
-        ;(
-          inputRef as React.MutableRefObject<HTMLTextAreaElement | null>
-        ).current = el
-      } else {
-        if (ownTextareaRef.current) {
-          registered.delete(ownTextareaRef.current)
-        }
-        if (inputRef.current === ownTextareaRef.current) {
-          // Hand the shared ref back to another still-mounted instance (e.g.
-          // the welcome-screen input after the bottom input unmounts) so
-          // focus actions keep working.
-          const remaining = [...registered].pop() ?? null
-          ;(
-            inputRef as React.MutableRefObject<HTMLTextAreaElement | null>
-          ).current = remaining
-        }
-        ownTextareaRef.current = null
-      }
-    },
-    [inputRef],
-  )
-
-  const useIsomorphicLayoutEffect =
-    typeof window !== 'undefined' ? useLayoutEffect : useEffect
-
-  const resizeTextarea = useCallback(
-    (el: HTMLTextAreaElement | null) => {
-      if (!el) return
-
-      const min = Number.parseInt(inputMinHeight, 10) || 0
-      // Cap the textarea to the visual viewport (which shrinks when the
-      // on-screen keyboard opens) so the toolbar row with the send button
-      // always stays visible below it. Measure everything else rendered in
-      // the input area (toolbar, paddings, suggestion chips, banners,
-      // attachment previews) so the cap adapts to what is actually shown,
-      // e.g. the extra suggestions row on the initial query screen.
-      const viewportHeight = window.visualViewport?.height ?? window.innerHeight
-      const inputArea = el.closest(INPUT_AREA_SELECTOR)
-      const chromeHeight = inputArea
-        ? inputArea.getBoundingClientRect().height -
-          el.getBoundingClientRect().height
-        : CONSTANTS.INPUT_VIEWPORT_RESERVED_PX
-      const available = Math.min(
-        CONSTANTS.INPUT_MAX_HEIGHT_PX,
-        viewportHeight - chromeHeight - CONSTANTS.INPUT_VIEWPORT_TOP_GAP_PX,
-      )
-      // Snap the cap to a whole number of text lines so scrolled-out content
-      // is clipped flush at a line boundary instead of mid-line.
-      const lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight)
-      const max =
-        Number.isFinite(lineHeight) && lineHeight > 0
-          ? Math.max(Math.floor(available / lineHeight), 1) * lineHeight
-          : available
-
-      // Reset to 0 so the browser recomputes content height.
-      // Using '0' instead of 'auto' forces scrollHeight to reflect the
-      // full content height on mobile Safari, even when the textarea is
-      // unfocused (e.g. after programmatic value changes like transcription).
-      el.style.height = '0'
-
-      const raw = el.scrollHeight
-      const next = Math.max(min, Math.min(raw, max))
-      el.style.height = `${next}px`
-      el.style.overflowY = raw > max ? 'auto' : 'hidden'
-
-      // Once capped, a line typed at the end lands below the visible area,
-      // and browsers do not reliably scroll to it after the height changes
-      // above, so keep the caret's line in view.
-      if (
-        raw > max &&
-        document.activeElement === el &&
-        el.selectionEnd === el.value.length
-      ) {
-        el.scrollTop = el.scrollHeight
-      }
-    },
-    [inputMinHeight],
-  )
-
-  // Coalesce resize requests to at most one layout read/write per frame.
-  // Typing fires several resize triggers per keystroke (input event, value
-  // change, viewport changes); collapsing them into a single rAF avoids the
-  // repeated forced reflows that dominated the typing CPU profile.
-  const resizeRafRef = useRef<number | null>(null)
-  const pendingResizeElRef = useRef<HTMLTextAreaElement | null>(null)
-  const scheduleResize = useCallback(
-    (el: HTMLTextAreaElement | null) => {
-      if (!el) return
-      pendingResizeElRef.current = el
-      if (resizeRafRef.current !== null) return
-      resizeRafRef.current = requestAnimationFrame(() => {
-        resizeRafRef.current = null
-        resizeTextarea(pendingResizeElRef.current)
-      })
-    },
-    [resizeTextarea],
-  )
-
-  useEffect(() => {
-    return () => {
-      if (resizeRafRef.current !== null) {
-        cancelAnimationFrame(resizeRafRef.current)
-        // Clear the id so a later remount (e.g. React Strict Mode's
-        // simulated unmount/remount) can schedule again instead of seeing a
-        // stale, already-cancelled frame and short-circuiting forever.
-        resizeRafRef.current = null
-      }
-    }
-  }, [])
-
-  // If the input transitions from non-empty -> empty (send/clear), remount the
-  // textarea to guarantee any stuck inline height is dropped on mobile Safari.
-  useEffect(() => {
-    const prev = prevInputValueRef.current
-    if (prev !== '' && input === '' && shouldRemountOnClearRef.current) {
-      refocusAfterResetRef.current =
-        typeof document !== 'undefined' &&
-        ownTextareaRef.current !== null &&
-        document.activeElement === ownTextareaRef.current
-      setTextareaResetNonce((n) => n + 1)
-    }
-    prevInputValueRef.current = input
-    if (input === '') {
-      shouldRemountOnClearRef.current = false
-    }
-  }, [input])
-
-  useEffect(() => {
-    if (refocusAfterResetRef.current && ownTextareaRef.current) {
-      ownTextareaRef.current.focus()
-      refocusAfterResetRef.current = false
-    }
-  }, [textareaResetNonce])
+  const composerRef = useRef<ComposerHandle>(null)
 
   // --- Speech-to-text state ---
   const dictationState = useSyncExternalStore(
@@ -459,54 +285,6 @@ export const ChatInput = memo(function ChatInput({
     unsupportedAttachmentStatus,
   ])
 
-  // Auto-resize textarea as content changes (typing, transcription, paste, etc.)
-  // Layout effect avoids iOS Safari cases where `scrollHeight` lags a paint.
-  useIsomorphicLayoutEffect(() => {
-    // Synchronous pass before paint avoids a visible height jump.
-    resizeTextarea(ownTextareaRef.current)
-
-    // iOS Safari can report the previous scrollHeight on the same tick; re-check
-    // on the next frame (coalesced with any other pending resize) to ensure
-    // growth kicks in.
-    scheduleResize(ownTextareaRef.current)
-    // Include `textareaResetNonce` so a remount recalculates height immediately.
-    // Include `isRecording` because the textarea is hidden while recording and
-    // measures as zero height, so it must be re-measured once it reappears.
-  }, [input, resizeTextarea, scheduleResize, textareaResetNonce, isRecording])
-
-  // Recompute the height cap when the visual viewport changes (e.g. the
-  // on-screen keyboard opens or closes) so long text never pushes the send
-  // button out of view.
-  useEffect(() => {
-    const vv = typeof window !== 'undefined' ? window.visualViewport : null
-    if (!vv) return
-    const onViewportResize = () => scheduleResize(ownTextareaRef.current)
-    vv.addEventListener('resize', onViewportResize)
-    return () => vv.removeEventListener('resize', onViewportResize)
-  }, [scheduleResize])
-
-  // Recompute the height cap when anything else in the input area changes
-  // size (attachments, their upload status, banners), not only on the next
-  // keystroke. The textarea's own resizes also land here, but they settle
-  // after one pass because the cap does not depend on the textarea height.
-  useEffect(() => {
-    const inputArea = ownTextareaRef.current?.closest(INPUT_AREA_SELECTOR)
-    if (!inputArea || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() =>
-      scheduleResize(ownTextareaRef.current),
-    )
-    observer.observe(inputArea)
-    return () => observer.disconnect()
-  }, [scheduleResize])
-
-  // Focus textarea on initial mount only (not on remounts after sending)
-  useEffect(() => {
-    if (!hasInitiallyFocusedRef.current && ownTextareaRef.current) {
-      ownTextareaRef.current.focus()
-      hasInitiallyFocusedRef.current = true
-    }
-  }, [])
-
   const handleFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0 && handleDocumentUpload) {
@@ -544,12 +322,12 @@ export const ChatInput = memo(function ChatInput({
         // then explicitly resize after React commits the new value to the DOM.
         // The layout effect should handle this, but mobile Safari can report
         // stale scrollHeight for programmatic value changes.
-        ownTextareaRef.current?.focus()
+        composerRef.current?.focus()
         requestAnimationFrame(() => {
-          resizeTextarea(ownTextareaRef.current)
+          composerRef.current?.resize()
         })
       }),
-    [chatId, setInput, resizeTextarea],
+    [chatId, setInput],
   )
 
   const startRecording = useCallback(async () => {
@@ -633,30 +411,46 @@ export const ChatInput = memo(function ChatInput({
     [handleDocumentUpload, session],
   )
 
-  // Once a conversation is underway the composer collapses into a single row
-  // with the controls flanking the textarea; the welcome screen keeps the
-  // taller two-row layout.
-  const isCompact = Boolean(hasMessages)
+  const hasCompletedDocuments = Boolean(
+    processedDocuments?.some((doc) => isDocumentSubmittable(doc)),
+  )
 
   return (
-    <div className="flex flex-col gap-2">
-      {hasMessages && modelSelectorButton && (
-        <div className="flex items-center self-end px-3 md:hidden">
-          {modelSelectorButton}
-        </div>
-      )}
-      <div className="relative">
-        {mobileHeader}
-        <div
-          className={cn(
-            // relative anchors the folder-style tabs below to the card itself.
-            'relative rounded-3xl border bg-white px-3 py-3 shadow-md transition-colors dark:bg-surface-chat md:rounded-4xl md:px-6 md:py-4',
-            isCompact && 'md:px-4 md:py-3',
-            isTemporaryMode
-              ? 'border-dashed border-content-muted'
-              : 'border-border-subtle',
-          )}
-        >
+    <Composer
+      ref={composerRef}
+      input={input}
+      setInput={setInput}
+      onSubmit={handleSubmit}
+      busy={loadingState !== 'idle'}
+      onCancel={cancelGeneration}
+      cancelOnEscape={loadingState === 'loading'}
+      inputRef={inputRef}
+      onFocus={handleInputFocus}
+      inputMinHeight={inputMinHeight}
+      hasMessages={hasMessages}
+      enterToNewline={enterToNewline}
+      onListKeyDown={handleListKeyDown}
+      onPaste={handlePaste}
+      hasAttachedContent={Boolean(quote) || hasCompletedDocuments}
+      locked={isRecording || isTranscribing}
+      // While recording an empty draft, the textarea is hidden behind the
+      // live waveform. Nonempty drafts stay visible above the waveform.
+      textareaHidden={Boolean(isRecording && recordingStream && !input.trim())}
+      belowTextarea={
+        isRecording &&
+        recordingStream && (
+          <RecordingWaveform
+            stream={recordingStream}
+            className="w-full"
+            style={{ minHeight: inputMinHeight }}
+          />
+        )
+      }
+      dashed={isTemporaryMode}
+      modelSelectorButton={modelSelectorButton}
+      header={mobileHeader}
+      tabs={
+        <>
           {/* Project tab - manila folder style, absolutely positioned */}
           {isProjectMode &&
             activeProject &&
@@ -723,6 +517,10 @@ export const ChatInput = memo(function ChatInput({
                 </div>
               )
             })()}
+        </>
+      }
+      attachments={
+        <>
           <input
             type="file"
             ref={fileInputRef}
@@ -853,414 +651,230 @@ export const ChatInput = memo(function ChatInput({
             onDiscard={() => dictation.discard()}
             className="mb-3"
           />
-
-          {/* In compact mode the toolbar below uses display: contents so its
-              button groups become flex siblings of the textarea and can be
-              ordered around it. */}
-          <div className={cn(isCompact && 'flex items-end gap-2')}>
-            {/* The button groups are sized to the send button so a one-line
-                textarea centers against them; when it grows they stay pinned
-                to the bottom via items-end. */}
-            {/* While recording an empty draft, the textarea stays mounted (so
-                its ref, height and focus handling survive) but is hidden behind
-                the live waveform, which occupies the same slot. */}
-            {/* Nonempty drafts stay visible above the waveform. */}
-            <div
-              className={cn(
-                'flex w-full min-w-0 flex-col',
-                isCompact && 'flex-1 self-center',
-              )}
+        </>
+      }
+      status={audioStatus}
+      leadingControls={
+        <>
+          {/* Unified + button opening the input options menu */}
+          <div className="relative">
+            <button
+              id="input-options-button"
+              ref={inputMenuTriggerRef}
+              type="button"
+              onClick={() => setIsInputMenuOpen(!isInputMenuOpen)}
+              aria-label="Input options"
+              aria-expanded={isInputMenuOpen}
+              aria-haspopup="menu"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
             >
-              <textarea
-                id="chat-input"
-                aria-label="Message"
-                ref={attachTextareaRef}
-                key={textareaResetNonce}
-                value={input}
-                readOnly={isRecording || isTranscribing}
-                onFocus={handleInputFocus}
-                onChange={(e) => {
-                  // Resize is driven by the layout effect on the resulting value
-                  // change; avoid an extra synchronous reflow here.
-                  setInput(e.target.value)
-                }}
-                onInput={(e) => {
-                  // Some mobile Safari builds update `scrollHeight` more reliably on
-                  // `input`; schedule a coalesced resize rather than reflowing now.
-                  scheduleResize(e.currentTarget as HTMLTextAreaElement)
-                }}
-                onPaste={
-                  isRecording || isTranscribing ? undefined : handlePaste
-                }
-                onKeyDown={(e) => {
-                  if ((isRecording || isTranscribing) && e.key !== 'Escape') {
-                    return
-                  }
-                  // Enter during IME composition only confirms the conversion;
-                  // it must not send the message or edit the list structure.
-                  if (e.key === 'Enter' && isImeComposition(e)) {
-                    return
-                  }
-                  if (isSubmitShortcut(e, enterToNewline)) {
-                    e.preventDefault()
-                    const hasDocuments =
-                      processedDocuments &&
-                      processedDocuments.some((doc) =>
-                        isDocumentSubmittable(doc),
-                      )
-                    const hasInput = input.trim().length > 0
-                    const hasQuote = Boolean(quote)
-                    if (hasInput || hasDocuments || hasQuote) {
-                      shouldRemountOnClearRef.current = true
-                      handleSubmit(e)
-                    }
-                  } else if (handleListKeyDown(e)) {
-                    return
-                  } else if (e.key === 'Escape' && loadingState === 'loading') {
-                    e.preventDefault()
-                    cancelGeneration()
-                  }
-                }}
-                placeholder={
-                  hasMessages
-                    ? CONSTANTS.REPLY_PLACEHOLDER
-                    : CONSTANTS.INPUT_PLACEHOLDER
-                }
-                rows={1}
-                className={cn(
-                  'w-full resize-none bg-transparent font-chat text-lg leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
-                  isRecording && recordingStream && !input.trim() && 'hidden',
-                )}
-                style={{
-                  minHeight: inputMinHeight,
-                  maxHeight: `${CONSTANTS.INPUT_MAX_HEIGHT_PX}px`,
-                }}
-              />
-              {isRecording && recordingStream && (
-                <RecordingWaveform
-                  stream={recordingStream}
-                  className="w-full"
-                  style={{ minHeight: inputMinHeight }}
+              <TfPlusAnimated className="h-5 w-5" aria-hidden="true" />
+            </button>
+            {isInputMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => closeInputMenu(false)}
                 />
-              )}
-            </div>
-
-            <div
-              className={cn(
-                isCompact
-                  ? 'contents'
-                  : 'mt-3 flex items-center justify-between',
-              )}
-            >
-              <span className="sr-only" role="status" aria-live="polite">
-                {audioStatus}
-              </span>
-              <div
-                className={cn(
-                  'flex items-center gap-1',
-                  isCompact && 'order-first h-10 md:h-8',
-                )}
-              >
-                {/* Unified + button opening the input options menu */}
-                <div className="relative">
-                  <button
-                    id="input-options-button"
-                    ref={inputMenuTriggerRef}
-                    type="button"
-                    onClick={() => setIsInputMenuOpen(!isInputMenuOpen)}
-                    aria-label="Input options"
-                    aria-expanded={isInputMenuOpen}
-                    aria-haspopup="menu"
-                    className="flex h-7 w-7 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
-                  >
-                    <TfPlusAnimated className="h-5 w-5" aria-hidden="true" />
-                  </button>
-                  {isInputMenuOpen && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-10"
-                        onClick={() => closeInputMenu(false)}
-                      />
-                      <div
-                        ref={inputMenuRef}
-                        role="menu"
-                        aria-label="Input options"
-                        onKeyDown={handleInputMenuKeyDown}
-                        className="absolute bottom-full left-0 z-20 mb-2 min-w-[220px] rounded-xl border border-border-subtle bg-surface-chat py-1.5 shadow-lg"
-                      >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            triggerFileInput()
-                            closeInputMenu(true)
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
-                        >
-                          <TfAttachment
-                            className="h-5 w-5 !text-content-secondary"
-                            aria-hidden="true"
-                          />
-                          Add files or photos
-                        </button>
-                        {onOpenPromptLibrary && (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={() => {
-                              onOpenPromptLibrary()
-                              closeInputMenu(true)
-                            }}
-                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
-                          >
-                            <TfToolsAnimated
-                              className="h-5 w-5 text-content-secondary"
-                              aria-hidden="true"
-                            />
-                            Change system prompt
-                          </button>
-                        )}
-                        {onWebSearchToggle && (
-                          <div className="my-1.5 border-t border-border-subtle" />
-                        )}
-                        {onWebSearchToggle && (
-                          <button
-                            type="button"
-                            role="menuitemcheckbox"
-                            aria-checked={webSearchEnabled}
-                            onClick={() => {
-                              onWebSearchToggle()
-                              closeInputMenu(true)
-                            }}
-                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
-                          >
-                            {webSearchEnabled ? (
-                              <TfGlobe
-                                className="h-5 w-5 !text-content-secondary"
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <TfGlobeX
-                                className="h-5 w-5 text-content-secondary"
-                                aria-hidden="true"
-                              />
-                            )}
-                            <span className="flex-1">Web search</span>
-                            {webSearchEnabled && (
-                              <TfBoxCheckmark
-                                className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
-                                aria-hidden="true"
-                              />
-                            )}
-                          </button>
-                        )}
-                        {onResearchToggle && (
-                          <button
-                            type="button"
-                            role="menuitemcheckbox"
-                            aria-checked={researchEnabled}
-                            onClick={() => {
-                              onResearchToggle()
-                              closeInputMenu(true)
-                            }}
-                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
-                          >
-                            <TfWebSearch
-                              className="h-5 w-5 text-content-secondary"
-                              aria-hidden="true"
-                            />
-                            <span className="flex-1">Deep research</span>
-                            {researchEnabled && (
-                              <TfBoxCheckmark
-                                className="h-4 w-4 text-brand-accent-light"
-                                aria-hidden="true"
-                              />
-                            )}
-                          </button>
-                        )}
-                        {contextUsage && (
-                          <div className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary md:hidden">
-                            <span className="flex-1">Context</span>
-                            <ContextUsageIndicator usage={contextUsage} />
-                          </div>
-                        )}
-                        {contextUsage && compaction && (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            aria-disabled={!compaction.canCompact}
-                            onClick={() => {
-                              if (!compaction.canCompact) return
-                              compaction.onCompact()
-                              closeInputMenu(true)
-                            }}
-                            className={cn(
-                              'flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary md:hidden',
-                              compaction.canCompact
-                                ? 'hover:bg-surface-chat-background'
-                                : 'cursor-default opacity-50',
-                            )}
-                          >
-                            <TfStack
-                              className="h-5 w-5 text-content-secondary"
-                              aria-hidden="true"
-                            />
-                            {compaction.compacting
-                              ? COMPACTING_LABEL
-                              : COMPACT_LABEL}
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-                {researchEnabled && onResearchToggle && (
+                <div
+                  ref={inputMenuRef}
+                  role="menu"
+                  aria-label="Input options"
+                  onKeyDown={handleInputMenuKeyDown}
+                  className="absolute bottom-full left-0 z-20 mb-2 min-w-[220px] rounded-xl border border-border-subtle bg-surface-chat py-1.5 shadow-lg"
+                >
                   <button
                     type="button"
-                    onClick={onResearchToggle}
-                    aria-label="Turn off deep research"
-                    className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-brand-accent-light transition-colors hover:bg-surface-chat-background"
+                    role="menuitem"
+                    onClick={() => {
+                      triggerFileInput()
+                      closeInputMenu(true)
+                    }}
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                   >
-                    <TfWebSearch className="h-4 w-4" aria-hidden="true" />
-                    Deep research
-                    <TfBoxX className="h-3 w-3" aria-hidden="true" />
+                    <TfAttachment
+                      className="h-5 w-5 !text-content-secondary"
+                      aria-hidden="true"
+                    />
+                    Add files or photos
                   </button>
-                )}
-              </div>
-
-              <div
-                className={cn(
-                  'flex items-center gap-2',
-                  isCompact && 'h-10 md:h-8',
-                )}
-              >
-                {/* Once a conversation is underway these move to the footer
-                  below the card so the card itself stays focused on composing. */}
-                {!hasMessages && contextUsage && (
-                  <ContextUsageIndicator
-                    usage={contextUsage}
-                    className="hidden md:flex"
-                  />
-                )}
-                {!hasMessages && modelSelectorButton && (
-                  <div>{modelSelectorButton}</div>
-                )}
-                {isPremium && transcriptionAvailable && (
-                  <button
-                    type="button"
-                    onClick={isRecording ? stopRecording : startRecording}
-                    className={cn(
-                      'disabled:opacity-50',
-                      isRecording
-                        ? 'flex h-10 w-10 animate-pulse items-center justify-center rounded-full bg-red-500 text-white md:h-8 md:w-8'
-                        : 'rounded-lg bg-transparent p-2.5 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary md:p-1.5',
-                    )}
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
-                    title={recordingButtonLabel}
-                    aria-label={recordingButtonLabel}
-                    disabled={isTranscribing}
-                  >
-                    {isRecording ? (
-                      <TfStopAnimated
-                        className="h-6 w-6 md:h-5 md:w-5"
-                        aria-hidden="true"
-                      />
-                    ) : isTranscribing ? (
-                      <PiSpinner
-                        className="h-6 w-6 animate-spin text-current md:h-5 md:w-5"
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <TfMicrophoneAnimated
-                        className="h-6 w-6 md:h-4 md:w-4"
-                        aria-hidden="true"
-                      />
-                    )}
-                  </button>
-                )}
-                {(() => {
-                  const isBusy = loadingState !== 'idle'
-                  const hasCompletedDocuments = Boolean(
-                    processedDocuments &&
-                    processedDocuments.some((doc) =>
-                      isDocumentSubmittable(doc),
-                    ),
-                  )
-                  const hasSubmittableContent =
-                    Boolean(input.trim()) ||
-                    Boolean(quote) ||
-                    hasCompletedDocuments
-                  const showStopAction = isBusy && !hasSubmittableContent
-
-                  return (
+                  {onOpenPromptLibrary && (
                     <button
-                      id="send-button"
                       type="button"
-                      onClick={(e) => {
-                        if (showStopAction) {
-                          e.preventDefault()
-                          cancelGeneration()
-                        } else {
-                          shouldRemountOnClearRef.current = true
-                          handleSubmit(e)
-                          // On iOS Safari, forcing blur here can lead to a "dead" touch region
-                          // after the keyboard dismisses. Keep focus on mobile; desktop can blur.
-                          if (!isMobileDevice()) {
-                            ownTextareaRef.current?.blur()
-                          }
-                        }
+                      role="menuitem"
+                      onClick={() => {
+                        onOpenPromptLibrary()
+                        closeInputMenu(true)
                       }}
-                      className={cn(
-                        'group flex h-10 w-10 items-center justify-center rounded-site-control bg-tinfoil-oak text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:opacity-50 md:h-8 md:w-8',
-                        !isCompact && 'ml-2',
-                      )}
-                      style={{ WebkitTapHighlightColor: 'transparent' }}
-                      disabled={
-                        showStopAction
-                          ? false
-                          : isRecording ||
-                            isTranscribing ||
-                            !hasSubmittableContent
-                      }
-                      aria-label={showStopAction ? 'Stop generation' : 'Send'}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                     >
-                      {showStopAction ? (
-                        <TfStopAnimated
-                          className="h-6 w-6 text-current transition-colors md:h-5 md:w-5"
+                      <TfToolsAnimated
+                        className="h-5 w-5 text-content-secondary"
+                        aria-hidden="true"
+                      />
+                      Change system prompt
+                    </button>
+                  )}
+                  {onWebSearchToggle && (
+                    <div className="my-1.5 border-t border-border-subtle" />
+                  )}
+                  {onWebSearchToggle && (
+                    <button
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={webSearchEnabled}
+                      onClick={() => {
+                        onWebSearchToggle()
+                        closeInputMenu(true)
+                      }}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
+                    >
+                      {webSearchEnabled ? (
+                        <TfGlobe
+                          className="h-5 w-5 !text-content-secondary"
                           aria-hidden="true"
                         />
                       ) : (
-                        <TfArrowUpAnimated
-                          className="h-6 w-6 text-current transition-colors md:h-5 md:w-5"
+                        <TfGlobeX
+                          className="h-5 w-5 text-content-secondary"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className="flex-1">Web search</span>
+                      {webSearchEnabled && (
+                        <TfBoxCheckmark
+                          className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
                           aria-hidden="true"
                         />
                       )}
                     </button>
-                  )
-                })()}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {hasMessages && (
-        <div className="flex items-center justify-between gap-4 px-3 md:px-6">
-          <p className="text-xs text-content-muted">
-            AI can make mistakes. Verify important information.
-          </p>
-          <div className="hidden items-center gap-2 md:flex">
-            {contextUsage && (
-              <ContextUsageIndicator
-                usage={contextUsage}
-                className="hidden md:flex"
-                compaction={compaction}
-              />
+                  )}
+                  {onResearchToggle && (
+                    <button
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={researchEnabled}
+                      onClick={() => {
+                        onResearchToggle()
+                        closeInputMenu(true)
+                      }}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
+                    >
+                      <TfWebSearch
+                        className="h-5 w-5 text-content-secondary"
+                        aria-hidden="true"
+                      />
+                      <span className="flex-1">Deep research</span>
+                      {researchEnabled && (
+                        <TfBoxCheckmark
+                          className="h-4 w-4 text-brand-accent-light"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </button>
+                  )}
+                  {contextUsage && (
+                    <div className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary md:hidden">
+                      <span className="flex-1">Context</span>
+                      <ContextUsageIndicator usage={contextUsage} />
+                    </div>
+                  )}
+                  {contextUsage && compaction && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      aria-disabled={!compaction.canCompact}
+                      onClick={() => {
+                        if (!compaction.canCompact) return
+                        compaction.onCompact()
+                        closeInputMenu(true)
+                      }}
+                      className={cn(
+                        'flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary md:hidden',
+                        compaction.canCompact
+                          ? 'hover:bg-surface-chat-background'
+                          : 'cursor-default opacity-50',
+                      )}
+                    >
+                      <TfStack
+                        className="h-5 w-5 text-content-secondary"
+                        aria-hidden="true"
+                      />
+                      {compaction.compacting ? COMPACTING_LABEL : COMPACT_LABEL}
+                    </button>
+                  )}
+                </div>
+              </>
             )}
-            {modelSelectorButton}
           </div>
-        </div>
-      )}
-    </div>
+          {researchEnabled && onResearchToggle && (
+            <button
+              type="button"
+              onClick={onResearchToggle}
+              aria-label="Turn off deep research"
+              className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-brand-accent-light transition-colors hover:bg-surface-chat-background"
+            >
+              <TfWebSearch className="h-4 w-4" aria-hidden="true" />
+              Deep research
+              <TfBoxX className="h-3 w-3" aria-hidden="true" />
+            </button>
+          )}
+        </>
+      }
+      trailingControls={
+        <>
+          {isPremium && transcriptionAvailable && (
+            <button
+              type="button"
+              onClick={isRecording ? stopRecording : startRecording}
+              className={cn(
+                'disabled:opacity-50',
+                isRecording
+                  ? 'flex h-10 w-10 animate-pulse items-center justify-center rounded-full bg-red-500 text-white md:h-8 md:w-8'
+                  : 'rounded-lg bg-transparent p-2.5 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary md:p-1.5',
+              )}
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+              title={recordingButtonLabel}
+              aria-label={recordingButtonLabel}
+              disabled={isTranscribing}
+            >
+              {isRecording ? (
+                <TfStopAnimated
+                  className="h-6 w-6 md:h-5 md:w-5"
+                  aria-hidden="true"
+                />
+              ) : isTranscribing ? (
+                <PiSpinner
+                  className="h-6 w-6 animate-spin text-current md:h-5 md:w-5"
+                  aria-hidden="true"
+                />
+              ) : (
+                <TfMicrophoneAnimated
+                  className="h-6 w-6 md:h-4 md:w-4"
+                  aria-hidden="true"
+                />
+              )}
+            </button>
+          )}
+        </>
+      }
+      cardUsage={
+        contextUsage && (
+          <ContextUsageIndicator
+            usage={contextUsage}
+            className="hidden md:flex"
+          />
+        )
+      }
+      footerUsage={
+        contextUsage && (
+          <ContextUsageIndicator
+            usage={contextUsage}
+            className="hidden md:flex"
+            compaction={compaction}
+          />
+        )
+      }
+    />
   )
 })

@@ -3,14 +3,6 @@ export const CONSTANTS = {
   INPUT_MIN_HEIGHT: '28px',
   // Welcome-screen composer: one comfortable line of text before it grows.
   WELCOME_INPUT_MIN_HEIGHT: '36px',
-  // Maximum height of the chat input textarea before it scrolls internally
-  INPUT_MAX_HEIGHT_PX: 240,
-  // Fallback estimate of the input card chrome height (paddings, toolbar row,
-  // send button) used when the input area wrapper cannot be measured
-  INPUT_VIEWPORT_RESERVED_PX: 160,
-  // Minimum breathing room kept above the input area within the visual
-  // viewport so it never covers the entire screen above the keyboard
-  INPUT_VIEWPORT_TOP_GAP_PX: 24,
   CHAT_INPUT_BOTTOM_GAP_PX: 32,
   CHAT_MESSAGE_TOP_GAP_PX: 16,
   CHAT_SCROLL_BUTTON_THRESHOLD_PX: 200,
@@ -85,10 +77,6 @@ export const CONSTANTS = {
   ARTIFACT_SIDEBAR_MIN_WIDTH_PX: 360,
   ARTIFACT_SIDEBAR_MAX_WIDTH_PX: 840,
   ARTIFACT_SIDEBAR_RESIZE_STEP_PX: 40,
-  // Placeholder for the input before a conversation has started
-  INPUT_PLACEHOLDER: 'How can I help you today?',
-  // Placeholder once a conversation has started
-  REPLY_PLACEHOLDER: 'Reply to Al...',
   // Base document title used when no chat title is meaningful
   BASE_DOCUMENT_TITLE: 'Tinfoil Chat',
   // Row bounds for the in-place message edit textarea

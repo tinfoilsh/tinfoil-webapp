@@ -8,6 +8,7 @@ import {
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
 import { useHarness } from '@/services/harness/provider'
 import { useUser } from '@clerk/react'
+import { timeOfDayGreeting } from '@tinfoil/chat-ui/greeting'
 import { TfChevronRight } from '@tinfoilsh/tinfoil-icons'
 import { motion } from 'framer-motion'
 import React, { memo, useRef, useState } from 'react'
@@ -317,17 +318,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
     if (!name) {
       return 'Tinfoil Chat'
     }
-
-    const hour = new Date().getHours()
-    if (hour >= 5 && hour < 12) {
-      return `Good morning, ${name}!`
-    } else if (hour >= 12 && hour < 17) {
-      return `Good afternoon, ${name}!`
-    } else if (hour >= 17 && hour < 22) {
-      return `Good evening, ${name}!`
-    } else {
-      return `Up late, ${name}?`
-    }
+    return timeOfDayGreeting(name)
   }
 
   // Don't show loading skeleton - show the welcome screen immediately

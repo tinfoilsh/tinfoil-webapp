@@ -5,23 +5,47 @@
   "type": "module",
   "exports": {
     "./button": "./src/button.tsx",
-    "./utils": "./src/utils.ts",
-    "./StreamingMarkdown": "./src/StreamingMarkdown.tsx",
+    "./composer": "./src/composer.tsx",
+    "./format-duration": "./src/format-duration.ts",
+    "./greeting": "./src/greeting.ts",
+    "./keyboard-utils": "./src/keyboard-utils.ts",
+    "./LoadingDots": "./src/LoadingDots.tsx",
     "./markdown-blocks": "./src/markdown-blocks.ts",
-    "./keyboard-utils": "./src/keyboard-utils.ts"
+    "./message": "./src/message.tsx",
+    "./modal": "./src/modal.tsx",
+    "./model-lifecycle-badges": "./src/model-lifecycle-badges.tsx",
+    "./model-selector": "./src/model-selector.tsx",
+    "./model-selector-trigger-label": "./src/model-selector-trigger-label.tsx",
+    "./StepMarkdown": "./src/StepMarkdown.tsx",
+    "./stepped-slider": "./src/stepped-slider.tsx",
+    "./StreamingMarkdown": "./src/StreamingMarkdown.tsx",
+    "./StreamingTracerDot": "./src/StreamingTracerDot.tsx",
+    "./ThoughtProcess": "./src/ThoughtProcess.tsx",
+    "./tooltip": "./src/tooltip.tsx",
+    "./user-avatar": "./src/user-avatar.tsx",
+    "./utils": "./src/utils.ts",
+    "./WorkStep": "./src/WorkStep.tsx"
   },
   "peerDependencies": {
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
   "dependencies": {
-    "@types/mdast": "^4.0.4",
+    "@braintree/sanitize-url": "^7.1.1",
+    "@headlessui/react": "^2.1.1",
+    "@radix-ui/react-slider": "^1.4.7",
     "@radix-ui/react-slot": "^1.1.1",
+    "@radix-ui/react-tooltip": "^1.2.0",
+    "@tinfoil/chat-client": "*",
+    "@tinfoilsh/tinfoil-icons": "^2.6.0",
+    "@types/mdast": "^4.0.4",
+    "boring-avatars": "^2.0.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^2.6.0",
     "react-markdown": "^9.0.3",
+    "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
+    "tailwind-merge": "^2.6.0",
     "unified": "^11.0.5"
   }
 }

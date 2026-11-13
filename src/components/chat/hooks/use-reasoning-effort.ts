@@ -1,7 +1,15 @@
-import type { BaseModel } from '@/config/models'
 import { useProfileSetting } from '@/services/harness/provider'
-export type ReasoningEffort = 'low' | 'medium' | 'high'
-export const DEFAULT_EFFORT: ReasoningEffort = 'medium'
+import {
+  DEFAULT_EFFORT,
+  type ReasoningEffort,
+} from '@tinfoil/chat-client/models'
+
+export {
+  DEFAULT_EFFORT,
+  supportsReasoningEffort,
+  supportsThinkingToggle,
+  type ReasoningEffort,
+} from '@tinfoil/chat-client/models'
 export function useReasoningEffort() {
   const [reasoningEffort, setReasoningEffort] =
     useProfileSetting<ReasoningEffort>('reasoningEffort', DEFAULT_EFFORT)
@@ -14,7 +22,3 @@ export function useThinkingEnabled() {
   )
   return { thinkingEnabled, setThinkingEnabled }
 }
-export const supportsReasoningEffort = (model?: BaseModel | null) =>
-  !!model?.reasoning?.effort
-export const supportsThinkingToggle = (model?: BaseModel | null) =>
-  !!model?.reasoning?.toggle

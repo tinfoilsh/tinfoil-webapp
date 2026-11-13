@@ -5,11 +5,15 @@ import {
   ForwardIcon,
   InformationCircleIcon,
 } from '@heroicons/react/24/outline'
+import {
+  MESSAGE_PROSE_CLASS_NAME,
+  MessageMetadata,
+  USER_MESSAGE_BUBBLE_CLASS_NAME,
+} from '@tinfoil/chat-ui/message'
 import { TfBoxCheckmark, TfFork, TfTrash } from '@tinfoilsh/tinfoil-icons'
 import {
   TfChevronDownAnimated,
   TfCopyAnimated,
-  TfLockLockedAnimated,
   TfRefreshTwoArrowsAnimated,
   TfWritingAnimated,
 } from '@tinfoilsh/tinfoil-icons/animated'
@@ -46,25 +50,6 @@ import {
 
 const hasVisibleAssistantMessage = (message: MessageRenderProps['message']) =>
   !!message.content || !!message.timeline?.length
-
-const MessageMetadata = ({
-  modelDisplayName,
-}: {
-  modelDisplayName?: string
-}) => (
-  <div className="flex shrink-0 items-center gap-1.5 text-xs text-content-muted">
-    {modelDisplayName && (
-      <>
-        <span>{modelDisplayName}</span>
-        <span aria-hidden="true">·</span>
-      </>
-    )}
-    <span className="flex items-center gap-1 text-[10px]">
-      <TfLockLockedAnimated className="h-3 w-3" aria-hidden="true" />
-      Encrypted
-    </span>
-  </div>
-)
 
 const DefaultMessageComponent = ({
   message,
@@ -545,13 +530,7 @@ const DefaultMessageComponent = ({
               return (
                 <div key={block.id} className="w-full px-4 py-2">
                   <div className="w-full">
-                    <div
-                      className={cn(
-                        'prose w-full max-w-none text-base prose-pre:bg-transparent prose-pre:p-0',
-                        'text-content-primary prose-headings:text-content-primary prose-strong:text-content-primary prose-code:text-content-primary',
-                        'prose-a:text-blue-500 hover:prose-a:text-blue-600',
-                      )}
-                    >
+                    <div className={MESSAGE_PROSE_CLASS_NAME}>
                       <StreamingContentWrapper
                         isStreaming={isActivelyStreaming}
                       >
@@ -669,12 +648,7 @@ const DefaultMessageComponent = ({
                   {isUser && message.research && !hasUserAnswers && (
                     <ResearchTab />
                   )}
-                  <div
-                    className={cn(
-                      isUser &&
-                        'rounded-site-lg bg-surface-message-user/90 px-4 py-2 shadow-sm backdrop-blur-sm',
-                    )}
-                  >
+                  <div className={cn(isUser && USER_MESSAGE_BUBBLE_CLASS_NAME)}>
                     <div className="relative">
                       <div
                         ref={isUser ? userMessageContentRef : undefined}
@@ -689,13 +663,7 @@ const DefaultMessageComponent = ({
                             : undefined
                         }
                       >
-                        <div
-                          className={cn(
-                            'prose w-full max-w-none text-base prose-pre:bg-transparent prose-pre:p-0',
-                            'text-content-primary prose-headings:text-content-primary prose-strong:text-content-primary prose-code:text-content-primary',
-                            'prose-a:text-blue-500 hover:prose-a:text-blue-600',
-                          )}
-                        >
+                        <div className={MESSAGE_PROSE_CLASS_NAME}>
                           {!isUser && isStreaming && isLastMessage ? (
                             <StreamingContentWrapper isStreaming={true}>
                               <StreamingChunkedText
