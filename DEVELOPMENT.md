@@ -54,7 +54,7 @@ npm exec --workspace=apps/extension -- playwright install chromium
 npm run test:browser --workspace=apps/extension
 ```
 
-The extension's icons in `apps/extension/public/icon` are rendered from `apps/extension/assets/icon.svg`:
+The extension's icons in `apps/extension/public/icon` are rendered from `apps/extension/assets/icon.svg` with `rsvg-convert`, which [librsvg](https://gitlab.gnome.org/GNOME/librsvg) provides (`brew install librsvg`):
 
 ```bash
 for size in 16 32 48 128; do rsvg-convert -w $size -h $size apps/extension/assets/icon.svg -o apps/extension/public/icon/$size.png; done
