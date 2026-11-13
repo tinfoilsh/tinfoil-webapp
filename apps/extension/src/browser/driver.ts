@@ -5,11 +5,11 @@ import type { ProtocolMapping } from 'devtools-protocol/types/protocol-mapping'
 import {
   chooseOption,
   glideIntoView,
-  hideCursor,
+  hideMark,
   includesHit,
   inspectElement,
-  pointCursor,
-  removeCursor,
+  markPage,
+  removeMark,
   selectText,
   stableElement,
   stableViewport,
@@ -23,12 +23,24 @@ const TASK_GROUP_TITLE = 'Tinfoil'
 const TASK_GROUP_COLOR = 'green'
 // The cursor that shows the user where a task points on a page.
 const CURSOR_TAG = 'tinfoil-cursor'
-const CURSOR_COLOR = '#004444'
+// How the task's mark on a page looks and reads: Deep Teal with a lighter
+// glow that shows where it does not, and the stop control in the colors of
+// a primary action.
+const MARK_LOOK = {
+  ink: '#004444',
+  glow: '#A8C7D1',
+  paper: '#F9F8F6',
+  action: '#E6CCA8',
+  actionHover: '#DDBB8C',
+  actionInk: '#05252E',
+  label: 'Al is working here',
+  stop: 'Stop',
+}
 // How long the cursor takes to reach a point: in proportion to how far it
 // is, and never so little that the user cannot follow it.
-const CURSOR_MIN_TRAVEL_MS = 300
-const CURSOR_MAX_TRAVEL_MS = 700
-const CURSOR_PX_PER_MS = 1.5
+const CURSOR_MIN_TRAVEL_MS = 350
+const CURSOR_MAX_TRAVEL_MS = 900
+const CURSOR_PX_PER_MS = 1.2
 // How few of the frames a controlled page draws are sent to the extension,
 // which has no use for them.
 const DRAWN_FRAME_INTERVAL = 1000
@@ -179,6 +191,11 @@ type Page = {
   ready: boolean
   // Told whenever the main frame's navigation moves on.
   waiters: Set<() => void>
+  // The task has put its mark on the tab: the glow around its edge, the
+  // notice that it is at work there, and its cursor once it has pointed.
+  marked: boolean
+  // The user moved the notice to the bottom of the page.
+  noticeBelow?: boolean
   // Where the task last pointed on the page, which its cursor shows.
   cursor?: Point
   screenshot?: {
@@ -223,6 +240,16 @@ export class BrowserDriver {
     const page =
       source.tabId === undefined ? undefined : this.pages.get(source.tabId)
     if (!page) return
+    if (method === 'Runtime.bindingCalled') {
+      const { name, payload } = params as Protocol.Runtime.BindingCalledEvent
+      if (name !== this.binding || source.sessionId !== undefined) return
+      if (payload === 'stop') this.stopped()
+      else if (payload === 'move') {
+        page.noticeBelow = !page.noticeBelow
+        void this.mark({ tabId: source.tabId }, page)
+      }
+      return
+    }
     this.followNavigation(page, source.sessionId === undefined, method, params)
     if (method === 'Target.attachedToTarget') {
       const event = params as Protocol.Target.AttachedToTargetEvent
@@ -279,9 +306,15 @@ export class BrowserDriver {
     }
   }
 
+  // The function a page calls to reach this task from the notice on it,
+  // under a name no page can know ahead of time.
+  private readonly binding = `tinfoil${crypto.randomUUID().replaceAll('-', '')}`
+
   constructor(
     private readonly signal: AbortSignal,
     private readonly interrupted: (message: string) => void,
+    // The user stopped the task from the page it works in.
+    private readonly stopped: () => void = () => {},
   ) {
     chrome.debugger.onEvent.addListener(this.onEvent)
     chrome.debugger.onDetach.addListener(this.onDetach)
@@ -419,6 +452,9 @@ export class BrowserDriver {
     // the browser does not show is still drawn while it is captured, which
     // the page's own animations otherwise bring to a halt on some platforms.
     if (!target.parent) {
+      await this.send(target.session, 'Runtime.addBinding', {
+        name: this.binding,
+      })
       await this.send(target.session, 'Emulation.setFocusEmulationEnabled', {
         enabled: true,
       })
@@ -460,6 +496,7 @@ export class BrowserDriver {
       pending: false,
       ready: false,
       waiters: new Set(),
+      marked: false,
     }
     this.pages.set(tabId, page)
     if (this.closed || this.signal.aborted) {
@@ -492,36 +529,59 @@ export class BrowserDriver {
     }
   }
 
-  // Gives a page back: without the task's cursor, and no longer controlled.
+  // Gives a page back: without the task's mark, and no longer controlled.
   private async leave(tabId: number, page: Page | undefined) {
-    if (page?.cursor)
+    if (page?.marked)
       await chrome.debugger
         .sendCommand({ tabId }, 'Runtime.evaluate', {
-          expression: `(${removeCursor.toString()})(${JSON.stringify(CURSOR_TAG)})`,
+          expression: `(${removeMark.toString()})(${JSON.stringify(CURSOR_TAG)})`,
         })
         .catch(() => undefined)
     await chrome.debugger.detach({ tabId })
   }
 
-  // Shows the user where the task points, and says whether the cursor
-  // showed. The task goes on the same without it.
-  private async pointCursor(
+  // Shows the user the tab the task works in, by a glow around its edge,
+  // and where on it the task points, by its cursor. Says whether the mark
+  // showed; the task goes on the same without it.
+  private async mark(
     root: Session,
     page: Page,
-    point: Point,
-    press: boolean,
+    point?: Point,
+    press = false,
   ): Promise<boolean> {
+    const pointed = point && {
+      ...point,
+      press,
+      minTravelMs: CURSOR_MIN_TRAVEL_MS,
+      maxTravelMs: CURSOR_MAX_TRAVEL_MS,
+      pxPerMs: CURSOR_PX_PER_MS,
+    }
     try {
       const shown = await this.send(root, 'Runtime.evaluate', {
-        expression: `(${pointCursor.toString()})(${JSON.stringify(CURSOR_TAG)}, ${JSON.stringify(CURSOR_COLOR)}, ${point.x}, ${point.y}, ${press}, ${CURSOR_MIN_TRAVEL_MS}, ${CURSOR_MAX_TRAVEL_MS}, ${CURSOR_PX_PER_MS})`,
+        expression: `(${markPage.toString()})(${JSON.stringify(CURSOR_TAG)}, ${JSON.stringify(MARK_LOOK)}, ${JSON.stringify(this.binding)}, ${page.noticeBelow === true}, ${JSON.stringify(pointed ?? null)})`,
         awaitPromise: true,
         returnByValue: true,
       })
-      page.cursor = point
+      page.marked = true
+      if (point) page.cursor = point
       return shown.result.value === true
     } catch {
       this.check()
       return false
+    }
+  }
+
+  // Takes the task's mark off a tab it has moved on from.
+  private async unmark(tabId: number) {
+    const left = this.pages.get(tabId)
+    if (!left?.marked) return
+    try {
+      await this.send({ tabId }, 'Runtime.evaluate', {
+        expression: `(${removeMark.toString()})(${JSON.stringify(CURSOR_TAG)})`,
+      })
+      left.marked = false
+    } catch {
+      this.check()
     }
   }
 
@@ -536,7 +596,7 @@ export class BrowserDriver {
       if (cause instanceof BrowserError) return
       throw cause
     }
-    await this.pointCursor(root, page, point, false)
+    await this.mark(root, page, point)
   }
 
   // Where an action's input goes, once the cursor has shown the user. The
@@ -549,11 +609,11 @@ export class BrowserDriver {
     locate: () => Promise<Point>,
   ): Promise<Point> {
     const aim = await this.beforeInput(locate)
-    if (!(await this.pointCursor(root, page, aim, press))) return aim
+    if (!(await this.mark(root, page, aim, press))) return aim
     return this.beforeInput(locate)
   }
 
-  // Captures the page without the task's cursor, which is no part of what
+  // Captures the page without the task's mark, which is no part of what
   // the page shows.
   private async capture(
     root: Session,
@@ -561,10 +621,10 @@ export class BrowserDriver {
     parameters: Protocol.Page.CaptureScreenshotRequest,
   ) {
     const hide = async (hidden: boolean) => {
-      if (!page.cursor) return false
+      if (!page.marked) return false
       try {
         const answer = await this.send(root, 'Runtime.evaluate', {
-          expression: `(${hideCursor.toString()})(${JSON.stringify(CURSOR_TAG)}, ${hidden})`,
+          expression: `(${hideMark.toString()})(${JSON.stringify(CURSOR_TAG)}, ${hidden})`,
           returnByValue: true,
         })
         return answer.result.value === true
@@ -665,9 +725,13 @@ export class BrowserDriver {
         { cause },
       )
     }
+    const previous = this.currentTabId
     this.currentTabId = id
     await this.gather(tab)
     this.check()
+    // The glow goes with the task to the tab it works in.
+    if (previous !== undefined && previous !== id) await this.unmark(previous)
+    await this.mark({ tabId: id }, page)
     return [id, page]
   }
 
@@ -1391,11 +1455,10 @@ export class BrowserDriver {
   private async observed(id: number): Promise<BrowserResult> {
     try {
       const result = await this.read(id)
-      // The cursor stays where the task last pointed on a page it has since
-      // replaced.
+      // The mark stays on a page the tab has since replaced, its cursor
+      // where the task last pointed.
       const page = this.pages.get(id)
-      if (page?.cursor)
-        await this.pointCursor({ tabId: id }, page, page.cursor, false)
+      if (page) await this.mark({ tabId: id }, page, page.cursor)
       return result
     } catch (cause) {
       this.check()

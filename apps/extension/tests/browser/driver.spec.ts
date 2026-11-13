@@ -20,6 +20,8 @@ declare global {
 }
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const MAX_SNAPSHOT_OBSERVATIONS = 10
+// Where the tip of the task's cursor lies within its picture.
+const CURSOR_TIP = { x: 6, y: 3 }
 const DEVICE_SCALE_FACTOR = 2
 const WINDOW_SIZE = '1500,1000'
 // The longest side of the picture of a viewport that a model is given.
@@ -647,17 +649,22 @@ test('tabs a task works in are gathered in a green Tinfoil group until it stops'
 test('a cursor on the page shows where the task points, out of what it captures, until the task stops', async () => {
   const { page, tabId } = await startFixture('/?cursor')
   const tip = () =>
-    page.evaluate(() => {
+    page.evaluate(async (tip) => {
       const host = document.querySelector('tinfoil-cursor')
       const arrow = host?.shadowRoot?.getElementById('arrow')
-      if (!host || !arrow) return null
+      if (!host || !arrow || getComputedStyle(arrow).display === 'none')
+        return null
+      // The cursor is measured once it has come to rest.
+      await Promise.all(
+        arrow.getAnimations().map((animation) => animation.finished),
+      )
       const box = arrow.getBoundingClientRect()
       return {
-        x: box.left + 4,
-        y: box.top + 2,
+        x: box.left + tip.x,
+        y: box.top + tip.y,
         takesInput: getComputedStyle(host).pointerEvents !== 'none',
       }
-    })
+    }, CURSOR_TIP)
   const center = async (selector: string) => {
     const box = (await page.locator(selector).boundingBox())!
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
@@ -680,7 +687,7 @@ test('a cursor on the page shows where the task points, out of what it captures,
   const shadow = await center('#shadow button')
   const path = await sampled(
     page,
-    `document.querySelector('tinfoil-cursor').shadowRoot.getElementById('arrow').getBoundingClientRect().left + 4`,
+    `document.querySelector('tinfoil-cursor').shadowRoot.getElementById('arrow').getBoundingClientRect().left + ${CURSOR_TIP.x}`,
     () =>
       execute({
         action: 'hover',
@@ -747,6 +754,102 @@ test('a cursor on the page shows where the task points, out of what it captures,
 
   await worker.evaluate(() => browserTest.stop())
   expect(await tip()).toBeNull()
+})
+
+test('a tab the task works in says so around its edge, and in a notice that stops the task', async () => {
+  const { page, tabId } = await startFixture('/?marked')
+  const mark = (of: Page = page) =>
+    of.evaluate(() => {
+      const tree = document.querySelector('tinfoil-cursor')?.shadowRoot
+      if (!tree) return null
+      const box = (id: string) => {
+        const { x, y, width, height } = tree
+          .getElementById(id)!
+          .getBoundingClientRect()
+        return { x, y, width, height }
+      }
+      return {
+        glow: box('glow'),
+        notice: box('notice'),
+        stop: box('stop'),
+        move: box('move'),
+        says: tree.getElementById('notice')!.textContent,
+        pointing:
+          getComputedStyle(tree.getElementById('arrow')!).display !== 'none',
+        page: {
+          x: 0,
+          y: 0,
+          width: document.documentElement.clientWidth,
+          height: document.documentElement.clientHeight,
+        },
+      }
+    })
+  const middle = (box: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }) => [box.x + box.width / 2, box.y + box.height / 2] as const
+  const stops = () => worker.evaluate(() => browserTest.stops())
+  expect(await mark()).toBeNull()
+
+  // The mark is there from the task's first look at the page, before it has
+  // pointed at anything.
+  await execute({ action: 'read', tabId })
+  const shown = (await mark())!
+  expect(shown.glow).toEqual(shown.page)
+  expect(shown.says).toContain('Al is working here')
+  expect(shown.pointing).toBe(false)
+
+  // What the task presses beneath the notice reaches the page, as though the
+  // notice were not there.
+  await page.evaluate(({ x, y, width, height }) => {
+    const beneath = document.createElement('button')
+    beneath.textContent = 'Beneath'
+    beneath.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:${width}px;height:${height}px`
+    beneath.onclick = () => {
+      document.title = `${document.title} pressed`
+    }
+    document.body.append(beneath)
+  }, shown.stop)
+  const read = await execute({ action: 'read', tabId })
+  await execute({ action: 'click', tabId, ref: ref(read.text, 'Beneath') })
+  await expect(page).toHaveTitle('Browser fixture pressed')
+  expect(await stops()).toBe(0)
+
+  // What the user presses on Stop stops the task, and is kept from the page.
+  await page.mouse.click(...middle(shown.stop))
+  await expect.poll(stops).toBe(1)
+  await expect(page).toHaveTitle('Browser fixture pressed')
+
+  // The notice moves out of the user's way, to the bottom of the page.
+  await page.mouse.click(...middle(shown.move))
+  await expect
+    .poll(async () => {
+      const moved = (await mark())!
+      return moved.page.height - (moved.notice.y + moved.notice.height)
+    })
+    .toBe(0)
+  expect(await stops()).toBe(1)
+
+  // The mark goes with the task to the tab it works in next, and leaves
+  // with the task.
+  const next = await context.newPage()
+  try {
+    await next.goto(`${origin}/next`)
+    const nextId = await worker.evaluate(
+      async (url) =>
+        (await chrome.tabs.query({})).find((tab) => tab.url === url)!.id!,
+      next.url(),
+    )
+    await execute({ action: 'read', tabId: nextId })
+    expect(await mark()).toBeNull()
+    expect((await mark(next))!.says).toContain('Al is working here')
+    await worker.evaluate(() => browserTest.stop())
+    expect(await mark(next)).toBeNull()
+  } finally {
+    await next.close()
+  }
 })
 
 test('a task can visit more tabs than it keeps attached and releases every attachment when stopped', async () => {

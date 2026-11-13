@@ -1,4 +1,5 @@
 import { HarnessClient } from '@tinfoil/chat-client/client'
+import { logError } from '@tinfoil/chat-client/logging'
 import { ROUTES } from '@tinfoil/chat-client/protocol'
 import {
   initialChat,
@@ -47,6 +48,8 @@ type BrowserExecutor = Pick<BrowserDriver, 'execute' | 'describe' | 'dispose'>
 type CreateBrowser = (
   signal: AbortSignal,
   interrupted: (message: string) => void,
+  // The user stopped the task from the page it works in.
+  stopped: () => void,
 ) => BrowserExecutor
 
 export class TaskController {
@@ -73,8 +76,11 @@ export class TaskController {
     private readonly publish: (view: View) => void,
     // Whether an action that changes a page waits for the user's approval.
     private readonly reviewActions: () => Promise<boolean>,
-    private readonly createBrowser: CreateBrowser = (signal, interrupted) =>
-      new BrowserDriver(signal, interrupted),
+    private readonly createBrowser: CreateBrowser = (
+      signal,
+      interrupted,
+      stopped,
+    ) => new BrowserDriver(signal, interrupted, stopped),
   ) {}
 
   initialize(after: Promise<void> = Promise.resolve()): Promise<void> {
@@ -338,11 +344,17 @@ export class TaskController {
   }
 
   private async run(task: Task, signal: AbortSignal, turn?: Turn) {
-    const driver = this.createBrowser(signal, (message) => {
-      if (signal.aborted) return
-      task.error = message
-      this.active?.abort.abort()
-    })
+    const driver = this.createBrowser(
+      signal,
+      (message) => {
+        if (signal.aborted) return
+        task.error = message
+        this.active?.abort.abort()
+      },
+      () => {
+        this.stop().catch((cause) => logError('Unable to stop task', cause))
+      },
+    )
     try {
       await this.save(task)
       const access = turn?.browser ?? task.receipt?.browser
