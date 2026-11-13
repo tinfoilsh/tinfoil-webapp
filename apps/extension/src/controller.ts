@@ -28,11 +28,18 @@ import {
   TASK_TIMEOUT_MS,
 } from './config'
 import type { Command, View } from './messages'
-import { TaskStore, type Task } from './storage'
+import { TaskStore, type Task, type TaskPhase } from './storage'
 
 const TITLE_CHARS = 80
 const CANCEL_TIMEOUT_MS = 15_000
 const MAX_ACTION_WAIT_MS = 5 * 60_000
+// The phases a task rests in. A task stored in any other, as one this build
+// no longer has, was cut off when the extension last stopped.
+const SETTLED_PHASES: ReadonlySet<string> = new Set<TaskPhase>([
+  'idle',
+  'completed',
+  'interrupted',
+])
 const RESUME_PROMPT =
   'Continue my previous task. First observe the current browser state. Reconcile any action that may already have completed before taking another action.'
 
@@ -84,7 +91,7 @@ export class TaskController {
         title: summary.title,
         updatedAt: summary.updatedAt,
       })
-      if (['running', 'review'].includes(summary.phase)) {
+      if (!SETTLED_PHASES.has(summary.phase)) {
         const task = await this.store.get(this.owner, summary.id)
         if (!task) continue
         task.phase = 'interrupted'

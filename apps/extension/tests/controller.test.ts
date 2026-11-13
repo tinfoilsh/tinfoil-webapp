@@ -1,5 +1,6 @@
 import type { HarnessClient } from '@tinfoil/chat-client/client'
 import type { HarnessRoute } from '@tinfoil/chat-client/protocol'
+import { initialChat } from '@tinfoil/chat-client/reducer'
 import type {
   BrowserToolRequest,
   Frame,
@@ -179,6 +180,27 @@ test('local chats return the saved harness record intact on the next turn', asyn
     options: { model: MODEL },
   })
   expect(client.post.mock.calls.map(([path]) => path)).toEqual(['/v1/session'])
+})
+
+test('a task stored in a phase it cannot rest in opens as interrupted', async () => {
+  const { controller, until, store } = setup()
+  const stored = {
+    id: 'task',
+    owner: 'alice',
+    title: 'Left paused',
+    updatedAt: 1,
+    state: initialChat(),
+    lastPrompt: 'Save the form',
+    model: MODEL,
+    effort: 'low' as const,
+  }
+  // A phase an earlier build stored, which this one no longer has.
+  await store.put({ ...stored, phase: 'paused' as never })
+  await controller.initialize()
+  const view = await until((view) => !!view.session)
+  expect(view.task).toMatchObject({ id: 'task', phase: 'interrupted' })
+  expect(view.task?.error).toContain('This task was interrupted')
+  expect((await store.get('alice', 'task'))?.phase).toBe('interrupted')
 })
 
 test('every turn offers the browser to the model and answers what it asks of it', async () => {
