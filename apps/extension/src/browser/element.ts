@@ -236,11 +236,15 @@ export function pointCursor(
   layer.style.visibility = ''
   const at = `translate(${x}px, ${y}px)`
   const to = `translate(${x - TIP_X}px, ${y - TIP_Y}px)`
-  const from = arrow.style.transform || to
+  // The cursor travels only from a point it was at to another.
+  const from = arrow.style.transform
+  const moved = arrow.dataset.x !== String(x) || arrow.dataset.y !== String(y)
+  arrow.dataset.x = String(x)
+  arrow.dataset.y = String(y)
   arrow.style.transform = to
   ring.style.transform = at
   const travel =
-    from === to || matchMedia('(prefers-reduced-motion: reduce)').matches
+    !from || !moved || matchMedia('(prefers-reduced-motion: reduce)').matches
       ? 0
       : travelMs
   const arrived = travel

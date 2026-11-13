@@ -458,6 +458,16 @@ test('all web tabs are available as they open, and working in one leaves the foc
 
 test('a task works on in its tab after the user leaves it, without pulling them back', async () => {
   const { page, tabId } = await startFixture('/?left-behind')
+  // A page that animates must go on being drawn while it is out of view.
+  await page.evaluate(() => {
+    const style = document.createElement('style')
+    style.textContent =
+      '@keyframes spin{to{transform:rotate(360deg)}}#spinner{width:20px;height:20px;animation:spin 1s linear infinite}'
+    const spinner = document.createElement('div')
+    spinner.id = 'spinner'
+    document.head.append(style)
+    document.body.append(spinner)
+  })
   const read = await execute({ action: 'read', tabId })
   const elsewhere = await context.newPage()
   try {

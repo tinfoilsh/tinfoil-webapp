@@ -24,6 +24,9 @@ const TASK_GROUP_COLOR = 'green'
 const CURSOR_TAG = 'tinfoil-cursor'
 const CURSOR_COLOR = '#004444'
 const CURSOR_TRAVEL_MS = 200
+// How few of the frames a controlled page draws are sent to the extension,
+// which has no use for them.
+const DRAWN_FRAME_INTERVAL = 1000
 const MAX_ATTACHED_TABS = 8
 const MAX_NODES = 300
 const MAX_SCANNED_NODES = 2000
@@ -152,6 +155,13 @@ export class BrowserDriver {
           )
       })
     }
+    if (method === 'Page.screencastFrame')
+      // A frame is acknowledged for the page to go on being drawn.
+      void chrome.debugger
+        .sendCommand(source, 'Page.screencastFrameAck', {
+          sessionId: (params as Protocol.Page.ScreencastFrameEvent).sessionId,
+        })
+        .catch(() => undefined)
     if (method === 'Target.detachedFromTarget') {
       const event = params as Protocol.Target.DetachedFromTargetEvent
       page.targets.delete(event.sessionId)
@@ -316,11 +326,21 @@ export class BrowserDriver {
 
   private async enable(target: Target) {
     // A page under control acts as focused and visible wherever its tab and
-    // window are, so the task never has to bring them to the front.
-    if (!target.parent)
+    // window are, so the task never has to bring them to the front. A page
+    // the browser does not show is still drawn while it is captured, which
+    // the page's own animations otherwise bring to a halt on some platforms.
+    if (!target.parent) {
       await this.send(target.session, 'Emulation.setFocusEmulationEnabled', {
         enabled: true,
       })
+      await this.send(target.session, 'Page.startScreencast', {
+        format: 'jpeg',
+        quality: 0,
+        maxWidth: 1,
+        maxHeight: 1,
+        everyNthFrame: DRAWN_FRAME_INTERVAL,
+      })
+    }
     await this.send(target.session, 'Page.enable')
     await this.send(target.session, 'DOM.enable')
     await this.send(target.session, 'Accessibility.enable')
