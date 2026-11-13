@@ -155,7 +155,7 @@ export const USER_PREFS_NATIVE_APP_DISMISSED =
   'tinfoil-user-prefs-native-app-dismissed'
 
 // --- localStorage: Development ---------------------------------------------
-export const DEV_ENABLE_DEBUG_LOGS = 'tinfoil-dev-enable-debug-logs'
+export { DEV_ENABLE_DEBUG_LOGS } from '@tinfoil/chat-client/config'
 
 // --- sessionStorage: UI state ----------------------------------------------
 export const UI_SIDEBAR_OPEN = 'tinfoil-ui-sidebar-open'

@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+.wxt/
+node_modules/
+.output/
+test-results/
+playwright-report/

@@ -13,6 +13,7 @@ const isDev = process.env.NODE_ENV === 'development'
 const nextConfig = {
   ...(isDev ? {} : { output: 'export' }),
   outputFileTracingRoot: projectRoot,
+  transpilePackages: ['@tinfoil/chat-client', '@tinfoil/chat-ui'],
   env: {
     NEXT_PUBLIC_APP_VERSION: appVersion,
     // The Vercel deployment being built, which scripts/write-deployment.mjs

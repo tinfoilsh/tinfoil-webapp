@@ -1,0 +1,433 @@
+{
+  "description": "A device chat executes two browser tools in order, returning each observation before continuing the model turn.",
+  "frames": [
+    {
+      "id": 0,
+      "event": {
+        "type": "RUN_STARTED",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
+        "runId": "00000000000000000000000000000002",
+        "instance": "00000000000000000000000000000003"
+      }
+    },
+    {
+      "id": 1,
+      "event": {
+        "type": "MESSAGES_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:01Z",
+        "messages": [
+          {
+            "id": "m1",
+            "role": "user",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "content": "first question"
+          },
+          {
+            "id": "m2",
+            "role": "assistant",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "timeline": [
+              {
+                "id": "b1",
+                "type": "content",
+                "content": "first answer"
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "role": "user",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "content": "second question"
+          }
+        ],
+        "hasOlder": false
+      }
+    },
+    {
+      "id": 2,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:02Z",
+        "snapshot": {
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "Kept title",
+            "titleState": "generated",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": null,
+            "activityAt": "2026-01-01T00:00:00Z",
+            "projectId": null,
+            "model": "kimi-k3",
+            "webSearchEnabled": false,
+            "pinned": false,
+            "contextUsage": {
+              "usedTokens": 732,
+              "limitTokens": 6553,
+              "percentage": 11.170456279566611
+            },
+            "activeRun": {
+              "runId": "00000000000000000000000000000002",
+              "expiresAt": "2026-01-01T00:00:00Z",
+              "instance": "00000000000000000000000000000003"
+            },
+            "messageCount": 3
+          },
+          "queue": [],
+          "rateLimit": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "event": {
+        "type": "TOOL_CALL_START",
+        "timestamp": "2026-01-01T00:00:03Z",
+        "toolCallId": "read",
+        "toolCallName": "browser_action",
+        "parentMessageId": "msg_00000000000000000000000000000005"
+      }
+    },
+    {
+      "id": 4,
+      "event": {
+        "type": "TOOL_CALL_ARGS",
+        "timestamp": "2026-01-01T00:00:04Z",
+        "toolCallId": "read",
+        "delta": "{\"action\":\"read\",\"tabId\":1}"
+      }
+    },
+    {
+      "id": 5,
+      "event": {
+        "type": "TOOL_CALL_START",
+        "timestamp": "2026-01-01T00:00:05Z",
+        "toolCallId": "click",
+        "toolCallName": "browser_action",
+        "parentMessageId": "msg_00000000000000000000000000000005"
+      }
+    },
+    {
+      "id": 6,
+      "event": {
+        "type": "TOOL_CALL_ARGS",
+        "timestamp": "2026-01-01T00:00:06Z",
+        "toolCallId": "click",
+        "delta": "{\"action\":\"click\",\"tabId\":1,\"ref\":\"page-1:3\"}"
+      }
+    },
+    {
+      "id": 7,
+      "event": {
+        "type": "TOOL_CALL_END",
+        "timestamp": "2026-01-01T00:00:07Z",
+        "toolCallId": "read"
+      }
+    },
+    {
+      "id": 8,
+      "event": {
+        "type": "TOOL_CALL_END",
+        "timestamp": "2026-01-01T00:00:08Z",
+        "toolCallId": "click"
+      }
+    },
+    {
+      "id": 9,
+      "event": {
+        "executionId": "00000000-0000-4000-8000-000000000006",
+        "executorId": "00000000-0000-4000-8000-000000000007",
+        "expiresAt": "2026-01-01T00:05:09Z",
+        "operation": {
+          "action": "read",
+          "tabId": 1
+        },
+        "timestamp": "2026-01-01T00:00:09Z",
+        "toolCallId": "read",
+        "type": "BROWSER_TOOL_REQUEST"
+      }
+    },
+    {
+      "id": 10,
+      "event": {
+        "type": "TOOL_CALL_RESULT",
+        "timestamp": "2026-01-01T00:00:10Z",
+        "messageId": "msg_00000000000000000000000000000008",
+        "toolCallId": "read",
+        "role": "tool",
+        "content": {
+          "text": "[page-1:3] button Save"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "event": {
+        "executionId": "00000000-0000-4000-8000-000000000009",
+        "executorId": "00000000-0000-4000-8000-000000000007",
+        "expiresAt": "2026-01-01T00:05:11Z",
+        "operation": {
+          "action": "click",
+          "ref": "page-1:3",
+          "tabId": 1
+        },
+        "timestamp": "2026-01-01T00:00:11Z",
+        "toolCallId": "click",
+        "type": "BROWSER_TOOL_REQUEST"
+      }
+    },
+    {
+      "id": 12,
+      "event": {
+        "type": "TOOL_CALL_RESULT",
+        "timestamp": "2026-01-01T00:00:12Z",
+        "messageId": "msg_0000000000000000000000000000000a",
+        "toolCallId": "click",
+        "role": "tool",
+        "content": {
+          "text": "Saved successfully"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "event": {
+        "type": "TEXT_MESSAGE_CHUNK",
+        "timestamp": "2026-01-01T00:00:13Z",
+        "messageId": "msg_00000000000000000000000000000005",
+        "role": "assistant",
+        "delta": "done"
+      }
+    },
+    {
+      "id": 14,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:14Z",
+        "snapshot": {
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "Kept title",
+            "titleState": "generated",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": null,
+            "activityAt": "2026-01-01T00:00:00Z",
+            "projectId": null,
+            "model": "kimi-k3",
+            "webSearchEnabled": false,
+            "pinned": false,
+            "contextUsage": {
+              "usedTokens": 732,
+              "limitTokens": 6553,
+              "percentage": 11.170456279566611
+            },
+            "activeRun": null,
+            "messageCount": 4
+          },
+          "queue": [],
+          "rateLimit": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "id": 15,
+      "event": {
+        "type": "RUN_FINISHED",
+        "timestamp": "2026-01-01T00:00:15Z",
+        "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
+        "runId": "00000000000000000000000000000002",
+        "metadata": {
+          "messages": [
+            {
+              "id": "msg_00000000000000000000000000000005",
+              "model": "kimi-k3",
+              "modelDisplayName": "Kimi K3",
+              "usage": {
+                "promptTokens": 0,
+                "completionTokens": 0
+              },
+              "isError": false,
+              "isInterrupted": false
+            }
+          ],
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "Kept title",
+            "titleState": "generated",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "model": "kimi-k3",
+            "projectId": null,
+            "presetId": null,
+            "pinned": false,
+            "webSearchEnabled": false,
+            "messages": [
+              {
+                "id": "m1",
+                "role": "user",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "content": "first question"
+              },
+              {
+                "id": "m2",
+                "role": "assistant",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "content": "first answer",
+                "timeline": [
+                  {
+                    "id": "b1",
+                    "type": "content",
+                    "content": "first answer"
+                  }
+                ]
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000004",
+                "role": "user",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "content": "second question",
+                "attachments": []
+              },
+              {
+                "id": "msg_00000000000000000000000000000005",
+                "role": "assistant",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "content": "done",
+                "model": "kimi-k3",
+                "modelDisplayName": "Kimi K3",
+                "timeline": [
+                  {
+                    "id": "read",
+                    "type": "tool_call",
+                    "toolCallId": "read",
+                    "name": "browser_action",
+                    "arguments": "{\"action\":\"read\",\"tabId\":1}",
+                    "complete": true,
+                    "result": {
+                      "text": "[page-1:3] button Save"
+                    },
+                    "progress": [],
+                    "startedAt": 1767225600000,
+                    "endedAt": 1767225600000
+                  },
+                  {
+                    "id": "click",
+                    "type": "tool_call",
+                    "toolCallId": "click",
+                    "name": "browser_action",
+                    "arguments": "{\"action\":\"click\",\"tabId\":1,\"ref\":\"page-1:3\"}",
+                    "complete": true,
+                    "result": {
+                      "text": "Saved successfully"
+                    },
+                    "progress": [],
+                    "startedAt": 1767225600000,
+                    "endedAt": 1767225600000
+                  },
+                  {
+                    "id": "msg_00000000000000000000000000000005_content_2",
+                    "type": "content",
+                    "content": "done"
+                  }
+                ],
+                "usage": {
+                  "promptTokens": 0,
+                  "completionTokens": 0
+                },
+                "isError": false,
+                "isInterrupted": false
+              }
+            ],
+            "lastRequestId": "00000000-0000-4000-8000-000000000004",
+            "lastRequestKind": "send",
+            "activeRun": null,
+            "contextUsage": {
+              "usedTokens": 732,
+              "limitTokens": 6553,
+              "percentage": 11.170456279566611
+            },
+            "recordVersion": 2
+          },
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+          },
+          "rateLimit": {
+            "kind": null
+          },
+          "cancelled": false
+        }
+      }
+    }
+  ],
+  "expected": {
+    "messages": [
+      {
+        "content": "first question",
+        "id": "m1",
+        "role": "user",
+        "timeline": []
+      },
+      {
+        "id": "m2",
+        "role": "assistant",
+        "timeline": [
+          {
+            "content": "first answer",
+            "id": "b1",
+            "type": "content"
+          }
+        ]
+      },
+      {
+        "content": "second question",
+        "id": "00000000-0000-4000-8000-000000000004",
+        "role": "user",
+        "timeline": []
+      },
+      {
+        "id": "msg_00000000000000000000000000000005",
+        "role": "assistant",
+        "timeline": [
+          {
+            "arguments": "{\"action\":\"read\",\"tabId\":1}",
+            "complete": true,
+            "id": "read",
+            "name": "browser_action",
+            "progress": [],
+            "result": {
+              "text": "[page-1:3] button Save"
+            },
+            "toolCallId": "read",
+            "type": "tool_call"
+          },
+          {
+            "arguments": "{\"action\":\"click\",\"tabId\":1,\"ref\":\"page-1:3\"}",
+            "complete": true,
+            "id": "click",
+            "name": "browser_action",
+            "progress": [],
+            "result": {
+              "text": "Saved successfully"
+            },
+            "toolCallId": "click",
+            "type": "tool_call"
+          },
+          {
+            "content": "done",
+            "id": "msg_00000000000000000000000000000005_content_2",
+            "type": "content"
+          }
+        ]
+      }
+    ],
+    "title": "Kept title",
+    "titleState": "generated",
+    "status": "idle"
+  }
+}

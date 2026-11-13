@@ -210,6 +210,39 @@ paths:
         "200": {$ref: "#/components/responses/RunEvents"}
         default: {$ref: "#/components/responses/Error"}
 
+  /v1/threads/browser/result:
+    post:
+      operationId: browserResult
+      summary: Return a browser action's result
+      tags: [runs]
+      description: |
+        The executor of a local browser turn returns one result for the pending
+        executionId, authenticated by the turn's private executor token. An
+        identical retry is accepted while the run is live; a conflicting or
+        unknown execution is refused. The client journals intent before acting
+        and the result before sending it. Replaying an event must never repeat
+        an action. An uncertain outcome requires observing the page and user
+        intervention, rather than replay. Screenshots reach the model during
+        this run only; events and the returned thread carry the text alone.
+      parameters:
+        - {$ref: "#/components/parameters/HarnessInstance"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BrowserResultInput"}
+      responses:
+        "200":
+          description: The result was accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted: {const: true}
+        default: {$ref: "#/components/responses/Error"}
+
   /v1/threads/follow:
     post:
       operationId: follow
@@ -1604,6 +1637,7 @@ components:
             - ATTACHMENT_UNSUPPORTED
             - ATTACHMENTS_UNAVAILABLE
             - BAD_REQUEST
+            - BROWSER_TIMEOUT
             - CHAT_FLAGGED
             - COMPACTION_FAILED
             - CONTEXT_TOO_LARGE
@@ -1811,8 +1845,76 @@ components:
         toolCallId: {type: string, description: "The widget call a retryToolCall regenerates."}
         attachments: {type: array, items: {$ref: "#/components/schemas/SentAttachment"}}
         widgets: {type: array, items: {type: string}, description: "The widgets this client renders."}
+        browser: {$ref: "#/components/schemas/BrowserAccess"}
         compactLatest: {type: boolean, description: "A compact turn, or a retry that compacts again, summarizes the chat's latest exchange too, as COMPACTION_START describes. It is refused on any other kind. A client sends it only while the session's features.compactLatest is true, and when it shows a compaction marker at the end of a chat."}
         options: {$ref: "#/components/schemas/TurnOptions"}
+
+    BrowserAccess:
+      description: |
+        Available only when features.browserTools is true, on local send turns
+        without research. The client controls selected tabs and supplies a new
+        executor identity and secret for each turn. The token is sent only in
+        sealed bodies, never in prompts, events or persistent chat records.
+        Browser actions run sequentially, at most 40 per turn. Each waits at
+        most five minutes for its executor; a timeout ends the run with
+        BROWSER_TIMEOUT and leaves later actions unexecuted. Clients cancel a run when they
+        relinquish browser control, and stop local dispatch immediately.
+      type: object
+      required: [executorId, token]
+      properties:
+        executorId: {type: string, format: uuid}
+        token: {type: string, pattern: "^[0-9a-f]{64}$"}
+
+    BrowserAction:
+      description: Arguments validated against the model-facing browser tool schema. The executor additionally validates selected tabs, URL schemes, current references, and action permissions before dispatch.
+      type: object
+      required: [action]
+      properties:
+        action: {type: string, enum: [tabs, read, screenshot, click, hover, fill, select, press, scroll, navigate, back, forward, open, switch, close, wait]}
+        tabId: {type: integer}
+        ref: {type: string}
+        text: {type: string}
+        url: {type: string}
+        key: {type: string, enum: [Enter, Tab, Escape, ArrowDown, ArrowUp, ArrowLeft, ArrowRight, Backspace]}
+        direction: {type: string, enum: [up, down]}
+        screenshotId: {type: string, description: "The fresh screenshot whose pixels a coordinate action uses."}
+        x: {type: number, minimum: 0}
+        y: {type: number, minimum: 0}
+
+    BrowserResult:
+      type: object
+      required: [text]
+      properties:
+        text: {type: string, maxLength: 65536, description: "Page data or a structured action error. Limited to 64 KiB UTF-8."}
+        image: {type: string, maxLength: 2097152, description: "Optional base64 JPEG viewport, at most 4 million pixels. Read only by vision models."}
+
+    BrowserResultInput:
+      type: object
+      required: [threadId, runId, executorId, token, executionId, result]
+      properties:
+        threadId: {$ref: "#/components/schemas/Identifier"}
+        runId: {type: string}
+        executorId: {type: string}
+        token: {type: string}
+        executionId: {type: string}
+        result: {$ref: "#/components/schemas/BrowserResult"}
+
+    BrowserToolRequestEvent:
+      description: |
+        A complete, validated browser operation ready for the selected executor.
+        Only this event authorizes dispatch, never partial TOOL_CALL_ARGS.
+        executionId identifies the operation across stream reconnections.
+        Every replay is reconciled against the executor's local journal.
+      type: object
+      required: [type, executionId, toolCallId, executorId, expiresAt, operation]
+      properties:
+        type: {const: BROWSER_TOOL_REQUEST}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        expiresAt: {type: string, format: date-time, description: "The executor refuses dispatch after this deadline, including after a delayed review or stream replay."}
+        executionId: {type: string}
+        toolCallId: {type: string}
+        executorId: {type: string}
+        operation: {$ref: "#/components/schemas/BrowserAction"}
 
     TurnOptions:
       type: object
@@ -1910,6 +2012,7 @@ components:
         - {$ref: "#/components/schemas/ToolCallArgsEvent"}
         - {$ref: "#/components/schemas/ToolCallEndEvent"}
         - {$ref: "#/components/schemas/ToolCallResultEvent"}
+        - {$ref: "#/components/schemas/BrowserToolRequestEvent"}
         - {$ref: "#/components/schemas/ActivitySnapshotEvent"}
         - {$ref: "#/components/schemas/ActivityDeltaEvent"}
         - {$ref: "#/components/schemas/CompactionStartEvent"}
@@ -1930,6 +2033,7 @@ components:
           TOOL_CALL_ARGS: "#/components/schemas/ToolCallArgsEvent"
           TOOL_CALL_END: "#/components/schemas/ToolCallEndEvent"
           TOOL_CALL_RESULT: "#/components/schemas/ToolCallResultEvent"
+          BROWSER_TOOL_REQUEST: "#/components/schemas/BrowserToolRequestEvent"
           ACTIVITY_SNAPSHOT: "#/components/schemas/ActivitySnapshotEvent"
           ACTIVITY_DELTA: "#/components/schemas/ActivityDeltaEvent"
           COMPACTION_START: "#/components/schemas/CompactionStartEvent"

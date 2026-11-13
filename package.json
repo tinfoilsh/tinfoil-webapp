@@ -1,8 +1,16 @@
 {
   "name": "tinfoil-chat",
   "version": "1.2.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev",
+    "dev:extension": "npm run dev --workspace=@tinfoil/browser-extension",
+    "build:extension": "npm run build --workspace=@tinfoil/browser-extension",
+    "test:extension": "npm run test --workspace=@tinfoil/browser-extension",
+    "typecheck:extension": "npm run typecheck --workspace=@tinfoil/browser-extension",
     "build": "next build",
     "check:clerk-privacy": "node scripts/check-clerk-environment.mjs",
     "start": "npx serve out",
@@ -23,6 +31,8 @@
     "sync:harness-protocol": "node scripts/sync-harness-protocol.mjs"
   },
   "dependencies": {
+    "@tinfoil/chat-client": "*",
+    "@tinfoil/chat-ui": "*",
     "@braintree/sanitize-url": "^7.1.1",
     "@clerk/clerk-js": "6.32.1",
     "@clerk/react": "6.16.1",

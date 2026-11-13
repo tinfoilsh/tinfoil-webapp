@@ -1,0 +1,14 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "jsx": "react-jsx",
+    "noUncheckedIndexedAccess": false,
+    "noEmit": true,
+    "target": "ES2022",
+    "types": ["chrome", "vite/client", "node"],
+    "paths": { "@/*": ["../../src/*"] }
+  },
+  "include": ["src", "tests", "*.ts", ".wxt/wxt.d.ts"],
+  "exclude": ["node_modules", ".output"]
+}

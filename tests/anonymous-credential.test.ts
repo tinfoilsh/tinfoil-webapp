@@ -47,6 +47,15 @@ beforeEach(() => {
 })
 
 describe('anonymous client credentials', () => {
+  it('classifies a malformed issuance response before sending an enclave request', async () => {
+    controlplane.mockResolvedValueOnce(new Response('<html>Unavailable</html>'))
+    const { client, secure } = setup()
+    await expect(client.post('/v1/session', {})).rejects.toMatchObject({
+      detail: { code: 'UPSTREAM_REFUSED', action: 'retry' },
+    })
+    expect(secure.fetch).not.toHaveBeenCalled()
+    client.dispose()
+  })
   it('deduplicates direct issuance and sends only the key through the attested transport', async () => {
     const { client, secure } = setup()
     await Promise.all([

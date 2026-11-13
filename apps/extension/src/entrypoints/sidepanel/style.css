@@ -1,0 +1,353 @@
+:root {
+  --font-aeonik: system-ui;
+  --font-aeonik-fono: ui-monospace;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  color: hsl(var(--content-primary));
+  background: hsl(var(--surface-canvas));
+  font:
+    14px/1.5 system-ui,
+    sans-serif;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+}
+button:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 3px;
+}
+.app {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  padding: 16px;
+  border-bottom: 1px solid hsl(var(--border-subtle));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.brand {
+  font-size: 23px;
+  letter-spacing: -1.4px;
+}
+.beta {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  color: hsl(var(--content-muted));
+}
+.header-actions,
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.privacy-strip {
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  color: hsl(var(--content-muted));
+}
+.privacy-strip span:last-child {
+  margin-left: auto;
+}
+.verified-dot,
+.pending-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: hsl(var(--link));
+}
+.pending-dot {
+  opacity: 0.35;
+}
+.conversation {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 18px 24px;
+}
+.welcome {
+  padding: 40px 0 12px;
+}
+.welcome-symbol {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: hsl(var(--surface-muted));
+  color: hsl(var(--link));
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -3px;
+}
+.welcome h1 {
+  font-size: 31px;
+  letter-spacing: -1px;
+  line-height: 1.15;
+  margin: 18px 0 12px;
+  font-weight: 500;
+}
+.welcome p,
+.setup p {
+  color: hsl(var(--content-muted));
+}
+.suggestions {
+  display: grid;
+  gap: 8px;
+  margin-top: 26px;
+}
+.suggestions button {
+  text-align: left;
+  border: 1px solid hsl(var(--border-subtle));
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  background: hsl(var(--surface-raised));
+  font-size: 12px;
+}
+.suggestions button:hover {
+  background: hsl(var(--surface-muted));
+}
+.message {
+  margin: 14px 0 24px;
+  overflow-wrap: anywhere;
+}
+.message-label {
+  color: hsl(var(--content-muted));
+  font-size: 10px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.user-message {
+  background: hsl(var(--surface-muted));
+  padding: 12px;
+  border-radius: 12px;
+}
+.markdown p {
+  margin: 0 0 12px;
+}
+.markdown a {
+  color: hsl(var(--link));
+  text-decoration: underline;
+}
+.markdown pre {
+  padding: 10px;
+  border-radius: 8px;
+  background: hsl(var(--surface-muted));
+  overflow-x: auto;
+  margin: 12px 0;
+  font-size: 12px;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 22px;
+  list-style: revert;
+}
+.markdown table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+.markdown td,
+.markdown th {
+  border: 1px solid hsl(var(--border-subtle));
+  padding: 6px;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 16px 0 10px;
+}
+.steps {
+  background: hsl(var(--surface-muted));
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  margin-bottom: 12px;
+}
+.steps summary {
+  cursor: pointer;
+}
+.step {
+  padding-top: 10px;
+}
+.step pre,
+.review-card pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 180px;
+  overflow: auto;
+  font-size: 11px;
+  margin: 6px 0;
+}
+.task-status {
+  color: hsl(var(--content-muted));
+  font-size: 12px;
+  margin: 14px 0;
+}
+.review-card {
+  border: 1px solid hsl(var(--border-subtle));
+  background: hsl(var(--surface-raised));
+  border-radius: 12px;
+  padding: 14px;
+  margin: 12px 0;
+}
+.review-card h2 {
+  font-weight: 600;
+}
+.review-card p {
+  font-size: 12px;
+  color: hsl(var(--content-muted));
+  margin: 6px 0;
+}
+.notice {
+  border-left: 3px solid hsl(var(--link));
+  padding: 10px 12px;
+  background: hsl(var(--surface-muted));
+  margin: 12px 0;
+  font-size: 12px;
+}
+.composer-area {
+  border-top: 1px solid hsl(var(--border-subtle));
+  padding: 10px 12px;
+  background: hsl(var(--surface-canvas));
+}
+.shortcut {
+  margin-left: auto;
+  color: hsl(var(--content-muted));
+  font-size: 10px;
+}
+.working-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-left: 3px solid hsl(var(--link));
+  background: hsl(var(--surface-muted));
+  padding: 8px 10px;
+  font-size: 11px;
+  min-width: 0;
+}
+.working-tab strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.working-tab span {
+  color: hsl(var(--content-muted));
+}
+.review-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-top: 1px solid hsl(var(--border-subtle));
+  padding-top: 10px;
+  margin-top: 6px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+.composer {
+  background: hsl(var(--surface-input));
+  border: 1px solid hsl(var(--border-subtle));
+  border-radius: 14px;
+  padding: 10px;
+}
+.composer textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 64px;
+  max-height: 180px;
+  background: transparent;
+  border: none;
+  padding: 2px;
+  font-size: 13px;
+}
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+}
+.composer-toolbar select {
+  background: transparent;
+  font-size: 10px;
+  max-width: 42%;
+  min-width: 0;
+}
+.composer-toolbar button {
+  margin-left: auto;
+}
+.footer-note {
+  color: hsl(var(--content-muted));
+  text-align: center;
+  margin-top: 8px;
+  font-size: 9px;
+}
+.history {
+  border-bottom: 1px solid hsl(var(--border-subtle));
+  padding: 12px 16px;
+  max-height: 200px;
+  overflow: auto;
+}
+.history h2 {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12px;
+}
+.history-row button:first-child {
+  text-align: left;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-row button:last-child {
+  font-size: 10px;
+  color: hsl(var(--content-muted));
+}
+.setup {
+  padding: 24px 16px;
+}
+.setup h1 {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.setup p {
+  margin-bottom: 18px;
+  overflow-wrap: anywhere;
+}

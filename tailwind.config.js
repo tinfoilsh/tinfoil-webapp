@@ -5,7 +5,10 @@ const TINFOIL_TWILIGHT_RGB = '107 91 149'
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: ['class'],
-  content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
+  content: [
+    './src/**/*.{js,ts,jsx,tsx,mdx}',
+    './packages/chat-ui/src/**/*.{ts,tsx}',
+  ],
   theme: {
     extend: {
       fontFamily: {
