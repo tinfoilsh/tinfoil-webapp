@@ -26,6 +26,7 @@ import type { Command, View } from '../messages'
 import { turnModel } from '../model-choice'
 import { PanelConnection } from '../panel-connection'
 import {
+  catalog,
   chosenAutoLevel,
   chosenEffort,
   chosenModel,
@@ -132,6 +133,7 @@ export function ChatPanel({
   const [model] = useSetting(chosenModel)
   const [effort] = useSetting(chosenEffort)
   const [autoLevel] = useSetting(chosenAutoLevel)
+  const [lastOffered] = useSetting(catalog)
   const [chatsOpen, setChatsOpen] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const scroll = useRef<HTMLDivElement>(null)
@@ -172,7 +174,9 @@ export function ChatPanel({
         kind: 'send',
         content,
         effort: effort ?? DEFAULT_EFFORT,
-        ...turnModel(view.session, { model, autoLevel }),
+        // A turn sent before the session is known is chosen from what the
+        // service last offered, which it is checked against again.
+        ...turnModel(view.session ?? lastOffered, { model, autoLevel }),
       })
       setInput('')
       following.current = true
