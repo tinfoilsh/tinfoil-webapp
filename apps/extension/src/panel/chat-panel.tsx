@@ -171,8 +171,8 @@ export function ChatPanel({
       setError(cause instanceof Error ? cause.message : 'The command failed.')
     }
   }
-  const submit = async () => {
-    const content = input.trim()
+  const submit = async (draft = input) => {
+    const content = draft.trim()
     if (!content || sending) return
     if (content.length > MAX_PROMPT_CHARS) {
       setError(
@@ -306,10 +306,7 @@ export function ChatPanel({
                 <button
                   type="button"
                   key={text}
-                  onClick={() => {
-                    setInput(text)
-                    inputRef.current?.focus()
-                  }}
+                  onClick={() => void submit(text)}
                   className="inline-flex w-full items-center justify-center rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-2.5 text-sm text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
                 >
                   {text}
