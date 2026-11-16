@@ -1,4 +1,5 @@
 import { ConnectorsSettings } from '@/components/chat/connectors-settings'
+import { unconfirmed, unverified } from '@/services/harness/protocol'
 import { HarnessError } from '@/services/harness/sse'
 import type { Connector } from '@/services/harness/types'
 import {
@@ -151,5 +152,21 @@ describe('the Connectors settings', () => {
       within(permission).getByRole('radio', { name: 'Ask first' }),
     ).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByRole('alert')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['could not be verified', unverified()],
+    ['could not confirm the sign-in', unconfirmed()],
+  ])('says the chat service %s when a connection fails', async (_, detail) => {
+    answer = async () => {
+      throw new HarnessError(detail)
+    }
+    render(<ConnectorsSettings isDarkMode={false} />)
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: `Connect ${listed.name}` }),
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(detail.message)
   })
 })

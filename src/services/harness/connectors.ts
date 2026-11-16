@@ -62,6 +62,14 @@ const CONNECTOR_ERROR_COPY: Record<string, string> = {
   [ERROR_CODES.connectorNotFound]: 'This connector was removed.',
 }
 
+// The codes of the failures this client meets on its own, as when the chat
+// service cannot be reached or verified in time, whose messages it wrote for
+// the user to say which.
+const CLIENT_CODES: ReadonlySet<string> = new Set([
+  ERROR_CODES.connection,
+  ERROR_CODES.signInUnconfirmed,
+])
+
 const ACTION_COPY: Record<string, string> = {
   [ERROR_ACTIONS.retry]: 'Something went wrong. Try again.',
   [ERROR_ACTIONS.wait]: 'Try again later.',
@@ -77,6 +85,7 @@ export function describeConnectorError(cause: unknown): string {
   if (!(cause instanceof HarnessError)) return ACTION_COPY[ERROR_ACTIONS.retry]
   if (Object.hasOwn(CONNECTOR_ERROR_COPY, cause.code))
     return CONNECTOR_ERROR_COPY[cause.code]
+  if (CLIENT_CODES.has(cause.code)) return cause.message
   return Object.hasOwn(ACTION_COPY, cause.detail.action)
     ? ACTION_COPY[cause.detail.action]
     : cause.message
