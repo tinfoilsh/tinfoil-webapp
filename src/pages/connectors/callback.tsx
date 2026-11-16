@@ -78,7 +78,17 @@ export default function ConnectorCallbackPage() {
     started.current = true
     setProgress({ status: 'finishing' })
     void (async () => {
-      const outcome = await finishSignIn(api, answer)
+      let outcome: Awaited<ReturnType<typeof finishSignIn>>
+      try {
+        outcome = await finishSignIn(api, answer)
+      } catch (cause) {
+        logError('Failed to finish signing in to a connector', cause, {
+          component: 'ConnectorCallbackPage',
+          action: 'finishSignIn',
+        })
+        fail(describeConnectorError(cause))
+        return
+      }
       if (outcome.status === 'unknown') {
         fail(
           'This sign-in was not started in this tab. Start it again from Settings.',
@@ -91,7 +101,14 @@ export default function ConnectorCallbackPage() {
           component: 'ConnectorCallbackPage',
           action: 'finishSignIn',
         })
-      announceSignIn({ connectorId, signIn, status })
+      announceSignIn({
+        connectorId,
+        signIn,
+        status,
+        ...(status === 'failed'
+          ? { reason: describeConnectorError(outcome.cause) }
+          : {}),
+      })
       // Only a popup closes.
       window.close()
       if (window.closed) return
