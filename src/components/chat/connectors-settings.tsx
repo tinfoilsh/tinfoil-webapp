@@ -536,7 +536,7 @@ function Discover({
 // What the add dialog says of a request the harness found invalid, which
 // can only be the fields the user typed.
 const INVALID_FIELDS =
-  'Check the name and the address. The address must be a public HTTPS URL.'
+  'Check the name and the address. The address must be a public HTTPS URL on the standard port.'
 
 // Why a custom connector's fields cannot be sent, if they cannot.
 function customFieldsProblem(name: string, url: string): string | null {

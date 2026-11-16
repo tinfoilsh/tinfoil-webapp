@@ -206,7 +206,7 @@ describe('the Connectors settings', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }))
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'The address must be a public HTTPS URL.',
+      'The address must be a public HTTPS URL on the standard port.',
     )
     expect(requests('/v1/connectors/add')).toEqual([
       [
