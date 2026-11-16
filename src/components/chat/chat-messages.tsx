@@ -653,14 +653,16 @@ export function ChatMessages({
             {/* Spacer allows scrolling the user message to the top of the viewport.
           Subtracts the composer height (set on the scroll container as
           --input-area-height) so the total over-scroll is just enough for the
-          fade above the input area, not a full viewport of empty space. */}
+          fade above the input area, not a full viewport of empty space.
+          Sized from --app-height, like the app shell, so the two change
+          height together when the on-screen keyboard opens or closes. */}
             {showSpacer && (
               <div
                 ref={spacerRef}
                 data-spacer
                 className="flex-shrink-0"
                 style={{
-                  height: `max(0px, calc(100dvh - var(--input-area-height, 0px) - ${CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px))`,
+                  height: `max(0px, calc(var(--app-height, 100dvh) - var(--input-area-height, 0px) - ${CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px))`,
                 }}
                 aria-hidden="true"
               />

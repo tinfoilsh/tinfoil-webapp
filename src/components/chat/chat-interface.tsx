@@ -76,6 +76,7 @@ import { ChatMessages } from './chat-messages'
 import {
   getChatContentBottomScrollTop,
   getChatSpacerHeight,
+  resizeChatViewport,
 } from './chat-scroll'
 import { ChatSidebar } from './chat-sidebar'
 import { CompactedNotice, CompactionStatus } from './compaction-status'
@@ -1620,9 +1621,18 @@ export function ChatInterface({
     const root = document.documentElement
     const vv = window.visualViewport
 
+    let zoomed = false
+
     const update = () => {
       const height = vv?.height ?? window.innerHeight
-      root.style.setProperty('--app-height', `${Math.round(height)}px`)
+      const setAppHeight = () =>
+        root.style.setProperty('--app-height', `${Math.round(height)}px`)
+      // Pinch-zooming changes the visual viewport's height as well, and the
+      // conversation should stay under the fingers instead of following it.
+      const wasZoomed = zoomed
+      zoomed = !!vv && vv.scale !== 1
+      if (zoomed || wasZoomed) setAppHeight()
+      else resizeChatViewport(scrollContainerRef.current, setAppHeight)
     }
 
     update()
