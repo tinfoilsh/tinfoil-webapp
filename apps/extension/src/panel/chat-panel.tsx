@@ -14,8 +14,8 @@ import { StepDetails, StepHeader } from '@tinfoil/chat-ui/WorkStep'
 import { TfSetting } from '@tinfoilsh/tinfoil-icons'
 import {
   TfChat2Animated,
+  TfPlusAnimated,
   TfRefreshTwoArrowsAnimated,
-  TfWriting2Animated,
 } from '@tinfoilsh/tinfoil-icons/animated'
 import {
   useCallback,
@@ -303,7 +303,7 @@ export function ChatPanel({
             title="New chat"
             onClick={() => void command({ kind: 'new' })}
           >
-            <TfWriting2Animated className="h-4 w-4" aria-hidden="true" />
+            <TfPlusAnimated className="h-4 w-4" aria-hidden="true" />
           </button>
           <button
             type="button"
