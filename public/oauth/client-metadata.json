@@ -1,0 +1,10 @@
+{
+  "client_id": "https://chat.tinfoil.sh/oauth/client-metadata.json",
+  "client_name": "Tinfoil Chat",
+  "client_uri": "https://tinfoil.sh",
+  "logo_uri": "https://chat.tinfoil.sh/android-chrome-512x512.png",
+  "redirect_uris": ["https://chat.tinfoil.sh/connectors/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}
