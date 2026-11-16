@@ -457,6 +457,81 @@ it('leaves no room for the composer on the desktop welcome screen after a chat',
   expect(welcome.style.getPropertyValue('--input-area-height')).toBe('0px')
 })
 
+const CONVERSATION_CONTENT_HEIGHT_PX = 3000
+const KEYBOARD_CLOSED_HEIGHT_PX = 800
+const KEYBOARD_OPEN_HEIGHT_PX = 500
+
+// Opens the trip chat in a visual viewport the test resizes, with the
+// conversation laid out as the browser would: as tall as the app shell,
+// scrolled to its end, and never scrolling past it.
+async function openTripChatScrolledToEnd() {
+  const viewport = Object.assign(new EventTarget(), {
+    height: KEYBOARD_CLOSED_HEIGHT_PX,
+    scale: 1,
+  })
+  vi.stubGlobal('visualViewport', viewport)
+  signIn()
+  await localThreadStore('device').add(TRIP)
+  render(view({ initialChatId: TRIP.id, isLocalChatUrl: true }))
+  await screen.findByText('Where should we go?')
+  const conversation = screen.getByRole('main', { name: 'Conversation' })
+  const appHeight = () =>
+    Number.parseInt(
+      document.documentElement.style.getPropertyValue('--app-height'),
+      10,
+    )
+  const end = () => CONVERSATION_CONTENT_HEIGHT_PX - appHeight()
+  let scrolled = end()
+  Object.defineProperties(conversation, {
+    clientHeight: { configurable: true, get: appHeight },
+    scrollHeight: { configurable: true, value: CONVERSATION_CONTENT_HEIGHT_PX },
+    scrollTop: {
+      configurable: true,
+      get: () => Math.min(scrolled, end()),
+      set: (top: number) => {
+        scrolled = top
+      },
+    },
+  })
+  return {
+    conversation,
+    end,
+    resizeViewport(next: { height: number; scale?: number }) {
+      Object.assign(viewport, { scale: 1, ...next })
+      viewport.dispatchEvent(new Event('resize'))
+    },
+  }
+}
+
+it('keeps the latest message above the composer as the on-screen keyboard opens and closes', async () => {
+  const { conversation, end, resizeViewport } =
+    await openTripChatScrolledToEnd()
+  const closed = end()
+
+  resizeViewport({ height: KEYBOARD_OPEN_HEIGHT_PX })
+  expect(conversation.scrollTop).toBe(
+    closed + KEYBOARD_CLOSED_HEIGHT_PX - KEYBOARD_OPEN_HEIGHT_PX,
+  )
+
+  resizeViewport({ height: KEYBOARD_CLOSED_HEIGHT_PX })
+  expect(conversation.scrollTop).toBe(closed)
+})
+
+it('leaves the conversation where it is while the page is pinch-zoomed', async () => {
+  const { conversation, end, resizeViewport } =
+    await openTripChatScrolledToEnd()
+  const unzoomed = end()
+
+  resizeViewport({ height: KEYBOARD_CLOSED_HEIGHT_PX / 2, scale: 2 })
+  expect(document.documentElement.style.getPropertyValue('--app-height')).toBe(
+    `${KEYBOARD_CLOSED_HEIGHT_PX / 2}px`,
+  )
+  expect(conversation.scrollTop).toBe(unzoomed)
+
+  resizeViewport({ height: KEYBOARD_CLOSED_HEIGHT_PX })
+  expect(conversation.scrollTop).toBe(unzoomed)
+})
+
 it('keeps the base tab title when chat titles are turned off', async () => {
   signIn({ profile: { browserTabChatTitleEnabled: false } })
   await localThreadStore('device').add(TRIP)
