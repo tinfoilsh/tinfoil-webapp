@@ -571,25 +571,17 @@ html[data-chat-font='dyslexic'] {
 
 /* Full-viewport app shell; --app-height is set before first paint by
    public/js/boot.js. A class rather than inline styles so the prerendered
-   HTML needs no style-src 'unsafe-inline'. */
+   HTML needs no style-src 'unsafe-inline'. iOS does not resize the page for
+   the on-screen keyboard: it slides the visible part down the page to show
+   the focused field, and --app-top moves the shell down with it. */
 .app-shell {
   position: fixed;
-  top: 0;
+  top: var(--app-top, 0px);
   left: 0;
   right: 0;
   height: var(--app-height, 100dvh);
   max-height: var(--app-height, 100dvh);
   overscroll-behavior: none;
-}
-
-/* iOS does not resize the page for the on-screen keyboard: it slides the page
-   up to show the focused field. A shell shortened to the visible height is
-   slid up as well, which carries the composer off the top of the screen, so
-   the shell keeps its full height there. */
-@supports (-webkit-touch-callout: none) {
-  .app-shell {
-    min-height: -webkit-fill-available;
-  }
 }
 
 @keyframes df-dash {
