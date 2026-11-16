@@ -57,6 +57,14 @@
     {
       "source": "/sso-callback/",
       "destination": "/sso-callback.html"
+    },
+    {
+      "source": "/connectors/callback",
+      "destination": "/connectors/callback.html"
+    },
+    {
+      "source": "/connectors/callback/",
+      "destination": "/connectors/callback.html"
     }
   ],
   "headers": [

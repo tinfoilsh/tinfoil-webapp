@@ -176,6 +176,11 @@ export const UI_EXPAND_PROJECT_DOCUMENTS = 'tinfoil-ui-expand-project-documents'
 export const UPDATE_RELOADED_FOR_DEPLOYMENT =
   'tinfoil-update-reloaded-for-deployment'
 
+// --- sessionStorage: Connectors --------------------------------------------
+// The connector sign-ins this tab started, by the state each sign-in page
+// returns, with where the user goes once it finishes.
+export const CONNECTOR_SIGN_INS = 'tinfoil-connector-sign-ins'
+
 // --- sessionStorage: Sync --------------------------------------------------
 export const SYNC_SESSION_CHATS = 'tinfoil-sync-session-chats'
 export const SYNC_DELETED_CHATS = 'tinfoil-sync-deleted-chats'
