@@ -468,6 +468,7 @@ async function openTripChatScrolledToEnd() {
   const viewport = Object.assign(new EventTarget(), {
     height: KEYBOARD_CLOSED_HEIGHT_PX,
     scale: 1,
+    offsetTop: 0,
   })
   vi.stubGlobal('visualViewport', viewport)
   signIn()
@@ -496,12 +497,24 @@ async function openTripChatScrolledToEnd() {
   return {
     conversation,
     end,
-    resizeViewport(next: { height: number; scale?: number }) {
-      Object.assign(viewport, { scale: 1, ...next })
+    resizeViewport(next: {
+      height: number
+      scale?: number
+      offsetTop?: number
+    }) {
+      Object.assign(viewport, { scale: 1, offsetTop: 0, ...next })
       viewport.dispatchEvent(new Event('resize'))
+    },
+    // iOS slides the visual viewport down the page instead of resizing it.
+    slideViewport(offsetTop: number) {
+      viewport.offsetTop = offsetTop
+      viewport.dispatchEvent(new Event('scroll'))
     },
   }
 }
+
+const appShellTop = () =>
+  document.documentElement.style.getPropertyValue('--app-top')
 
 it('keeps the latest message above the composer as the on-screen keyboard opens and closes', async () => {
   const { conversation, end, resizeViewport } =
@@ -530,6 +543,28 @@ it('leaves the conversation where it is while the page is pinch-zoomed', async (
 
   resizeViewport({ height: KEYBOARD_CLOSED_HEIGHT_PX })
   expect(conversation.scrollTop).toBe(unzoomed)
+})
+
+it('moves the app shell with the part of the page iOS shows above its keyboard', async () => {
+  const { resizeViewport, slideViewport } = await openTripChatScrolledToEnd()
+  const slid = KEYBOARD_CLOSED_HEIGHT_PX - KEYBOARD_OPEN_HEIGHT_PX
+
+  slideViewport(slid)
+  expect(appShellTop()).toBe(`${slid}px`)
+
+  // A zoomed page is panned the same way, and the shell stays where it is.
+  resizeViewport({
+    height: KEYBOARD_CLOSED_HEIGHT_PX / 2,
+    scale: 2,
+    offsetTop: slid,
+  })
+  expect(appShellTop()).toBe('0px')
+
+  resizeViewport({ height: KEYBOARD_OPEN_HEIGHT_PX, offsetTop: slid })
+  expect(appShellTop()).toBe(`${slid}px`)
+
+  slideViewport(0)
+  expect(appShellTop()).toBe('0px')
 })
 
 it('keeps the base tab title when chat titles are turned off', async () => {

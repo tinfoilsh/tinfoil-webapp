@@ -1625,14 +1625,20 @@ export function ChatInterface({
 
     const update = () => {
       const height = vv?.height ?? window.innerHeight
-      const setAppHeight = () =>
-        root.style.setProperty('--app-height', `${Math.round(height)}px`)
       // Pinch-zooming changes the visual viewport's height as well, and the
       // conversation should stay under the fingers instead of following it.
       const wasZoomed = zoomed
       zoomed = !!vv && vv.scale !== 1
-      if (zoomed || wasZoomed) setAppHeight()
-      else resizeChatViewport(scrollContainerRef.current, setAppHeight)
+      // iOS slides the visual viewport down the page to show the focused
+      // field above the on-screen keyboard, and the shell moves with it to
+      // stay in view. A zoomed page is panned the same way and stays put.
+      const top = zoomed ? 0 : Math.max(0, vv?.offsetTop ?? 0)
+      const setAppViewport = () => {
+        root.style.setProperty('--app-height', `${Math.round(height)}px`)
+        root.style.setProperty('--app-top', `${Math.round(top)}px`)
+      }
+      if (zoomed || wasZoomed) setAppViewport()
+      else resizeChatViewport(scrollContainerRef.current, setAppViewport)
     }
 
     update()
