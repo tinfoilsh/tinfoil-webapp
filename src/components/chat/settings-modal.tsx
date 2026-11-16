@@ -2087,7 +2087,7 @@ ${encryptionKey.replace('key_', '')}
                 className={cn(
                   'flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
                   activeTab === item.id
-                    ? 'bg-surface-raised text-content-primary ring-1 ring-inset ring-border-subtle dark:bg-primary dark:text-primary-foreground dark:ring-primary'
+                    ? 'bg-brand-accent-light text-brand-accent-dark ring-1 ring-inset ring-brand-accent-dark hover:bg-brand-accent-light-darker'
                     : 'text-content-secondary hover:bg-surface-chat/50',
                 )}
               >
@@ -2128,7 +2128,7 @@ ${encryptionKey.replace('key_', '')}
                 className={cn(
                   'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                   activeTab === item.id
-                    ? 'bg-surface-raised text-content-primary ring-1 ring-inset ring-border-subtle dark:bg-primary dark:text-primary-foreground dark:ring-primary'
+                    ? 'bg-brand-accent-light text-brand-accent-dark ring-1 ring-inset ring-brand-accent-dark hover:bg-brand-accent-light-darker'
                     : 'text-content-secondary hover:bg-surface-chat/50',
                 )}
               >

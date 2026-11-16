@@ -3,8 +3,8 @@
 Use Midnight Petrol (`#05252E`) with Bone (`#F9F8F6`) text for primary
 actions and CTAs in light mode, and the inverse in dark mode. Use the theme-aware
 `primary`, `primary-foreground`, `primary-hover`, and `primary-active` tokens.
-Selected tabs use white with a neutral border in light mode and Bone with
-Midnight Petrol text in dark mode. Keep Twilight purple (`#6B5B95`, light
+Selected tabs use Steel Mist blue (`#A8C7D1`) with Deep Teal (`#004444`) text
+and borders in both themes. Keep Twilight purple (`#6B5B95`, light
 `#A89ACB` on dark surfaces) for secondary accents, Steel Mist (`#A8C7D1`) for
 soft highlights, and Deep Teal (`#004444`) for branding. Reserve amber/orange for
 warnings. Links and focus indicators use the theme-aware `link`

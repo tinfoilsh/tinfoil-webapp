@@ -89,7 +89,7 @@ const ENCRYPTION_NOTE_ID = 'sidebar-encryption-note'
 const STORAGE_TAB_CLASS_NAME =
   'flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors'
 const STORAGE_TAB_ACTIVE_CLASS_NAME =
-  'border-border-subtle bg-surface-raised text-content-primary dark:border-primary dark:bg-primary dark:text-primary-foreground'
+  'border-brand-accent-dark bg-brand-accent-light text-brand-accent-dark hover:bg-brand-accent-light-darker'
 const STORAGE_TAB_INACTIVE_CLASS_NAME =
   'border-border-subtle bg-surface-chat-background text-content-secondary hover:border-border-strong hover:text-content-primary'
 const STORAGE_TAB_DROP_TARGET_CLASS_NAME = 'border-ring ring-2 ring-ring/30'
