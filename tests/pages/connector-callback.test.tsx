@@ -241,7 +241,8 @@ describe('the connector sign-in callback', () => {
           action: 'retry',
           message: 'The server did not answer as an MCP server',
         })
-      return { connectors: [connector()] }
+      if (path === '/v1/connectors/list') return { connectors: [connector()] }
+      throw new Error(`Unexpected harness request: ${path}`)
     })
     closingAsA('popup')
     setLocation(`/connectors/callback?code=the-code&state=${STATE}`)
