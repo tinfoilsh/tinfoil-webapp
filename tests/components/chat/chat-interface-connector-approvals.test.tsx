@@ -333,6 +333,36 @@ describe('a reply that asks to run a connector’s tool', () => {
     await act(async () => settle(true))
   })
 
+  it('Always allow stops asking for the tool even when the call was already answered', async () => {
+    approve = async () => {
+      throw new HarnessError({
+        code: 'REVISION_CONFLICT',
+        action: 'reload',
+        message: 'The action was already answered',
+      })
+    }
+    const { card, settle } = await openWaiting()
+
+    await act(async () =>
+      fireEvent.click(
+        within(card).getByRole('button', { name: 'Always allow' }),
+      ),
+    )
+
+    await waitFor(() =>
+      expect(posted('/v1/connectors/update')).toEqual([
+        [
+          '/v1/connectors/update',
+          { key: KEY, id: NOTION.id, tools: { create_page: 'allow' } },
+          expect.any(AbortSignal),
+        ],
+      ]),
+    )
+    expect(posted('/v1/threads/approve')).toEqual([answerOf(true)])
+    expect(within(card).queryByRole('alert')).toBeNull()
+    await act(async () => settle(true))
+  })
+
   it('takes no second answer while the first is sent, and says nothing of one already taken', async () => {
     let refuse!: (cause: unknown) => void
     approve = () =>

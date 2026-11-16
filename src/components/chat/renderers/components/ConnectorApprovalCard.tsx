@@ -54,14 +54,16 @@ export function ConnectorApprovalCard({
       setAnswered(true)
     } catch (cause) {
       // The call was answered already, as from another tab, or no longer
-      // waits: the reply's stream shows how it went.
+      // waits: the reply's stream shows how it went. The tool is still let
+      // run without asking from now on, as the user chose.
       if (
-        cause instanceof HarnessError &&
-        cause.code === ERROR_CODES.revisionConflict
-      )
-        setAnswered(true)
-      else setError(describeConnectorError(cause))
-      return
+        !(cause instanceof HarnessError) ||
+        cause.code !== ERROR_CODES.revisionConflict
+      ) {
+        setError(describeConnectorError(cause))
+        return
+      }
+      setAnswered(true)
     } finally {
       setSending(null)
     }
