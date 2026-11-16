@@ -842,6 +842,7 @@ export function SettingsModal({
     cloud: cloudSyncEnabled,
     profileReady,
     error: sessionError,
+    session,
   } = useHarness()
 
   const { refresh: refreshProjects } = useProjects({ autoLoad: false })
@@ -963,8 +964,10 @@ export function SettingsModal({
     activeTab === 'cloud-sync' ||
     activeTab === 'safeguards' ||
     activeTab === 'connectors'
-  // The Connectors tab shows only while the session offers connectors.
-  const unofferedTab = activeTab === 'connectors' && !connectorsOffered
+  // The Connectors tab shows only while the session offers connectors, which
+  // is known once the session loads, as when a sign-in returns to the tab.
+  const unofferedTab =
+    activeTab === 'connectors' && !!session && !connectorsOffered
   useEffect(() => {
     if ((!isSignedIn && signedInOnlyTab) || unofferedTab) {
       setActiveTab('account')

@@ -917,3 +917,47 @@ describe('settings imports', () => {
     expect(client.multipart).toHaveBeenCalledOnce()
   })
 })
+
+describe('the Connectors tab', () => {
+  const offering = {
+    ...testSession,
+    features: { ...testSession.features, connectors: true },
+  }
+
+  beforeEach(() => {
+    authState.isSignedIn = true
+  })
+
+  // Opens settings on the Connectors tab while the session still loads, as
+  // a sign-in that took the whole tab returns to it.
+  function openWhileLoading() {
+    signIn({ cloud: true, session: offering })
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/connectors/list') return { connectors: [] }
+      throw new Error(`Unexpected harness request: ${path}`)
+    })
+    publish({ session: undefined })
+    render(<Harness initialTab="connectors" isSignedIn />)
+  }
+
+  it('stays open while the session loads, and shows once it offers connectors', async () => {
+    openWhileLoading()
+    expect(
+      screen.queryByRole('button', { name: 'Sign out' }),
+    ).not.toBeInTheDocument()
+
+    act(() => publish({ session: offering }))
+
+    expect(
+      await screen.findByRole('heading', { name: 'Your connectors' }),
+    ).toBeInTheDocument()
+  })
+
+  it('falls back to Account once the session does not offer connectors', () => {
+    openWhileLoading()
+
+    act(() => publish({ session: testSession }))
+
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
+  })
+})
