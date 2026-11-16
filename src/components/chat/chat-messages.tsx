@@ -15,6 +15,7 @@ import React, {
   useRef,
   useState,
 } from 'react'
+import type { ComposerConnectors } from './chat-input'
 import {
   canRemoveChatSpacerWithoutJump,
   getChatContentBottomScrollTop,
@@ -108,6 +109,7 @@ type ChatMessagesProps = {
   onWebSearchToggle?: () => void
   researchEnabled?: boolean
   onResearchToggle?: () => void
+  connectors?: ComposerConnectors
   reasoningEffort?: ReasoningEffort
   setReasoningEffort?: (effort: ReasoningEffort) => void
   thinkingEnabled?: boolean
@@ -331,6 +333,7 @@ export function ChatMessages({
   onWebSearchToggle,
   researchEnabled,
   onResearchToggle,
+  connectors,
   reasoningEffort,
   setReasoningEffort,
   thinkingEnabled,
@@ -525,6 +528,7 @@ export function ChatMessages({
         onWebSearchToggle={onWebSearchToggle}
         researchEnabled={researchEnabled}
         onResearchToggle={onResearchToggle}
+        connectors={connectors}
         reasoningEffort={reasoningEffort}
         setReasoningEffort={setReasoningEffort}
         thinkingEnabled={thinkingEnabled}

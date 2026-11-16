@@ -71,7 +71,7 @@ import {
   ChatHistoryStatus,
   type ChatHistoryProblem,
 } from './chat-history-status'
-import { ChatInput } from './chat-input'
+import { ChatInput, type ComposerConnectors } from './chat-input'
 import { ChatMessages } from './chat-messages'
 import {
   getChatContentBottomScrollTop,
@@ -169,8 +169,12 @@ const OnboardingView = dynamic(
 )
 
 import { verifyChatService } from '@/services/harness/attestation'
-import { ERROR_CODES } from '@/services/harness/protocol'
-import { reportProfileError, useHarness } from '@/services/harness/provider'
+import { CONNECTORS_FEATURE, ERROR_CODES } from '@/services/harness/protocol'
+import {
+  reportProfileError,
+  useHarness,
+  useSessionFeature,
+} from '@/services/harness/provider'
 import { HarnessError } from '@/services/harness/sse'
 import { useStore } from '@/services/harness/store'
 import { isAttachmentsUnavailable } from '@/services/harness/transfer'
@@ -519,6 +523,11 @@ export function ChatInterface({
     (session?.features.research ?? false) &&
     (profile.webSearchAvailable ?? true)
   const researchEnabled = researchAvailable && thread.research
+  const connectorsOffered =
+    useSessionFeature(CONNECTORS_FEATURE) && !!isSignedIn
+  // Connectors run in the chats the harness stores: not in one kept on this
+  // device, or a temporary one.
+  const connectorsAvailable = thread.cloud && !thread.local && !isTemporaryMode
   // A researched question searches the web whatever its chat's setting, so
   // web search shows on while deep research is.
   const effectiveWebSearchEnabled =
@@ -1849,6 +1858,7 @@ export function ChatInterface({
     clearPromptPreset: () => handleSetActivePreset(null),
     toggleWebSearch: handleWebSearchToggle,
     toggleResearch: handleResearchToggle,
+    manageConnectors: () => handleOpenSettingsModal('connectors'),
     selectModel: handleModelSelect,
     clickLabel: handleLabelClick,
     setReasoningEffort,
@@ -1856,6 +1866,16 @@ export function ChatInterface({
     setAutoIntelligence,
     compact: compactChat,
   })
+  const composerConnectors = useMemo<ComposerConnectors | undefined>(
+    () =>
+      connectorsOffered
+        ? {
+            available: connectorsAvailable,
+            onManage: composerActions.manageConnectors,
+          }
+        : undefined,
+    [connectorsOffered, connectorsAvailable, composerActions],
+  )
   const composerHeader = useMemo(
     () =>
       // With a preset active, the preset tab attached to the input card
@@ -2863,6 +2883,7 @@ export function ChatInterface({
                       onResearchToggle={
                         researchAvailable ? handleResearchToggle : undefined
                       }
+                      connectors={composerConnectors}
                       reasoningEffort={reasoningEffort}
                       setReasoningEffort={setReasoningEffort}
                       thinkingEnabled={thinkingEnabled}
@@ -3012,6 +3033,7 @@ export function ChatInterface({
                             ? composerActions.toggleResearch
                             : undefined
                         }
+                        connectors={composerConnectors}
                       />
                     </form>
                   )}
