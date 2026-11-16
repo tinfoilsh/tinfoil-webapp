@@ -27,11 +27,12 @@ import {
   describeImportFailure,
 } from '@/services/harness/import-failure-copy'
 import { deleteAllProjects } from '@/services/harness/projects'
-import { ERROR_CODES } from '@/services/harness/protocol'
+import { CONNECTORS_FEATURE, ERROR_CODES } from '@/services/harness/protocol'
 import {
   reportProfileError,
   useHarness,
   useProfileSetting,
+  useSessionFeature,
 } from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
@@ -83,6 +84,7 @@ import {
   TfEye,
   TfEyeSlash,
   TfKey,
+  TfLink,
   TfMoon,
   TfNumber1,
   TfNumber2,
@@ -122,6 +124,7 @@ import {
   CloudSyncHealthCard,
   CloudSyncStatusLine,
 } from './cloud-sync-health-card'
+import { ConnectorsSettings } from './connectors-settings'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
@@ -891,6 +894,7 @@ export function SettingsModal({
   )
 
   const localChatsEnabled = useLocalChatsSetting()
+  const connectorsOffered = useSessionFeature(CONNECTORS_FEATURE)
 
   // Web Search PII check setting (defaults to on)
   const [piiCheckEnabled, setPiiCheckEnabled] = useProfileSetting(
@@ -956,12 +960,16 @@ export function SettingsModal({
   // tab that still exists so the modal is not left with blank content. This
   // runs after the initial-tab effect so a requested hidden tab cannot win.
   const signedInOnlyTab =
-    activeTab === 'cloud-sync' || activeTab === 'safeguards'
+    activeTab === 'cloud-sync' ||
+    activeTab === 'safeguards' ||
+    activeTab === 'connectors'
+  // The Connectors tab shows only while the session offers connectors.
+  const unofferedTab = activeTab === 'connectors' && !connectorsOffered
   useEffect(() => {
-    if (!isSignedIn && signedInOnlyTab) {
+    if ((!isSignedIn && signedInOnlyTab) || unofferedTab) {
       setActiveTab('account')
     }
-  }, [isSignedIn, signedInOnlyTab])
+  }, [isSignedIn, signedInOnlyTab, unofferedTab])
 
   // Sync URL fragment with active tab
   useEffect(() => {
@@ -2014,6 +2022,15 @@ ${encryptionKey.replace('key_', '')}
             label: 'Cloud Sync',
             icon: TfCloudSync,
           },
+          ...(connectorsOffered
+            ? [
+                {
+                  id: 'connectors' as const,
+                  label: 'Connectors',
+                  icon: TfLink,
+                },
+              ]
+            : []),
           {
             id: 'safeguards' as const,
             label: 'Safeguards',
@@ -4271,6 +4288,12 @@ ${encryptionKey.replace('key_', '')}
                   )}
                 </>
               )}
+
+              {activeTab === 'connectors' &&
+                isSignedIn &&
+                connectorsOffered && (
+                  <ConnectorsSettings isDarkMode={isDarkMode} />
+                )}
 
               {activeTab === 'safeguards' && isSignedIn && (
                 <SafeguardsSettings

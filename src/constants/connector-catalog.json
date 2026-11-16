@@ -1,0 +1,56 @@
+[
+  {
+    "id": "notion",
+    "name": "Notion",
+    "url": "https://mcp.notion.com/mcp",
+    "vendor": "Notion",
+    "website": "https://notion.com",
+    "description": "Search, read, and update pages and databases in your Notion workspace.",
+    "categories": ["Productivity", "Documents"]
+  },
+  {
+    "id": "linear",
+    "name": "Linear",
+    "url": "https://mcp.linear.app/mcp",
+    "vendor": "Linear",
+    "website": "https://linear.app",
+    "description": "Find, create, and update issues, projects, and comments in Linear.",
+    "categories": ["Project management", "Developer tools"]
+  },
+  {
+    "id": "sentry",
+    "name": "Sentry",
+    "url": "https://mcp.sentry.dev/mcp",
+    "vendor": "Sentry",
+    "website": "https://sentry.io",
+    "description": "Look up errors, issues, and releases in your Sentry projects.",
+    "categories": ["Developer tools", "Monitoring"]
+  },
+  {
+    "id": "hugging-face",
+    "name": "Hugging Face",
+    "url": "https://huggingface.co/mcp",
+    "vendor": "Hugging Face",
+    "website": "https://huggingface.co",
+    "description": "Search models, datasets, Spaces, and papers on the Hugging Face Hub.",
+    "categories": ["AI", "Developer tools"]
+  },
+  {
+    "id": "context7",
+    "name": "Context7",
+    "url": "https://mcp.context7.com/mcp",
+    "vendor": "Upstash",
+    "website": "https://context7.com",
+    "description": "Fetch up-to-date documentation and code examples for libraries.",
+    "categories": ["Developer tools", "Documentation"]
+  },
+  {
+    "id": "microsoft-learn",
+    "name": "Microsoft Learn",
+    "url": "https://learn.microsoft.com/api/mcp",
+    "vendor": "Microsoft",
+    "website": "https://learn.microsoft.com",
+    "description": "Search and read official Microsoft documentation.",
+    "categories": ["Documentation"]
+  }
+]
