@@ -1,10 +1,12 @@
 import type {
+  TimelineConnectorCallBlock,
   TimelineThinkingBlock,
   TimelineURLFetchBlock,
   TimelineWebSearchBlock,
 } from '@/components/chat/types'
 import { TfWebSearch } from '@tinfoilsh/tinfoil-icons'
 import { memo, useId, useMemo, useState, type ReactNode } from 'react'
+import { connectorCallName, ConnectorCallProcess } from './ConnectorCallProcess'
 import { ThinkingLabel, ThoughtProcess } from './ThoughtProcess'
 import {
   getURLFetchHeaderLabel,
@@ -15,7 +17,10 @@ import { WebSearchLabel, WebSearchProcess } from './WebSearchProcess'
 import { StepDetails, StepHeader } from './WorkStep'
 
 export type WorkBlock =
-  TimelineThinkingBlock | TimelineWebSearchBlock | TimelineURLFetchBlock
+  | TimelineThinkingBlock
+  | TimelineWebSearchBlock
+  | TimelineURLFetchBlock
+  | TimelineConnectorCallBlock
 
 interface WorkProcessProps {
   /** Consecutive trace blocks, in timeline order. */
@@ -35,11 +40,19 @@ const ACTION_LIST = new Intl.ListFormat('en', {
 const linksNoun = (count: number) => (count === 1 ? 'a link' : `${count} links`)
 
 // What the steps did, in the order each kind first appears, as "Thought,
-// searched the web, and read 3 links". Links read count across the steps.
+// searched the web, and read 3 links". Links read count across the steps,
+// and the connectors used are named once each.
 function describeWork(blocks: WorkBlock[]): string {
   const fetches = blocks.flatMap((block) =>
     block.type === 'url_fetches' ? block.fetches : [],
   )
+  const connectors = [
+    ...new Set(
+      blocks.flatMap((block) =>
+        block.type === 'connector_call' ? [block.connector.name] : [],
+      ),
+    ),
+  ]
   const linksRead = fetches.filter(
     (fetch) => fetch.status === 'completed',
   ).length
@@ -52,9 +65,11 @@ function describeWork(blocks: WorkBlock[]): string {
         ? 'thought'
         : block.type === 'web_search'
           ? 'searched the web'
-          : linksRead > 0
-            ? `read ${linksNoun(linksRead)}`
-            : `tried to read ${linksNoun(fetches.length)}`,
+          : block.type === 'connector_call'
+            ? `used ${ACTION_LIST.format(connectors)}`
+            : linksRead > 0
+              ? `read ${linksNoun(linksRead)}`
+              : `tried to read ${linksNoun(fetches.length)}`,
     )
   }
   const description = ACTION_LIST.format(actions.values())
@@ -100,6 +115,18 @@ function getLiveActivity(blocks: WorkBlock[]): LiveActivity {
         label: (
           <span className="font-medium">
             {getURLFetchHeaderLabel(last.fetches)}
+          </span>
+        ),
+      }
+    case 'connector_call':
+      if (last.status !== 'running') return { kind: 'idle' }
+      return {
+        kind: 'action',
+        label: (
+          <span className="font-medium">
+            {last.approval
+              ? `Waiting for approval · ${last.connector.name}`
+              : connectorCallName(last)}
           </span>
         ),
       }
@@ -184,6 +211,8 @@ export const WorkProcess = memo(function WorkProcess({
                 startedAt={block.startedAt}
                 inGroup
               />
+            ) : block.type === 'connector_call' ? (
+              <ConnectorCallProcess call={block} inGroup />
             ) : (
               <URLFetchProcess
                 urlFetches={block.fetches}

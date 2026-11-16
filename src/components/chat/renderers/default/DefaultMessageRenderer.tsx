@@ -19,6 +19,7 @@ import { CONSTANTS } from '../../constants'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
 import { useListEditing } from '../../hooks/use-list-editing'
 import { isImeComposition, isSubmitShortcut } from '../../keyboard-utils'
+import { ConnectorCallProcess } from '../components/ConnectorCallProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
 import {
@@ -500,6 +501,12 @@ const DefaultMessageComponent = ({
                     urlFetches={block.fetches}
                     startedAt={block.startedAt}
                   />
+                </div>
+              )
+            case 'connector_call':
+              return (
+                <div key={block.id} className="no-scroll-anchoring w-full px-4">
+                  <ConnectorCallProcess call={block} />
                 </div>
               )
             case 'tool_call': {
