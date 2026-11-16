@@ -110,7 +110,11 @@ import { QuoteSelectionPopover } from './quote-selection-popover'
 import { initializeRenderers } from './renderers/client'
 import type { ProcessedDocument } from './renderers/types'
 import type { SettingsTab } from './settings-modal'
-import { SIDEBAR_PANEL_ID } from './sidebar-layout'
+import {
+  SIDEBAR_COLLAPSED_OFFSET_PX,
+  SIDEBAR_OPEN_OFFSET_PX,
+  SIDEBAR_PANEL_ID,
+} from './sidebar-layout'
 import type { Chat } from './types'
 import { uploadErrorMessage } from './upload-error'
 import {
@@ -2262,9 +2266,9 @@ export function ChatInterface({
                 return isSidebarOpen ? '-9999px' : '0px'
               }
               if (isSidebarOpen) {
-                return `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`
+                return `${SIDEBAR_OPEN_OFFSET_PX}px`
               }
-              return `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`
+              return `${SIDEBAR_COLLAPSED_OFFSET_PX}px`
             })(),
           }}
         >
@@ -2647,9 +2651,9 @@ export function ChatInterface({
           left:
             windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
               ? isSidebarOpen
-                ? `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`
+                ? `${SIDEBAR_OPEN_OFFSET_PX}px`
                 : windowWidth >= CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT
-                  ? `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`
+                  ? `${SIDEBAR_COLLAPSED_OFFSET_PX}px`
                   : '0'
               : '0',
           top: 0,

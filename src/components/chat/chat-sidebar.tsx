@@ -55,7 +55,6 @@ import { getSidebarUpsellVariant } from './sidebar-upsell-state'
 import { useFavoriteDropTarget } from './use-favorite-drop-target'
 
 import { useProject } from '@/components/project/project-context'
-import { SidebarPatternEdge } from '@/components/ui/sidebar-pattern-edge'
 import { cn } from '@/components/ui/utils'
 import {
   getProjectColor,
@@ -693,7 +692,7 @@ export const ChatSidebar = memo(function ChatSidebar({
       {!isMobile && (
         <SidebarRail
           isOpen={isOpen}
-          tintStyle={sidebarTintStyle}
+          style={sidebarTintStyle}
           aria-label="Chat history"
         >
           {/* Logo icon - shows expand icon on hover */}
@@ -864,7 +863,6 @@ export const ChatSidebar = memo(function ChatSidebar({
         style={sidebarTintStyle}
         onDismiss={() => setIsOpen(false)}
       >
-        <SidebarPatternEdge isDarkMode={isDarkMode} />
         {/* Header */}
         <div className="flex h-16 flex-none items-center justify-between p-4">
           <Link href="/" title="Home" className="-ml-1 flex items-center">

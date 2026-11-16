@@ -5,12 +5,35 @@ import {
   type CSSProperties,
   type KeyboardEvent,
 } from 'react'
-import { SIDEBAR_PATTERN_EDGE_WIDTH_PX } from '../ui/sidebar-pattern-edge'
 import { cn } from '../ui/utils'
 import { CONSTANTS } from './constants'
 
 /** Id of the expanded sidebar, for the `aria-controls` of controls that open it. */
 export const SIDEBAR_PANEL_ID = 'sidebar-panel'
+
+/** Where the chat starts beside the open sidebar, gaps included. */
+export const SIDEBAR_OPEN_OFFSET_PX =
+  CONSTANTS.CHAT_SIDEBAR_WIDTH_PX + 2 * CONSTANTS.CHAT_SIDEBAR_INSET_PX
+
+/** Where the chat starts beside the collapsed rail, gaps included. */
+export const SIDEBAR_COLLAPSED_OFFSET_PX =
+  CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX +
+  2 * CONSTANTS.CHAT_SIDEBAR_INSET_PX
+
+// The rail and the expanded panel are matching cards that float inside the
+// window. A hidden card moves past the window edge and drops its shadow so
+// none of it shows in the gap.
+const FLOATING_SIDEBAR_CLASS_NAME =
+  'fixed flex flex-col rounded-2xl border border-border-subtle bg-surface-sidebar text-content-primary'
+const FLOATING_SIDEBAR_SHOWN_CLASS_NAME = 'translate-x-0 shadow-md'
+const FLOATING_SIDEBAR_HIDDEN_CLASS_NAME =
+  'translate-x-[var(--sidebar-hidden-offset)] shadow-none'
+const FLOATING_SIDEBAR_STYLE = {
+  top: CONSTANTS.CHAT_SIDEBAR_INSET_PX,
+  left: CONSTANTS.CHAT_SIDEBAR_INSET_PX,
+  height: `calc(100dvh - ${2 * CONSTANTS.CHAT_SIDEBAR_INSET_PX}px)`,
+  '--sidebar-hidden-offset': `calc(-100% - ${CONSTANTS.CHAT_SIDEBAR_INSET_PX}px)`,
+} as CSSProperties
 
 // Controls that open the sidebar carry `data-sidebar-toggle` so focus can
 // return to one on close; its close button carries `data-sidebar-close` so it
@@ -26,13 +49,10 @@ function isFocusLost(element: Element | null): boolean {
 
 type SidebarRailProps = ComponentPropsWithoutRef<'nav'> & {
   isOpen: boolean
-  tintStyle?: CSSProperties
 }
 
 export function SidebarRail({
   isOpen,
-  tintStyle,
-  children,
   className,
   style,
   ...props
@@ -44,20 +64,21 @@ export function SidebarRail({
       aria-hidden={isOpen}
       inert={isOpen}
       className={cn(
-        'fixed left-0 top-0 z-50 flex h-dvh flex-col text-content-primary',
+        'z-50',
+        FLOATING_SIDEBAR_CLASS_NAME,
         CONSTANTS.SIDEBAR_LAYOUT_TRANSITION_CLASS_NAME,
-        isOpen ? 'pointer-events-none -translate-x-full' : 'translate-x-0',
+        isOpen && 'pointer-events-none',
+        isOpen
+          ? FLOATING_SIDEBAR_HIDDEN_CLASS_NAME
+          : FLOATING_SIDEBAR_SHOWN_CLASS_NAME,
         className,
       )}
-      style={{ width: CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX, ...style }}
-    >
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-y-0 left-0 -z-10 bg-surface-sidebar"
-        style={{ right: SIDEBAR_PATTERN_EDGE_WIDTH_PX, ...tintStyle }}
-      />
-      {children}
-    </nav>
+      style={{
+        ...FLOATING_SIDEBAR_STYLE,
+        width: CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX,
+        ...style,
+      }}
+    />
   )
 }
 
@@ -137,29 +158,22 @@ export function SidebarPanel({
       aria-hidden={!isOpen}
       inert={!isOpen}
       className={cn(
-        'fixed left-0 top-0 z-40 flex h-dvh flex-col items-start overflow-hidden bg-surface-sidebar text-content-primary [&>*:not(:first-child)]:w-[var(--sidebar-content-width)]',
+        'z-40 overflow-hidden',
+        FLOATING_SIDEBAR_CLASS_NAME,
         isOpen
-          ? 'translate-x-0'
-          : isMobile
-            ? '-translate-x-full'
-            : 'translate-x-[var(--sidebar-closed-offset)]',
+          ? FLOATING_SIDEBAR_SHOWN_CLASS_NAME
+          : FLOATING_SIDEBAR_HIDDEN_CLASS_NAME,
         animate && CONSTANTS.SIDEBAR_LAYOUT_TRANSITION_CLASS_NAME,
         className,
       )}
-      style={
-        {
-          width: isMobile
-            ? CONSTANTS.MOBILE_SIDEBAR_WIDTH
-            : CONSTANTS.CHAT_SIDEBAR_WIDTH_PX,
-          maxWidth: CONSTANTS.CHAT_SIDEBAR_WIDTH_PX,
-          paddingRight: SIDEBAR_PATTERN_EDGE_WIDTH_PX,
-          '--sidebar-closed-offset': `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX - CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`,
-          '--sidebar-content-width': isMobile
-            ? '100%'
-            : `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX - SIDEBAR_PATTERN_EDGE_WIDTH_PX}px`,
-          ...style,
-        } as CSSProperties
-      }
+      style={{
+        ...FLOATING_SIDEBAR_STYLE,
+        width: isMobile
+          ? CONSTANTS.MOBILE_SIDEBAR_WIDTH
+          : CONSTANTS.CHAT_SIDEBAR_WIDTH_PX,
+        maxWidth: CONSTANTS.CHAT_SIDEBAR_WIDTH_PX,
+        ...style,
+      }}
     />
   )
 }
