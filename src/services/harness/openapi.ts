@@ -98,6 +98,59 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/v1/threads/browser/result': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Return a browser action's result
+     * @description The executor of a local browser turn returns one result for the pending
+     *     executionId, authenticated by the turn's private executor token. An
+     *     identical retry is accepted while the run is live; a conflicting or
+     *     unknown execution is refused. The client journals intent before acting
+     *     and the result before sending it. Replaying an event must never repeat
+     *     an action. An uncertain outcome requires observing the page and user
+     *     intervention, rather than replay. Screenshots reach the model during
+     *     this run only; events and the returned thread carry the text alone.
+     */
+    post: operations['browserResult']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/v1/threads/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Answer a call that waits for approval
+     * @description A call to a connector's tool that the user asked to approve waits for
+     *     their answer: its display's connector.approval is pending, with the id
+     *     the answer names and the time it expires. Approving runs the call;
+     *     declining it, or not answering in time, tells the model the user did
+     *     not let it run. The same answer sent again is accepted; a different
+     *     one, or an answer to a call not waiting, is refused with
+     *     REVISION_CONFLICT.
+     */
+    post: operations['approve']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/v1/threads/follow': {
     parameters: {
       query?: never
@@ -709,6 +762,149 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/v1/connectors/list': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** List the account's connectors */
+    post: operations['connectorsList']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/v1/connectors/add': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Connect a server
+     * @description Connects the MCP server at url. A server that needs no sign-in is
+     *     connected with its tools. One that does is added signed out, with the
+     *     page the client sends the user to: the harness registers itself with
+     *     the server's authorization server, by its client metadata document
+     *     where the server reads one and dynamically otherwise, and keeps the
+     *     sign-in pending until the user comes back to the client's callback
+     *     with the code and state the client sends to connectors/complete.
+     *     A server that signs in only clients registered in advance is refused
+     *     with CONNECTOR_UNSUPPORTED, and one that does not answer as an MCP
+     *     server with CONNECTOR_UNREACHABLE.
+     */
+    post: operations['connectorsAdd']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/v1/connectors/authorize': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Sign in to a connector again
+     * @description Starts a new sign-in to the connector, whose tokens stay until the sign-in replaces them. A server that no longer asks for one is connected without it, and no page is returned.
+     */
+    post: operations['connectorsAuthorize']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/v1/connectors/complete': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Finish signing in to a connector
+     * @description Sends what the user came back from the sign-in page with, the code, the state and the issuer when the authorization server names one. The harness checks the state against the sign-in pending, trades the code for tokens, which never leave the enclave, and lists the server's tools. A mismatched, expired or refused sign-in is refused with CONNECTOR_SIGN_IN_FAILED.
+     */
+    post: operations['connectorsComplete']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/v1/connectors/update': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Change a connector's name, whether chats use it, and what its tools may do */
+    post: operations['connectorsUpdate']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/v1/connectors/refresh': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * List a connector's tools again
+     * @description Lists the tools the server offers now, keeping the permissions given to those it offered before. A connector whose authorization server no longer accepts its tokens is refused with CONNECTOR_SIGNED_OUT.
+     */
+    post: operations['connectorsRefresh']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/v1/connectors/delete': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Remove a connector
+     * @description Removes the connector and asks its authorization server to revoke its tokens.
+     */
+    post: operations['connectorsDelete']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/v1/keys/current': {
     parameters: {
       query?: never
@@ -1117,8 +1313,15 @@ export interface components {
           | 'ATTACHMENT_UNSUPPORTED'
           | 'ATTACHMENTS_UNAVAILABLE'
           | 'BAD_REQUEST'
+          | 'BROWSER_TIMEOUT'
           | 'CHAT_FLAGGED'
           | 'COMPACTION_FAILED'
+          | 'CONNECTOR_LIMIT'
+          | 'CONNECTOR_NOT_FOUND'
+          | 'CONNECTOR_SIGN_IN_FAILED'
+          | 'CONNECTOR_SIGNED_OUT'
+          | 'CONNECTOR_UNREACHABLE'
+          | 'CONNECTOR_UNSUPPORTED'
           | 'CONTEXT_TOO_LARGE'
           | 'CREDENTIAL_REQUIRED'
           | 'IMPORT_INVALID'
@@ -1184,7 +1387,7 @@ export interface components {
       profileDefaults: components['schemas']['Profile']
       composer: components['schemas']['Composer']
       presets: components['schemas']['Preset'][]
-      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes. */
+      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes. connectors is true while this caller may connect servers, whose tools a stored chat's replies call. */
       features: {
         [key: string]: boolean
       }
@@ -1300,9 +1503,103 @@ export interface components {
       attachments?: components['schemas']['SentAttachment'][]
       /** @description The widgets this client renders. */
       widgets?: string[]
+      browser?: components['schemas']['BrowserAccess']
       /** @description A compact turn, or a retry that compacts again, summarizes the chat's latest exchange too, as COMPACTION_START describes. It is refused on any other kind. A client sends it only while the session's features.compactLatest is true, and when it shows a compaction marker at the end of a chat. */
       compactLatest?: boolean
       options?: components['schemas']['TurnOptions']
+    }
+    /**
+     * @description Available only when features.browserTools is true, on local send turns
+     *     without research. The client controls selected tabs and supplies a new
+     *     executor identity and secret for each turn. The token is sent only in
+     *     sealed bodies, never in prompts, events or persistent chat records.
+     *     Browser actions run sequentially, at most 40 per turn. Each waits at
+     *     most five minutes for its executor; a timeout ends the run with
+     *     BROWSER_TIMEOUT and leaves later actions unexecuted. Clients cancel a run when they
+     *     relinquish browser control, and stop local dispatch immediately.
+     */
+    BrowserAccess: {
+      /** Format: uuid */
+      executorId: string
+      token: string
+    }
+    /** @description Arguments validated against the model-facing browser tool schema. The executor additionally validates selected tabs, URL schemes, current references, and action permissions before dispatch. */
+    BrowserAction: {
+      /** @enum {string} */
+      action:
+        | 'tabs'
+        | 'read'
+        | 'screenshot'
+        | 'click'
+        | 'hover'
+        | 'fill'
+        | 'select'
+        | 'press'
+        | 'scroll'
+        | 'navigate'
+        | 'back'
+        | 'forward'
+        | 'open'
+        | 'switch'
+        | 'close'
+        | 'wait'
+      tabId?: number
+      ref?: string
+      text?: string
+      url?: string
+      /** @enum {string} */
+      key?:
+        | 'Enter'
+        | 'Tab'
+        | 'Escape'
+        | 'ArrowDown'
+        | 'ArrowUp'
+        | 'ArrowLeft'
+        | 'ArrowRight'
+        | 'Backspace'
+      /** @enum {string} */
+      direction?: 'up' | 'down'
+      /** @description The fresh screenshot whose pixels a coordinate action uses. */
+      screenshotId?: string
+      x?: number
+      y?: number
+    }
+    BrowserResult: {
+      /** @description Page data or a structured action error. Limited to 64 KiB UTF-8. */
+      text: string
+      /** @description Optional base64 JPEG viewport, at most 4 million pixels. Read only by vision models. */
+      image?: string
+    }
+    BrowserResultInput: {
+      threadId: components['schemas']['Identifier']
+      runId: string
+      executorId: string
+      token: string
+      executionId: string
+      result: components['schemas']['BrowserResult']
+    }
+    /**
+     * @description A complete, validated browser operation ready for the selected executor.
+     *     Only this event authorizes dispatch, never partial TOOL_CALL_ARGS.
+     *     executionId identifies the operation across stream reconnections.
+     *     Every replay is reconciled against the executor's local journal.
+     */
+    BrowserToolRequestEvent: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'BROWSER_TOOL_REQUEST'
+      timestamp?: components['schemas']['Timestamp']
+      /**
+       * Format: date-time
+       * @description The executor refuses dispatch after this deadline, including after a delayed review or stream replay.
+       */
+      expiresAt: string
+      executionId: string
+      toolCallId: string
+      executorId: string
+      operation: components['schemas']['BrowserAction']
     }
     TurnOptions: {
       model?: string
@@ -1388,6 +1685,7 @@ export interface components {
       | components['schemas']['ToolCallArgsEvent']
       | components['schemas']['ToolCallEndEvent']
       | components['schemas']['ToolCallResultEvent']
+      | components['schemas']['BrowserToolRequestEvent']
       | components['schemas']['ActivitySnapshotEvent']
       | components['schemas']['ActivityDeltaEvent']
       | components['schemas']['CompactionStartEvent']
@@ -1902,7 +2200,7 @@ export interface components {
       /** @description The widget's current declaration refuses the call's arguments, so the client offers to regenerate them. */
       invalidArguments?: boolean
     }
-    /** @description What a web search or page fetch shows, kept current while it runs. */
+    /** @description What a web search, page fetch or call to a connector's tool shows, kept current while it runs. An ACTIVITY_DELTA's display replaces the call's. */
     ToolDisplay: {
       query?: string
       url?: string
@@ -1913,6 +2211,56 @@ export interface components {
         title: string
         snippet?: string
       }[]
+      connector?: components['schemas']['ConnectorCall']
+    }
+    /** @description The connector a call reached, the tool's name on its server, and the user's approval when the call needs one. */
+    ConnectorCall: {
+      id: string
+      name: string
+      url: string
+      tool: string
+      title?: string
+      approval?: components['schemas']['ToolApproval']
+    }
+    /** @description The user's answer to a call that needs it. A pending approval names the id threads/approve answers it under and when it expires; the call waits until then. */
+    ToolApproval: {
+      id?: string
+      /** @description A client shows a status it does not know as declined. */
+      status: ('pending' | 'approved' | 'declined' | 'expired') | string
+      /** Format: date-time */
+      expiresAt?: string
+    }
+    /** @description What a connector's tool may do in a chat. A client shows a permission it does not know as ask. */
+    ToolPermission: ('allow' | 'ask' | 'off') | string
+    /** @description A server the account connected, without anything it signs in with, which never leaves the enclave. */
+    Connector: {
+      id: string
+      name: string
+      url: string
+      /** @description Whether chats call its tools. */
+      enabled: boolean
+      /** @description Whether its tools can be called, or the user must sign in first. A client shows a status it does not know as signedOut. */
+      status: ('connected' | 'signedOut') | string
+      /** @description Whether the server asks the user to sign in. */
+      signIn: boolean
+      createdAt: string
+      updatedAt: string
+      tools: {
+        name: string
+        title?: string
+        description?: string
+        /** @description The server says the tool changes nothing. */
+        readOnly?: boolean
+        permission: components['schemas']['ToolPermission']
+      }[]
+    }
+    ApprovalInput: {
+      /** @description The account's content key, base64. */
+      key?: string
+      threadId: components['schemas']['Identifier']
+      runId: string
+      approvalId: string
+      approved: boolean
     }
     /** @description A reply's citation of a page. */
     Annotation: {
@@ -2424,6 +2772,19 @@ export interface components {
         'application/json': components['schemas']['Project']
       }
     }
+    /** @description The connector, and the page that signs the user in to it when it needs that. */
+    ConnectorAnswer: {
+      headers: {
+        [name: string]: unknown
+      }
+      content: {
+        'application/json': {
+          connector: components['schemas']['Connector']
+          /** @description The authorization server's page the client sends the user to. Present only while a sign-in the route started is pending. */
+          authorizationUrl?: string
+        }
+      }
+    }
   }
   parameters: {
     /** @description The cursor of the last event of the run the client applied. The stream resumes after it, and starts from the run's first event without it; either starts with a checkpoint when the harness no longer holds the events that follow. A cursor the run never sent is refused. */
@@ -2540,6 +2901,68 @@ export interface operations {
     }
     responses: {
       200: components['responses']['RunEvents']
+      default: components['responses']['Error']
+    }
+  }
+  browserResult: {
+    parameters: {
+      query?: never
+      header?: {
+        /** @description The instance a run's RUN_STARTED named. A deployment of several harnesses routes a request about the run to it by this header, which says nothing about the caller. */
+        'X-Tinfoil-Harness-Instance'?: components['parameters']['HarnessInstance']
+      }
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BrowserResultInput']
+      }
+    }
+    responses: {
+      /** @description The result was accepted. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            /** @constant */
+            accepted: true
+          }
+        }
+      }
+      default: components['responses']['Error']
+    }
+  }
+  approve: {
+    parameters: {
+      query?: never
+      header?: {
+        /** @description The instance a run's RUN_STARTED named. A deployment of several harnesses routes a request about the run to it by this header, which says nothing about the caller. */
+        'X-Tinfoil-Harness-Instance'?: components['parameters']['HarnessInstance']
+      }
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApprovalInput']
+      }
+    }
+    responses: {
+      /** @description The answer was accepted. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            /** @constant */
+            accepted: true
+          }
+        }
+      }
       default: components['responses']['Error']
     }
   }
@@ -3441,6 +3864,159 @@ export interface operations {
           projectId: components['schemas']['Identifier']
           documentId: components['schemas']['Identifier']
         }
+      }
+    }
+    responses: {
+      200: components['responses']['Empty']
+      default: components['responses']['Error']
+    }
+  }
+  connectorsList: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['Keyed']
+      }
+    }
+    responses: {
+      /** @description The account's connectors, the oldest first. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            connectors: components['schemas']['Connector'][]
+          }
+        }
+      }
+      default: components['responses']['Error']
+    }
+  }
+  connectorsAdd: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @description The account's content key, base64. */
+          key?: string
+          /** @description 1 to 64 characters. */
+          name: string
+          /** @description A public HTTPS address on the standard port. */
+          url: string
+        }
+      }
+    }
+    responses: {
+      200: components['responses']['ConnectorAnswer']
+      default: components['responses']['Error']
+    }
+  }
+  connectorsAuthorize: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['KeyedId']
+      }
+    }
+    responses: {
+      200: components['responses']['ConnectorAnswer']
+      default: components['responses']['Error']
+    }
+  }
+  connectorsComplete: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @description The account's content key, base64. */
+          key?: string
+          id: components['schemas']['Identifier']
+          code: string
+          state: string
+          iss?: string
+        }
+      }
+    }
+    responses: {
+      200: components['responses']['ConnectorAnswer']
+      default: components['responses']['Error']
+    }
+  }
+  connectorsUpdate: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @description The account's content key, base64. */
+          key?: string
+          id: components['schemas']['Identifier']
+          name?: string
+          enabled?: boolean
+          /** @description A permission for each tool named. A tool the connector no longer offers is refused with REVISION_CONFLICT. */
+          tools?: {
+            [key: string]: components['schemas']['ToolPermission']
+          }
+        }
+      }
+    }
+    responses: {
+      200: components['responses']['ConnectorAnswer']
+      default: components['responses']['Error']
+    }
+  }
+  connectorsRefresh: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['KeyedId']
+      }
+    }
+    responses: {
+      200: components['responses']['ConnectorAnswer']
+      default: components['responses']['Error']
+    }
+  }
+  connectorsDelete: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['KeyedId']
       }
     }
     responses: {
