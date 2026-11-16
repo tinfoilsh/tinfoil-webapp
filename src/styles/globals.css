@@ -73,6 +73,7 @@ html[data-chat-font='dyslexic'] {
   width: 4px;
   aspect-ratio: 1;
   border-radius: 50%;
+  corner-shape: round;
   animation: stream-loader 1s infinite linear alternate;
 }
 @keyframes stream-loader {

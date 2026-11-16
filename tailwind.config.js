@@ -217,6 +217,22 @@ module.exports = {
 // Add custom styles to base layer
 const plugin = require('tailwindcss/plugin')
 module.exports.plugins.push(
+  plugin(function ({ addBase, addUtilities, e, theme }) {
+    addBase({
+      '*, ::before, ::after': { cornerShape: 'squircle' },
+      ':where(input[type="radio"], [class~="cl-avatarBox"], [class~="cl-avatarImage"], [class~="cl-spinner"])': {
+        cornerShape: 'round',
+      },
+    })
+    addUtilities(
+      Object.fromEntries(
+        Object.keys(theme('borderRadius')).map((name) => [
+          name === 'DEFAULT' ? '.rounded' : `.rounded-${e(name)}`,
+          { cornerShape: name === 'full' ? 'round' : 'squircle' },
+        ]),
+      ),
+    )
+  }),
   plugin(function ({ addUtilities }) {
     addUtilities({
       '.no-scrollbar': {

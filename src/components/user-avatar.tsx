@@ -25,7 +25,7 @@ export function UserAvatar({ size = 32, className }: UserAvatarProps) {
         alt={displayName}
         width={size}
         height={size}
-        className={className}
+        className={`[corner-shape:round] ${className ?? ''}`}
         style={{ borderRadius: '50%' }}
       />
     )
