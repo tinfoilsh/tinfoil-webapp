@@ -2041,7 +2041,8 @@ export function ChatInterface({
           type="button"
           className={cn(
             'flex items-center justify-center gap-2 rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
-            !hasVisibleChatHeader && 'fixed left-4 top-4 z-50',
+            !hasVisibleChatHeader &&
+              'fixed left-4 top-[calc(var(--app-top,0px)_+_1rem)] z-50',
           )}
           onClick={() => {
             setIsSidebarOpen(true)
@@ -2063,7 +2064,7 @@ export function ChatInterface({
             'pointer-events-none z-50 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100',
             hasVisibleChatHeader
               ? 'absolute left-0 top-full mt-1'
-              : 'fixed left-4 top-16',
+              : 'fixed left-4 top-[calc(var(--app-top,0px)_+_4rem)]',
           )}
         >
           Open sidebar{' '}
@@ -2250,7 +2251,7 @@ export function ChatInterface({
       {(isTemporaryMode || currentChat.isTemporary) && !showChatHeader && (
         <div
           inert={isSidebarCoveringChat}
-          className="pointer-events-none fixed top-0 z-40 flex items-center gap-1.5 rounded-br-lg bg-[hsl(18,90%,92%)] py-7 pl-16 pr-3 text-xs font-medium text-orange-600 transition-all duration-300 dark:bg-[hsl(20,40%,15%)] dark:text-orange-500 md:py-2 md:pl-3"
+          className="pointer-events-none fixed top-[var(--app-top,0px)] z-40 flex items-center gap-1.5 rounded-br-lg bg-[hsl(18,90%,92%)] py-7 pl-16 pr-3 text-xs font-medium text-orange-600 transition-all duration-300 dark:bg-[hsl(20,40%,15%)] dark:text-orange-500 md:py-2 md:pl-3"
           style={{
             left: (() => {
               const isMobile = windowWidth < CONSTANTS.MOBILE_BREAKPOINT
@@ -2276,7 +2277,7 @@ export function ChatInterface({
           chat has messages they move into the chat header. */}
       {!showChatHeader && !hideTopControlsOnMobile && (
         <div
-          className="fixed top-4 z-50 flex gap-2 transition-all duration-300"
+          className="fixed top-[calc(var(--app-top,0px)_+_1rem)] z-50 flex gap-2 transition-all duration-300"
           style={{
             right:
               windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
