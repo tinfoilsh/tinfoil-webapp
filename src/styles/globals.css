@@ -582,6 +582,16 @@ html[data-chat-font='dyslexic'] {
   overscroll-behavior: none;
 }
 
+/* iOS does not resize the page for the on-screen keyboard: it slides the page
+   up to show the focused field. A shell shortened to the visible height is
+   slid up as well, which carries the composer off the top of the screen, so
+   the shell keeps its full height there. */
+@supports (-webkit-touch-callout: none) {
+  .app-shell {
+    min-height: -webkit-fill-available;
+  }
+}
+
 @keyframes df-dash {
   to {
     stroke-dashoffset: -18;
