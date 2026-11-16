@@ -32,6 +32,8 @@ const signedOut = () =>
     401,
   )
 
+const PANEL_PATH = 'sidepanel.html'
+
 export default defineBackground(() => {
   const store = new TaskStore()
   let current:
@@ -51,10 +53,32 @@ export default defineBackground(() => {
     closing = Promise.all([closing, closed]).then(() => undefined)
     return closed
   }
-  chrome.runtime.onInstalled.addListener(() => {
+  // Each tab owns its panel, so Chrome hides it when another tab is selected.
+  void Promise.all([
+    chrome.sidePanel.setOptions({ enabled: false }),
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }),
+  ]).catch((cause) =>
+    logError('Unable to configure tab-specific panels', cause),
+  )
+  chrome.action.onClicked.addListener((tab) => {
+    const tabId = tab.id
+    if (tabId === undefined) return
+    // Chrome toggles enabled panels itself. A tab without one needs both
+    // requests issued in the click's user gesture, without awaiting either.
+    void Promise.all([
+      chrome.sidePanel.setOptions({ tabId, path: PANEL_PATH, enabled: true }),
+      chrome.sidePanel.open({ tabId }),
+    ]).catch((cause) => logError('Unable to open side panel', cause))
+  })
+  // A closed tab-specific entry must not reappear when another tab opens
+  // the same extension's panel. Switching tabs only hides it, without closing.
+  chrome.sidePanel.onClosed.addListener(({ tabId }) => {
+    if (tabId === undefined) return
     void chrome.sidePanel
-      .setPanelBehavior({ openPanelOnActionClick: true })
-      .catch((cause) => logError('Unable to enable side panel', cause))
+      .setOptions({ tabId, enabled: false })
+      .catch((cause) => logError('Unable to disable closed side panel', cause))
+  })
+  chrome.runtime.onInstalled.addListener(() => {
     void chrome.storage.local
       .setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })
       .catch((cause) => logError('Unable to restrict extension storage', cause))
@@ -77,7 +101,7 @@ export default defineBackground(() => {
       sender?.id !== chrome.runtime.id ||
       url.protocol !== 'chrome-extension:' ||
       url.hostname !== chrome.runtime.id ||
-      url.pathname !== '/sidepanel.html'
+      url.pathname !== `/${PANEL_PATH}`
     ) {
       port.disconnect()
       return

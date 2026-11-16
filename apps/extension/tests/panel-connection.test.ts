@@ -235,7 +235,7 @@ test('a panel whose place another one took leaves it the worker, and says where 
   disconnect()
   await vi.runAllTimersAsync()
   expect(connections).toBe(1)
-  expect(connection.snapshot().error).toContain('open in another window')
+  expect(connection.snapshot().error).toContain('open in another tab or window')
   // What it was waiting on is answered with the same reason.
   expect(await waiting).toEqual(new Error(connection.snapshot().error))
   close()
