@@ -820,8 +820,10 @@ export const ChatSidebar = memo(function ChatSidebar({
                 Chats <span className="text-content-muted">{modKey}.</span>
               </span>
             </div>
+          </div>
 
-            {/* Settings button */}
+          {/* Settings button, pinned to the bottom of the rail */}
+          <div className="mt-auto flex flex-col items-center px-2 pb-2">
             <div className="group relative">
               <button
                 onClick={() => onSettingsClick?.()}
