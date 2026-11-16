@@ -18,6 +18,7 @@ import { showsRateLimit, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import { createFrameStore, createStore } from './store'
 import type {
+  ApprovalInput,
   HarnessErrorBody,
   HarnessEvent,
   TerminalEvent,
@@ -702,6 +703,11 @@ export class RunController {
     queueId: string
   }) {
     return this.api.post(ROUTES.queueRemove, input, { keyless: true })
+  }
+
+  // Answers a call of the run that waits for the user's approval.
+  approve(input: ApprovalInput) {
+    return this.api.post(ROUTES.approve, input, { keyless: true })
   }
 
   receipt(): Receipt | null {

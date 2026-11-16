@@ -66,6 +66,7 @@ const threadOf = (input: unknown): string | undefined => {
 const RUN_ROUTES: ReadonlySet<HarnessRoute> = new Set([
   ROUTES.follow,
   ROUTES.cancel,
+  ROUTES.approve,
   ROUTES.queueSend,
   ROUTES.queueRemove,
 ])
