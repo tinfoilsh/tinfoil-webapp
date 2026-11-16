@@ -45,6 +45,7 @@ const EFFORT_EXPLAINER =
 const INTELLIGENCE_EXPLAINER =
   'Higher intelligence picks a more capable model and thinks longer.'
 
+const DEFAULT_MODEL_ICON = '/model-icons/default.svg'
 const MOBILE_BREAKPOINT_PX = 768
 const EFFORT_FLYOUT_WIDTH_PX = 240
 const EFFORT_FLYOUT_GAP_PX = 8
@@ -338,7 +339,7 @@ export function ModelSelector({
   const otherModels = displayModels.slice(topModelCount)
 
   const getModelIcon = (model: BaseModel) => {
-    if (failedImages[model.id]) return '/icon.png'
+    if (!model.icon || failedImages[model.id]) return DEFAULT_MODEL_ICON
     if (model.icon === 'openai.png')
       return `/model-icons/openai-${isDarkMode ? 'dark' : 'light'}.png`
     if (model.icon === 'moonshot.png')
