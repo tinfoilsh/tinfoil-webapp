@@ -2,6 +2,7 @@ import { CONNECTOR_SIGN_INS } from '@/constants/storage-keys'
 import { useConnectors } from '@/hooks/use-connectors'
 import ConnectorCallbackPage from '@/pages/connectors/callback'
 import { publish } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import type { Connector } from '@/services/harness/types'
 import {
   act,
@@ -229,6 +230,33 @@ describe('the connector sign-in callback', () => {
     ])
     expect(routerReplace).not.toHaveBeenCalled()
     expect(toast).not.toHaveBeenCalled()
+  })
+
+  it('tells the tab that started a popup’s sign-in why the harness refused it', async () => {
+    await connectFromChat()
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/connectors/complete')
+        throw new HarnessError({
+          code: 'CONNECTOR_UNREACHABLE',
+          action: 'retry',
+          message: 'The server did not answer as an MCP server',
+        })
+      return { connectors: [connector()] }
+    })
+    closingAsA('popup')
+    setLocation(`/connectors/callback?code=the-code&state=${STATE}`)
+
+    render(<ConnectorCallbackPage />)
+
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          title: 'Sign-in did not finish',
+          description:
+            'No MCP server answered at that address. Check the URL and try again.',
+        }),
+      ),
+    )
   })
 
   it('refuses a state this tab did not start without asking the harness', async () => {

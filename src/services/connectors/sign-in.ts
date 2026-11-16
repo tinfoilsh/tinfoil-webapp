@@ -40,6 +40,8 @@ interface SignInEnded {
   // counts.
   signIn: string
   status: SignInStatus
+  // Why finishing a failed sign-in failed, as the user reads it.
+  reason?: string
 }
 
 interface PendingSignIn {
@@ -194,6 +196,9 @@ export function listenForSignIns(
         connectorId: message.connectorId,
         signIn: message.signIn,
         status: message.status as SignInStatus,
+        ...(typeof message.reason === 'string' && message.reason
+          ? { reason: message.reason }
+          : {}),
       })
   }
   return () => channel.close()
@@ -241,18 +246,9 @@ export async function finishSignIn(
 
 // Tells this app's other tabs how a sign-in ended, so the one that started
 // it shows it.
-export function announceSignIn({
-  connectorId,
-  signIn,
-  status,
-}: Omit<SignInEnded, 'type'>) {
+export function announceSignIn(ended: Omit<SignInEnded, 'type'>) {
   const channel = new BroadcastChannel(SIGN_IN_CHANNEL)
-  const message: SignInEnded = {
-    type: SIGN_IN_MESSAGE,
-    connectorId,
-    signIn,
-    status,
-  }
+  const message: SignInEnded = { type: SIGN_IN_MESSAGE, ...ended }
   channel.postMessage(message)
   channel.close()
 }

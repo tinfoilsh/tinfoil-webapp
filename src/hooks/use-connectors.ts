@@ -184,9 +184,9 @@ export class ConnectorList {
   private listen() {
     const { signal } = this.api.lifetime
     if (this.stopListening || signal.aborted) return
-    const stop = listenForSignIns(({ connectorId, signIn, status }) => {
+    const stop = listenForSignIns(({ connectorId, signIn, status, reason }) => {
       if (this.awaited.get(connectorId) === signIn)
-        this.signInEnded(connectorId, status)
+        this.signInEnded(connectorId, status, reason)
     })
     const close = () => {
       stop()
@@ -205,7 +205,11 @@ export class ConnectorList {
   // A sign-in this tab awaits ended in its popup, which finished it: the
   // list shows the connector as the harness now has it, or the user is told
   // why the sign-in did not finish.
-  private signInEnded(connectorId: string, status: SignInStatus) {
+  private signInEnded(
+    connectorId: string,
+    status: SignInStatus,
+    reason?: string,
+  ) {
     this.stopAwaiting(connectorId)
     if (status === 'completed') {
       void this.refresh()
@@ -216,7 +220,7 @@ export class ConnectorList {
       description:
         status === 'refused'
           ? 'The sign-in was canceled or refused.'
-          : 'Try signing in again.',
+          : (reason ?? 'Try signing in again.'),
       variant: 'destructive',
     })
   }
