@@ -2,6 +2,7 @@ import { findSelectableModel, getSelectedModelLabel } from '@/config/models'
 import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { UI_EXPAND_PROJECT_DOCUMENTS } from '@/constants/storage-keys'
+import { useConnectors } from '@/hooks/use-connectors'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
@@ -108,6 +109,7 @@ import { PageNotice } from './page-notice'
 import { openProjectChat } from './project-navigation'
 import { QuoteSelectionPopover } from './quote-selection-popover'
 import { initializeRenderers } from './renderers/client'
+import type { ConnectorApproving } from './renderers/components/ConnectorApprovalCard'
 import type { ProcessedDocument } from './renderers/types'
 import type { SettingsTab } from './settings-modal'
 import {
@@ -169,12 +171,8 @@ const OnboardingView = dynamic(
 )
 
 import { verifyChatService } from '@/services/harness/attestation'
-import { CONNECTORS_FEATURE, ERROR_CODES } from '@/services/harness/protocol'
-import {
-  reportProfileError,
-  useHarness,
-  useSessionFeature,
-} from '@/services/harness/provider'
+import { ERROR_CODES } from '@/services/harness/protocol'
+import { reportProfileError, useHarness } from '@/services/harness/provider'
 import { HarnessError } from '@/services/harness/sse'
 import { useStore } from '@/services/harness/store'
 import { isAttachmentsUnavailable } from '@/services/harness/transfer'
@@ -523,8 +521,7 @@ export function ChatInterface({
     (session?.features.research ?? false) &&
     (profile.webSearchAvailable ?? true)
   const researchEnabled = researchAvailable && thread.research
-  const connectorsOffered =
-    useSessionFeature(CONNECTORS_FEATURE) && !!isSignedIn
+  const { offered: connectorsOffered, list: connectorList } = useConnectors()
   // Connectors run in the chats the harness stores: not in one kept on this
   // device, or a temporary one.
   const connectorsAvailable = thread.cloud && !thread.local && !isTemporaryMode
@@ -781,6 +778,26 @@ export function ChatInterface({
       submit: () => void handleQuery(''),
     }
   })
+  // The calls of the reply running now that wait for the user's approval
+  // take answers while it runs.
+  const approvalActions = useRef(thread.approve)
+  useEffect(() => {
+    approvalActions.current = thread.approve
+  })
+  const connectorApprovals = useMemo<ConnectorApproving | undefined>(
+    () =>
+      isStreaming && !currentChatIsFlagged
+        ? {
+            approve: (approvalId, approved) =>
+              approvalActions.current(approvalId, approved),
+            allowTool: (connectorId, tool) =>
+              connectorList.update(connectorId, {
+                tools: { [tool]: 'allow' },
+              }),
+          }
+        : undefined,
+    [isStreaming, currentChatIsFlagged, connectorList],
+  )
   const canAnswer = canChangeMessages && !isStreaming && !currentChatIsFlagged
   const canSubmitAnswers = canChat && !isStreaming && !generationBlocked
   const questionAnswering = useMemo<QuestionAnswering>(
@@ -2865,6 +2882,7 @@ export function ChatInterface({
                       loadDocumentText={messageActions.loadDocumentText}
                       speak={messageActions.speak}
                       questions={questionAnswering}
+                      approvals={connectorApprovals}
                       imagesUnsaved={!isSignedIn && !isTemporaryMode}
                       earlierMessageCount={Math.max(
                         0,

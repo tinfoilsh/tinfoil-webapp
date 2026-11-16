@@ -40,6 +40,10 @@ import {
   COMPACTING_LABEL,
   CompactionMarker,
 } from './renderers/components/CompactionMarker'
+import {
+  ConnectorApprovalsContext,
+  type ConnectorApproving,
+} from './renderers/components/ConnectorApprovalCard'
 import { StreamingTracerDot } from './renderers/components/StreamingTracerDot'
 import { SpeechProvider, type Speak } from './speech-context'
 import type { Attachment, Compaction, LabelType, Message } from './types'
@@ -98,6 +102,9 @@ type ChatMessagesProps = {
   // What the chat's questions widgets can do; without it they take no
   // answers.
   questions?: QuestionAnswering
+  // Answers the calls of the reply running now that wait for the user's
+  // approval; without it they take none.
+  approvals?: ConnectorApproving
   // The chat keeps its images only while the page is open.
   imagesUnsaved?: boolean
   // Messages before those shown: how many, and loading them, which resolves
@@ -325,6 +332,7 @@ export function ChatMessages({
   loadDocumentText,
   speak,
   questions,
+  approvals,
   imagesUnsaved = false,
   earlierMessageCount = 0,
   loadEarlierMessages,
@@ -597,42 +605,46 @@ export function ChatMessages({
             )}
             <UnsavedImagesProvider value={imagesUnsaved}>
               <QuestionsContext.Provider value={questions ?? null}>
-                {messages.map((message, index) => {
-                  const compaction = message.id
-                    ? compactions[message.id]
-                    : undefined
-                  return (
-                    <React.Fragment key={message.id ?? `${chatId}-${index}`}>
-                      {compaction && (
-                        <CompactionMarker
-                          id={compaction.id}
-                          isRunning={compaction.isRunning}
-                          summary={compaction.summary}
-                          messageCount={compaction.messageCount}
-                          startedAt={compaction.startedAt}
-                          outOfContext={index < contextStart}
-                        />
-                      )}
-                      <ChatMessage
-                        message={message}
-                        messageIndex={index}
-                        model={currentModel}
-                        isDarkMode={isDarkMode}
-                        isLastMessage={index === messages.length - 1}
-                        isStreaming={
-                          index === messages.length - 1 && isStreamingResponse
-                        }
-                        activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
-                          message,
-                          activeArtifactToolCallId,
+                <ConnectorApprovalsContext.Provider
+                  value={readOnly ? null : (approvals ?? null)}
+                >
+                  {messages.map((message, index) => {
+                    const compaction = message.id
+                      ? compactions[message.id]
+                      : undefined
+                    return (
+                      <React.Fragment key={message.id ?? `${chatId}-${index}`}>
+                        {compaction && (
+                          <CompactionMarker
+                            id={compaction.id}
+                            isRunning={compaction.isRunning}
+                            summary={compaction.summary}
+                            messageCount={compaction.messageCount}
+                            startedAt={compaction.startedAt}
+                            outOfContext={index < contextStart}
+                          />
                         )}
-                        hideActions={readOnly}
-                        outOfContext={index < contextStart}
-                        {...messageActions}
-                      />
-                    </React.Fragment>
-                  )
-                })}
+                        <ChatMessage
+                          message={message}
+                          messageIndex={index}
+                          model={currentModel}
+                          isDarkMode={isDarkMode}
+                          isLastMessage={index === messages.length - 1}
+                          isStreaming={
+                            index === messages.length - 1 && isStreamingResponse
+                          }
+                          activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
+                            message,
+                            activeArtifactToolCallId,
+                          )}
+                          hideActions={readOnly}
+                          outOfContext={index < contextStart}
+                          {...messageActions}
+                        />
+                      </React.Fragment>
+                    )
+                  })}
+                </ConnectorApprovalsContext.Provider>
               </QuestionsContext.Provider>
             </UnsavedImagesProvider>
             {endCompaction && (
