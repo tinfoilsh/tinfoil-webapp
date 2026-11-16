@@ -74,7 +74,7 @@
 
     /* Buttons */
     --button-send-background: var(--primary);
-    --button-send-foreground: var(--color-brand-dark);
+    --button-send-foreground: var(--primary-foreground);
 
     /* Neutral scale */
     --gray-950: var(--color-brand-dark);
@@ -96,15 +96,17 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
-    --primary: 34.84 55.36% 78.04%;
-    --primary-foreground: var(--color-brand-dark);
+    --primary: var(--color-brand-dark);
+    --primary-foreground: var(--color-brand-light);
+    --primary-hover: 193 77.5% 13.9%;
+    --primary-active: 193.55 83.78% 7.25%;
     --link: var(--color-accent-dark);
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
     --muted: var(--surface-chat);
     --muted-foreground: var(--content-secondary);
-    --accent: var(--primary);
-    --accent-foreground: var(--primary-foreground);
+    --accent: var(--surface-muted);
+    --accent-foreground: var(--content-primary);
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     --border: var(--border-subtle);
@@ -136,7 +138,7 @@
     --content-inverse: var(--color-brand-dark);
 
     --button-send-background: var(--primary);
-    --button-send-foreground: var(--color-brand-dark);
+    --button-send-foreground: var(--primary-foreground);
 
     --color-accent-light-darker: 195 24.8% 67.3%;
 
@@ -158,13 +160,17 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
+    --primary: var(--color-brand-light);
+    --primary-foreground: var(--color-brand-dark);
+    --primary-hover: 180 15.4% 94.9%;
+    --primary-active: 220 13% 91%;
     --link: 257 32% 70%;
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
     --muted: var(--surface-chat);
     --muted-foreground: var(--content-secondary);
-    --accent: var(--primary);
-    --accent-foreground: var(--primary-foreground);
+    --accent: var(--surface-muted);
+    --accent-foreground: var(--content-primary);
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     --border: var(--border-subtle);

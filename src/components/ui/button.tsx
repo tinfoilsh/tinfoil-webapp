@@ -10,9 +10,9 @@ const BUTTON_VARIANTS = cva(
     variants: {
       variant: {
         default:
-          'bg-primary text-primary-foreground shadow hover:bg-primary/90',
+          'bg-primary text-primary-foreground shadow hover:bg-primary-hover active:bg-primary-active',
         solid:
-          'border border-tinfoil-oak bg-tinfoil-oak text-brand-dark shadow-none hover:border-tinfoil-oak-hover hover:bg-tinfoil-oak-hover',
+          'border border-primary bg-primary text-primary-foreground shadow-none hover:border-primary-hover hover:bg-primary-hover active:border-primary-active active:bg-primary-active',
         destructive:
           'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90',
         outline:

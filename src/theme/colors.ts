@@ -6,7 +6,6 @@
  * - tinfoil-light: #F9F8F6 Bone (light background)
  * - tinfoil-accent-dark: #004444 Deep Teal (primary brand color)
  * - tinfoil-accent-light: #A8C7D1 Steel Mist (accent/success color)
- * - tinfoil-oak: #E6CCA8 Pale Oak (actions, selection, hovers)
  * - tinfoil-twilight: #6B5B95 Twilight (secondary accents, charts)
  */
 
@@ -35,11 +34,6 @@ export const colors = {
     DEFAULT: '#A8C7D1',
     hover: '#BED7DF',
     darker: '#97B6C0',
-  },
-
-  // Tinfoil oak - used for actions, selection, hovers
-  'tinfoil-oak': {
-    DEFAULT: '#E6CCA8',
   },
 
   // Tinfoil twilight - used for secondary accents and charts

@@ -239,7 +239,7 @@ export function PromptLibraryModal({
         className={cn(
           'group relative flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
           isSelected
-            ? 'border-yellow-700 bg-primary/20 dark:border-primary'
+            ? 'border-primary bg-primary/20'
             : 'border-border-subtle bg-surface-chat-background hover:bg-surface-chat',
         )}
         aria-pressed={isActive}
@@ -263,7 +263,7 @@ export function PromptLibraryModal({
             {isDefault && (
               <>
                 <TfBookmarkFilled
-                  className="h-3.5 w-3.5 text-yellow-700 dark:text-primary"
+                  className="h-3.5 w-3.5 text-primary"
                   aria-hidden="true"
                 />
                 <span className="sr-only">Default for new chats</span>
@@ -281,7 +281,7 @@ export function PromptLibraryModal({
             {isActive && (
               <>
                 <TfBoxCheckmark
-                  className="h-3.5 w-3.5 text-yellow-700 dark:text-primary"
+                  className="h-3.5 w-3.5 text-primary"
                   aria-hidden="true"
                 />
                 <span className="sr-only">Active</span>
@@ -597,7 +597,7 @@ function PresetDetail({
                 <button
                   type="button"
                   onClick={onUseThis}
-                  className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-tinfoil-oak px-3 py-2 text-sm font-semibold text-brand-dark transition-colors hover:bg-tinfoil-oak-hover"
+                  className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
                 >
                   <TfStars className="h-4 w-4" aria-hidden="true" />
                   Use for this chat
@@ -622,7 +622,7 @@ function PresetDetail({
             <button
               type="button"
               onClick={onUseThis}
-              className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-tinfoil-oak px-3 py-2 text-sm font-semibold text-brand-dark transition-colors hover:bg-tinfoil-oak-hover md:w-auto"
+              className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover md:w-auto"
             >
               <TfStars className="h-4 w-4" aria-hidden="true" />
               Use for this chat
@@ -670,7 +670,7 @@ function PresetDetail({
           className={cn(
             'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
             isDefault
-              ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+              ? 'bg-primary text-primary-foreground hover:bg-primary-hover'
               : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
           )}
         >

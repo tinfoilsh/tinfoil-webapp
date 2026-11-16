@@ -2057,7 +2057,7 @@ ${encryptionKey.replace('key_', '')}
                     type="button"
                     onClick={handleSavePersonalization}
                     disabled={profileLocked}
-                    className="rounded-lg bg-tinfoil-oak px-3 py-1 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-primary px-3 py-1 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -2087,7 +2087,7 @@ ${encryptionKey.replace('key_', '')}
                 className={cn(
                   'flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
                   activeTab === item.id
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-surface-raised text-content-primary ring-1 ring-inset ring-border-subtle dark:bg-primary dark:text-primary-foreground dark:ring-primary'
                     : 'text-content-secondary hover:bg-surface-chat/50',
                 )}
               >
@@ -2128,7 +2128,7 @@ ${encryptionKey.replace('key_', '')}
                 className={cn(
                   'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                   activeTab === item.id
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-surface-raised text-content-primary ring-1 ring-inset ring-border-subtle dark:bg-primary dark:text-primary-foreground dark:ring-primary'
                     : 'text-content-secondary hover:bg-surface-chat/50',
                 )}
               >
@@ -2164,7 +2164,7 @@ ${encryptionKey.replace('key_', '')}
                   <button
                     onClick={handleSavePersonalization}
                     disabled={profileLocked}
-                    className="rounded-lg bg-tinfoil-oak px-4 py-1.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -2239,7 +2239,7 @@ ${encryptionKey.replace('key_', '')}
                             className={cn(
                               'flex flex-col items-center gap-1 rounded-lg border p-3 transition-all',
                               themeMode === theme.id
-                                ? 'border-yellow-700 bg-primary/20 dark:border-primary'
+                                ? 'border-primary bg-primary/20'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
@@ -2374,7 +2374,7 @@ ${encryptionKey.replace('key_', '')}
                             className={cn(
                               'flex flex-col items-center gap-1 rounded-lg border p-2 transition-all',
                               chatFont === font.id
-                                ? 'border-yellow-700 bg-primary/20 dark:border-primary'
+                                ? 'border-primary bg-primary/20'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
@@ -2422,7 +2422,7 @@ ${encryptionKey.replace('key_', '')}
                             className={cn(
                               'cursor-pointer rounded-lg border px-2 py-1.5 text-center text-xs text-content-primary transition-all has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring',
                               readAloudSpeed === speed
-                                ? 'border-yellow-700 bg-primary/20 dark:border-primary'
+                                ? 'border-primary bg-primary/20'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
@@ -4379,7 +4379,7 @@ ${encryptionKey.replace('key_', '')}
                               }}
                               disabled={upgradeLoading}
                               className={cn(
-                                'mt-4 w-full rounded-md bg-tinfoil-oak px-4 py-3 text-sm font-medium text-brand-dark transition-all hover:bg-tinfoil-oak-hover',
+                                'mt-4 w-full rounded-md bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-all hover:bg-primary-hover',
                                 upgradeLoading &&
                                   'cursor-not-allowed opacity-70',
                               )}
@@ -4495,7 +4495,7 @@ ${encryptionKey.replace('key_', '')}
                         </p>
                         <Link
                           href="/signin"
-                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-tinfoil-oak px-4 py-2.5 text-sm font-medium text-brand-dark transition-all hover:bg-tinfoil-oak-hover"
+                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary-hover"
                         >
                           <TfSignIn className="h-4 w-4" aria-hidden="true" />
                           Sign in or sign up

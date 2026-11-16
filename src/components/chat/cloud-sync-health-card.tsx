@@ -67,7 +67,7 @@ export function CloudSyncHealthCard({
           <button
             type="button"
             onClick={onRecoverClick}
-            className="shrink-0 rounded-md bg-orange-500/90 px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-orange-500"
+            className="shrink-0 rounded-md bg-primary px-2.5 py-1.5 font-aeonik text-xs font-medium text-primary-foreground transition-colors hover:bg-primary-hover"
           >
             Recover Key
           </button>

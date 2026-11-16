@@ -105,8 +105,7 @@ describe('SteppedSlider', () => {
               ).toBeNull()
             }
             browserWindow.document.body.innerHTML = container.innerHTML
-            const fill =
-              browserWindow.document.querySelector('.bg-tinfoil-oak')!
+            const fill = browserWindow.document.querySelector('.bg-primary')!
             const computed = browserWindow.getComputedStyle(fill)
 
             expect(computed.animation).toBe(
