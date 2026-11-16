@@ -18,6 +18,7 @@ import React, {
 import {
   canRemoveChatSpacerWithoutJump,
   getChatContentBottomScrollTop,
+  getChatPromptScrollTop,
 } from './chat-scroll'
 import { UnsavedImagesProvider } from './components/unsaved-images-notice'
 import { CONSTANTS } from './constants'
@@ -435,20 +436,10 @@ export function ChatMessages({
     const container = spacerRef.current.closest<HTMLElement>(
       '[data-scroll-container="main"]',
     )
-    const users = container?.querySelectorAll<HTMLElement>(
-      '[data-message-role="user"]',
-    )
-    const lastUser = users?.[users.length - 1]
-    if (!container || !lastUser) return
+    const top = container ? getChatPromptScrollTop(container) : null
+    if (!container || top === null) return
     anchorPendingRef.current = false
-    container.scrollTo({
-      top:
-        container.scrollTop +
-        lastUser.getBoundingClientRect().top -
-        container.getBoundingClientRect().top -
-        CONSTANTS.CHAT_MESSAGE_TOP_GAP_PX,
-      behavior: 'smooth',
-    })
+    container.scrollTo({ top, behavior: 'smooth' })
   }, [showSpacer, messages, mounted])
 
   useLayoutEffect(() => {
