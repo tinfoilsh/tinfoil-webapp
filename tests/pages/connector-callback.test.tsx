@@ -1,3 +1,4 @@
+import { CONNECTOR_SIGN_INS } from '@/constants/storage-keys'
 import { useConnectors } from '@/hooks/use-connectors'
 import ConnectorCallbackPage from '@/pages/connectors/callback'
 import { publish } from '@/services/harness/runtime'
@@ -33,6 +34,8 @@ const session = {
 const SERVER = 'https://mcp.notion.com/mcp'
 const STATE = 'state-started-here'
 const AUTHORIZATION_URL = `https://auth.notion.example/authorize?client_id=x&state=${STATE}&code_challenge=c`
+// The channel the callback page says how a sign-in ended on.
+const SIGN_IN_CHANNEL = 'tinfoil-connector-sign-ins'
 
 const connector = (fields: Partial<Connector> = {}): Connector => ({
   id: 'connector-1',
@@ -57,53 +60,113 @@ function setLocation(path: string) {
 
 const completions = () =>
   client.post.mock.calls.filter(([path]) => path === '/v1/connectors/complete')
+const listings = () =>
+  client.post.mock.calls.filter(([path]) => path === '/v1/connectors/list')
 
-// The sign-in popup this tab opens, which the browser lets it open unless
-// `blocked`.
-let popup: Window | null
+// The popup the browser opens, unless it blocks it, and the sign-ins this
+// tab kept when the popup opened, which the popup's copy holds.
+interface FakePopup {
+  opener: unknown
+  location: { replace: ReturnType<typeof vi.fn> }
+}
+let popup: FakePopup | null
+let keptWhenOpened: string | null
+// The harness has the connector connected once the sign-in completed.
+let completed: boolean
 
 beforeEach(() => {
   routerReplace.mockReset().mockResolvedValue(true)
   toast.mockReset()
+  completed = false
   signIn({ cloud: true, session })
   client.post.mockImplementation(async (path: string) => {
     switch (path) {
       case '/v1/session':
         return structuredClone(session)
       case '/v1/connectors/list':
-        return { connectors: [] }
+        return { connectors: [completed ? CONNECTED : connector()] }
       case '/v1/connectors/add':
         return { connector: connector(), authorizationUrl: AUTHORIZATION_URL }
       case '/v1/connectors/complete':
+        completed = true
         return { connector: CONNECTED }
       default:
         throw new Error(`Unexpected harness request: ${path}`)
     }
   })
-  popup = {} as Window
-  vi.spyOn(window, 'open').mockImplementation(() => popup)
+  popup = { opener: window, location: { replace: vi.fn() } }
+  keptWhenOpened = null
+  vi.spyOn(window, 'open').mockImplementation(() => {
+    keptWhenOpened = sessionStorage.getItem(CONNECTOR_SIGN_INS)
+    return popup as unknown as Window
+  })
 })
 
+const closedProperty = Object.getOwnPropertyDescriptor(window, 'closed')!
 afterEach(() => {
   setLocation('/')
+  Object.defineProperty(window, 'closed', closedProperty)
 })
 
-// Connects Notion from a chat's settings, which starts a sign-in in a popup.
+// Stubs closing this window: a popup closes, a tab does not.
+function closingAsA(kind: 'popup' | 'tab') {
+  return vi.spyOn(window, 'close').mockImplementation(() => {
+    if (kind === 'popup')
+      Object.defineProperty(window, 'closed', {
+        configurable: true,
+        value: true,
+      })
+  })
+}
+
+// Connects Notion from a chat's settings, which starts a sign-in.
 async function connectFromChat() {
   setLocation('/chat/chat-1')
   const { result } = renderHook(() => useConnectors())
   await act(() => result.current.list.add('Notion', SERVER))
-  expect(window.open).toHaveBeenCalledExactlyOnceWith(
-    AUTHORIZATION_URL,
-    expect.any(String),
-    expect.any(String),
-  )
   return result
 }
 
-describe('the connector sign-in callback', () => {
-  it('finishes a sign-in this tab started and returns to where it started', async () => {
+describe('starting a connector sign-in', () => {
+  it('keeps the sign-in, then opens its page in a popup that cannot reach this tab', async () => {
     await connectFromChat()
+
+    expect(window.open).toHaveBeenCalledExactlyOnceWith(
+      '',
+      expect.any(String),
+      expect.any(String),
+    )
+    expect(JSON.parse(keptWhenOpened ?? '[]')).toEqual([
+      expect.objectContaining({
+        state: STATE,
+        connectorId: 'connector-1',
+        returnTo: '/chat/chat-1#settings/connectors',
+      }),
+    ])
+    expect(popup!.opener).toBeNull()
+    expect(popup!.location.replace).toHaveBeenCalledExactlyOnceWith(
+      AUTHORIZATION_URL,
+    )
+  })
+
+  it('opens the sign-in page in the tab when the popup is blocked', async () => {
+    popup = null
+    const assign = vi
+      .spyOn(window.location, 'assign')
+      .mockImplementation(() => {})
+
+    await connectFromChat()
+
+    expect(assign).toHaveBeenCalledExactlyOnceWith(AUTHORIZATION_URL)
+  })
+})
+
+describe('the connector sign-in callback', () => {
+  it('finishes a sign-in in the tab it took, and returns to where it started', async () => {
+    popup = null
+    vi.spyOn(window.location, 'assign').mockImplementation(() => {})
+    await connectFromChat()
+    const close = closingAsA('tab')
     setLocation(
       `/connectors/callback?code=the-code&state=${STATE}&iss=https%3A%2F%2Fauth.notion.example`,
     )
@@ -117,6 +180,7 @@ describe('the connector sign-in callback', () => {
         '/chat/chat-1#settings/connectors',
       ),
     )
+    expect(close).toHaveBeenCalled()
     expect(completions()).toEqual([
       [
         '/v1/connectors/complete',
@@ -132,8 +196,29 @@ describe('the connector sign-in callback', () => {
     ])
   })
 
+  it('finishes a popup’s sign-in, tells the tab that started it, and closes', async () => {
+    const result = await connectFromChat()
+    expect(result.current.connectors).toEqual([connector()])
+    closingAsA('popup')
+    setLocation(`/connectors/callback?code=the-code&state=${STATE}`)
+
+    render(<ConnectorCallbackPage />)
+
+    await waitFor(() => expect(result.current.connectors).toEqual([CONNECTED]))
+    expect(completions()).toEqual([
+      [
+        '/v1/connectors/complete',
+        { key: KEY, id: 'connector-1', code: 'the-code', state: STATE },
+        expect.any(AbortSignal),
+      ],
+    ])
+    expect(routerReplace).not.toHaveBeenCalled()
+    expect(toast).not.toHaveBeenCalled()
+  })
+
   it('refuses a state this tab did not start without asking the harness', async () => {
     await connectFromChat()
+    closingAsA('tab')
     setLocation('/connectors/callback?code=the-code&state=another-state')
 
     render(<ConnectorCallbackPage />)
@@ -147,12 +232,17 @@ describe('the connector sign-in callback', () => {
 
   it('refuses a sign-in the authorization server declined without asking the harness', async () => {
     await connectFromChat()
+    closingAsA('popup')
     setLocation(`/connectors/callback?error=access_denied&state=${STATE}`)
 
     render(<ConnectorCallbackPage />)
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'The sign-in was canceled or refused.',
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          description: 'The sign-in was canceled or refused.',
+        }),
+      ),
     )
     expect(completions()).toEqual([])
   })
@@ -171,65 +261,33 @@ describe('the connector sign-in callback', () => {
     )
     expect(completions()).toEqual([])
   })
-
-  it('hands the answer to the page that opened the popup', async () => {
-    const opener = { location: window.location, postMessage: vi.fn() }
-    vi.spyOn(window, 'opener', 'get').mockReturnValue(opener)
-    const close = vi.spyOn(window, 'close').mockImplementation(() => {})
-    setLocation(`/connectors/callback?code=the-code&state=${STATE}`)
-
-    render(<ConnectorCallbackPage />)
-
-    await waitFor(() => expect(close).toHaveBeenCalled())
-    expect(opener.postMessage).toHaveBeenCalledExactlyOnceWith(
-      {
-        type: 'tinfoil-connector-callback',
-        code: 'the-code',
-        state: STATE,
-      },
-      window.location.origin,
-    )
-    expect(window.location.search).toBe('')
-    expect(completions()).toEqual([])
-  })
 })
 
-describe('a sign-in popup', () => {
-  const answer = (source: unknown, data: Record<string, unknown>) =>
-    window.dispatchEvent(
-      new MessageEvent('message', {
-        data: { type: 'tinfoil-connector-callback', ...data },
-        origin: window.location.origin,
-        source: source as Window,
-      }),
+describe('the tab that started a sign-in', () => {
+  // Says on the channel how sign-ins ended, in order, as callback pages do.
+  function signInsEnded(...ended: [connectorId: string, status: string][]) {
+    const channel = new BroadcastChannel(SIGN_IN_CHANNEL)
+    for (const [connectorId, status] of ended)
+      channel.postMessage({ type: 'connector-sign-in', connectorId, status })
+    channel.close()
+  }
+
+  it('shows how its own sign-in ended, and ignores others', async () => {
+    const result = await connectFromChat()
+    const listed = listings().length
+
+    signInsEnded(
+      ['connector-2', 'refused'],
+      ['connector-2', 'completed'],
+      ['connector-1', 'failed'],
     )
 
-  it('finishes the sign-in with what only the popup it opened sends back', async () => {
-    const result = await connectFromChat()
-
-    // Another window of this origin cannot answer for the popup.
-    answer(window, { code: 'forged', state: STATE })
-    expect(completions()).toEqual([])
-
-    answer(popup, { code: 'the-code', state: STATE })
-    await waitFor(() => expect(result.current.connectors).toEqual([CONNECTED]))
-    expect(completions()).toEqual([
-      [
-        '/v1/connectors/complete',
-        { key: KEY, id: 'connector-1', code: 'the-code', state: STATE },
-        expect.any(AbortSignal),
-      ],
-    ])
-  })
-
-  it('opens the sign-in page in the tab when the popup is blocked', async () => {
-    popup = null
-    const assign = vi
-      .spyOn(window.location, 'assign')
-      .mockImplementation(() => {})
-
-    await connectFromChat()
-
-    expect(assign).toHaveBeenCalledExactlyOnceWith(AUTHORIZATION_URL)
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ title: 'Sign-in did not finish' }),
+      ),
+    )
+    expect(listings()).toHaveLength(listed)
+    expect(result.current.connectors).toEqual([connector()])
   })
 })

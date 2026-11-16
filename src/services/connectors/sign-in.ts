@@ -3,24 +3,41 @@ import { completeConnector } from '@/services/harness/connectors'
 import { ERROR_ACTIONS, ERROR_CODES } from '@/services/harness/protocol'
 import type { HarnessAPI } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
-import type { Connector } from '@/services/harness/types'
 import { sanitizeRelativeRedirect } from '@/utils/redirect-url'
 
 // Signing in to a connector. The harness starts a sign-in and names the
 // authorization server's page; this tab keeps which connector the sign-in is
-// for, under the state the page will return, and opens the page in a popup,
-// or in the tab itself when the popup is blocked. The authorization server
-// sends the user back to the callback page with a code and that state,
-// which the harness trades for tokens it keeps. The code only passes through
-// the browser. The callback page's address is the one the app's client
-// metadata document (public/oauth/client-metadata.json) names.
+// for, under the state the page will return, and opens the page in a popup
+// that cannot reach this tab, or in the tab itself when the popup is
+// blocked. The authorization server sends the user back to the callback
+// page with a code and that state. The callback page finishes the sign-in:
+// the harness trades the code for tokens it keeps, so the code only passes
+// through the browser. A popup's callback page then tells the tab that
+// started the sign-in how it ended. The callback page's address is the one
+// the app's client metadata document (public/oauth/client-metadata.json)
+// names.
 
-// The type of the message a sign-in popup sends the page that opened it.
-const CALLBACK_MESSAGE = 'tinfoil-connector-callback'
 // How long a sign-in started in this tab waits for the user to come back.
 const SIGN_IN_TTL_MS = 30 * 60_000
 const POPUP_NAME = 'tinfoil-connector-sign-in'
 const POPUP_FEATURES = 'popup,width=520,height=720'
+// The channel a callback page tells this app's tabs how a sign-in ended on,
+// and the type of its messages.
+const SIGN_IN_CHANNEL = 'tinfoil-connector-sign-ins'
+const SIGN_IN_MESSAGE = 'connector-sign-in'
+
+// How a sign-in ended: the harness finished it, the authorization server
+// refused it or the user canceled it, or finishing it failed.
+export type SignInStatus = 'completed' | 'refused' | 'failed'
+const STATUSES: readonly string[] = ['completed', 'refused', 'failed']
+
+// What the callback page tells the tab that started a sign-in. It never
+// holds the code or the state.
+interface SignInEnded {
+  type: typeof SIGN_IN_MESSAGE
+  connectorId: string
+  status: SignInStatus
+}
 
 interface PendingSignIn {
   state: string
@@ -95,18 +112,6 @@ export function callbackAnswer(search: string): CallbackAnswer | null {
   return Object.keys(answer).length ? answer : null
 }
 
-// A sign-in page's answer as a popup sent it, if the message is one.
-function messageAnswer(data: unknown): CallbackAnswer | null {
-  if (typeof data !== 'object' || data === null) return null
-  const message = data as Record<string, unknown>
-  if (message.type !== CALLBACK_MESSAGE) return null
-  const answer: CallbackAnswer = {}
-  for (const field of ANSWER_FIELDS)
-    if (typeof message[field] === 'string' && message[field])
-      answer[field] = message[field]
-  return answer
-}
-
 const signInRefused = (message: string) =>
   new HarnessError({
     code: ERROR_CODES.connectorSignInFailed,
@@ -114,14 +119,17 @@ const signInRefused = (message: string) =>
     message,
   })
 
-// Sends the user to the page that signs them in to a connector: in a popup
-// that answers this page, or in this tab when the browser blocks the popup.
-// Returns the popup, or null once the tab is on its way.
+// Sends the user to the page that signs them in to a connector. The sign-in
+// is kept first, so a popup's copy of this tab's sign-ins holds it. The
+// popup opens blank, so a blocked one is told apart, and loses its opener
+// before it loads the authorization server's page, which could otherwise
+// navigate this tab. A blocked popup takes this tab to the page instead.
+// Says where the page opened.
 export function openSignIn(
   authorizationUrl: string,
   connectorId: string,
   returnTo: string,
-): Window | null {
+): 'popup' | 'tab' {
   let page: URL
   try {
     page = new URL(authorizationUrl)
@@ -135,65 +143,50 @@ export function openSignIn(
     ...pendingSignIns().filter((entry) => entry.state !== state),
     { state, connectorId, returnTo, startedAt: Date.now() },
   ])
-  const popup = window.open(page.href, POPUP_NAME, POPUP_FEATURES)
-  if (popup) return popup
-  window.location.assign(page.href)
-  return null
+  const popup = window.open('', POPUP_NAME, POPUP_FEATURES)
+  if (!popup) {
+    window.location.assign(page.href)
+    return 'tab'
+  }
+  popup.opener = null
+  popup.location.replace(page.href)
+  return 'popup'
 }
 
-// Calls `answered` with what the popup this page opened sends back. Only a
-// message from that popup, on this app's origin, counts. Returns what stops
-// waiting.
-export function awaitPopupAnswer(
-  popup: Window,
-  answered: (answer: CallbackAnswer) => void,
+// Calls `ended` with each sign-in a callback page in another window says
+// ended. Returns what stops listening.
+export function listenForSignIns(
+  ended: (message: Omit<SignInEnded, 'type'>) => void,
 ): () => void {
-  const listener = (event: MessageEvent) => {
-    if (event.origin !== window.location.origin || event.source !== popup)
-      return
-    const answer = messageAnswer(event.data)
-    if (!answer) return
-    stop()
-    answered(answer)
+  const channel = new BroadcastChannel(SIGN_IN_CHANNEL)
+  channel.onmessage = (event: MessageEvent) => {
+    const data: unknown = event.data
+    if (typeof data !== 'object' || data === null) return
+    const message = data as Record<string, unknown>
+    if (
+      message.type === SIGN_IN_MESSAGE &&
+      typeof message.connectorId === 'string' &&
+      typeof message.status === 'string' &&
+      STATUSES.includes(message.status)
+    )
+      ended({
+        connectorId: message.connectorId,
+        status: message.status as SignInStatus,
+      })
   }
-  const stop = () => window.removeEventListener('message', listener)
-  window.addEventListener('message', listener)
-  return stop
-}
-
-// The page that opened this window, when it is this app's.
-function appOpener(): Window | null {
-  const opener: unknown = window.opener
-  if (!opener || opener === window) return null
-  try {
-    return (opener as Window).location.origin === window.location.origin
-      ? (opener as Window)
-      : null
-  } catch {
-    // An opener on another origin cannot be read.
-    return null
-  }
-}
-
-// Hands a sign-in page's answer to the page of this app that opened the
-// sign-in popup, if one did. Says whether it did.
-export function answerOpener(answer: CallbackAnswer): boolean {
-  const opener = appOpener()
-  if (!opener) return false
-  opener.postMessage(
-    { type: CALLBACK_MESSAGE, ...answer },
-    window.location.origin,
-  )
-  return true
+  return () => channel.close()
 }
 
 export type SignInOutcome =
-  // The harness finished the sign-in.
-  | { status: 'completed'; connector: Connector; returnTo: string | null }
-  // The authorization server refused it, or the user canceled it.
-  | { status: 'refused'; returnTo: string | null }
   // No sign-in this tab started returns this state.
   | { status: 'unknown' }
+  | {
+      status: SignInStatus
+      connectorId: string
+      returnTo: string | null
+      // Why finishing the sign-in failed.
+      cause?: unknown
+    }
 
 // Finishes a sign-in this tab started, with what the user came back from
 // its page with. An answer to a sign-in this tab did not start, or one the
@@ -204,13 +197,32 @@ export async function finishSignIn(
 ): Promise<SignInOutcome> {
   const pending = state ? takeSignIn(state) : undefined
   if (!pending) return { status: 'unknown' }
-  const returnTo = sanitizeRelativeRedirect(pending.returnTo)
-  if (error || !code) return { status: 'refused', returnTo }
-  const { connector } = await completeConnector(api, {
-    id: pending.connectorId,
-    code,
-    state: pending.state,
-    ...(iss ? { iss } : {}),
-  })
-  return { status: 'completed', connector, returnTo }
+  const ended = {
+    connectorId: pending.connectorId,
+    returnTo: sanitizeRelativeRedirect(pending.returnTo),
+  }
+  if (error || !code) return { status: 'refused', ...ended }
+  try {
+    await completeConnector(api, {
+      id: pending.connectorId,
+      code,
+      state: pending.state,
+      ...(iss ? { iss } : {}),
+    })
+  } catch (cause) {
+    return { status: 'failed', ...ended, cause }
+  }
+  return { status: 'completed', ...ended }
+}
+
+// Tells this app's other tabs how a sign-in ended, so the one that started
+// it shows it.
+export function announceSignIn({
+  connectorId,
+  status,
+}: Omit<SignInEnded, 'type'>) {
+  const channel = new BroadcastChannel(SIGN_IN_CHANNEL)
+  const message: SignInEnded = { type: SIGN_IN_MESSAGE, connectorId, status }
+  channel.postMessage(message)
+  channel.close()
 }

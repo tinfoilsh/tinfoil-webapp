@@ -1,10 +1,9 @@
 import type { SettingsTab } from '@/constants/settings-tabs'
 import { toast } from '@/hooks/use-toast'
 import {
-  awaitPopupAnswer,
-  finishSignIn,
+  listenForSignIns,
   openSignIn,
-  type CallbackAnswer,
+  type SignInStatus,
 } from '@/services/connectors/sign-in'
 import {
   addConnector,
@@ -77,8 +76,10 @@ export class ConnectorList {
   private listing: Promise<void> | null = null
   // The storage mode and key the list was last read under.
   private scope?: string
-  // What stops waiting for each connector's sign-in popup.
-  private readonly popups = new Map<string, () => void>()
+  // The connectors whose sign-in this tab opened a popup for, whose
+  // callback page says how it ended, and what stops listening for that.
+  private readonly awaited = new Set<string>()
+  private stopListening?: () => void
 
   constructor(private readonly api: HarnessAPI) {}
 
@@ -171,41 +172,50 @@ export class ConnectorList {
 
   private signInIfAsked({ connector, authorizationUrl }: ConnectorAnswer) {
     if (!authorizationUrl) return
-    const popup = openSignIn(authorizationUrl, connector.id, returnAddress())
-    if (!popup) return
-    this.popups.get(connector.id)?.()
-    this.popups.set(
-      connector.id,
-      awaitPopupAnswer(popup, (answer) => {
-        this.popups.delete(connector.id)
-        void this.finishSignIn(answer)
-      }),
-    )
+    if (openSignIn(authorizationUrl, connector.id, returnAddress()) !== 'popup')
+      return
+    this.awaited.add(connector.id)
+    this.listen()
   }
 
-  private async finishSignIn(answer: CallbackAnswer) {
-    let failure: string
-    try {
-      const outcome = await finishSignIn(this.api, answer)
-      if (outcome.status === 'completed') {
-        this.show(outcome.connector)
-        return
-      }
-      failure =
-        outcome.status === 'refused'
-          ? 'The sign-in was canceled or refused.'
-          : 'This sign-in was not started here. Try signing in again.'
-    } catch (cause) {
-      if (this.api.lifetime.signal.aborted) return
-      logError('Failed to finish signing in to a connector', cause, {
-        component: 'ConnectorList',
-        action: 'finishSignIn',
-      })
-      failure = describeConnectorError(cause)
+  // Listens for how the sign-ins of this tab's popups end, while it awaits
+  // any, until the account changes.
+  private listen() {
+    const { signal } = this.api.lifetime
+    if (this.stopListening || signal.aborted) return
+    const stop = listenForSignIns(({ connectorId, status }) =>
+      this.signInEnded(connectorId, status),
+    )
+    const close = () => {
+      stop()
+      signal.removeEventListener('abort', close)
+      this.stopListening = undefined
+    }
+    signal.addEventListener('abort', close)
+    this.stopListening = close
+  }
+
+  private stopAwaiting(connectorId: string) {
+    this.awaited.delete(connectorId)
+    if (!this.awaited.size) this.stopListening?.()
+  }
+
+  // A sign-in this tab awaits ended in its popup, which finished it: the
+  // list shows the connector as the harness now has it, or the user is told
+  // why the sign-in did not finish.
+  private signInEnded(connectorId: string, status: SignInStatus) {
+    if (!this.awaited.has(connectorId)) return
+    this.stopAwaiting(connectorId)
+    if (status === 'completed') {
+      void this.refresh()
+      return
     }
     toast({
       title: 'Sign-in did not finish',
-      description: failure,
+      description:
+        status === 'refused'
+          ? 'The sign-in was canceled or refused.'
+          : 'Try signing in again.',
       variant: 'destructive',
     })
   }
@@ -234,8 +244,7 @@ export class ConnectorList {
 
   async remove(id: string) {
     await deleteConnector(this.api, id)
-    this.popups.get(id)?.()
-    this.popups.delete(id)
+    this.stopAwaiting(id)
     this.generation++
     this.listing = null
     this.set({

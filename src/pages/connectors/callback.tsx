@@ -1,6 +1,6 @@
 import { LogoLoading } from '@/components/ui/logo-loading'
 import {
-  answerOpener,
+  announceSignIn,
   callbackAnswer,
   finishSignIn,
   type CallbackAnswer,
@@ -18,14 +18,12 @@ const CLOUD_SYNC_RETURN = '/#settings/cloud-sync'
 
 type Progress =
   | { status: 'finishing' }
-  // The answer went to the page that opened this sign-in window.
-  | { status: 'handed' }
   | { status: 'failed'; message: string; returnTo: string }
 
 // Where an authorization server sends the user back after they sign in to a
-// connector. In a popup, the answer goes to the page that opened it, which
-// finishes the sign-in; otherwise this page finishes it and returns to where
-// the sign-in started.
+// connector. This page finishes the sign-in and tells the tab that started
+// it how it ended. A popup then closes; the tab the sign-in took returns to
+// where it started.
 export default function ConnectorCallbackPage() {
   const router = useRouter()
   const { api, keyLocked, profileReady } = useHarness()
@@ -54,12 +52,6 @@ export default function ConnectorCallbackPage() {
       fail('There is no sign-in to finish here.')
       return
     }
-    if (answerOpener(answer)) {
-      started.current = true
-      setProgress({ status: 'handed' })
-      window.close()
-      return
-    }
     if (!api.userId) {
       fail('Sign in to Tinfoil Chat, then connect again.')
       return
@@ -75,28 +67,32 @@ export default function ConnectorCallbackPage() {
     if (!profileReady) return
     started.current = true
     void (async () => {
-      try {
-        const outcome = await finishSignIn(api, answer)
-        if (outcome.status === 'completed') {
-          void router.replace(outcome.returnTo ?? SETTINGS_RETURN)
-          return
-        }
-        if (outcome.status === 'refused')
-          fail(
-            'The sign-in was canceled or refused.',
-            outcome.returnTo ?? SETTINGS_RETURN,
-          )
-        else
-          fail(
-            'This sign-in was not started in this tab. Start it again from Settings.',
-          )
-      } catch (cause) {
-        logError('Failed to finish signing in to a connector', cause, {
+      const outcome = await finishSignIn(api, answer)
+      if (outcome.status === 'unknown') {
+        fail(
+          'This sign-in was not started in this tab. Start it again from Settings.',
+        )
+        return
+      }
+      const { connectorId, status, returnTo } = outcome
+      if (status === 'failed')
+        logError('Failed to finish signing in to a connector', outcome.cause, {
           component: 'ConnectorCallbackPage',
           action: 'finishSignIn',
         })
-        fail(describeConnectorError(cause))
-      }
+      announceSignIn({ connectorId, status })
+      // Only a popup closes.
+      window.close()
+      if (window.closed) return
+      if (status === 'completed')
+        void router.replace(returnTo ?? SETTINGS_RETURN)
+      else
+        fail(
+          status === 'refused'
+            ? 'The sign-in was canceled or refused.'
+            : describeConnectorError(outcome.cause),
+          returnTo ?? SETTINGS_RETURN,
+        )
     })()
   }, [answer, api, keyLocked, profileReady, router])
 
@@ -110,27 +106,18 @@ export default function ConnectorCallbackPage() {
     <main className="flex h-screen items-center justify-center bg-surface-chat-background p-8">
       <div className="max-w-sm text-center">
         <h1 className="font-aeonik text-lg font-semibold text-content-primary">
-          {progress.status === 'handed'
-            ? 'Signed in'
-            : 'Could not finish signing in'}
+          Could not finish signing in
         </h1>
-        <p
-          role={progress.status === 'failed' ? 'alert' : undefined}
-          className="mt-2 text-sm text-content-secondary"
-        >
-          {progress.status === 'handed'
-            ? 'You can close this window.'
-            : progress.message}
+        <p role="alert" className="mt-2 text-sm text-content-secondary">
+          {progress.message}
         </p>
-        {progress.status === 'failed' && (
-          <Link
-            href={progress.returnTo}
-            replace
-            className="mt-4 inline-block rounded-lg bg-tinfoil-oak px-4 py-2 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover"
-          >
-            Back to Tinfoil Chat
-          </Link>
-        )}
+        <Link
+          href={progress.returnTo}
+          replace
+          className="mt-4 inline-block rounded-lg bg-tinfoil-oak px-4 py-2 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover"
+        >
+          Back to Tinfoil Chat
+        </Link>
       </div>
     </main>
   )
