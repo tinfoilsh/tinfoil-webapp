@@ -26,7 +26,7 @@ type Progress =
 // where it started.
 export default function ConnectorCallbackPage() {
   const router = useRouter()
-  const { api, keyLocked, profileReady } = useHarness()
+  const { api, keyLocked, profileReady, error } = useHarness()
   // undefined until the address is read; null when it holds no answer.
   const [answer, setAnswer] = useState<CallbackAnswer | null>()
   const [progress, setProgress] = useState<Progress>({ status: 'finishing' })
@@ -63,9 +63,20 @@ export default function ConnectorCallbackPage() {
       )
       return
     }
-    // The account's settings load once its key is unlocked.
-    if (!profileReady) return
+    // The account's settings load once its key is unlocked. While they
+    // cannot, the user can go back; the sign-in goes on if they load.
+    if (!profileReady) {
+      if (error)
+        setProgress({
+          status: 'failed',
+          message:
+            'Your account could not be loaded. Check your connection, then sign in to the connector again from Settings.',
+          returnTo: SETTINGS_RETURN,
+        })
+      return
+    }
     started.current = true
+    setProgress({ status: 'finishing' })
     void (async () => {
       const outcome = await finishSignIn(api, answer)
       if (outcome.status === 'unknown') {
@@ -94,7 +105,7 @@ export default function ConnectorCallbackPage() {
           returnTo ?? SETTINGS_RETURN,
         )
     })()
-  }, [answer, api, keyLocked, profileReady, router])
+  }, [answer, api, keyLocked, profileReady, error, router])
 
   if (progress.status === 'finishing')
     return (

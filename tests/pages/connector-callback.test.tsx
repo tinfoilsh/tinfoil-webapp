@@ -276,6 +276,43 @@ describe('the connector sign-in callback', () => {
     )
     expect(completions()).toEqual([])
   })
+
+  it('offers a way back while the account cannot load, and finishes once it does', async () => {
+    popup = null
+    vi.spyOn(window.location, 'assign').mockImplementation(() => {})
+    await connectFromChat()
+    closingAsA('tab')
+    publish({
+      profileReady: false,
+      error: 'The chat service could not be reached.',
+    })
+    setLocation(`/connectors/callback?code=the-code&state=${STATE}`)
+
+    render(<ConnectorCallbackPage />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Your account could not be loaded.',
+    )
+    expect(
+      screen.getByRole('link', { name: 'Back to Tinfoil Chat' }),
+    ).toHaveAttribute('href', '/#settings/connectors')
+    expect(completions()).toEqual([])
+
+    act(() => publish({ profileReady: true, error: undefined }))
+
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledExactlyOnceWith(
+        '/chat/chat-1#settings/connectors',
+      ),
+    )
+    expect(completions()).toEqual([
+      [
+        '/v1/connectors/complete',
+        { key: KEY, id: 'connector-1', code: 'the-code', state: STATE },
+        expect.any(AbortSignal),
+      ],
+    ])
+  })
 })
 
 describe('the tab that started a sign-in', () => {
