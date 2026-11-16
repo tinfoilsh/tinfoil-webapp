@@ -965,9 +965,12 @@ export function SettingsModal({
     activeTab === 'safeguards' ||
     activeTab === 'connectors'
   // The Connectors tab shows only while the session offers connectors, which
-  // is known once the session loads, as when a sign-in returns to the tab.
+  // is known once the session loads, as when a sign-in returns to the tab,
+  // or once it fails to.
   const unofferedTab =
-    activeTab === 'connectors' && !!session && !connectorsOffered
+    activeTab === 'connectors' &&
+    (!!session || !!sessionError) &&
+    !connectorsOffered
   useEffect(() => {
     if ((!isSignedIn && signedInOnlyTab) || unofferedTab) {
       setActiveTab('account')

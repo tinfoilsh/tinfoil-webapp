@@ -960,4 +960,12 @@ describe('the Connectors tab', () => {
 
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
   })
+
+  it('falls back to Account when the session cannot load', () => {
+    openWhileLoading()
+
+    act(() => publish({ error: 'The chat service is unreachable' }))
+
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
+  })
 })
