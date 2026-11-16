@@ -44,10 +44,12 @@ export const CONSTANTS = {
   // Sidebar widths
   CHAT_SIDEBAR_WIDTH_PX: 300,
   CHAT_SIDEBAR_COLLAPSED_WIDTH_PX: 48,
+  // The chat sidebar floats this far from the window edges and from the chat.
+  CHAT_SIDEBAR_INSET_PX: 8,
   MOBILE_SIDEBAR_WIDTH: '85vw',
   // Sidebar geometry and the adjacent chat area share one transition.
   SIDEBAR_LAYOUT_TRANSITION_CLASS_NAME:
-    'transition-[transform,left,right] duration-200 ease-in-out motion-reduce:transition-none',
+    'transition-[transform,left,right,box-shadow] duration-200 ease-in-out motion-reduce:transition-none',
   // How long the dimmed "forking" overlay stays up after the fork lands
   // so a fast fork still reads as an action instead of a flicker.
   FORK_OVERLAY_MIN_VISIBLE_MS: 600,

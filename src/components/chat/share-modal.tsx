@@ -23,6 +23,7 @@ import { PiSpinner } from 'react-icons/pi'
 import { Card, CardContent } from '../ui/card'
 import { CONSTANTS } from './constants'
 import type { LoadDocumentText } from './document-text-context'
+import { SIDEBAR_OPEN_OFFSET_PX } from './sidebar-layout'
 import type { Message } from './types'
 
 type ShareModalProps = {
@@ -406,7 +407,7 @@ function ShareModalContent({
             : ''
 
   // Calculate the positioning to center within the chat area
-  const leftOffset = isSidebarOpen ? CONSTANTS.CHAT_SIDEBAR_WIDTH_PX : 0
+  const leftOffset = isSidebarOpen ? SIDEBAR_OPEN_OFFSET_PX : 0
   const rightOffset = isRightSidebarOpen
     ? CONSTANTS.SETTINGS_SIDEBAR_WIDTH_PX
     : 0

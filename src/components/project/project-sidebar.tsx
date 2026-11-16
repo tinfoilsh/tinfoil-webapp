@@ -20,7 +20,6 @@ import { TypingAnimation } from '@/components/chat/typing-animation'
 import { uploadErrorMessage } from '@/components/chat/upload-error'
 import { useFavoriteDropTarget } from '@/components/chat/use-favorite-drop-target'
 import { Link } from '@/components/link'
-import { SidebarPatternEdge } from '@/components/ui/sidebar-pattern-edge'
 import { cn } from '@/components/ui/utils'
 import {
   getProjectColor,
@@ -608,7 +607,7 @@ export const ProjectSidebar = memo(function ProjectSidebar({
       {!isMobile && (
         <SidebarRail
           isOpen={isOpen}
-          tintStyle={sidebarTintStyle}
+          style={sidebarTintStyle}
           aria-label="Project navigation"
         >
           {/* Folder icon - shows expand icon on hover */}
@@ -699,7 +698,6 @@ export const ProjectSidebar = memo(function ProjectSidebar({
         style={sidebarTintStyle}
         onDismiss={() => setIsOpen(false)}
       >
-        <SidebarPatternEdge isDarkMode={isDarkMode} />
         {/* Header: the editable project title takes the logo's slot */}
         <div className="flex h-16 flex-none items-center justify-between gap-2 border-b border-border-subtle px-4 py-3">
           <div className="flex min-w-0 flex-1 flex-col">

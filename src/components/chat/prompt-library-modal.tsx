@@ -38,6 +38,7 @@ import {
   type PresetSettingsSummary,
 } from './prompts/preset-settings'
 import type { PromptPreset } from './prompts/types'
+import { SIDEBAR_OPEN_OFFSET_PX } from './sidebar-layout'
 
 type PromptLibraryModalProps = {
   isOpen: boolean
@@ -112,7 +113,7 @@ export function PromptLibraryModal({
 
   if (!isOpen) return null
 
-  const leftOffset = isSidebarOpen ? CONSTANTS.CHAT_SIDEBAR_WIDTH_PX : 0
+  const leftOffset = isSidebarOpen ? SIDEBAR_OPEN_OFFSET_PX : 0
   const rightOffset = isRightSidebarOpen
     ? CONSTANTS.SETTINGS_SIDEBAR_WIDTH_PX
     : 0
