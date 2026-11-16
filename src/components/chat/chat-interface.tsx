@@ -1651,6 +1651,9 @@ export function ChatInterface({
         window.removeEventListener('orientationchange', update)
         vv.removeEventListener('resize', update)
         vv.removeEventListener('scroll', update)
+        // Nothing follows the visual viewport from here on, so the next app
+        // shell (the loading screen) must not inherit a keyboard's offset.
+        root.style.removeProperty('--app-top')
       }
     }
 

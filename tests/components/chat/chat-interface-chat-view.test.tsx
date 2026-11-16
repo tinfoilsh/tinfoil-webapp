@@ -473,7 +473,9 @@ async function openTripChatScrolledToEnd() {
   vi.stubGlobal('visualViewport', viewport)
   signIn()
   await localThreadStore('device').add(TRIP)
-  render(view({ initialChatId: TRIP.id, isLocalChatUrl: true }))
+  const { unmount } = render(
+    view({ initialChatId: TRIP.id, isLocalChatUrl: true }),
+  )
   await screen.findByText('Where should we go?')
   const conversation = screen.getByRole('main', { name: 'Conversation' })
   const appHeight = () =>
@@ -497,6 +499,7 @@ async function openTripChatScrolledToEnd() {
   return {
     conversation,
     end,
+    unmount,
     resizeViewport(next: {
       height: number
       scale?: number
@@ -565,6 +568,17 @@ it('moves the app shell with the part of the page iOS shows above its keyboard',
 
   slideViewport(0)
   expect(appShellTop()).toBe('0px')
+})
+
+it('leaves no keyboard offset behind for the next app shell when the chat goes away', async () => {
+  const { slideViewport, unmount } = await openTripChatScrolledToEnd()
+  const slid = KEYBOARD_CLOSED_HEIGHT_PX - KEYBOARD_OPEN_HEIGHT_PX
+  slideViewport(slid)
+  expect(appShellTop()).toBe(`${slid}px`)
+
+  unmount()
+
+  expect(appShellTop()).toBe('')
 })
 
 it('keeps the base tab title when chat titles are turned off', async () => {
