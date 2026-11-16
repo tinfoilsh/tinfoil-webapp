@@ -1,56 +1,6895 @@
 [
   {
+    "id": "canva",
+    "name": "Canva",
+    "url": "https://mcp.canva.com/mcp",
+    "vendor": "Canva",
+    "website": "https://canva.com/",
+    "description": "",
+    "categories": ["Creative", "Education"]
+  },
+  {
     "id": "notion",
     "name": "Notion",
     "url": "https://mcp.notion.com/mcp",
     "vendor": "Notion",
-    "website": "https://notion.com",
-    "description": "Search, read, and update pages and databases in your Notion workspace.",
-    "categories": ["Productivity", "Documents"]
+    "website": "https://notion.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "atlassian",
+    "name": "Atlassian MCP",
+    "url": "https://mcp.atlassian.com/v2/mcp",
+    "vendor": "Atlassian",
+    "website": "https://atlassian.com/",
+    "description": "",
+    "categories": ["Productivity"]
   },
   {
     "id": "linear",
     "name": "Linear",
     "url": "https://mcp.linear.app/mcp",
-    "vendor": "Linear",
-    "website": "https://linear.app",
-    "description": "Find, create, and update issues, projects, and comments in Linear.",
-    "categories": ["Project management", "Developer tools"]
+    "vendor": "Linear (Linear Orbit, Inc.)",
+    "website": "https://linear.app/",
+    "description": "",
+    "categories": ["Productivity"]
   },
   {
-    "id": "sentry",
-    "name": "Sentry",
-    "url": "https://mcp.sentry.dev/mcp",
-    "vendor": "Sentry",
-    "website": "https://sentry.io",
-    "description": "Look up errors, issues, and releases in your Sentry projects.",
-    "categories": ["Developer tools", "Monitoring"]
+    "id": "monday",
+    "name": "monday.com",
+    "url": "https://mcp.monday.com/mcp",
+    "vendor": "monday.com",
+    "website": "https://monday.com/",
+    "description": "",
+    "categories": [
+      "Creative",
+      "Developer tools",
+      "Other",
+      "Productivity",
+      "Sales & marketing"
+    ]
   },
   {
-    "id": "hugging-face",
-    "name": "Hugging Face",
-    "url": "https://huggingface.co/mcp",
-    "vendor": "Hugging Face",
-    "website": "https://huggingface.co",
-    "description": "Search models, datasets, Spaces, and papers on the Hugging Face Hub.",
-    "categories": ["AI", "Developer tools"]
+    "id": "supabase",
+    "name": "Supabase",
+    "url": "https://mcp.supabase.com/mcp",
+    "vendor": "Supabase",
+    "website": "https://supabase.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools"]
   },
   {
-    "id": "context7",
-    "name": "Context7",
-    "url": "https://mcp.context7.com/mcp",
-    "vendor": "Upstash",
-    "website": "https://context7.com",
-    "description": "Fetch up-to-date documentation and code examples for libraries.",
-    "categories": ["Developer tools", "Documentation"]
+    "id": "miro",
+    "name": "Miro",
+    "url": "https://mcp.miro.com/",
+    "vendor": "Miro",
+    "website": "https://miro.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Creative",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "shopify",
+    "name": "Shopify",
+    "url": "https://setup.shopify.com/mcp",
+    "vendor": "Shopify",
+    "website": "https://www.shopify.com/",
+    "description": "",
+    "categories": ["Commerce & shopping", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "vercel",
+    "name": "Vercel",
+    "url": "https://mcp.vercel.com/",
+    "vendor": "Vercel",
+    "website": "https://vercel.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "granola",
+    "name": "Granola",
+    "url": "https://mcp.granola.ai/mcp",
+    "vendor": "Granola",
+    "website": "https://www.granola.ai/",
+    "description": "",
+    "categories": ["Communication", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "gamma",
+    "name": "Gamma",
+    "url": "https://mcp.gamma.app/mcp",
+    "vendor": "Gamma",
+    "website": "https://gamma.app/about",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "wispr-flow",
+    "name": "Wispr Flow",
+    "url": "https://api.wisprflow.ai/connect/mcp",
+    "vendor": "Wispr Flow",
+    "website": "https://wisprflow.ai/",
+    "description": "",
+    "categories": ["Communication", "Productivity"]
   },
   {
     "id": "microsoft-learn",
     "name": "Microsoft Learn",
     "url": "https://learn.microsoft.com/api/mcp",
     "vendor": "Microsoft",
-    "website": "https://learn.microsoft.com",
-    "description": "Search and read official Microsoft documentation.",
-    "categories": ["Documentation"]
+    "website": "https://learn.microsoft.com/en-us/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "vidiq",
+    "name": "vidIQ",
+    "url": "https://mcp.vidiq.com/mcp",
+    "vendor": "vidIQ",
+    "website": "https://vidiq.com/",
+    "description": "",
+    "categories": ["Creative", "Data & analytics", "Media & entertainment"]
+  },
+  {
+    "id": "airtable",
+    "name": "Airtable",
+    "url": "https://mcp.airtable.com/mcp",
+    "vendor": "Airtable",
+    "website": "https://airtable.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "lucid",
+    "name": "Lucid",
+    "url": "https://mcp.lucid.app/mcp",
+    "vendor": "Lucid Software",
+    "website": "https://lucid.co/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "datadog",
+    "name": "Datadog",
+    "url": "https://mcp.datadoghq.com/v1/mcp?toolsets=all,visualizations",
+    "vendor": "Datadog",
+    "website": "https://www.datadoghq.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "windsor-ai",
+    "name": "Windsor.ai",
+    "url": "https://mcp.windsor.ai/",
+    "vendor": "Windsor.ai",
+    "website": "https://windsor.ai/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Media & entertainment",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "sentry",
+    "name": "Sentry",
+    "url": "https://mcp.sentry.dev/mcp",
+    "vendor": "Sentry.io",
+    "website": "https://sentry.io/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "apollo",
+    "name": "Apollo.io",
+    "url": "https://mcp.apollo.io/mcp",
+    "vendor": "Apollo.io",
+    "website": "https://www.apollo.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "stripe",
+    "name": "Stripe",
+    "url": "https://mcp.stripe.com/",
+    "vendor": "Stripe",
+    "website": "https://stripe.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "lovable",
+    "name": "Lovable",
+    "url": "https://mcp.lovable.dev/",
+    "vendor": "Lovable",
+    "website": "https://www.lovable.dev/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "metricool-social-media-management",
+    "name": "Metricool Social Media Management",
+    "url": "https://ai.metricool.com/mcp",
+    "vendor": "Metricool",
+    "website": "https://metricool.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Communication",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "cloudflare",
+    "name": "Cloudflare Developer Platform",
+    "url": "https://bindings.mcp.cloudflare.com/mcp",
+    "vendor": "Cloudflare",
+    "website": "https://cloudflare.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "consensus",
+    "name": "Consensus",
+    "url": "https://mcp.consensus.app/mcp",
+    "vendor": "Consensus",
+    "website": "https://consensus.app/",
+    "description": "",
+    "categories": ["Data & analytics", "Health & life sciences"]
+  },
+  {
+    "id": "todoist",
+    "name": "Todoist",
+    "url": "https://ai.todoist.net/mcp",
+    "vendor": "Doist",
+    "website": "https://todoist.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "supermetrics",
+    "name": "Supermetrics Marketing Analytics",
+    "url": "https://mcp.supermetrics.com/mcp",
+    "vendor": "Supermetrics",
+    "website": "https://supermetrics.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "wordpress-com",
+    "name": "WordPress.com",
+    "url": "https://public-api.wordpress.com/wpcom/v2/mcp/v1",
+    "vendor": "Automattic (WordPress.com)",
+    "website": "https://wordpress.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "firecrawl",
+    "name": "Firecrawl",
+    "url": "https://mcp.firecrawl.dev/v2/mcp-search",
+    "vendor": "Firecrawl",
+    "website": "https://www.firecrawl.dev/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "zoominfo",
+    "name": "ZoomInfo",
+    "url": "https://mcp.zoominfo.com/mcp",
+    "vendor": "ZoomInfo Technologies Inc.",
+    "website": "https://www.zoominfo.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "context7",
+    "name": "Context7",
+    "url": "https://mcp.context7.com/mcp",
+    "vendor": "Context7",
+    "website": "https://context7.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "trello",
+    "name": "Trello",
+    "url": "https://mcp.trello.com/v1",
+    "vendor": "Trello",
+    "website": "https://trello.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "postman",
+    "name": "Postman",
+    "url": "https://mcp.postman.com/minimal",
+    "vendor": "Postman, Inc.",
+    "website": "https://www.postman.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "ahrefs",
+    "name": "Ahrefs",
+    "url": "https://api.ahrefs.com/mcp/mcp",
+    "vendor": "Ahrefs Pte. Ltd.",
+    "website": "https://ahrefs.com/",
+    "description": "",
+    "categories": ["Communication", "Data & analytics", "Sales & marketing"]
+  },
+  {
+    "id": "webflow",
+    "name": "Webflow",
+    "url": "https://mcp.webflow.com/mcp",
+    "vendor": "Webflow",
+    "website": "https://webflow.com/",
+    "description": "",
+    "categories": [
+      "Creative",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "plaud",
+    "name": "Plaud",
+    "url": "https://mcp.plaud.ai/mcp",
+    "vendor": "Plaud",
+    "website": "https://www.plaud.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "clay",
+    "name": "Clay",
+    "url": "https://api.clay.com/v3/mcp",
+    "vendor": "Clay",
+    "website": "https://clay.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Sales & marketing"]
+  },
+  {
+    "id": "fireflies",
+    "name": "Fireflies",
+    "url": "https://api.fireflies.ai/mcp",
+    "vendor": "Fireflies AI Corp",
+    "website": "https://fireflies.ai/",
+    "description": "",
+    "categories": ["Communication"]
+  },
+  {
+    "id": "netlify",
+    "name": "Netlify",
+    "url": "https://mcp.netlify.com/mcp",
+    "vendor": "Netlify",
+    "website": "https://www.netlify.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "make",
+    "name": "Make",
+    "url": "https://mcp.make.com/",
+    "vendor": "Make",
+    "website": "https://www.make.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "posthog",
+    "name": "PostHog",
+    "url": "https://mcp.posthog.com/mcp",
+    "vendor": "PostHog",
+    "website": "https://posthog.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "excalidraw-app-demo",
+    "name": "Excalidraw",
+    "url": "https://mcp.excalidraw.com/mcp",
+    "vendor": "Excalidraw",
+    "website": "https://github.com/excalidraw",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "pitchbook",
+    "name": "PitchBook Premium",
+    "url": "https://premium.mcp.pitchbook.com/mcp",
+    "vendor": "PitchBook",
+    "website": "https://www.pitchbook.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services", "Productivity"]
+  },
+  {
+    "id": "hugging-face",
+    "name": "Hugging Face",
+    "url": "https://huggingface.co/mcp?login&gradio=none",
+    "vendor": "Hugging Face",
+    "website": "https://huggingface.co/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "superhuman-mail",
+    "name": "Superhuman Mail",
+    "url": "https://mcp.mail.superhuman.com/mcp",
+    "vendor": "Superhuman Mail",
+    "website": "https://superhuman.com/products/mail",
+    "description": "",
+    "categories": ["Communication", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "exa",
+    "name": "Exa",
+    "url": "https://mcp.exa.ai/mcp",
+    "vendor": "Exa",
+    "website": "https://exa.ai/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "s-p-global",
+    "name": "S&P - Deterministic Retrieval",
+    "url": "https://kfinance.kensho.com/integrations/mcp",
+    "vendor": "S&P Global",
+    "website": "https://www.spglobal.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "mobbin",
+    "name": "Mobbin",
+    "url": "https://api.mobbin.com/mcp",
+    "vendor": "Mobbin",
+    "website": "https://mobbin.com/",
+    "description": "",
+    "categories": [
+      "Creative",
+      "Developer tools",
+      "Education",
+      "Other",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "fathom",
+    "name": "Fathom – Your Meeting Intelligence Layer",
+    "url": "https://api.fathom.ai/mcp",
+    "vendor": "Fathom",
+    "website": "https://fathom.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "interactive-brokers",
+    "name": "Interactive Brokers (IBKR)",
+    "url": "https://api.ibkr.com/v1/api/mcp",
+    "vendor": "Interactive Brokers",
+    "website": "https://www.interactivebrokers.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "amplitude",
+    "name": "Amplitude",
+    "url": "https://mcp.amplitude.com/mcp",
+    "vendor": "Amplitude",
+    "website": "https://amplitude.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Sales & marketing"]
+  },
+  {
+    "id": "calendly",
+    "name": "Calendly",
+    "url": "https://mcp.calendly.com/",
+    "vendor": "Calendly",
+    "website": "https://calendly.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "kiwi-com",
+    "name": "Kiwi.com",
+    "url": "https://mcp.kiwi.com/",
+    "vendor": "Kiwi.com",
+    "website": "https://kiwi.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "wix",
+    "name": "Wix",
+    "url": "https://mcp.wix.com/mcp",
+    "vendor": "Wix",
+    "website": "https://www.wix.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Creative",
+      "Developer tools",
+      "Other",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "adobe-marketing-agent",
+    "name": "Adobe CX Enterprise Coworker",
+    "url": "https://mcp.coworker.experience.adobe.io/",
+    "vendor": "Adobe Inc.",
+    "website": "https://business.adobe.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "ramp",
+    "name": "Ramp",
+    "url": "https://ramp-mcp-remote.ramp.com/mcp",
+    "vendor": "Ramp",
+    "website": "https://ramp.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "klaviyo",
+    "name": "Klaviyo",
+    "url": "https://mcp.klaviyo.com/mcp?include-mcp-app=true",
+    "vendor": "Klaviyo",
+    "website": "https://klaviyo.com/",
+    "description": "",
+    "categories": ["Communication", "Data & analytics", "Sales & marketing"]
+  },
+  {
+    "id": "scholar-gateway",
+    "name": "Wiley Scholar Gateway",
+    "url": "https://connector.scholargateway.ai/v2/mcp",
+    "vendor": "John Wiley & Sons Inc.",
+    "website": "https://www.wiley.com/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "vibeprospecting",
+    "name": "Vibe Prospecting",
+    "url": "https://vibeprospecting.explorium.ai/mcp",
+    "vendor": "Vibeprospecting.ai",
+    "website": "https://www.vibeprospecting.ai/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Financial services",
+      "Other",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "factset",
+    "name": "FactSet AI-Ready Data",
+    "url": "https://mcp.factset.com/content/v1",
+    "vendor": "FactSet Research Systems",
+    "website": "https://www.factset.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "adobe-experience-manager",
+    "name": "Adobe Experience Manager",
+    "url": "https://mcp.adobeaemcloud.com/adobe/mcp/aem",
+    "vendor": "Adobe",
+    "website": "https://business.adobe.com/products/experience-manager",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "mixpanel",
+    "name": "Mixpanel",
+    "url": "https://mcp.mixpanel.com/mcp",
+    "vendor": "Mixpanel",
+    "website": "https://mixpanel.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "elicit",
+    "name": "Elicit",
+    "url": "https://elicit.com/api/mcp",
+    "vendor": "Elicit, inc.",
+    "website": "https://elicit.com/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "gong",
+    "name": "Gong",
+    "url": "https://mcp.gong.io/mcp",
+    "vendor": "Gong",
+    "website": "https://www.gong.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "sketchup",
+    "name": "Trimble SketchUp",
+    "url": "https://api.sketchup.com/mcp/v1/sketchup/mcp",
+    "vendor": "Trimble SketchUp",
+    "website": "https://sketchup.trimble.com/",
+    "description": "",
+    "categories": ["Creative"]
+  },
+  {
+    "id": "tripadvisor",
+    "name": "Tripadvisor",
+    "url": "https://production.ai-mcp-extensibility-prd.tamg.cloud/ogMvjY4De1G7CiHanMOAgddl/mcp",
+    "vendor": "Tripadvisor",
+    "website": "https://www.tripadvisor.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "biorender",
+    "name": "BioRender",
+    "url": "https://mcp.services.biorender.com/mcp",
+    "vendor": "BioRender",
+    "website": "https://biorender.com/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "alpha-vantage",
+    "name": "Alpha Vantage MCP Server",
+    "url": "https://mcp.alphavantage.co/mcp",
+    "vendor": "Alpha Vantage Inc",
+    "website": "https://alphavantage.co/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "scite",
+    "name": "Scite",
+    "url": "https://api.scite.ai/mcp",
+    "vendor": "Scite",
+    "website": "https://scite.ai/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "adobe-workfront",
+    "name": "Adobe Workfront",
+    "url": "https://mcp.workfront.adobe.com/mcp/v1/workfront",
+    "vendor": "Adobe",
+    "website": "https://business.adobe.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "similarweb",
+    "name": "Similarweb",
+    "url": "https://mcp.similarweb.com/",
+    "vendor": "Similarweb",
+    "website": "https://similarweb.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "read-ai",
+    "name": "Read AI",
+    "url": "https://api.read.ai/mcp",
+    "vendor": "Read AI",
+    "website": "https://read.ai/",
+    "description": "",
+    "categories": ["Communication", "Productivity"]
+  },
+  {
+    "id": "ironclad",
+    "name": "Ironclad Contracts",
+    "url": "https://mcp.na1.ironcladapp.com/mcp",
+    "vendor": "Ironclad, Inc",
+    "website": "https://ironcladapp.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "pipedrive-mcp",
+    "name": "Pipedrive",
+    "url": "https://mcp.pipedrive.ai/mcp",
+    "vendor": "Pipedrive",
+    "website": "https://pipedrive.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "paypal",
+    "name": "PayPal",
+    "url": "https://mcp.paypal.com/mcp",
+    "vendor": "PayPal",
+    "website": "https://paypal.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "datasite",
+    "name": "Datasite",
+    "url": "https://mcp.global.datasite.com/mcp",
+    "vendor": "Datasite",
+    "website": "https://www.datasite.com/",
+    "description": "",
+    "categories": ["Financial services", "Legal"]
+  },
+  {
+    "id": "resend",
+    "name": "Resend",
+    "url": "https://mcp.resend.com/",
+    "vendor": "Resend",
+    "website": "https://resend.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "carta",
+    "name": "Carta",
+    "url": "https://mcp.app.carta.com/mcp",
+    "vendor": "Carta",
+    "website": "https://carta.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "morningstar",
+    "name": "Morningstar",
+    "url": "https://mcp.morningstar.com/mcp",
+    "vendor": "Morningstar",
+    "website": "https://www.morningstar.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "incident-io",
+    "name": "incident.io",
+    "url": "https://mcp.incident.io/mcp",
+    "vendor": "incident.io",
+    "website": "https://incident.io/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "courtlistener",
+    "name": "CourtListener",
+    "url": "https://mcp.courtlistener.com/",
+    "vendor": "Free Law Project",
+    "website": "https://free.law/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "ashby",
+    "name": "Ashby",
+    "url": "https://mcp.ashbyhq.com/mcp/v1",
+    "vendor": "Ashby",
+    "website": "https://www.ashbyhq.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "attio",
+    "name": "Attio",
+    "url": "https://mcp.attio.com/mcp",
+    "vendor": "Attio",
+    "website": "https://attio.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "otter-ai",
+    "name": "Otter.ai",
+    "url": "https://mcp.otter.ai/mcp",
+    "vendor": "Otter.ai",
+    "website": "https://otter.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "base44",
+    "name": "Base44",
+    "url": "https://app.base44.com/mcp",
+    "vendor": "Base44",
+    "website": "https://base44.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "surveymonkey",
+    "name": "SurveyMonkey",
+    "url": "https://mcp.surveymonkey.com/mcp",
+    "vendor": "SurveyMonkey",
+    "website": "https://www.surveymonkey.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "unsplash",
+    "name": "Unsplash",
+    "url": "https://mcp.unsplash.com/mcp",
+    "vendor": "Unsplash",
+    "website": "https://unsplash.com/",
+    "description": "",
+    "categories": ["Creative", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "tally",
+    "name": "Tally",
+    "url": "https://api.tally.so/mcp",
+    "vendor": "Tally Forms",
+    "website": "https://tally.so/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "fmp",
+    "name": "FMP",
+    "url": "https://financialmodelingprep.com/mcp",
+    "vendor": "Financial Modeling Prep",
+    "website": "https://financialmodelingprep.com/?utm_source=claude",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "aws-mcp",
+    "name": "AWS MCP",
+    "url": "https://aws-mcp.us-east-1.api.aws/mcp",
+    "vendor": "Amazon Web Services",
+    "website": "https://aws.amazon.com/products/developer-tools/agent-toolkit-for-aws",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Developer tools",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "cocounsel-legal",
+    "name": "CoCounsel Legal",
+    "url": "https://cocoagent-service.cocounsel.thomsonreuters.com/mcp",
+    "vendor": "Thomson Reuters",
+    "website": "https://www.thomsonreuters.com/en",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "pdf-viewer",
+    "name": "PDF Viewer",
+    "url": "https://example-server.modelcontextprotocol.io/pdf/mcp",
+    "vendor": "Model Context Protocol Community",
+    "website": "https://modelcontextprotocol.io/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "outreach",
+    "name": "Outreach",
+    "url": "https://api.outreach.io/mcp/",
+    "vendor": "Outreach",
+    "website": "https://outreach.io/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "motion",
+    "name": "Motion Creative Analytics",
+    "url": "https://projects.motionapp.com/mcp",
+    "vendor": "Motion Creative Analytics",
+    "website": "https://motionapp.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "playmcp",
+    "name": "PlayMCP",
+    "url": "https://playmcp.kakao.com/mcp",
+    "vendor": "KAKAO",
+    "website": "https://www.kakaocorp.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "railway",
+    "name": "Railway",
+    "url": "https://mcp.railway.com/",
+    "vendor": "Railway",
+    "website": "https://railway.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "trivago",
+    "name": "Trivago",
+    "url": "https://mcp.trivago.com/mcp",
+    "vendor": "trivago",
+    "website": "https://www.trivago.com/",
+    "description": "",
+    "categories": ["Productivity", "Travel"]
+  },
+  {
+    "id": "opusclip",
+    "name": "OpusClip",
+    "url": "https://api.opus.pro/api/mcp",
+    "vendor": "Opusclip Inc.",
+    "website": "https://opus.pro/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "vanta",
+    "name": "Vanta",
+    "url": "https://mcp.vanta.com/mcp",
+    "vendor": "Vanta Inc",
+    "website": "https://www.vanta.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "adisinsight",
+    "name": "AdisInsight",
+    "url": "https://adisinsight-mcp.springer.com/mcp",
+    "vendor": "Springer Nature",
+    "website": "https://www.springernature.com/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "amazon-selling-partner",
+    "name": "Amazon Selling Partner",
+    "url": "https://sellingpartner-ai.amazon.com/mcp",
+    "vendor": "Amazon",
+    "website": "https://sellercentral.amazon.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Data & analytics",
+      "Financial services",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "open-targets",
+    "name": "Open Targets",
+    "url": "https://mcp.platform.opentargets.org/mcp",
+    "vendor": "OpenTargets",
+    "website": "https://www.opentargets.org/",
+    "description": "",
+    "categories": ["Data & analytics", "Health & life sciences"]
+  },
+  {
+    "id": "cortellis-regulatory",
+    "name": "Cortellis Regulatory Intelligence",
+    "url": "https://api.clarivate.com/lifesciences/mcp-regulatory/mcp",
+    "vendor": "Clarivate",
+    "website": "https://clarivate.com/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "superhuman-docs",
+    "name": "Superhuman Docs",
+    "url": "https://docs.superhuman.com/apis/mcp",
+    "vendor": "Superhuman",
+    "website": "https://superhuman.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "daloopa",
+    "name": "Daloopa",
+    "url": "https://mcp.daloopa.com/server/mcp",
+    "vendor": "Daloopa",
+    "website": "https://daloopa.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "threejs-3d-viewer",
+    "name": "Three.js 3D Viewer",
+    "url": "https://example-server.modelcontextprotocol.io/threejs/mcp",
+    "vendor": "Model Context Protocol Community",
+    "website": "https://modelcontextprotocol.io/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "dice",
+    "name": "Dice",
+    "url": "https://mcp.dice.com/mcp",
+    "vendor": "Dice.com",
+    "website": "https://www.dice.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "autodesk-product-help",
+    "name": "Autodesk Product Help",
+    "url": "https://developer.api.autodesk.com/knowledge/public/v1/mcp",
+    "vendor": "Autodesk, Inc.",
+    "website": "https://www.autodesk.com/",
+    "description": "",
+    "categories": ["Creative", "Productivity"]
+  },
+  {
+    "id": "whimsical",
+    "name": "Whimsical",
+    "url": "https://mcp.whimsical.com/mcp",
+    "vendor": "Whimsical",
+    "website": "https://whimsical.com/",
+    "description": "",
+    "categories": ["Creative", "Productivity"]
+  },
+  {
+    "id": "london-stock-exchange-group",
+    "name": "LSEG",
+    "url": "https://api.analytics.lseg.com/lfa/mcp/server-cl",
+    "vendor": "LSEG",
+    "website": "https://www.lseg.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "picsart-media-studio",
+    "name": "Picsart Media Studio",
+    "url": "https://api.picsart.com/connectors/media-tools/mcp",
+    "vendor": "PicsArt, Inc.",
+    "website": "https://picsart.com/",
+    "description": "",
+    "categories": ["Creative", "Media & entertainment", "Other"]
+  },
+  {
+    "id": "tavily",
+    "name": "Tavily",
+    "url": "https://mcp.tavily.com/mcp",
+    "vendor": "Tavily",
+    "website": "https://www.tavily.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "tldraw",
+    "name": "tldraw",
+    "url": "https://tldraw-mcp-app.tldraw.workers.dev/mcp",
+    "vendor": "tldraw",
+    "website": "https://www.tldraw.dev/",
+    "description": "",
+    "categories": ["Creative", "Productivity"]
+  },
+  {
+    "id": "sanity",
+    "name": "Sanity",
+    "url": "https://mcp.sanity.io/",
+    "vendor": "Sanity",
+    "website": "https://www.sanity.io/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "synapse-org",
+    "name": "Synapse.org",
+    "url": "https://mcp.synapse.org/mcp",
+    "vendor": "Sage Bionetworks",
+    "website": "https://sagebionetworks.org/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "upwork",
+    "name": "Upwork",
+    "url": "https://mcp.upwork.com/mcp",
+    "vendor": "Upwork",
+    "website": "https://upwork.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "legal-data-hunter",
+    "name": "Legal Data Hunter",
+    "url": "https://legaldatahunter.com/mcp",
+    "vendor": "GoodLegal",
+    "website": "https://legaldatahunter.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "crypto-com",
+    "name": "Crypto.com",
+    "url": "https://mcp.crypto.com/market-data/mcp",
+    "vendor": "Crypto.com",
+    "website": "https://crypto.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "profound",
+    "name": "Profound",
+    "url": "https://mcp.tryprofound.com/mcp",
+    "vendor": "Profound",
+    "website": "https://tryprofound.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "pandadoc",
+    "name": "PandaDoc",
+    "url": "https://mcp.pandadoc.com/v1/mcp",
+    "vendor": "PandaDoc",
+    "website": "https://www.pandadoc.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "affinity",
+    "name": "Affinity",
+    "url": "https://mcp.affinity.co/mcp",
+    "vendor": "Affinity",
+    "website": "https://www.affinity.co/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "adobe-journey-optimizer",
+    "name": "Adobe Journey Optimizer",
+    "url": "https://ajo-mcp.adobe.io/mcp",
+    "vendor": "Adobe",
+    "website": "https://adobe.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "brex",
+    "name": "Brex",
+    "url": "https://api.brex.com/mcp",
+    "vendor": "Brex",
+    "website": "https://brex.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "ai-producer-by-opusclip",
+    "name": "AI Producer by OpusClip",
+    "url": "https://producer.opus.pro/api/mcp",
+    "vendor": "OpusClip Inc.",
+    "website": "https://www.opus.pro/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "framer",
+    "name": "Framer",
+    "url": "https://mcp.framer.com/mcp",
+    "vendor": "Framer",
+    "website": "https://www.framer.com/",
+    "description": "",
+    "categories": ["Creative", "Developer tools", "Sales & marketing"]
+  },
+  {
+    "id": "twilio",
+    "name": "Twilio",
+    "url": "https://mcp.twilio.com/docs",
+    "vendor": "Twilio",
+    "website": "https://twilio.com/",
+    "description": "",
+    "categories": ["Communication"]
+  },
+  {
+    "id": "omni-analytics",
+    "name": "Omni Analytics",
+    "url": "https://callbacks.omniapp.co/callback/mcp",
+    "vendor": "Omni Analytics",
+    "website": "https://www.omni.co/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "godaddy",
+    "name": "GoDaddy",
+    "url": "https://mcp.godaddy.com/",
+    "vendor": "GoDaddy",
+    "website": "https://www.godaddy.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "alltrails",
+    "name": "AllTrails",
+    "url": "https://www.alltrails.com/mcp",
+    "vendor": "AllTrails",
+    "website": "https://www.alltrails.com/",
+    "description": "",
+    "categories": ["Consumer health"]
+  },
+  {
+    "id": "bird",
+    "name": "Bird",
+    "url": "https://mcp.bird.com/",
+    "vendor": "Bird",
+    "website": "https://www.bird.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "egnyte",
+    "name": "Egnyte",
+    "url": "https://mcp-server.egnyte.com/mcp",
+    "vendor": "Egnyte, Inc.",
+    "website": "https://www.egnyte.com/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Financial services",
+      "Legal",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "imanage",
+    "name": "iManage Work",
+    "url": "https://cloudimanage.com/mcp/work",
+    "vendor": "iManage LLC",
+    "website": "https://imanage.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "windsor-ai-for-social-media",
+    "name": "Windsor.ai for Social Media",
+    "url": "https://mcp.windsor.ai/social_media",
+    "vendor": "Windsor.ai",
+    "website": "https://windsor.ai/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Media & entertainment",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "navan",
+    "name": "Navan",
+    "url": "https://mcp.navan.com/mcp",
+    "vendor": "Navan",
+    "website": "https://navan.com/",
+    "description": "",
+    "categories": ["Financial services", "Travel"]
+  },
+  {
+    "id": "udemy-business",
+    "name": "Udemy Business",
+    "url": "https://api.udemy.com/mcp",
+    "vendor": "Udemy, Inc.",
+    "website": "https://www.udemy.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "meltwater",
+    "name": "Meltwater",
+    "url": "https://api.meltwater.com/v2/mcp",
+    "vendor": "Meltwater",
+    "website": "https://www.meltwater.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Other",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "fellow-ai",
+    "name": "Fellow.ai",
+    "url": "https://fellow.app/mcp",
+    "vendor": "Fellow.ai",
+    "website": "https://fellow.ai/",
+    "description": "",
+    "categories": ["Communication"]
+  },
+  {
+    "id": "alphaxiv",
+    "name": "alphaXiv",
+    "url": "https://api.alphaxiv.org/mcp/v1",
+    "vendor": "alphaXiv",
+    "website": "https://www.alphaxiv.org/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "era-context",
+    "name": "Era Context",
+    "url": "https://context.era.app/",
+    "vendor": "Tinwell Labs Inc, DBA Era",
+    "website": "https://era.app/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "crossbeam",
+    "name": "Crossbeam",
+    "url": "https://mcp.crossbeam.com/",
+    "vendor": "Crossbeam",
+    "website": "https://crossbeam.com/",
+    "description": "",
+    "categories": ["Communication", "Productivity"]
+  },
+  {
+    "id": "cb-insights",
+    "name": "CB Insights",
+    "url": "https://mcp.cbinsights.com/",
+    "vendor": "CB Insights",
+    "website": "https://www.cbinsights.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "adspirer-ads-performance-marketing-agent",
+    "name": "Adspirer Ads & Performance Marketing Agent",
+    "url": "https://mcp.adspirer.com/mcp",
+    "vendor": "Adspirer",
+    "website": "https://www.adspirer.com/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "greenhouse",
+    "name": "Greenhouse",
+    "url": "https://mcp.greenhouse.io/mcp",
+    "vendor": "Greenhouse Software, Inc.",
+    "website": "https://www.greenhouse.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Developer tools",
+      "Other",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "bitly",
+    "name": "Bitly",
+    "url": "https://api-ssl.bitly.com/v4/mcp",
+    "vendor": "Bitly",
+    "website": "https://bitly.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "braze",
+    "name": "Braze",
+    "url": "https://mcp.braze.com/mcp",
+    "vendor": "Braze Inc",
+    "website": "https://braze.com/",
+    "description": "",
+    "categories": ["Communication", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "guru",
+    "name": "Guru",
+    "url": "https://mcp.api.getguru.com/mcp",
+    "vendor": "Guru",
+    "website": "https://www.getguru.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "speko",
+    "name": "Speko",
+    "url": "https://mcp.speko.ai/mcp",
+    "vendor": "Speko",
+    "website": "https://speko.ai/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "mailerlite",
+    "name": "MailerLite",
+    "url": "https://mcp.mailerlite.com/mcp",
+    "vendor": "MailerLite",
+    "website": "https://www.mailerlite.com/",
+    "description": "",
+    "categories": ["Communication"]
+  },
+  {
+    "id": "metaview",
+    "name": "Metaview",
+    "url": "https://mcp.metaview.ai/mcp",
+    "vendor": "Metaview",
+    "website": "https://metaview.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "neon",
+    "name": "Neon",
+    "url": "https://mcp.neon.tech/mcp",
+    "vendor": "Neon (A Databricks, Inc. company)",
+    "website": "https://neon.com/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Developer tools",
+      "Other",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "fullstory",
+    "name": "Fullstory",
+    "url": "https://api.fullstory.com/mcp/fullstory",
+    "vendor": "Fullstory",
+    "website": "https://www.fullstory.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "aws-marketplace",
+    "name": "AWS Marketplace",
+    "url": "https://marketplace-mcp.us-east-1.api.aws/mcp",
+    "vendor": "AWS Marketplace",
+    "website": "https://aws.amazon.com/marketplace",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "medidata",
+    "name": "Medidata",
+    "url": "https://mcp.imedidata.com/mcp",
+    "vendor": "Medidata Solutions",
+    "website": "https://medidata.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Health & life sciences", "Productivity"]
+  },
+  {
+    "id": "tldv",
+    "name": "tl;dv - AI Note Taker & Meeting Recorder: Transcripts, Summaries & Meeting Minutes",
+    "url": "https://mcp.tldv.io/mcp",
+    "vendor": "tldx solutions GmbH",
+    "website": "https://tldv.io/",
+    "description": "",
+    "categories": ["Communication", "Data & analytics", "Productivity"]
+  },
+  {
+    "id": "peec-ai",
+    "name": "Peec AI",
+    "url": "https://api.peec.ai/mcp",
+    "vendor": "Peec AI",
+    "website": "https://peec.ai/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "riverside",
+    "name": "Riverside",
+    "url": "https://mcp.riverside.com/mcp",
+    "vendor": "Riverside",
+    "website": "https://riverside.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Creative",
+      "Media & entertainment",
+      "Other",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "tactiq",
+    "name": "Tactiq",
+    "url": "https://mcp.tactiq.io/",
+    "vendor": "Tactiq",
+    "website": "https://tactiq.io/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "slicktrip",
+    "name": "SlickTrip",
+    "url": "https://mcp.slicktrip.com/mcp",
+    "vendor": "SlickTrip",
+    "website": "https://slicktrip.com/",
+    "description": "",
+    "categories": ["Commerce & shopping", "Travel"]
+  },
+  {
+    "id": "typefully",
+    "name": "Typefully - Social Media Scheduler",
+    "url": "https://mcp.typefully.com/mcp",
+    "vendor": "Typefully",
+    "website": "https://typefully.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "euler",
+    "name": "EULER",
+    "url": "https://mcp.eulerapp.com/mcp",
+    "vendor": "Euler Software Inc",
+    "website": "https://eulerapp.com/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "salesloft",
+    "name": "Salesloft",
+    "url": "https://mcp.salesloft.com/sse",
+    "vendor": "Salesloft",
+    "website": "https://www.salesloft.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "synthesize-bio",
+    "name": "Synthesize Bio",
+    "url": "https://app.synthesize.bio/api/mcp",
+    "vendor": "Synthesize Bio",
+    "website": "https://www.synthesize.bio/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "moda",
+    "name": "Moda - Slides and Designs",
+    "url": "https://agents.moda.app/mcp",
+    "vendor": "Moda",
+    "website": "https://moda.app/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Creative",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "nimble",
+    "name": "Nimble",
+    "url": "https://mcp.nimbleway.com/mcp",
+    "vendor": "Nimble",
+    "website": "https://www.nimbleway.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "freee",
+    "name": "freee",
+    "url": "https://mcp.freee.co.jp/mcp",
+    "vendor": "freee K.K.",
+    "website": "https://corp.freee.co.jp/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "craft",
+    "name": "Craft",
+    "url": "https://mcp.craft.do/my/mcp",
+    "vendor": "Craft Docs Ltd",
+    "website": "https://www.craft.do/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "grafana-cloud",
+    "name": "Grafana Cloud",
+    "url": "https://mcp.grafana.com/mcp",
+    "vendor": "Grafana Labs",
+    "website": "https://grafana.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools"]
+  },
+  {
+    "id": "deepl",
+    "name": "DeepL",
+    "url": "https://mcp.deepl.com/v1/mcp",
+    "vendor": "DeepL",
+    "website": "https://deepl.com/",
+    "description": "",
+    "categories": ["Communication", "Productivity"]
+  },
+  {
+    "id": "articulate",
+    "name": "Articulate",
+    "url": "https://mcp.articulate.com/mcp",
+    "vendor": "Articulate",
+    "website": "https://www.articulate.com/",
+    "description": "",
+    "categories": ["Creative", "Education", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "brighthire",
+    "name": "BrightHire",
+    "url": "https://app.brighthire.ai/mcp/v1",
+    "vendor": "BrightHire",
+    "website": "https://brighthire.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "floot-mcp-updated",
+    "name": "Floot",
+    "url": "https://mcp.floot.com/mcp",
+    "vendor": "Floot",
+    "website": "https://floot.com/",
+    "description": "",
+    "categories": ["Creative", "Developer tools"]
+  },
+  {
+    "id": "openseo",
+    "name": "OpenSEO",
+    "url": "https://app.openseo.so/mcp",
+    "vendor": "OpenSEO",
+    "website": "https://openseo.so/",
+    "description": "",
+    "categories": ["Developer tools", "Sales & marketing"]
+  },
+  {
+    "id": "mercury",
+    "name": "Mercury",
+    "url": "https://mcp.mercury.com/mcp",
+    "vendor": "Mercury",
+    "website": "https://mercury.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "teamtailor",
+    "name": "Teamtailor",
+    "url": "https://mcp.teamtailor.com/mcp",
+    "vendor": "Teamtailor",
+    "website": "https://teamtailor.com/",
+    "description": "",
+    "categories": ["Other", "Productivity"]
+  },
+  {
+    "id": "contentful-mcp",
+    "name": "Contentful MCP",
+    "url": "https://mcp.contentful.com/mcp",
+    "vendor": "Contentful Inc.",
+    "website": "https://www.contentful.com/",
+    "description": "",
+    "categories": [
+      "Creative",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "adobe-cja",
+    "name": "Adobe Customer Journey Analytics",
+    "url": "https://cja-mcp.adobe.io/mcp",
+    "vendor": "Adobe",
+    "website": "https://business.adobe.com/products/adobe-analytics/customer-journey-analytics.html",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "helium-10",
+    "name": "Helium 10",
+    "url": "https://mcp.helium10.com/mcp",
+    "vendor": "Helium 10",
+    "website": "https://www.helium10.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Data & analytics",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "clickhouse",
+    "name": "ClickHouse",
+    "url": "https://mcp.clickhouse.cloud/mcp",
+    "vendor": "ClickHouse",
+    "website": "https://clickhouse.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "evernote",
+    "name": "Evernote",
+    "url": "https://mcp.evernote.com/mcp",
+    "vendor": "Evernote",
+    "website": "https://evernote.com/",
+    "description": "",
+    "categories": ["Communication", "Creative", "Education", "Productivity"]
+  },
+  {
+    "id": "msci",
+    "name": "MSCI Connector",
+    "url": "https://mcp.msci.com/mcp/v1.0/mcp",
+    "vendor": "MSCI Inc",
+    "website": "https://msci.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "cloudinary",
+    "name": "Cloudinary",
+    "url": "https://asset-management.mcp.cloudinary.com/sse",
+    "vendor": "Cloudinary",
+    "website": "https://cloudinary.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools"]
+  },
+  {
+    "id": "parallel-search",
+    "name": "Parallel Search",
+    "url": "https://search.parallel.ai/mcp",
+    "vendor": "Parallel Web Systems",
+    "website": "https://parallel.ai/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "latchbio",
+    "name": "LatchBio",
+    "url": "https://mcp.latch.bio/mcp",
+    "vendor": "LatchBio",
+    "website": "https://latch.bio/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "third-bridge",
+    "name": "Third Bridge",
+    "url": "https://ai.thirdbridge.com/mcp/sse",
+    "vendor": "Third Bridge Group",
+    "website": "https://www.thirdbridge.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "twelvedata",
+    "name": "Twelve Data",
+    "url": "https://mcp.twelvedata.com/mcp",
+    "vendor": "Twelve Data",
+    "website": "https://twelvedata.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "frontify",
+    "name": "Frontify",
+    "url": "https://mcp.frontify-integrations.com/mcp",
+    "vendor": "Frontify",
+    "website": "https://frontify.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Creative",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "runway-team",
+    "name": "Runway (runway.team)",
+    "url": "https://mcp.runway.team/",
+    "vendor": "Runway (runway.team)",
+    "website": "https://www.runway.team/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "workable",
+    "name": "Workable",
+    "url": "https://mcp.workable.com/mcp",
+    "vendor": "Workable",
+    "website": "https://www.workable.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "inductive-bio",
+    "name": "Inductive Bio",
+    "url": "https://api.inductive.bio/mcp",
+    "vendor": "Inductive Bio",
+    "website": "https://inductive.bio/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "quartr",
+    "name": "Quartr",
+    "url": "https://mcp.quartr.com/mcp",
+    "vendor": "Quartr",
+    "website": "https://quartr.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "pylon",
+    "name": "Pylon",
+    "url": "https://mcp.usepylon.com/",
+    "vendor": "Pylon",
+    "website": "https://www.usepylon.com/",
+    "description": "",
+    "categories": ["Communication"]
+  },
+  {
+    "id": "mongodb-atlas",
+    "name": "MongoDB Atlas",
+    "url": "https://mcp.mongodb.com/",
+    "vendor": "MongoDB",
+    "website": "https://mongodb.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "eden-basecamp-research",
+    "name": "EDEN by Basecamp Research",
+    "url": "https://mcp-public.basecamp-research.com/mcp",
+    "vendor": "Basecamp Research",
+    "website": "https://basecamp-research.com/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "tella",
+    "name": "Tella",
+    "url": "https://api.tella.com/mcp",
+    "vendor": "Tella",
+    "website": "https://tella.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Creative",
+      "Media & entertainment",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "ubersuggest-by-neil-patel",
+    "name": "Ubersuggest",
+    "url": "https://ubersuggest-mcp.neilpatelapi.com/mcp",
+    "vendor": "Ubersuggest",
+    "website": "https://ubersuggest.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "krisp",
+    "name": "Krisp",
+    "url": "https://mcp.krisp.ai/mcp",
+    "vendor": "Krisp",
+    "website": "https://krisp.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "jam",
+    "name": "Jam",
+    "url": "https://mcp.jam.dev/mcp",
+    "vendor": "Jam",
+    "website": "https://jam.dev/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "adspirer-social-ads",
+    "name": "Adspirer Social Ads",
+    "url": "https://mcp.adspirer.com/social-ads",
+    "vendor": "Adspirer",
+    "website": "https://www.adspirer.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "fiverr-mcp",
+    "name": "Fiverr",
+    "url": "https://mcp.fiverr.com/mcp",
+    "vendor": "Fiverr",
+    "website": "https://www.fiverr.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "tomtom-maps",
+    "name": "TomTom Maps",
+    "url": "https://mcp.tomtom.com/maps",
+    "vendor": "TomTom",
+    "website": "https://www.tomtom.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "zillow",
+    "name": "Zillow",
+    "url": "https://mcp.zillow.com/api/v2",
+    "vendor": "Zillow Inc.",
+    "website": "https://www.zillow.com/",
+    "description": "",
+    "categories": ["Commerce & shopping", "Media & entertainment", "Other"]
+  },
+  {
+    "id": "amass",
+    "name": "Amass Connector",
+    "url": "https://mcp.amass.tech/mcp",
+    "vendor": "Amass technologies Aps",
+    "website": "https://amass.tech/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "turkish-airlines",
+    "name": "Turkish Airlines",
+    "url": "https://mcp-app.turkishtechlab.com/mcp",
+    "vendor": "Turkish Airlines",
+    "website": "https://www.turkishairlines.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "anythingmcp",
+    "name": "AnythingMCP",
+    "url": "https://cloud.anythingmcp.com/mcp",
+    "vendor": "helpcode.ai",
+    "website": "https://helpcode.ai/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Developer tools",
+      "Financial services",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "otto-travel",
+    "name": "Otto Travel",
+    "url": "https://api.ottotheagent.com/mcp",
+    "vendor": "Otto Trip, Inc.",
+    "website": "https://www.ottotheagent.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "ifttt",
+    "name": "IFTTT",
+    "url": "https://ifttt.com/mcp",
+    "vendor": "IFTTT, Inc.",
+    "website": "https://ifttt.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "cdata-connect-ai",
+    "name": "CData Connect AI",
+    "url": "https://mcp.cloud.cdata.com/mcp",
+    "vendor": "CData",
+    "website": "https://www.cdata.com/ai",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "financial-datasets",
+    "name": "Financial Datasets",
+    "url": "https://mcp.financialdatasets.ai/",
+    "vendor": "Financial Datasets, Inc.",
+    "website": "https://www.financialdatasets.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "quo",
+    "name": "Quo",
+    "url": "https://mcp.quo.com/mcp",
+    "vendor": "Quo",
+    "website": "https://quo.com/",
+    "description": "",
+    "categories": ["Communication"]
+  },
+  {
+    "id": "wolfram",
+    "name": "Wolfram",
+    "url": "https://agenttools.wolfram.com/mcp",
+    "vendor": "Wolfram Research",
+    "website": "https://www.wolfram.com/",
+    "description": "",
+    "categories": ["Education", "Productivity"]
+  },
+  {
+    "id": "mintlify",
+    "name": "Mintlify",
+    "url": "https://mcp.mintlify.com/",
+    "vendor": "Mintlify",
+    "website": "https://mintlify.com/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "highspot",
+    "name": "Highspot by Seismic",
+    "url": "https://mcp.highspot.com/mcp",
+    "vendor": "Highspot",
+    "website": "https://highspot.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "deel",
+    "name": "Deel",
+    "url": "https://api.letsdeel.com/mcp",
+    "vendor": "Deel",
+    "website": "https://www.deel.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "play-sheet-music",
+    "name": "Play Sheet Music",
+    "url": "https://example-server.modelcontextprotocol.io/sheet-music/mcp",
+    "vendor": "Model Context Protocol Community",
+    "website": "https://modelcontextprotocol.io/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "contentsquare",
+    "name": "Contentsquare",
+    "url": "https://api.contentsquare.com/mcp",
+    "vendor": "Contentsquare",
+    "website": "https://www.contentsquare.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "expo",
+    "name": "Expo",
+    "url": "https://mcp.expo.dev/mcp",
+    "vendor": "Expo",
+    "website": "https://expo.dev/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "v0",
+    "name": "v0",
+    "url": "https://v0.app/api/mcp",
+    "vendor": "Vercel",
+    "website": "https://vercel.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "coindesk",
+    "name": "CoinDesk",
+    "url": "https://mcp.coindesk.com/mcp",
+    "vendor": "CoinDesk",
+    "website": "https://www.coindesk.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "swagger",
+    "name": "Swagger",
+    "url": "https://swagger.mcp.smartbear.com/mcp",
+    "vendor": "SmartBear",
+    "website": "https://smartbear.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "close",
+    "name": "Close",
+    "url": "https://mcp.close.com/mcp",
+    "vendor": "Close",
+    "website": "https://www.close.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "crustdata",
+    "name": "Crustdata",
+    "url": "https://mcp.crustdata.com/mcp",
+    "vendor": "Crustdata",
+    "website": "https://crustdata.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Sales & marketing"]
+  },
+  {
+    "id": "idiolect",
+    "name": "Idiolect",
+    "url": "https://idiolect.app/api/mcp",
+    "vendor": "Moshpit",
+    "website": "https://idiolect.app/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "qonto",
+    "name": "Qonto",
+    "url": "https://mcp.qonto.com/mcp",
+    "vendor": "Qonto",
+    "website": "https://qonto.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "taplio",
+    "name": "Taplio",
+    "url": "https://mcp.taplio.com/",
+    "vendor": "Taplio",
+    "website": "https://taplio.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Media & entertainment",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "orshot",
+    "name": "Orshot",
+    "url": "https://mcp.orshot.com/mcp",
+    "vendor": "Orshot",
+    "website": "https://orshot.com/",
+    "description": "",
+    "categories": ["Creative", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "midpage",
+    "name": "Midpage Legal Research",
+    "url": "https://app.midpage.ai/mcp",
+    "vendor": "Midpage",
+    "website": "https://www.midpage.ai/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "within",
+    "name": "Within",
+    "url": "https://api.within.ai/mcp",
+    "vendor": "Within",
+    "website": "https://www.within.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "airops",
+    "name": "AirOps",
+    "url": "https://app.airops.com/mcp",
+    "vendor": "AirOps",
+    "website": "https://www.airops.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "lawve-ai",
+    "name": "Lawve AI",
+    "url": "https://mcp.lawve.ai/mcp",
+    "vendor": "Lawve AI",
+    "website": "https://lawve.ai/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "agentmail",
+    "name": "AgentMail",
+    "url": "https://mcp.agentmail.to/mcp",
+    "vendor": "AgentMail, Inc.",
+    "website": "https://www.agentmail.to/",
+    "description": "",
+    "categories": ["Communication", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "gainsight-staircase-ai",
+    "name": "Gainsight (Staircase AI)",
+    "url": "https://mcp.staircase.ai/mcp",
+    "vendor": "Gainsight",
+    "website": "https://www.gainsight.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "lunarcrush",
+    "name": "LunarCrush",
+    "url": "https://lunarcrush.ai/mcp",
+    "vendor": "LunarCrush",
+    "website": "https://lunarcrush.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "grain",
+    "name": "Grain",
+    "url": "https://api.grain.com/_/mcp",
+    "vendor": "Grain",
+    "website": "https://grain.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "oreilly",
+    "name": "O’Reilly",
+    "url": "https://api.oreilly.com/api/content-discovery/v1/mcp/",
+    "vendor": "O’Reilly Media",
+    "website": "https://www.oreilly.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "coupler-io",
+    "name": "Coupler.io",
+    "url": "https://mcp.coupler.io/mcp/",
+    "vendor": "Coupler.io",
+    "website": "https://coupler.io/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "productboard",
+    "name": "Productboard",
+    "url": "https://mcp.productboard.com/",
+    "vendor": "Productboard",
+    "website": "https://productboard.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "common-room",
+    "name": "Common Room",
+    "url": "https://mcp.commonroom.io/mcp",
+    "vendor": "Common Room",
+    "website": "https://commonroom.io/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "website-generator-by-b12",
+    "name": "Website Generator by B12",
+    "url": "https://mcp.b12.io/mcp",
+    "vendor": "B12",
+    "website": "https://www.b12.io/",
+    "description": "",
+    "categories": [
+      "Creative",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "funnel",
+    "name": "Funnel",
+    "url": "https://mcp.ai.funnel.io/mcp",
+    "vendor": "Funnel",
+    "website": "https://funnel.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "gem",
+    "name": "Gem",
+    "url": "https://mcp.gem.com/mcp",
+    "vendor": "Gem",
+    "website": "https://www.gem.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "webull",
+    "name": "Webull",
+    "url": "https://api.webull.com/mcp",
+    "vendor": "Webull",
+    "website": "https://www.webull.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "sonos-mcp",
+    "name": "Sonos",
+    "url": "https://mcp.ws.sonos.com/mcp",
+    "vendor": "Sonos, Inc.",
+    "website": "https://www.sonos.com/",
+    "description": "",
+    "categories": ["Media & entertainment"]
+  },
+  {
+    "id": "honeycomb",
+    "name": "Honeycomb",
+    "url": "https://mcp.honeycomb.io/mcp",
+    "vendor": "honeycomb.io",
+    "website": "https://www.honeycomb.io/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "mem",
+    "name": "Mem",
+    "url": "https://mcp.mem.ai/mcp",
+    "vendor": "Mem Labs, Inc.",
+    "website": "https://get.mem.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "coralogix",
+    "name": "Coralogix",
+    "url": "https://api.eu2.coralogix.com/mgmt/api/v1/mcp",
+    "vendor": "Coralogix",
+    "website": "https://coralogix.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "oxford-economics",
+    "name": "Oxford Economics",
+    "url": "https://services.oxfordeconomics.com/mcp",
+    "vendor": "Oxford Economics",
+    "website": "https://www.oxfordeconomics.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "harmonic",
+    "name": "Harmonic",
+    "url": "https://mcp.api.harmonic.ai/",
+    "vendor": "Harmonic",
+    "website": "https://harmonic.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "send",
+    "name": "Send",
+    "url": "https://www.send.co/mcp",
+    "vendor": "Send",
+    "website": "https://www.send.co/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Creative",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "rocketreach",
+    "name": "RocketReach",
+    "url": "https://mcp.rocketreach.co/mcp",
+    "vendor": "RocketReach",
+    "website": "https://rocketreach.co/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "circleback",
+    "name": "Circleback",
+    "url": "https://circleback.ai/api/mcp",
+    "vendor": "Circleback",
+    "website": "https://circleback.ai/",
+    "description": "",
+    "categories": ["Communication", "Productivity"]
+  },
+  {
+    "id": "magic-patterns",
+    "name": "Magic Patterns",
+    "url": "https://mcp.magicpatterns.com/mcp",
+    "vendor": "Magic Patterns",
+    "website": "https://www.magicpatterns.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "moodys-analytics",
+    "name": "Moody's Credit MCP",
+    "url": "https://mcp.moodys.com/genai-ready-data/Credit/mcp",
+    "vendor": "Moody's Analytics",
+    "website": "https://moodys.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "monte-carlo",
+    "name": "Monte Carlo",
+    "url": "https://mcp.getmontecarlo.com/mcp",
+    "vendor": "Monte Carlo",
+    "website": "https://www.montecarlodata.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "readwise",
+    "name": "Readwise",
+    "url": "https://mcp2.readwise.io/mcp",
+    "vendor": "Readwise Inc.",
+    "website": "https://readwise.io/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "texttoquant",
+    "name": "TEXT TO QUANT",
+    "url": "https://www.texttoquant.com/api/mcp",
+    "vendor": "Spekule",
+    "website": "https://www.texttoquant.com/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Developer tools",
+      "Financial services",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "eraser",
+    "name": "Eraser",
+    "url": "https://app.eraser.io/api/mcp",
+    "vendor": "Eraser",
+    "website": "https://eraser.io/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "viator",
+    "name": "Viator",
+    "url": "https://exp-app-mcp.prod.ep.viator.com/mcp",
+    "vendor": "Viator",
+    "website": "https://www.viator.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "beehiiv",
+    "name": "beehiiv",
+    "url": "https://mcp.beehiiv.com/mcp",
+    "vendor": "beehiiv",
+    "website": "https://www.beehiiv.com/",
+    "description": "",
+    "categories": ["Creative", "Data & analytics"]
+  },
+  {
+    "id": "brightdeck-ai",
+    "name": "Brightdeck",
+    "url": "https://api.brightdeck.ai/mcp",
+    "vendor": "Brightdeck",
+    "website": "https://brightdeck.ai/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Creative",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "cortellis-cmc-intelligence",
+    "name": "Cortellis CMC Intelligence",
+    "url": "https://api.clarivate.com/lifesciences/mcp-cmc/mcp",
+    "vendor": "Clarivate",
+    "website": "https://clarivate.com/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "meridian-connector-for-quickbooks",
+    "name": "Meridian Connector for QuickBooks",
+    "url": "https://qbo-connector.meridian.pilot.com/mcp",
+    "vendor": "Pilot.com, Inc.",
+    "website": "https://meridian.pilot.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services", "Productivity"]
+  },
+  {
+    "id": "local-falcon",
+    "name": "Local Falcon",
+    "url": "https://mcp.localfalcon.com/",
+    "vendor": "Local Falcon",
+    "website": "https://www.localfalcon.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "s-p-global-adaptive-retrieval",
+    "name": "S&P Global - Adaptive Retrieval",
+    "url": "https://grounding.kensho.com/integrations/v2/mcp",
+    "vendor": "S&P Global",
+    "website": "https://www.spglobal.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "motherduck",
+    "name": "MotherDuck",
+    "url": "https://api.motherduck.com/mcp",
+    "vendor": "MotherDuck Corporation",
+    "website": "https://motherduck.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "mychatbot",
+    "name": "MyChatBot",
+    "url": "https://connector.mychatbot.app/mcp",
+    "vendor": "MyChatBot Corp",
+    "website": "https://mychatbot.app/",
+    "description": "",
+    "categories": ["Commerce & shopping", "Communication", "Sales & marketing"]
+  },
+  {
+    "id": "fiscal-ai",
+    "name": "Fiscal.ai",
+    "url": "https://api.fiscal.ai/mcp/sse",
+    "vendor": "Fiscal.ai",
+    "website": "https://fiscal.ai/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "health-data-avatar-hda",
+    "name": "Health Data Avatar (HDA)",
+    "url": "https://hda-mcp.healthdataavatar.com/mcp",
+    "vendor": "Health Data Avatar",
+    "website": "https://healthdataavatar.com/",
+    "description": "",
+    "categories": ["Healthcare"]
+  },
+  {
+    "id": "crunchbase-mcp",
+    "name": "Crunchbase",
+    "url": "https://mcp.crunchbase.com/",
+    "vendor": "Crunchbase",
+    "website": "https://www.crunchbase.com/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Financial services",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "files-com",
+    "name": "Files.com",
+    "url": "https://app.files.com/api/ai/mcp/v1",
+    "vendor": "Files.com",
+    "website": "https://www.files.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "newrelic",
+    "name": "New Relic",
+    "url": "https://mcp.newrelic.com/mcp/",
+    "vendor": "New Relic",
+    "website": "https://newrelic.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools"]
+  },
+  {
+    "id": "athletedata",
+    "name": "athletedata",
+    "url": "https://mcp.athletedata.health/mcp",
+    "vendor": "HealthspanOS AG",
+    "website": "https://athletedata.health/",
+    "description": "",
+    "categories": [
+      "Consumer health",
+      "Data & analytics",
+      "Health & life sciences"
+    ]
+  },
+  {
+    "id": "tropic",
+    "name": "Tropic",
+    "url": "https://app.tropicapp.io/mcp",
+    "vendor": "Tropic",
+    "website": "https://www.tropicapp.io/mcp-demo",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "netdocuments",
+    "name": "NetDocuments",
+    "url": "https://web-api.us.netdocuments.app/connect/mcp",
+    "vendor": "NetDocuments",
+    "website": "https://www.netdocuments.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "kahoot",
+    "name": "Kahoot!",
+    "url": "https://mcp.kahoot.it/mcp",
+    "vendor": "Kahoot! ASA",
+    "website": "https://www.kahoot.com/",
+    "description": "",
+    "categories": ["Education"]
+  },
+  {
+    "id": "fyxer",
+    "name": "Fyxer",
+    "url": "https://app.fyxer.com/mcp",
+    "vendor": "Fyxer",
+    "website": "https://www.fyxer.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "splice",
+    "name": "Splice",
+    "url": "https://mcp.splice.com/mcp",
+    "vendor": "Splice",
+    "website": "https://splice.com/",
+    "description": "",
+    "categories": ["Creative"]
+  },
+  {
+    "id": "letsbot",
+    "name": "LetsBot",
+    "url": "https://letsbot.net/mcp",
+    "vendor": "BOT FOR DIGITAL SOLUTIONS LIMITED",
+    "website": "https://letsbot.net/en/home.html",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "graphify",
+    "name": "Graphify",
+    "url": "https://api.graphify.com/mcp",
+    "vendor": "Graphify Labs Inc",
+    "website": "https://graphify.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "chronograph",
+    "name": "Chronograph",
+    "url": "https://ai.chronograph.pe/mcp",
+    "vendor": "Chronograph",
+    "website": "https://www.chronograph.pe/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "clerk",
+    "name": "Clerk",
+    "url": "https://mcp.clerk.com/mcp",
+    "vendor": "Clerk",
+    "website": "https://clerk.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "circleci",
+    "name": "CircleCI",
+    "url": "https://mcp.circleci.com/v1/mcp",
+    "vendor": "CircleCI Engineering",
+    "website": "https://circleci.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "aiera",
+    "name": "Aiera",
+    "url": "https://mcp-pub.aiera.com/",
+    "vendor": "Aiera",
+    "website": "https://www.aiera.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "shutterstock",
+    "name": "Shutterstock",
+    "url": "https://www.shutterstock.com/cciq/mcp",
+    "vendor": "Shutterstock",
+    "website": "https://www.shutterstock.com/",
+    "description": "",
+    "categories": ["Creative", "Sales & marketing"]
+  },
+  {
+    "id": "kit-mcp",
+    "name": "Kit",
+    "url": "https://app.kit.com/mcp",
+    "vendor": "Kit, Inc.",
+    "website": "https://kit.com/",
+    "description": "",
+    "categories": ["Communication", "Data & analytics", "Productivity"]
+  },
+  {
+    "id": "coingecko",
+    "name": "CoinGecko",
+    "url": "https://mcp.coingecko.com/mcp",
+    "vendor": "Gecko Labs Pte Ltd",
+    "website": "https://www.coingecko.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "brisk-teaching",
+    "name": "Brisk Teaching",
+    "url": "https://mcp.briskteaching.com/mcp",
+    "vendor": "Brisk Teaching",
+    "website": "https://www.briskteaching.com/",
+    "description": "",
+    "categories": ["Education"]
+  },
+  {
+    "id": "pdf-net",
+    "name": "PDF.net",
+    "url": "https://mcp.pdf.net/mcp",
+    "vendor": "PDF.net",
+    "website": "https://pdf.net/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "brightflag",
+    "name": "Brightflag",
+    "url": "https://mcp-us.brightflag.com/mcp",
+    "vendor": "Brightflag",
+    "website": "https://brightflag.com/",
+    "description": "",
+    "categories": ["Legal"]
+  },
+  {
+    "id": "ringcentral-chat",
+    "name": "RingCentral Chat",
+    "url": "https://mcp.labs.ringcentral.com/ringex/v1.1.0/team-chat",
+    "vendor": "RingCentral, Inc.",
+    "website": "https://ringcentral.com/",
+    "description": "",
+    "categories": ["Communication"]
+  },
+  {
+    "id": "ibisworld",
+    "name": "IBISWorld",
+    "url": "https://mcp.ibisworld.com/",
+    "vendor": "IBISWorld",
+    "website": "https://www.ibisworld.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "glg",
+    "name": "GLG",
+    "url": "https://mcp.glgresearch.com/myglg/mcp",
+    "vendor": "Gerson Lehrman Group",
+    "website": "https://glg.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services", "Productivity"]
+  },
+  {
+    "id": "pocketsmith-complete-access",
+    "name": "PocketSmith Complete Access",
+    "url": "https://mcp.pocketsmith.com/mcp",
+    "vendor": "PocketSmith Ltd",
+    "website": "https://www.pocketsmith.com/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Financial services",
+      "Other",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "enterpret-wisdom",
+    "name": "Enterpret",
+    "url": "https://wisdom-api.enterpret.com/server/mcp",
+    "vendor": "Enterpret Inc",
+    "website": "https://enterpret.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "openrush",
+    "name": "OpenRush",
+    "url": "https://api.openrush.com/mcp",
+    "vendor": "OpenRush",
+    "website": "https://openrush.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "adspirer-search-ads",
+    "name": "Adspirer Search Ads",
+    "url": "https://mcp.adspirer.com/search-ads",
+    "vendor": "Adspirer",
+    "website": "https://www.adspirer.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "codewords",
+    "name": "CodeWords",
+    "url": "https://runtime.codewords.ai/run/devx_mcp/mcp",
+    "vendor": "Agemo",
+    "website": "https://codewords.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "sumble",
+    "name": "Sumble",
+    "url": "https://mcp.sumble.com/",
+    "vendor": "Sumble, Inc",
+    "website": "https://sumble.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "attention",
+    "name": "Attention",
+    "url": "https://api.attention.tech/mcp",
+    "vendor": "Attention",
+    "website": "https://attention.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "brandfetch",
+    "name": "Brandfetch",
+    "url": "https://mcp.brandfetch.io/mcp",
+    "vendor": "Brandfetch",
+    "website": "https://brandfetch.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Creative",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "workos",
+    "name": "WorkOS",
+    "url": "https://mcp.workos.com/mcp",
+    "vendor": "WorkOS",
+    "website": "https://workos.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "maven-bio",
+    "name": "Maven Bio",
+    "url": "https://mcp.mavenbio.com/",
+    "vendor": "Maven Bio",
+    "website": "https://mavenbio.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Health & life sciences", "Productivity"]
+  },
+  {
+    "id": "candid",
+    "name": "Candid",
+    "url": "https://mcp.candid.org/mcp",
+    "vendor": "Candid",
+    "website": "https://candid.org/",
+    "description": "",
+    "categories": ["Nonprofit"]
+  },
+  {
+    "id": "coinmarketcap",
+    "name": "CoinMarketCap",
+    "url": "https://mcp.coinmarketcap.com/mcp",
+    "vendor": "CoinMarketCap",
+    "website": "https://coinmarketcap.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "autosheet",
+    "name": "Autosheet",
+    "url": "https://mcp.autosheet.com/mcp",
+    "vendor": "Talarian",
+    "website": "https://talarian.io/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Data & analytics",
+      "Financial services",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "aleph",
+    "name": "Aleph",
+    "url": "https://mcp.getaleph.com/mcp",
+    "vendor": "Aleph",
+    "website": "https://getaleph.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "triple-whale",
+    "name": "Triple Whale",
+    "url": "https://mcp.triplewhale.com/sse",
+    "vendor": "Triple Whale",
+    "website": "https://www.triplewhale.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "menti",
+    "name": "Menti",
+    "url": "https://ai.mentimeter.com/api/mcp",
+    "vendor": "Mentimeter",
+    "website": "https://www.mentimeter.com/",
+    "description": "",
+    "categories": ["Creative", "Data & analytics", "Education", "Productivity"]
+  },
+  {
+    "id": "devrev",
+    "name": "DevRev",
+    "url": "https://api.devrev.ai/mcp/v1",
+    "vendor": "DevRev",
+    "website": "https://devrev.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "plaid",
+    "name": "Plaid Developer Tools",
+    "url": "https://api.dashboard.plaid.com/mcp/sse",
+    "vendor": "Plaid",
+    "website": "https://plaid.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "flourish-studio",
+    "name": "Flourish",
+    "url": "https://app.flourish.studio/mcp",
+    "vendor": "Flourish",
+    "website": "https://flourish.studio/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "rippit",
+    "name": "Rippit",
+    "url": "https://mcp.rippit.com/mcp",
+    "vendor": "rippit",
+    "website": "https://www.rippit.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "stewdio",
+    "name": "Stewdio",
+    "url": "https://mcp.stewdio.ai/mcp",
+    "vendor": "Cekura, Inc.",
+    "website": "https://www.stewdio.ai/",
+    "description": "",
+    "categories": ["Creative"]
+  },
+  {
+    "id": "datahub",
+    "name": "DataHub",
+    "url": "https://mcp.datahub.com/mcp",
+    "vendor": "Acryl Data, Inc.",
+    "website": "https://datahub.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "rillet",
+    "name": "Rillet",
+    "url": "https://api.rillet.com/mcp",
+    "vendor": "Rillet",
+    "website": "https://www.rillet.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "bill",
+    "name": "BILL",
+    "url": "https://gateway.prod.bill.com/ai-mcp-server/v1",
+    "vendor": "BILL",
+    "website": "https://www.bill.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "reclaim-ai",
+    "name": "Reclaim.ai",
+    "url": "https://mcp.reclaim.ai/",
+    "vendor": "Reclaim.ai",
+    "website": "https://reclaim.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "super-com",
+    "name": "Super.com",
+    "url": "https://www.super.com/travel/mcp",
+    "vendor": "Super.com",
+    "website": "https://www.super.com/",
+    "description": "",
+    "categories": ["Travel"]
+  },
+  {
+    "id": "hive",
+    "name": "Hive",
+    "url": "https://hive-mind.hive.com/mcp",
+    "vendor": "Hive",
+    "website": "https://hive.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "zomato",
+    "name": "Zomato",
+    "url": "https://mcp-server.zomato.com/mcp",
+    "vendor": "Eternal Limited",
+    "website": "https://www.zomato.com/",
+    "description": "",
+    "categories": ["Commerce & shopping"]
+  },
+  {
+    "id": "unwrap",
+    "name": "Unwrap",
+    "url": "https://nlp.api.production.unwrap.ai/mcp",
+    "vendor": "Unwrap AI",
+    "website": "https://www.unwrap.ai/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "mt-newswires",
+    "name": "MT Newswires",
+    "url": "https://mcp.mtnewswires.com/mcp",
+    "vendor": "MT Newswires",
+    "website": "https://www.mtnewswires.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "ticket-tailor",
+    "name": "Ticket Tailor",
+    "url": "https://mcp.tickettailor.ai/mcp",
+    "vendor": "Ticket Tailor",
+    "website": "https://www.tickettailor.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "jasper",
+    "name": "Jasper",
+    "url": "https://mcp.jasper.ai/",
+    "vendor": "Jasper",
+    "website": "https://jasper.ai/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "signnow",
+    "name": "SignNow",
+    "url": "https://mcp-server.signnow.com/mcp",
+    "vendor": "airSlate Inc",
+    "website": "https://www.airslate.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "etherscan",
+    "name": "Etherscan",
+    "url": "https://mcp-keyless.etherscan.io/mcp",
+    "vendor": "etherscan",
+    "website": "https://etherscan.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Financial services"]
+  },
+  {
+    "id": "rootly",
+    "name": "Rootly",
+    "url": "https://mcp.rootly.com/mcp",
+    "vendor": "Rootly",
+    "website": "https://rootly.com/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "alma",
+    "name": "Alma",
+    "url": "https://mcp.alma.food/",
+    "vendor": "Alma",
+    "website": "https://alma.food/",
+    "description": "",
+    "categories": ["Consumer health"]
+  },
+  {
+    "id": "tomorrow-io-weather-mcp-app",
+    "name": "Tomorrow.io Weather MCP App",
+    "url": "https://api.tomorrow.io/v4/weather-intelligence/mcp",
+    "vendor": "Tomorrow.io",
+    "website": "https://www.tomorrow.io/",
+    "description": "",
+    "categories": ["Health & life sciences", "Other", "Travel"]
+  },
+  {
+    "id": "seamless",
+    "name": "Seamless",
+    "url": "https://mcp.seamless.ai/mcp",
+    "vendor": "Seamless",
+    "website": "https://seamless.ai/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "shop",
+    "name": "Shop",
+    "url": "https://mcp.shop.com/",
+    "vendor": "Shopify",
+    "website": "https://shop.app/",
+    "description": "",
+    "categories": ["Commerce & shopping"]
+  },
+  {
+    "id": "dhs-program",
+    "name": "Demographic and Health Surveys",
+    "url": "https://api.dhsprogram.com/mcp",
+    "vendor": "ICF",
+    "website": "https://dhsprogram.com/",
+    "description": "",
+    "categories": ["Consumer health"]
+  },
+  {
+    "id": "thoughtspot-spotter",
+    "name": "ThoughtSpot Spotter",
+    "url": "https://agent.thoughtspot.app/mcp?api-version=latest",
+    "vendor": "ThoughtSpot",
+    "website": "https://www.thoughtspot.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "pinegap",
+    "name": "Pinegap",
+    "url": "https://mcp.pinegap.ai/",
+    "vendor": "PineGap",
+    "website": "https://www.pinegap.ai/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "intuit-developer",
+    "name": "Intuit Developer",
+    "url": "https://ai-inc-developer.intuit.com/v1/mcp",
+    "vendor": "Intuit",
+    "website": "https://developer.intuit.com/",
+    "description": "",
+    "categories": ["Developer tools", "Financial services", "Productivity"]
+  },
+  {
+    "id": "remote-com",
+    "name": "Remote",
+    "url": "https://mcp.remote.com/mcp",
+    "vendor": "Remote Technology Services, Inc.",
+    "website": "https://remote.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "betterstack",
+    "name": "mcp.betterstack.com",
+    "url": "https://mcp.betterstack.com/",
+    "vendor": "Better Stack, Inc.",
+    "website": "https://betterstack.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools"]
+  },
+  {
+    "id": "payhawk",
+    "name": "Payhawk",
+    "url": "https://mcp.payhawk.com/mcp",
+    "vendor": "Payhawk",
+    "website": "https://payhawk.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "aftership-channels-for-tiktok-shop",
+    "name": "AfterShip Channels for TikTok Shop",
+    "url": "https://mcp.aftership.com/channels",
+    "vendor": "AfterShip",
+    "website": "https://www.aftership.com/",
+    "description": "",
+    "categories": ["Commerce & shopping"]
+  },
+  {
+    "id": "yardi-matrix",
+    "name": "Yardi Matrix",
+    "url": "https://matrixmcp.virtuoso.ai/mcp",
+    "vendor": "Yardi Systems Inc",
+    "website": "https://www.yardi.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "blockscout",
+    "name": "Blockscout",
+    "url": "https://mcp.blockscout.com/mcp",
+    "vendor": "Blockscout",
+    "website": "https://www.blockscout.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "felt-maps",
+    "name": "Felt Maps",
+    "url": "https://felt.com/mcp",
+    "vendor": "Felt Maps",
+    "website": "https://felt.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "sent",
+    "name": "Sent",
+    "url": "https://mcp.sent.dm/mcp",
+    "vendor": "Sent, Inc.",
+    "website": "https://www.sent.dm/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Developer tools",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "squarespace",
+    "name": "Squarespace",
+    "url": "https://mcp.squarespace.com/mcp",
+    "vendor": "Squarespace",
+    "website": "https://www.squarespace.com/",
+    "description": "",
+    "categories": ["Commerce & shopping", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "nsdap-archiv-der-spiegel",
+    "name": "NSDAP Archiv - DER SPIEGEL",
+    "url": "https://nsdap-mcp.prod.ki.spiegel.de/mcp",
+    "vendor": "DER SPIEGEL",
+    "website": "https://www.spiegel.de/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Education",
+      "Media & entertainment",
+      "Other"
+    ]
+  },
+  {
+    "id": "ontra",
+    "name": "Ontra",
+    "url": "https://mcp.ontra.ai/mcp",
+    "vendor": "Ontra",
+    "website": "https://www.ontra.ai/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "unblocked",
+    "name": "Unblocked",
+    "url": "https://getunblocked.com/api/mcpsse",
+    "vendor": "Unblocked",
+    "website": "https://getunblocked.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "klue",
+    "name": "Klue",
+    "url": "https://mcp.app.klue.com/mcp",
+    "vendor": "Klue Labs",
+    "website": "https://klue.com/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "helena-by-enrich-labs",
+    "name": "Helena by Enrich Labs",
+    "url": "https://agent.enrichlabs.ai/api/mcp",
+    "vendor": "Enrich Labs",
+    "website": "https://www.enrichlabs.ai/",
+    "description": "",
+    "categories": ["Commerce & shopping", "Creative", "Sales & marketing"]
+  },
+  {
+    "id": "letsfg",
+    "name": "LetsFG | Book the best flights or hotels",
+    "url": "https://letsfg.co/mcp",
+    "vendor": "LetsFG",
+    "website": "https://letsfg.co/",
+    "description": "",
+    "categories": ["Productivity", "Travel"]
+  },
+  {
+    "id": "fastmail",
+    "name": "Fastmail",
+    "url": "https://api.fastmail.com/mcp",
+    "vendor": "Fastmail",
+    "website": "https://fastmail.com/",
+    "description": "",
+    "categories": ["Communication", "Productivity"]
+  },
+  {
+    "id": "vaisala-xweather",
+    "name": "Vaisala Xweather",
+    "url": "https://mcp.api.xweather.com/mcp",
+    "vendor": "Vaisala Xweather",
+    "website": "https://xweather.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools"]
+  },
+  {
+    "id": "razorpay",
+    "name": "Razorpay",
+    "url": "https://mcp.razorpay.com/mcp",
+    "vendor": "Razorpay Software Private Limited",
+    "website": "https://razorpay.com/about/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "planetscale",
+    "name": "PlanetScale",
+    "url": "https://mcp.pscale.dev/mcp/planetscale",
+    "vendor": "PlanetScale",
+    "website": "https://planetscale.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "phoenix",
+    "name": "Phoenix by HG Insights",
+    "url": "https://phoenix.hginsights.com/api/ai/mcp",
+    "vendor": "HG Insights",
+    "website": "https://hginsights.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Sales & marketing"]
+  },
+  {
+    "id": "sprinto-mcp-plugins",
+    "name": "Sprinto MCP",
+    "url": "https://mcp.sprinto.com/tools",
+    "vendor": "Sprinto",
+    "website": "https://sprinto.com/",
+    "description": "",
+    "categories": ["Other"]
+  },
+  {
+    "id": "coinversa-pulse",
+    "name": "Coinversa Pulse",
+    "url": "https://mcp.coinversa.ai/mcp",
+    "vendor": "Coinversaa Incorporated",
+    "website": "https://coinversa.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Financial services"]
+  },
+  {
+    "id": "campfire",
+    "name": "Campfire",
+    "url": "https://api.meetcampfire.com/mcp",
+    "vendor": "Campfire",
+    "website": "https://campfire.ai/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "padlet-mcp",
+    "name": "Padlet",
+    "url": "https://mcp.padlet.com/",
+    "vendor": "Wallwisher, Inc.",
+    "website": "https://padlet.com/",
+    "description": "",
+    "categories": ["Education", "Productivity"]
+  },
+  {
+    "id": "botify-mcp",
+    "name": "Botify MCP",
+    "url": "https://mcp.botify.com/",
+    "vendor": "Botify",
+    "website": "https://www.botify.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "snagajob",
+    "name": "Snagajob",
+    "url": "https://platform.jobget.com/jobs-mcp/mcp",
+    "vendor": "JobGet",
+    "website": "https://www.jobget.com/",
+    "description": "",
+    "categories": ["Other", "Productivity"]
+  },
+  {
+    "id": "scribemcp",
+    "name": "Scribe MCP",
+    "url": "https://mcp.scribe.com/capture/mcp",
+    "vendor": "Scribe",
+    "website": "https://scribe.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "govtribe",
+    "name": "GovTribe",
+    "url": "https://govtribe.com/mcp",
+    "vendor": "Government Executive Media Group LLC",
+    "website": "https://govtribe.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "general-legal",
+    "name": "General Legal",
+    "url": "https://mcp.general.legal/mcp",
+    "vendor": "General Legal",
+    "website": "https://general.legal/",
+    "description": "",
+    "categories": ["Legal"]
+  },
+  {
+    "id": "productive-io",
+    "name": "Productive",
+    "url": "https://mcp.productive.io/mcp",
+    "vendor": "Productive",
+    "website": "https://productive.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "gainsight-customer-communities",
+    "name": "Gainsight (Customer Communities)",
+    "url": "https://mcp.insided.com/mcp",
+    "vendor": "Gainsight",
+    "website": "https://communities.gainsight.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "scriptivox",
+    "name": "Scriptivox",
+    "url": "https://platform.scriptivox.com/mcp",
+    "vendor": "Scriptivox",
+    "website": "https://www.scriptivox.com/",
+    "description": "",
+    "categories": ["Communication", "Productivity"]
+  },
+  {
+    "id": "polar-analytics",
+    "name": "Polar Analytics",
+    "url": "https://api.polaranalytics.com/mcp",
+    "vendor": "Polar Analytics",
+    "website": "https://www.polaranalytics.com/ai/mcp",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "datarails-financeos",
+    "name": "Datarails FinanceOS",
+    "url": "https://mcp.datarails.com/mcp",
+    "vendor": "Datarails",
+    "website": "https://www.datarails.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services", "Productivity"]
+  },
+  {
+    "id": "granted",
+    "name": "Granted",
+    "url": "https://grantedai.com/api/mcp/mcp",
+    "vendor": "Granted AI",
+    "website": "https://grantedai.com/",
+    "description": "",
+    "categories": ["Nonprofit"]
+  },
+  {
+    "id": "courtroom5",
+    "name": "Courtroom5",
+    "url": "https://mcp.courtroom5.com/v1",
+    "vendor": "Courtroom5",
+    "website": "https://courtroom5.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "descrybe",
+    "name": "Descrybe Legal Engine",
+    "url": "https://mcp.descrybe.com/mcp",
+    "vendor": "Descrybe",
+    "website": "https://descrybe.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "paxton-legal-research",
+    "name": "Paxton Legal Research",
+    "url": "https://paxton-mcp-connector-xmfvvq3waa-uc.a.run.app/mcp",
+    "vendor": "Paxton",
+    "website": "https://www.paxton.ai/",
+    "description": "",
+    "categories": ["Legal"]
+  },
+  {
+    "id": "mcp-browserstack-com",
+    "name": "BrowserStack",
+    "url": "https://mcp.browserstack.com/mcp",
+    "vendor": "BrowserStack",
+    "website": "https://browserstack.com/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "sybill",
+    "name": "Sybill",
+    "url": "https://mcp.sybill.ai/mcp",
+    "vendor": "Sybill Inc.",
+    "website": "https://www.sybill.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "pending-brand24",
+    "name": "Brand24",
+    "url": "https://mcp.brand24.com/v1/mcp",
+    "vendor": "Brand24 Global Inc.",
+    "website": "https://brand24.com/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "bloomberg-law",
+    "name": "Bloomberg Law",
+    "url": "https://gw.mcp.bindg.ai/blaw/mcp",
+    "vendor": "Bloomberg Industry Group",
+    "website": "https://www.bloombergindustry.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Legal", "Productivity"]
+  },
+  {
+    "id": "celigo",
+    "name": "Celigo",
+    "url": "https://api.integrator.io/celigo-mcp",
+    "vendor": "Celigo",
+    "website": "https://www.celigo.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "planning-center",
+    "name": "Planning Center",
+    "url": "https://mcp.planningcenteronline.com/mcp",
+    "vendor": "Planning Center",
+    "website": "https://www.planningcenter.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "kajabi",
+    "name": "Kajabi",
+    "url": "https://mcp.kajabi.com/mcp",
+    "vendor": "Kajabi",
+    "website": "https://kajabi.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Creative",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "roboflow",
+    "name": "Roboflow",
+    "url": "https://mcp.roboflow.com/mcp",
+    "vendor": "Roboflow",
+    "website": "https://roboflow.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "unstructured-transform",
+    "name": "Unstructured Transform",
+    "url": "https://mcp.transform.unstructured.io/",
+    "vendor": "Unstructured",
+    "website": "https://unstructured.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "loops",
+    "name": "Loops",
+    "url": "https://mcp.loops.so/",
+    "vendor": "Loops",
+    "website": "https://loops.so/",
+    "description": "",
+    "categories": ["Creative", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "gocardless",
+    "name": "GoCardless",
+    "url": "https://mcp.gocardless.com/",
+    "vendor": "GoCardless",
+    "website": "https://gocardless.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "airwallex",
+    "name": "Airwallex Developer",
+    "url": "https://mcp-demo.airwallex.com/developer",
+    "vendor": "Airwallex",
+    "website": "https://www.airwallex.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "zite",
+    "name": "Zite",
+    "url": "https://mcp.zite.com/mcp",
+    "vendor": "Zite",
+    "website": "https://www.zite.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "rally-mcp",
+    "name": "Rally MCP",
+    "url": "https://mcp.rallyuxr.com/mcp",
+    "vendor": "Rally HQ, Inc.",
+    "website": "https://rallyuxr.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "fibery",
+    "name": "Fibery",
+    "url": "https://mcp.fibery.io/mcp",
+    "vendor": "Fibery",
+    "website": "https://fibery.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "constant-contact",
+    "name": "Constant Contact",
+    "url": "https://mcp.apps.constantcontact.com/public_api/mcp",
+    "vendor": "Constant Contact",
+    "website": "https://www.constantcontact.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "perspective-ai",
+    "name": "Perspective AI",
+    "url": "https://getperspective.ai/mcp",
+    "vendor": "Perspective AI",
+    "website": "https://getperspective.ai/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Creative",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "robin-powered",
+    "name": "Robin (Workplace)",
+    "url": "https://mcp.robinpowered.com/mcp",
+    "vendor": "Robin Powered, Inc.",
+    "website": "https://robinpowered.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "speeda",
+    "name": "Speeda",
+    "url": "https://speeda-mcp.ub-speeda.com/mcp",
+    "vendor": "Uzabase, Inc.",
+    "website": "https://www.uzabase.com/jp/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Developer tools",
+      "Financial services",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "docsend-com",
+    "name": "docsend.com",
+    "url": "https://docsend.com/mcp",
+    "vendor": "Dropbox DocSend",
+    "website": "https://www.docsend.com/features/virtual-data-room/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Financial services",
+      "Legal",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "brek-hotel-wholesale-booking",
+    "name": "Brek - Hotel Wholesale Booking",
+    "url": "https://mcp.brek.com/mcp",
+    "vendor": "Brek",
+    "website": "https://www.brek.com/",
+    "description": "",
+    "categories": ["Commerce & shopping", "Travel"]
+  },
+  {
+    "id": "corraldata",
+    "name": "CorralData",
+    "url": "https://mcp.corraldata.com/mcp",
+    "vendor": "CorralData",
+    "website": "https://corraldata.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Health & life sciences"]
+  },
+  {
+    "id": "sumsub",
+    "name": "Sumsub",
+    "url": "https://api.sumsub.com/mcp/",
+    "vendor": "Sumsub",
+    "website": "https://sumsub.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "smartling",
+    "name": "Smartling",
+    "url": "https://mcp.smartling.com/mcp",
+    "vendor": "Smartling, Inc.",
+    "website": "https://www.smartling.com/",
+    "description": "",
+    "categories": ["Creative", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "leadfeeder",
+    "name": "Leadfeeder",
+    "url": "https://mcp.leadfeeder.com/mcp",
+    "vendor": "Leadfeeder",
+    "website": "https://leadfeeder.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "spinach-ai",
+    "name": "Spinach AI",
+    "url": "https://mcp.spinach.ai/mcp",
+    "vendor": "Spinach AI",
+    "website": "https://www.spinach.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "healthex",
+    "name": "HealthEx",
+    "url": "https://api.healthex.io/mcp",
+    "vendor": "HDX Labs, Inc. (dba HealthEx)",
+    "website": "https://healthex.io/",
+    "description": "",
+    "categories": ["Consumer health"]
+  },
+  {
+    "id": "digits",
+    "name": "Digits",
+    "url": "https://api.digits.com/mcp",
+    "vendor": "Digits Financial, Inc.",
+    "website": "https://digits.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "clarify",
+    "name": "Clarify",
+    "url": "https://api.clarify.ai/mcp",
+    "vendor": "Clarify",
+    "website": "https://www.clarify.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "day-ai",
+    "name": "Day AI",
+    "url": "https://day.ai/api/mcp",
+    "vendor": "Day AI",
+    "website": "https://day.ai/",
+    "description": "",
+    "categories": ["Communication", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "spotdraft",
+    "name": "SpotDraft",
+    "url": "https://mcp.us.spotdraft.com/mcp",
+    "vendor": "SpotDraft",
+    "website": "https://spotdraft.com/",
+    "description": "",
+    "categories": ["Legal"]
+  },
+  {
+    "id": "onesignal",
+    "name": "OneSignal",
+    "url": "https://api.onesignal.com/mcp/oauth",
+    "vendor": "OneSignal",
+    "website": "https://onesignal.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Communication",
+      "Data & analytics",
+      "Developer tools",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "livestorm",
+    "name": "Livestorm",
+    "url": "https://mcp.livestorm.co/mcp",
+    "vendor": "Livestorm",
+    "website": "https://livestorm.co/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "shippo",
+    "name": "Shippo",
+    "url": "https://mcp.shippo.com/",
+    "vendor": "Shippo",
+    "website": "https://shippo.com/",
+    "description": "",
+    "categories": ["Commerce & shopping", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "wingify",
+    "name": "Wingify",
+    "url": "https://mcp.wingify.ai/mcp",
+    "vendor": "Wingify Software Pvt. Ltd",
+    "website": "https://vwo.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "manatal",
+    "name": "Manatal",
+    "url": "https://mcp.manatal.com/mcp",
+    "vendor": "Manatal",
+    "website": "https://www.manatal.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "sprouts",
+    "name": "Sprouts Data Intelligence",
+    "url": "https://sprouts-mcp-server.kartikay-dhar.workers.dev/",
+    "vendor": "Sprouts.ai",
+    "website": "https://sprouts.ai/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "tabs",
+    "name": "Tabs",
+    "url": "https://integrators.prod.api.tabsplatform.com/mcp",
+    "vendor": "Tabs Platform, Inc.",
+    "website": "https://tabs.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "etoro-connector",
+    "name": "etoro",
+    "url": "https://mcp-readonly.public-api.etoro.com/",
+    "vendor": "etoro",
+    "website": "https://etoro.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "chartmogul",
+    "name": "ChartMogul",
+    "url": "https://mcp.chartmogul.com/",
+    "vendor": "ChartMogul",
+    "website": "https://chartmogul.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "taskrabbit",
+    "name": "Taskrabbit Booking Assistance",
+    "url": "https://mcp.taskrabbit.com/mcp",
+    "vendor": "Taskrabbit",
+    "website": "https://www.taskrabbit.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "lawvu",
+    "name": "LawVu",
+    "url": "https://mcp.lawvu.com/mcp",
+    "vendor": "LawVu Limited",
+    "website": "https://lawvu.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "flexport",
+    "name": "Flexport",
+    "url": "https://mcp.flexport.com/mcp",
+    "vendor": "Flexport Inc",
+    "website": "https://www.flexport.com/",
+    "description": "",
+    "categories": ["Communication", "Data & analytics", "Other", "Productivity"]
+  },
+  {
+    "id": "llamaparse",
+    "name": "LlamaParse",
+    "url": "https://mcp.llamaindex.ai/mcp",
+    "vendor": "LlamaIndex",
+    "website": "https://llamaindex.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "bling-mcp",
+    "name": "Bling MCP",
+    "url": "https://mcp.bling.com.br/mcp",
+    "vendor": "Bling",
+    "website": "https://www.bling.com.br/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Developer tools",
+      "Financial services",
+      "Other",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "softr",
+    "name": "Softr",
+    "url": "https://mcp.softr.io/mcp",
+    "vendor": "Softr",
+    "website": "https://www.softr.io/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "tango",
+    "name": "Tango",
+    "url": "https://govcon.dev/mcp",
+    "vendor": "MakeGov Inc",
+    "website": "https://makegov.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "coteach",
+    "name": "Coteach",
+    "url": "https://coteach.ai/api/mcp",
+    "vendor": "Coteach",
+    "website": "https://coteach.ai/",
+    "description": "",
+    "categories": ["Education"]
+  },
+  {
+    "id": "attentive",
+    "name": "Attentive",
+    "url": "https://attentive-ui-mcp.attentivemobile.com/mcp?readOnly=false",
+    "vendor": "Attentive",
+    "website": "https://www.attentive.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "melon",
+    "name": "Melon",
+    "url": "https://mcp.melon.com/mcp/",
+    "vendor": "Kakao Entertainment",
+    "website": "https://newsroom.kakaoent.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "viberate",
+    "name": "Viberate music data",
+    "url": "https://mcp.viberate.com/v1/sse",
+    "vendor": "Viberate",
+    "website": "https://viberate.com/",
+    "description": "",
+    "categories": ["Creative", "Data & analytics", "Media & entertainment"]
+  },
+  {
+    "id": "harness",
+    "name": "Harness",
+    "url": "https://mcp.harness.io/mcp",
+    "vendor": "Harness.io",
+    "website": "https://www.harness.io/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "mapbox-mcp",
+    "name": "Mapbox",
+    "url": "https://mcp.mapbox.com/mcp",
+    "vendor": "Mapbox",
+    "website": "https://www.mapbox.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Travel"]
+  },
+  {
+    "id": "lawstronaut",
+    "name": "Lawstronaut",
+    "url": "https://mcp.lawstronaut.com/",
+    "vendor": "Lawstronaut",
+    "website": "https://lawstronaut.com/",
+    "description": "",
+    "categories": ["Legal"]
+  },
+  {
+    "id": "lumin",
+    "name": "Lumin",
+    "url": "https://mcp.luminpdf.com/mcp",
+    "vendor": "Lumin",
+    "website": "https://www.luminpdf.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "zocks",
+    "name": "Zocks",
+    "url": "https://mcp.zocks.io/v1/mcp",
+    "vendor": "Zocks",
+    "website": "https://www.zocks.io/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "clio",
+    "name": "Clio",
+    "url": "https://mcp.api.clio.com/mcp",
+    "vendor": "Themis Solutions Inc. (DBA Clio)",
+    "website": "https://www.clio.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "bitrise-mcp",
+    "name": "Bitrise MCP",
+    "url": "https://mcp.bitrise.io/",
+    "vendor": "Bitrise, Inc.",
+    "website": "https://bitrise.io/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "kuliko-ai",
+    "name": "Kuliko AI",
+    "url": "https://mcp.kuliko.ai/mcp",
+    "vendor": "Kuliko Inc.",
+    "website": "https://kuliko.ai/",
+    "description": "",
+    "categories": ["Education", "Productivity"]
+  },
+  {
+    "id": "weweb",
+    "name": "WeWeb",
+    "url": "https://ai-api.weweb.io/v1/mcp",
+    "vendor": "WeWeb",
+    "website": "https://www.weweb.io/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "mygeotab-mcp-prod",
+    "name": "MyGeotab MCP",
+    "url": "https://mcp.geotab.com/mygeotab",
+    "vendor": "Geotab",
+    "website": "https://geotab.com/geotab-mcp-connector",
+    "description": "",
+    "categories": ["Other"]
+  },
+  {
+    "id": "fever-event-discovery",
+    "name": "Fever Event Discovery",
+    "url": "https://data-search.apigw.feverup.com/mcp",
+    "vendor": "Fever",
+    "website": "https://feverup.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "shapes",
+    "name": "Shapes",
+    "url": "https://mcp.shapes.co/mcp",
+    "vendor": "Shapes",
+    "website": "https://shapes.co/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "athenahq",
+    "name": "AthenaHQ",
+    "url": "https://api.athenahq.ai/api/mcp",
+    "vendor": "AthenaHQ",
+    "website": "https://athenahq.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "angellist",
+    "name": "AngelList",
+    "url": "https://mcp.angellist.com/mcp",
+    "vendor": "AngelList",
+    "website": "https://www.angellist.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "shipbob",
+    "name": "ShipBob",
+    "url": "https://api.shipbob.com/developer-api/mcp",
+    "vendor": "ShipBob",
+    "website": "https://www.shipbob.com/",
+    "description": "",
+    "categories": ["Commerce & shopping"]
+  },
+  {
+    "id": "orion",
+    "name": "Orion by Gravity",
+    "url": "https://g.runorion.com/mcp",
+    "vendor": "Gravity",
+    "website": "https://bygravity.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "process-street",
+    "name": "Process Street",
+    "url": "https://mcp.process.st/",
+    "vendor": "Process Street",
+    "website": "https://www.process.st/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "quicknode",
+    "name": "QuickNode",
+    "url": "https://mcp.quicknode.com/mcp",
+    "vendor": "QuickNode",
+    "website": "https://www.quicknode.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "cube-software",
+    "name": "Cube Software",
+    "url": "https://mcp.cubesoftware.com/",
+    "vendor": "Cube",
+    "website": "https://www.cubesoftware.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services", "Productivity"]
+  },
+  {
+    "id": "freshbooks",
+    "name": "FreshBooks",
+    "url": "https://mcp.freshbooks.com/v1",
+    "vendor": "FreshBooks",
+    "website": "https://www.freshbooks.com/",
+    "description": "",
+    "categories": ["Financial services", "Productivity"]
+  },
+  {
+    "id": "pophive",
+    "name": "PopHIVE",
+    "url": "https://mcp.pophive.org/mcp",
+    "vendor": "Yale School of Public Health",
+    "website": "https://www.pophive.org/",
+    "description": "",
+    "categories": ["Consumer health"]
+  },
+  {
+    "id": "wonder",
+    "name": "Wonder",
+    "url": "https://mcp.wonder.so/mcp",
+    "vendor": "Aquila Labs, Inc",
+    "website": "https://wonder.design/",
+    "description": "",
+    "categories": ["Creative", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "iubenda",
+    "name": "iubenda: Privacy policy & cookie banner",
+    "url": "https://mcp-server.iubenda.com/mcp",
+    "vendor": "iubenda",
+    "website": "https://www.iubenda.com/",
+    "description": "",
+    "categories": ["Developer tools", "Legal", "Productivity"]
+  },
+  {
+    "id": "loopio",
+    "name": "Loopio",
+    "url": "https://mcp-server.loopio.com/v1/mcp",
+    "vendor": "Loopio",
+    "website": "https://loopio.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "usafacts-connector",
+    "name": "USAFacts Government Data Connector",
+    "url": "https://data.mcp.usafacts.org/mcp",
+    "vendor": "USAFacts",
+    "website": "https://usafacts.org/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "mospi",
+    "name": "MoSPI",
+    "url": "https://mcp.mospi.gov.in/",
+    "vendor": "Ministry of Statistics and Programme Implementation (MoSPI), Government of India",
+    "website": "https://www.mospi.gov.in/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "abency",
+    "name": "Abency",
+    "url": "https://app.abency.com/mcp",
+    "vendor": "Additiu Marketing Digital SL",
+    "website": "https://abency.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "graphos-tools",
+    "name": "GraphOS MCP Tools",
+    "url": "https://mcp.apollographql.com/",
+    "vendor": "Apollo GraphQL",
+    "website": "https://www.apollographql.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "mdn",
+    "name": "MDN",
+    "url": "https://mcp.mdn.mozilla.net/",
+    "vendor": "Mozilla",
+    "website": "https://developer.mozilla.org/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "leaveadot",
+    "name": "dot.",
+    "url": "https://mcp.leaveadot.com/mcp",
+    "vendor": "dot.",
+    "website": "https://www.leaveadot.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "orion-advisor-solutions",
+    "name": "Orion",
+    "url": "https://gateway.oriondenali.ai/mcp",
+    "vendor": "Orion",
+    "website": "https://orion.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "addepar",
+    "name": "Addepar MCP",
+    "url": "https://mcp.addepar.com/",
+    "vendor": "Addepar",
+    "website": "https://addepar.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services", "Productivity"]
+  },
+  {
+    "id": "lightfield",
+    "name": "Lightfield",
+    "url": "https://mcp.lightfield.app/mcp",
+    "vendor": "Lightfield",
+    "website": "https://lightfield.app/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "cargoai",
+    "name": "CargoAi",
+    "url": "https://api.cargoai.co/mcp",
+    "vendor": "CargoAi",
+    "website": "https://www.cargoai.co/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "light",
+    "name": "Light",
+    "url": "https://api.light.inc/mcp",
+    "vendor": "Light",
+    "website": "https://www.light.inc/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "black-diamond",
+    "name": "Black Diamond",
+    "url": "https://bd3.bdreporting.com/mcp",
+    "vendor": "SS&C Black Diamond",
+    "website": "https://www.sscblackdiamond.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "travexp",
+    "name": "TravExp",
+    "url": "https://travexpserver-1-5480123242.us-central1.run.app/mcp-standard",
+    "vendor": "TravExp Inc",
+    "website": "https://www.travexp.live/",
+    "description": "",
+    "categories": ["Travel"]
+  },
+  {
+    "id": "8am-mycase",
+    "name": "8am MyCase",
+    "url": "https://mcp.mycase.com/mcp",
+    "vendor": "8am",
+    "website": "https://8am.com/",
+    "description": "",
+    "categories": ["Legal"]
+  },
+  {
+    "id": "addgene",
+    "name": "Addgene",
+    "url": "https://mcp-server.addgene.org/mcp",
+    "vendor": "Addgene",
+    "website": "https://www.addgene.org/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "wetransfer",
+    "name": "WeTransfer",
+    "url": "https://mcp-server.wetransfer.com/mcp",
+    "vendor": "WeTransfer",
+    "website": "https://wetransfer.com/",
+    "description": "",
+    "categories": ["Communication", "Creative", "Productivity"]
+  },
+  {
+    "id": "giscloud",
+    "name": "GIS Cloud",
+    "url": "https://mcp.giscloud.com/mcp",
+    "vendor": "GIS Cloud",
+    "website": "https://www.giscloud.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "subtext",
+    "name": "Subtext",
+    "url": "https://api.fullstory.com/mcp/subtext",
+    "vendor": "Fullstory",
+    "website": "https://subtext.fullstory.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools"]
+  },
+  {
+    "id": "stytch",
+    "name": "Stytch",
+    "url": "https://mcp.stytch.dev/mcp",
+    "vendor": "Stytch",
+    "website": "https://stytch.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "actively",
+    "name": "Actively",
+    "url": "https://api.actively.ai/mcp",
+    "vendor": "Taurus Labs, Inc.",
+    "website": "https://www.actively.ai/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "bigin-zohomcp-com",
+    "name": "Bigin by Zoho CRM",
+    "url": "https://bigin.zohomcp.com/mcp/message",
+    "vendor": "Zoho Corporation",
+    "website": "https://www.zoho.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "lilt",
+    "name": "LILT",
+    "url": "https://mcp.lilt.com/mcp",
+    "vendor": "LILT",
+    "website": "https://lilt.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "blackthorn-beacon-event-management-for-salesforce",
+    "name": "Blackthorn Forge MCP for Native Salesforce Event Management",
+    "url": "https://forge.blackthorn.io/api/mcp",
+    "vendor": "Blackthorn.io",
+    "website": "https://blackthorn.io/",
+    "description": "",
+    "categories": ["Education", "Nonprofit"]
+  },
+  {
+    "id": "all-accor",
+    "name": "ALL Accor",
+    "url": "https://mcp.dams.aws.accor.com/green/v1/mcp/apps",
+    "vendor": "Accor",
+    "website": "https://all.accor.com/",
+    "description": "",
+    "categories": ["Travel"]
+  },
+  {
+    "id": "jus-mundi",
+    "name": "Jus AI by Jus Mundi (Light Mode)",
+    "url": "https://mcp.jusmundi.com/",
+    "vendor": "Jus Mundi",
+    "website": "https://jusmundi.com/",
+    "description": "",
+    "categories": ["Legal"]
+  },
+  {
+    "id": "chariot",
+    "name": "Chariot",
+    "url": "https://api.givechariot.com/mcp",
+    "vendor": "Chariot",
+    "website": "https://givechariot.com/",
+    "description": "",
+    "categories": ["Financial services", "Nonprofit"]
+  },
+  {
+    "id": "salesflare",
+    "name": "Salesflare",
+    "url": "https://mcp.salesflare.com/mcp",
+    "vendor": "Salesflare",
+    "website": "https://salesflare.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "vianexus-vast",
+    "name": "viaNexus vAST",
+    "url": "https://vast.blueskyapi.com/vianexus/mcp",
+    "vendor": "viaNexus",
+    "website": "https://vianexus.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Financial services",
+      "Other"
+    ]
+  },
+  {
+    "id": "autonomad",
+    "name": "AUTONOMAD",
+    "url": "https://mcp.autonomad.ai/mcp",
+    "vendor": "AUTONOMAD",
+    "website": "https://www.autonomad.ai/",
+    "description": "",
+    "categories": ["Travel"]
+  },
+  {
+    "id": "myob",
+    "name": "MYOB",
+    "url": "https://mcp.myob.com/mcp",
+    "vendor": "MYOB",
+    "website": "https://www.myob.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "zacks-data",
+    "name": "Zacks Data",
+    "url": "https://mcp.zacksdata.com/",
+    "vendor": "Zacks Investment Research",
+    "website": "https://ai.zacksdata.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "pursuit",
+    "name": "Pursuit",
+    "url": "https://api.pursuit.us/mcp",
+    "vendor": "Pursuit Markets Inc",
+    "website": "https://pursuit.us/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "airwallex-c8725a",
+    "name": "Airwallex",
+    "url": "https://mcp.airwallex.com/mcp",
+    "vendor": "Airwallex",
+    "website": "https://www.airwallex.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Developer tools",
+      "Financial services",
+      "Legal",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "hubstaff",
+    "name": "Hubstaff",
+    "url": "https://mcp.hubstaff.com/",
+    "vendor": "Hubstaff",
+    "website": "https://hubstaff.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "patlytics",
+    "name": "Patlytics",
+    "url": "https://mcp.patlytics.ai/mcp",
+    "vendor": "Patlytics",
+    "website": "https://www.patlytics.ai/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "windsor-ai-for-paid-media",
+    "name": "Windsor.ai for Paid Media",
+    "url": "https://mcp.windsor.ai/paid_media",
+    "vendor": "Windsor.ai",
+    "website": "https://windsor.ai/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Data & analytics",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "wealth-com",
+    "name": "Wealth.com",
+    "url": "https://mcp.wealth.com/mcp",
+    "vendor": "Wealth.com",
+    "website": "https://www.wealth.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "instrumentl",
+    "name": "Instrumentl",
+    "url": "https://mcp.instrumentl.com/",
+    "vendor": "Instrumentl",
+    "website": "https://www.instrumentl.com/",
+    "description": "",
+    "categories": ["Nonprofit"]
+  },
+  {
+    "id": "aiwyn-tax",
+    "name": "Aiwyn Tax (formerly Column Tax)",
+    "url": "https://mcp.columnapi.com/mcp",
+    "vendor": "Aiwyn, Inc.",
+    "website": "https://aiwyn.ai/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "dext",
+    "name": "Dext",
+    "url": "https://app.dext.com/mcp",
+    "vendor": "Dext",
+    "website": "https://dext.com/",
+    "description": "",
+    "categories": ["Financial services", "Productivity"]
+  },
+  {
+    "id": "unthread",
+    "name": "Unthread",
+    "url": "https://app.unthread.io/api/mcp",
+    "vendor": "Unthread",
+    "website": "https://unthread.io/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "definely",
+    "name": "Definely",
+    "url": "https://mcp.app.definely.com/",
+    "vendor": "Definely",
+    "website": "https://www.definely.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "pg-aiguide",
+    "name": "pg-aiguide",
+    "url": "https://mcp.tigerdata.com/docs",
+    "vendor": "Tiger Data",
+    "website": "https://tigerdata.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "datacamp",
+    "name": "DataCamp",
+    "url": "https://mcp.datacamp.com/v1/mcp",
+    "vendor": "DataCamp",
+    "website": "https://www.datacamp.com/",
+    "description": "",
+    "categories": ["Education"]
+  },
+  {
+    "id": "wealthbox",
+    "name": "Wealthbox",
+    "url": "https://mcp.crmworkspace.com/mcp",
+    "vendor": "Wealthbox",
+    "website": "https://www.wealthbox.com/",
+    "description": "",
+    "categories": ["Financial services", "Productivity"]
+  },
+  {
+    "id": "anrok",
+    "name": "Anrok",
+    "url": "https://mcp.anrok.com/mcp",
+    "vendor": "Anrok",
+    "website": "https://anrok.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "clarity-ai",
+    "name": "Clarity AI",
+    "url": "https://clarity-sfdr20-mcp.pro.clarity.ai/mcp",
+    "vendor": "Clarity AI",
+    "website": "https://clarity.ai/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "vani",
+    "name": "Vani by Zoho",
+    "url": "https://app.vanihq.com/mcp",
+    "vendor": "Zoho",
+    "website": "https://zoho.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "windmill-hr",
+    "name": "Windmill HR",
+    "url": "https://mcp.gowindmill.com/mcp",
+    "vendor": "Windmill",
+    "website": "https://gowindmill.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "verisk-xactrestore",
+    "name": "Verisk XactRestore",
+    "url": "https://xactrestore-xactremodelserver-usw2-prod.propsol.io/mcp",
+    "vendor": "Verisk Analytics, Inc.",
+    "website": "https://verisk.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "tiller",
+    "name": "Tiller",
+    "url": "https://ai-tools.tillermoney.com/mcp",
+    "vendor": "Tiller",
+    "website": "https://tiller.com/",
+    "description": "",
+    "categories": ["Financial services", "Productivity"]
+  },
+  {
+    "id": "atlar",
+    "name": "Atlar",
+    "url": "https://mcp.atlar.com/mcp",
+    "vendor": "Atlar AB",
+    "website": "https://www.atlar.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "manufact",
+    "name": "Manufact",
+    "url": "https://mcp.manufact.com/mcp",
+    "vendor": "Manufact",
+    "website": "https://manufact.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "origin",
+    "name": "Origin",
+    "url": "https://mcp.prod.originhq.com/mcp",
+    "vendor": "Origin",
+    "website": "https://www.originhq.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "infobip-message",
+    "name": "Infobip Message",
+    "url": "https://mcp.infobip.com/message",
+    "vendor": "Infobip",
+    "website": "https://infobip.com/",
+    "description": "",
+    "categories": ["Communication"]
+  },
+  {
+    "id": "xtiles",
+    "name": "xTiles",
+    "url": "https://mcp.xtiles.app/mcp",
+    "vendor": "XTILES INC.",
+    "website": "https://xtiles.app/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "legora",
+    "name": "Legora",
+    "url": "https://mcp.legora.com/mcp",
+    "vendor": "Legora",
+    "website": "https://legora.com/",
+    "description": "",
+    "categories": ["Legal"]
+  },
+  {
+    "id": "meridian-connector-for-xero",
+    "name": "Meridian Connector for Xero",
+    "url": "https://xero-connector.meridian.pilot.com/mcp",
+    "vendor": "Pilot.com, Inc.",
+    "website": "https://meridian.pilot.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services", "Productivity"]
+  },
+  {
+    "id": "rockhopper",
+    "name": "Rockhopper",
+    "url": "https://mcp.rockhopper.co/mcp",
+    "vendor": "Rockhopper Inc.",
+    "website": "https://www.rockhopper.co/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Financial services",
+      "Health & life sciences",
+      "Legal",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "privacy",
+    "name": "Privacy.com",
+    "url": "https://mcp.privacy.com/",
+    "vendor": "Privacy.com",
+    "website": "https://privacy.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "lukka-predmar",
+    "name": "Lukka Prediction Markets Data MCP",
+    "url": "https://predmar.mcp.lukka.tech/",
+    "vendor": "Lukka Inc",
+    "website": "https://lukka.tech/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "catalyst-by-zoho",
+    "name": "Catalyst by Zoho",
+    "url": "https://catalystbyzoho.zohomcp.com/mcp/message",
+    "vendor": "Catalyst by Zoho",
+    "website": "https://catalyst.zoho.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "grasp",
+    "name": "Grasp",
+    "url": "https://app.grasp-ai.com/mcp",
+    "vendor": "Grasp AI",
+    "website": "https://grasp-ai.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "controlplane",
+    "name": "Control Plane",
+    "url": "https://mcp.cpln.io/mcp",
+    "vendor": "Control Plane Corporation",
+    "website": "https://controlplane.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "embat",
+    "name": "Embat",
+    "url": "https://tellme.embat.io/mcp",
+    "vendor": "Embat",
+    "website": "https://www.embat.io/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "ample-computer",
+    "name": "Ample Computer",
+    "url": "https://api.ample.computer/mcp",
+    "vendor": "Ample Computer",
+    "website": "https://ample.computer/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "phished",
+    "name": "Phished",
+    "url": "https://mcp.phished.io/mcp",
+    "vendor": "Phished BV",
+    "website": "https://phished.io/",
+    "description": "",
+    "categories": ["Developer tools", "Other", "Productivity"]
+  },
+  {
+    "id": "cna-mcp",
+    "name": "中央社新聞 CNA TAIWAN NEWS",
+    "url": "https://ask.cna.com.tw/mcp/connect",
+    "vendor": "中央通訊社",
+    "website": "https://ask.cna.com.tw/ask",
+    "description": "",
+    "categories": ["Data & analytics", "Education", "Media & entertainment"]
+  },
+  {
+    "id": "taxact",
+    "name": "TaxAct",
+    "url": "https://mcp.taxact.com/mcp",
+    "vendor": "TaxAct",
+    "website": "https://www.taxact.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "vuetify-mcp",
+    "name": "Vuetify MCP",
+    "url": "https://mcp.vuetifyjs.com/mcp",
+    "vendor": "Vuetify",
+    "website": "https://vuetifyjs.com/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "belvo",
+    "name": "Belvo MCP",
+    "url": "https://panorama-mcp.belvo.com/mcp",
+    "vendor": "Belvo",
+    "website": "https://belvo.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "turquoise",
+    "name": "Turquoise",
+    "url": "https://mcp.turquoise.health/mcp",
+    "vendor": "Turquoise Health",
+    "website": "https://turquoise.health/",
+    "description": "",
+    "categories": ["Consumer health"]
+  },
+  {
+    "id": "supersei-crm",
+    "name": "Supersei CRM",
+    "url": "https://api.supersei.com/mcp",
+    "vendor": "Supersei",
+    "website": "https://supersei.ai/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "onfire",
+    "name": "Onfire",
+    "url": "https://mcp.onfire.ai/v1/mcp",
+    "vendor": "Onfire",
+    "website": "https://onfire.ai/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "aftership-post-purchase",
+    "name": "AfterShip Post-Purchase",
+    "url": "https://mcp.aftership.com/post-purchase",
+    "vendor": "AfterShip",
+    "website": "https://www.aftership.com/",
+    "description": "",
+    "categories": ["Commerce & shopping"]
+  },
+  {
+    "id": "bubble-mcp",
+    "name": "Bubble",
+    "url": "https://mcp.bubble.io/mcp",
+    "vendor": "Bubble",
+    "website": "https://bubble.io/",
+    "description": "",
+    "categories": ["Creative", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "jentic",
+    "name": "Jentic",
+    "url": "https://api.jentic.com/mcp",
+    "vendor": "Jentic",
+    "website": "https://jentic.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "nutshell-crm",
+    "name": "Nutshell CRM",
+    "url": "https://app.nutshell.com/mcp",
+    "vendor": "Nutshell",
+    "website": "https://www.nutshell.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "webmcp-evaluator",
+    "name": "WebMCP Evaluator",
+    "url": "https://mcp.webmcp-eval.com/mcp",
+    "vendor": "John Williams at Sun Business Group",
+    "website": "https://www.sunbusinessgroup.com/",
+    "description": "",
+    "categories": [
+      "Data & analytics",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "ketryx",
+    "name": "Ketryx",
+    "url": "https://app.ketryx.com/api/mcp",
+    "vendor": "Ketryx",
+    "website": "https://www.ketryx.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "questrade",
+    "name": "Questrade",
+    "url": "https://mcp.questrade.com/v1/brokerage/mcp",
+    "vendor": "Questrade",
+    "website": "https://www.questrade.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "mabl",
+    "name": "mabl",
+    "url": "https://mcp.mabl.com/mcp",
+    "vendor": "mabl",
+    "website": "https://www.mabl.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "twinmind-app",
+    "name": "TwinMind",
+    "url": "https://api.twinmind.com/mcp",
+    "vendor": "TwinMind",
+    "website": "https://twinmind.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "jump-mcp",
+    "name": "Jump",
+    "url": "https://my.jumpapp.com/mcp",
+    "vendor": "Jump",
+    "website": "https://jump.ai/",
+    "description": "",
+    "categories": ["Financial services", "Productivity"]
+  },
+  {
+    "id": "restream",
+    "name": "Restream",
+    "url": "https://mcp.restream.io/mcp",
+    "vendor": "Restream",
+    "website": "https://restream.io/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Creative",
+      "Media & entertainment",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "kindora-funder-discovery",
+    "name": "Kindora Funder Discovery",
+    "url": "https://mcp.kindora.co/mcp",
+    "vendor": "Kindora",
+    "website": "https://www.kindora.co/",
+    "description": "",
+    "categories": ["Nonprofit"]
+  },
+  {
+    "id": "aurora",
+    "name": "Aurora",
+    "url": "https://mcp.ai.consilio.com/",
+    "vendor": "Consilio, LLC",
+    "website": "https://www.consilio.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "lorikeet",
+    "name": "Lorikeet",
+    "url": "https://mcp.lorikeetcx.ai/",
+    "vendor": "Lorikeet",
+    "website": "https://www.lorikeetcx.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "cloze",
+    "name": "Cloze MCP",
+    "url": "https://api.cloze.com/v1/mcp",
+    "vendor": "Cloze, Inc.",
+    "website": "https://cloze.com/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "jupiterone",
+    "name": "JupiterOne",
+    "url": "https://mcp.us.jupiterone.io/mcp",
+    "vendor": "JupiterOne",
+    "website": "https://www.jupiterone.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Other"]
+  },
+  {
+    "id": "vertiso-memory",
+    "name": "Vertiso Memory",
+    "url": "https://memory.vertiso.ai/mcp",
+    "vendor": "Vertiso Corporation",
+    "website": "https://www.vertiso.com/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "breezy-hr-mcp",
+    "name": "Breezy HR MCP",
+    "url": "https://mcp.breezy.hr/mcp",
+    "vendor": "Breezy HR",
+    "website": "https://breezy.hr/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "specter",
+    "name": "Specter",
+    "url": "https://mcp.tryspecter.com/mcp",
+    "vendor": "Specter Labs",
+    "website": "https://tryspecter.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "contract-factory-siren",
+    "name": "Contract-Factory — Sociétés & SIREN",
+    "url": "https://www.contract-factory.com/mcp.php",
+    "vendor": "Contract-Factory",
+    "website": "https://www.contract-factory.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services", "Legal"]
+  },
+  {
+    "id": "superbooks",
+    "name": "SuperBooks",
+    "url": "https://app.superbooks.io/mcp",
+    "vendor": "Devino Solutions",
+    "website": "https://devino.ca/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services", "Productivity"]
+  },
+  {
+    "id": "richpanel-ai",
+    "name": "Richpanel AI",
+    "url": "https://mcp.richpanel.com/mcp",
+    "vendor": "Richpanel Inc",
+    "website": "https://richpanel.com/",
+    "description": "",
+    "categories": ["Communication", "Data & analytics", "Productivity"]
+  },
+  {
+    "id": "craft-io",
+    "name": "Craft.io",
+    "url": "https://mcp.craft.io/mcp",
+    "vendor": "Craft.io",
+    "website": "https://craft.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "lumonic",
+    "name": "Lumonic",
+    "url": "https://mcp.lumonic.com/mcp",
+    "vendor": "Lumonic",
+    "website": "https://www.lumonic.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "sendcloud-mcp",
+    "name": "Sendcloud",
+    "url": "https://mcp.sendcloud.com/mcp",
+    "vendor": "Sendcloud",
+    "website": "https://sendcloud.com/",
+    "description": "",
+    "categories": ["Commerce & shopping", "Productivity"]
+  },
+  {
+    "id": "cloverleaf",
+    "name": "Cloverleaf",
+    "url": "https://app.cloverleaf.me/api/mcp",
+    "vendor": "Cloverleaf",
+    "website": "https://cloverleaf.me/",
+    "description": "",
+    "categories": ["Communication", "Productivity"]
+  },
+  {
+    "id": "terminal49",
+    "name": "Terminal49",
+    "url": "https://mcp.terminal49.com/",
+    "vendor": "Terminal49, Inc.",
+    "website": "https://terminal49.com/",
+    "description": "",
+    "categories": ["Commerce & shopping", "Data & analytics", "Other"]
+  },
+  {
+    "id": "fourthwall",
+    "name": "Fourthwall",
+    "url": "https://mcp.fourthwall.com/app",
+    "vendor": "Fourthwall",
+    "website": "https://fourthwall.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Creative",
+      "Media & entertainment",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "givebutter",
+    "name": "Givebutter",
+    "url": "https://mcp.givebutter.com/mcp",
+    "vendor": "Givebutter",
+    "website": "https://givebutter.com/",
+    "description": "",
+    "categories": ["Nonprofit"]
+  },
+  {
+    "id": "zoho-show",
+    "name": "Zoho Show",
+    "url": "https://show.zoho.com/mcp",
+    "vendor": "Zoho",
+    "website": "https://zoho.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Data & analytics",
+      "Education",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "mollie",
+    "name": "Mollie",
+    "url": "https://mcp.mollie.com/mcp",
+    "vendor": "Mollie B.V.",
+    "website": "https://mollie.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "productised",
+    "name": "Productised",
+    "url": "https://mcp.productised.ai/mcp",
+    "vendor": "Productised",
+    "website": "https://www.productised.ai/",
+    "description": "",
+    "categories": [
+      "Creative",
+      "Data & analytics",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "metal",
+    "name": "Metal",
+    "url": "https://mcp.metal.ai/mcp",
+    "vendor": "Metal",
+    "website": "https://www.metal.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "boardwise",
+    "name": "BoardWise",
+    "url": "https://uakozrqrztgrgwoywxkx.supabase.co/functions/v1/mcp-server",
+    "vendor": "BoardWise",
+    "website": "https://boardwise.online/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "bonsai",
+    "name": "Bonsai",
+    "url": "https://mcp.hellobonsai.com/mcp",
+    "vendor": "Bonsai by Zoom",
+    "website": "https://hellobonsai.com/",
+    "description": "",
+    "categories": ["Financial services", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "subframe",
+    "name": "Subframe",
+    "url": "https://mcp.subframe.com/mcp",
+    "vendor": "Subframe",
+    "website": "https://subframe.com/",
+    "description": "",
+    "categories": ["Creative", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "ninout",
+    "name": "Ninout",
+    "url": "https://mcp.svy.ooo/mcp",
+    "vendor": "Ninout, Inc.",
+    "website": "https://www.ninout.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "macrobond-ai-datafeed-mcp",
+    "name": "Macrobond Assist",
+    "url": "https://platform.macrobond.com/mcp",
+    "vendor": "Macrobond Financial AB",
+    "website": "https://www.macrobond.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Financial services"]
+  },
+  {
+    "id": "kick-co",
+    "name": "Kick",
+    "url": "https://use.kick.co/mcp",
+    "vendor": "Kick",
+    "website": "https://kick.co/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "sprites",
+    "name": "Sprites",
+    "url": "https://sprites.dev/mcp",
+    "vendor": "Fly.io",
+    "website": "https://fly.io/sprites",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "bolna",
+    "name": "bolna",
+    "url": "https://mcp.bolna.ai/api/connector/mcp",
+    "vendor": "Bolna",
+    "website": "https://bolna.ai/",
+    "description": "",
+    "categories": ["Communication", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "mcp-trainual-com",
+    "name": "Trainual",
+    "url": "https://mcp.trainual.com/",
+    "vendor": "Trainual",
+    "website": "https://trainual.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "prefect",
+    "name": "Prefect",
+    "url": "https://prefect.fastmcp.app/mcp",
+    "vendor": "Prefect Technologies",
+    "website": "https://www.prefect.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools"]
+  },
+  {
+    "id": "pi-security",
+    "name": "Pi Security",
+    "url": "https://mcp.pi.security/mcp",
+    "vendor": "Pi Security",
+    "website": "https://pi.security/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "badger-maps-standard",
+    "name": "Badger Maps (Standard)",
+    "url": "https://mcp.badgermapping.com/mcp",
+    "vendor": "Badger Maps, Inc",
+    "website": "https://www.badgermapping.com/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "rocketlawyer",
+    "name": "Rocket Lawyer",
+    "url": "https://api.rocketlawyer.com/mcp-du/mcp",
+    "vendor": "Rocket Lawyer, Inc.",
+    "website": "https://www.rocketlawyer.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "d-b-hoovers",
+    "name": "D&B Hoovers",
+    "url": "https://mcp.hoovers.dnb.com/mcp",
+    "vendor": "Dun & Bradstreet",
+    "website": "https://www.dnb.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "linksquares",
+    "name": "LinkSquares",
+    "url": "https://ai-chat-service.linksquares.com/v1/mcp/external",
+    "vendor": "LinkSquares, Inc.",
+    "website": "https://linksquares.com/",
+    "description": "",
+    "categories": ["Legal"]
+  },
+  {
+    "id": "agentphone",
+    "name": "AgentPhone",
+    "url": "https://mcp.agentphone.ai/mcp",
+    "vendor": "AgentPhone",
+    "website": "https://agentphone.ai/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "isometric",
+    "name": "Isometric",
+    "url": "https://api.isometric.com/mcp",
+    "vendor": "Isometric HQ Ltd",
+    "website": "https://isometric.com/",
+    "description": "",
+    "categories": ["Other"]
+  },
+  {
+    "id": "lacuna-research",
+    "name": "Lacuna Research",
+    "url": "https://lacuna.tiptreesystems.com/api/mcp",
+    "vendor": "Tiptree Systems",
+    "website": "https://tiptreesystems.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Education"]
+  },
+  {
+    "id": "cashfree",
+    "name": "Cashfree",
+    "url": "https://mcp.cashfree.com/mcp",
+    "vendor": "Cashfree Payments Pvt. Ltd.",
+    "website": "https://www.cashfree.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "rhizome-ai",
+    "name": "Rhizome AI",
+    "url": "https://rhizomeai.com/api/mcp",
+    "vendor": "Rhizome AI",
+    "website": "https://rhizomeai.com/",
+    "description": "",
+    "categories": ["Health & life sciences"]
+  },
+  {
+    "id": "voluum",
+    "name": "Voluum",
+    "url": "https://mcp.voluum.com/mcp",
+    "vendor": "Voluum",
+    "website": "https://voluum.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Sales & marketing"]
+  },
+  {
+    "id": "jedify",
+    "name": "Jedify",
+    "url": "https://be.jedify.com/mcp",
+    "vendor": "Jedify",
+    "website": "https://jedify.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "valuecase-v2",
+    "name": "Valuecase App",
+    "url": "https://mcp.valuecase.com/mcp",
+    "vendor": "Valuecase",
+    "website": "https://valuecase.com/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "numbersgame-mcp",
+    "name": "NumbersGame MCP",
+    "url": "https://mcp.numbersgame.xyz/mcp",
+    "vendor": "Numbers Game B.V.",
+    "website": "https://numbersgame.xyz/",
+    "description": "",
+    "categories": ["Financial services", "Productivity"]
+  },
+  {
+    "id": "energy-aspects",
+    "name": "Energy Aspects",
+    "url": "https://mcp.energyaspects.com/mcp",
+    "vendor": "Energy Aspects",
+    "website": "https://www.energyaspects.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Other"]
+  },
+  {
+    "id": "chatbase",
+    "name": "Chatbase",
+    "url": "https://mcp.chatbase.co/api/mcp",
+    "vendor": "Chatbase",
+    "website": "https://www.chatbase.co/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "eedi",
+    "name": "Eedi",
+    "url": "https://teacher-tools.eedi.ai/mcp",
+    "vendor": "Eedi Ltd",
+    "website": "https://www.eedi.com/",
+    "description": "",
+    "categories": ["Education"]
+  },
+  {
+    "id": "spacefast",
+    "name": "Spacefast",
+    "url": "https://mcp.spacefast.com/",
+    "vendor": "Automattic Inc.",
+    "website": "https://spacefast.com/",
+    "description": "",
+    "categories": ["Creative", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "lseg-ai",
+    "name": "LSEG AI",
+    "url": "https://mcp.lseg.com/",
+    "vendor": "LSEG",
+    "website": "https://www.lseg.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "product-hunt",
+    "name": "Product Hunt",
+    "url": "https://mcp.producthunt.com/mcp",
+    "vendor": "Product Hunt, Inc.",
+    "website": "https://www.producthunt.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "adspirer-retail-media-ads",
+    "name": "Adspirer Retail Media Ads",
+    "url": "https://mcp.adspirer.com/retail-ads",
+    "vendor": "Adspirer",
+    "website": "https://www.adspirer.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "extend",
+    "name": "Extend",
+    "url": "https://mcp.extend.ai/mcp",
+    "vendor": "Extend",
+    "website": "https://www.extend.ai/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "public-holdings",
+    "name": "Public Holdings",
+    "url": "https://mcp.public.com/read-only/mcp",
+    "vendor": "Public.com",
+    "website": "https://public.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "docfarm",
+    "name": "Docfarm",
+    "url": "https://mcp.doc.farm/",
+    "vendor": "Docfarm",
+    "website": "https://doc.farm/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Creative",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "vasara",
+    "name": "Vasara",
+    "url": "https://mcp.vasara.ai/",
+    "vendor": "Vasara",
+    "website": "https://vasara.ai/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "alpic",
+    "name": "Alpic",
+    "url": "https://mcp.alpic.ai/mcp",
+    "vendor": "Alpic",
+    "website": "https://alpic.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "clickfunnels",
+    "name": "ClickFunnels",
+    "url": "https://agents.myclickfunnels.com/mcp",
+    "vendor": "ClickFunnels",
+    "website": "https://www.clickfunnels.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Communication",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "grtwo-docs",
+    "name": "grtwo-docs",
+    "url": "https://www.grtwo.app/api/mcp",
+    "vendor": "GRTwo Digital LLC",
+    "website": "https://grtwo.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "papermark",
+    "name": "Papermark",
+    "url": "https://mcp.papermark.com/mcp",
+    "vendor": "Papermark",
+    "website": "https://www.papermark.com/",
+    "description": "",
+    "categories": ["Financial services", "Legal", "Productivity"]
+  },
+  {
+    "id": "astravue",
+    "name": "Astravue App",
+    "url": "https://api.astravue.com/mcp",
+    "vendor": "Astravue",
+    "website": "https://astravue.com/",
+    "description": "",
+    "categories": ["Communication", "Productivity"]
+  },
+  {
+    "id": "dagster-mcp",
+    "name": "Dagster+ MCP",
+    "url": "https://mcp.agent.dagster.cloud/mcp",
+    "vendor": "Prefect",
+    "website": "https://prefect.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools"]
+  },
+  {
+    "id": "pga-play-golf",
+    "name": "PGA – Play Golf",
+    "url": "https://mcp.pga.com/mcp",
+    "vendor": "PGA of America",
+    "website": "https://www.pga.com/",
+    "description": "",
+    "categories": ["Other"]
+  },
+  {
+    "id": "onchaindiligence",
+    "name": "OnChainDiligence",
+    "url": "https://mcp.onchaindiligence.com/public/mcp",
+    "vendor": "OnChainDiligence",
+    "website": "https://onchaindiligence.com/",
+    "description": "",
+    "categories": ["Developer tools", "Financial services"]
+  },
+  {
+    "id": "synthflow",
+    "name": "Synthflow",
+    "url": "https://mcp.synthflow.ai/mcp",
+    "vendor": "Synthflow.ai",
+    "website": "https://synthflow.ai/",
+    "description": "",
+    "categories": ["Communication", "Data & analytics", "Productivity"]
+  },
+  {
+    "id": "chamelio",
+    "name": "Chamelio",
+    "url": "https://mcp.chamelio.ai/mcp",
+    "vendor": "Chamelio",
+    "website": "https://chamelio.ai/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "sequencehq",
+    "name": "Sequence",
+    "url": "https://eu.sequencehq.com/mcp",
+    "vendor": "Sequence",
+    "website": "https://www.sequencehq.com/",
+    "description": "",
+    "categories": ["Financial services", "Sales & marketing"]
+  },
+  {
+    "id": "meridian-ai",
+    "name": "Meridian AI",
+    "url": "https://mcp.meridian-ai.com/mcp",
+    "vendor": "Meridian AI",
+    "website": "https://www.meridian-ai.com/",
+    "description": "",
+    "categories": ["Communication", "Data & analytics", "Productivity"]
+  },
+  {
+    "id": "brightcove",
+    "name": "Brightcove",
+    "url": "https://mcp.brightcove.com/mcp",
+    "vendor": "Brightcove",
+    "website": "https://www.brightcove.com/",
+    "description": "",
+    "categories": ["Media & entertainment"]
+  },
+  {
+    "id": "haloo-trademark-clearance",
+    "name": "Haloo Trademark Clearance",
+    "url": "https://connect.haloo.ai/trademark-search/mcp",
+    "vendor": "Haloo Inc",
+    "website": "https://haloo.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Legal", "Productivity"]
+  },
+  {
+    "id": "agility-cms",
+    "name": "Agility CMS",
+    "url": "https://mcp.agilitycms.com/api/mcp",
+    "vendor": "Agility CMS",
+    "website": "https://agilitycms.com/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "oak-national-academy",
+    "name": "Oak National Academy",
+    "url": "https://mcp.thenational.academy/mcp",
+    "vendor": "Oak National Academy",
+    "website": "https://www.thenational.academy/",
+    "description": "",
+    "categories": ["Education"]
+  },
+  {
+    "id": "infinitewatch-mcp",
+    "name": "InfiniteWatch MCP",
+    "url": "https://mcp.infinitewatch.ai/mcp",
+    "vendor": "InfiniteWatch",
+    "website": "https://app.infinitewatch.ai/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "picpay",
+    "name": "PicPay",
+    "url": "https://mcp.svc.picpay.com/v2/mcp",
+    "vendor": "PicPay",
+    "website": "https://picpay.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "keel",
+    "name": "Keel",
+    "url": "https://mcp.usekeel.io/mcp",
+    "vendor": "Keel Software, Inc.",
+    "website": "https://usekeel.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "duvo-mcp",
+    "name": "Duvo",
+    "url": "https://api.duvo.ai/v2/mcp",
+    "vendor": "Duvo",
+    "website": "https://duvo.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "spara",
+    "name": "Spara",
+    "url": "https://app.spara.co/mcp/customer/stream",
+    "vendor": "Spara, Inc.",
+    "website": "https://www.spara.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Sales & marketing"]
+  },
+  {
+    "id": "vibe-ai",
+    "name": "Vibe AI",
+    "url": "https://mcp.vibe.us/mcp",
+    "vendor": "Vibe Inc",
+    "website": "https://vibe.us/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "jetpost",
+    "name": "Jetpost",
+    "url": "https://www.jetpost.com/mcp",
+    "vendor": "Jetpost",
+    "website": "https://www.jetpost.com/",
+    "description": "",
+    "categories": ["Communication", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "omega-point",
+    "name": "Omega Point",
+    "url": "https://mcp.ompnt.com/mcp",
+    "vendor": "Omega Point",
+    "website": "https://omegapoint.ai/?ref=claude-directory",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "august-digital-twins",
+    "name": "august",
+    "url": "https://mcp.getaugust.ai/mcp",
+    "vendor": "Fermat Commerce",
+    "website": "https://getaugust.ai/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "superlawyer",
+    "name": "Superlawyer",
+    "url": "https://mcp.superlawyer.co.kr/api/mcp",
+    "vendor": "Law&Company",
+    "website": "https://superlawyer.co.kr/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "honeybadger",
+    "name": "Honeybadger",
+    "url": "https://mcp.honeybadger.io/mcp",
+    "vendor": "Honeybadger",
+    "website": "https://www.honeybadger.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools"]
+  },
+  {
+    "id": "icp",
+    "name": "Internet Computer",
+    "url": "https://mcp.internetcomputer.org/mcp",
+    "vendor": "DFINITY Foundation",
+    "website": "https://dfinity.org/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "checkout-com",
+    "name": "Checkout.com",
+    "url": "https://mcp.checkout.com/",
+    "vendor": "Checkout.com",
+    "website": "https://www.checkout.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "dualentry",
+    "name": "DualEntry",
+    "url": "https://api.dualentry.com/mcp",
+    "vendor": "DualEntry",
+    "website": "https://dualentry.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "biggerpockets",
+    "name": "BiggerPockets",
+    "url": "https://www.biggerpockets.com/mcp",
+    "vendor": "BiggerPockets, LLC",
+    "website": "https://www.biggerpockets.com/",
+    "description": "",
+    "categories": ["Education", "Financial services"]
+  },
+  {
+    "id": "dominos-india",
+    "name": "Domino's India",
+    "url": "https://genai-prod-ext.dominos.co.in/order-mcp/mcp",
+    "vendor": "Jubilant Foodworks Limited",
+    "website": "https://www.jubilantfoodworks.com/",
+    "description": "",
+    "categories": ["Commerce & shopping"]
+  },
+  {
+    "id": "strand-ai",
+    "name": "Strand AI",
+    "url": "https://mcp.strandai.com/mcp",
+    "vendor": "Strand AI",
+    "website": "https://strandai.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Health & life sciences"]
+  },
+  {
+    "id": "tana",
+    "name": "Tana",
+    "url": "https://home.tana.inc/mcp",
+    "vendor": "Tana Labs, Inc.",
+    "website": "https://tana.inc/",
+    "description": "",
+    "categories": ["Communication", "Productivity"]
+  },
+  {
+    "id": "meko",
+    "name": "Meko",
+    "url": "https://mcp.mekodata.ai/mcp",
+    "vendor": "YugabyteDB",
+    "website": "https://www.mekodata.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "civic-iq",
+    "name": "Civic IQ",
+    "url": "https://mcp.civiciq.com/mcp",
+    "vendor": "Civic IQ Inc.",
+    "website": "https://civiciq.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Sales & marketing"]
+  },
+  {
+    "id": "bitmovin",
+    "name": "Bitmovin",
+    "url": "https://mcp.bitmovin.com/",
+    "vendor": "Bitmovin",
+    "website": "https://bitmovin.com/",
+    "description": "",
+    "categories": ["Media & entertainment"]
+  },
+  {
+    "id": "archera",
+    "name": "Archera",
+    "url": "https://mcp.archera.ai/mcp",
+    "vendor": "Archera.ai",
+    "website": "https://archera.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Financial services"]
+  },
+  {
+    "id": "infobip-documentation",
+    "name": "Infobip Documentation",
+    "url": "https://mcp.infobip.com/search",
+    "vendor": "Infobip",
+    "website": "https://infobip.com/",
+    "description": "",
+    "categories": ["Communication"]
+  },
+  {
+    "id": "airfield-directory",
+    "name": "Airfield Directory",
+    "url": "https://airfield.directory/mcp",
+    "vendor": "Airfield Directory",
+    "website": "https://airfield.directory/",
+    "description": "",
+    "categories": []
+  },
+  {
+    "id": "hanover-park",
+    "name": "Hanover Park",
+    "url": "https://app.hanoverpark.com/api/mcp",
+    "vendor": "Hanover Park",
+    "website": "https://www.hanoverpark.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services", "Productivity"]
+  },
+  {
+    "id": "theysaid",
+    "name": "Theysaid",
+    "url": "https://ai.theysaid.io/api/mcp",
+    "vendor": "Theysaid",
+    "website": "https://www.theysaid.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Other", "Productivity"]
+  },
+  {
+    "id": "pine-labs-payments-assistant",
+    "name": "Pine Labs Payments Assistant",
+    "url": "https://mcp.pinelabs.com/mcp",
+    "vendor": "Pine Labs",
+    "website": "https://www.pinelabs.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "elfcare",
+    "name": "Elfcare",
+    "url": "https://patient.elf.care/api/mcp",
+    "vendor": "Elfcare AB",
+    "website": "https://elf.care/",
+    "description": "",
+    "categories": ["Consumer health"]
+  },
+  {
+    "id": "aditus-evo",
+    "name": "ADITUS Evo",
+    "url": "https://mcp.aditus.com/mcp",
+    "vendor": "ADITUS GmbH",
+    "website": "https://www.aditus.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "extuitive",
+    "name": "Lena",
+    "url": "https://www.letlena.com/mcp",
+    "vendor": "Extuitive, Inc.",
+    "website": "https://www.extuitive.com/",
+    "description": "",
+    "categories": ["Creative", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "clerq-mcp",
+    "name": "Clerq MCP",
+    "url": "https://mcp.us.clerq-ip.com/mcp",
+    "vendor": "Clerq",
+    "website": "https://www.clerq-ip.com/",
+    "description": "",
+    "categories": ["Legal"]
+  },
+  {
+    "id": "caisey",
+    "name": "CAISey",
+    "url": "https://mcp.caisgroup.com/mcp",
+    "vendor": "CAIS",
+    "website": "https://www.caisgroup.com/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "rsvpify",
+    "name": "RSVPify",
+    "url": "https://mcp.rsvpify.com/",
+    "vendor": "RSVPify Inc.",
+    "website": "https://rsvpify.com/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Nonprofit",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "breezing",
+    "name": "Breezing",
+    "url": "https://mcp.breezing.io/mcp",
+    "vendor": "Breezing SA",
+    "website": "https://breezing.io/",
+    "description": "",
+    "categories": ["Developer tools", "Financial services", "Productivity"]
+  },
+  {
+    "id": "notra",
+    "name": "Notra",
+    "url": "https://mcp.usenotra.com/mcp",
+    "vendor": "Notra, Inc.",
+    "website": "https://www.usenotra.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "cloudbees-unify-mcp-server",
+    "name": "CloudBees Unify MCP Server",
+    "url": "https://mcp.cloudbees.io/v1/mcp?toolset=all",
+    "vendor": "CloudBees",
+    "website": "http://cloudbees.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "trussi-ai",
+    "name": "Trussi AI",
+    "url": "https://my.trussi.ai/api/mcp/mcp",
+    "vendor": "Trussi AI",
+    "website": "https://trussi.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "tseha",
+    "name": "Tseha.io",
+    "url": "https://tseha.io/mcp",
+    "vendor": "MH Mariusz Henn",
+    "website": "https://tseha.io/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "optilogic",
+    "name": "Optilogic",
+    "url": "https://mcp.optilogic.app/mcp",
+    "vendor": "Optilogic",
+    "website": "https://optilogic.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Other", "Productivity"]
+  },
+  {
+    "id": "aptus-ai-nextos",
+    "name": "Aptus.AI - NextOS",
+    "url": "https://legalmcp.next.aptus.ai/mcp",
+    "vendor": "Aptus.AI",
+    "website": "https://aptus.ai/",
+    "description": "",
+    "categories": ["Legal"]
+  },
+  {
+    "id": "item",
+    "name": "item",
+    "url": "https://mcp.item.app/mcp",
+    "vendor": "item",
+    "website": "https://item.app/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "remesh",
+    "name": "Remesh",
+    "url": "https://live.remesh.chat/mcp",
+    "vendor": "Remesh Inc",
+    "website": "https://www.remesh.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Sales & marketing"]
+  },
+  {
+    "id": "agri-mcp-tcit-cl",
+    "name": "agri-mcp.tcit.cl",
+    "url": "https://agri-mcp.tcit.cl/mcp",
+    "vendor": "AGRI SpA",
+    "website": "https://www.agri.so/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services", "Productivity"]
+  },
+  {
+    "id": "sparxx-io",
+    "name": "spArxx.io | Zero-Knowledge Blockchain Timestamping",
+    "url": "https://gateway.sparxx.io/mcp",
+    "vendor": "spArxx.io",
+    "website": "https://www.sparxx.io/",
+    "description": "",
+    "categories": [
+      "Creative",
+      "Developer tools",
+      "Legal",
+      "Media & entertainment",
+      "Productivity"
+    ]
+  },
+  {
+    "id": "pocket-capture",
+    "name": "Mojo — Pocket Capture",
+    "url": "https://mcp.mojosystems.io/mcp",
+    "vendor": "Mojo Systems LLC",
+    "website": "https://www.mojosystems.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "promptless",
+    "name": "Promptless",
+    "url": "https://api.gopromptless.ai/mcp/with-direct-edits",
+    "vendor": "Promptless",
+    "website": "https://promptless.ai/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "wisdom",
+    "name": "WisdomAI",
+    "url": "https://mcp.wisdom.ai/mcp",
+    "vendor": "WisdomAI",
+    "website": "https://www.wisdom.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "infotrack",
+    "name": "InfoTrack",
+    "url": "https://mcp.infotrack.ai/servers/infotrack-all/mcp",
+    "vendor": "InfoTrack Australia",
+    "website": "https://www.infotrack.ai/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "find-your-great",
+    "name": "Find Your Great",
+    "url": "https://findyourgreat.com/mcp/v1",
+    "vendor": "Find Your Great",
+    "website": "https://findyourgreat.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "entendre",
+    "name": "Entendre",
+    "url": "https://mcp.entendre.finance/api/mcp",
+    "vendor": "Entendre AI",
+    "website": "https://entendre.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "clutch",
+    "name": "Clutch.co",
+    "url": "https://bot.clutch.co/mcp",
+    "vendor": "Clutch Co LLC",
+    "website": "https://clutch.co/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "signeasy",
+    "name": "Signeasy",
+    "url": "https://mcp.signeasy.com/mcp/sse",
+    "vendor": "Signeasy",
+    "website": "https://signeasy.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "quickstart",
+    "name": "QuickStart",
+    "url": "https://my.quickstartapi.netsuite.com/mcp",
+    "vendor": "Oracle NetSuite",
+    "website": "https://www.netsuite.com/quickstart.shtml",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "maia",
+    "name": "MAIA",
+    "url": "https://api.maia-analytics.com/mcp",
+    "vendor": "MAIA Analytics",
+    "website": "https://www.maia-analytics.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "fundraise-up-for-organizations",
+    "name": "Fundraise Up for Organizations",
+    "url": "https://mcp.fundraiseup.com/org",
+    "vendor": "Fundraise Up Inc.",
+    "website": "https://fundraiseup.com/",
+    "description": "",
+    "categories": ["Nonprofit"]
+  },
+  {
+    "id": "savri",
+    "name": "Savri",
+    "url": "https://savri.io/api/mcp",
+    "vendor": "Digisol AB",
+    "website": "https://savri.io/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "fax-plus",
+    "name": "Fax.Plus",
+    "url": "https://mcp.fax.plus/mcp",
+    "vendor": "Alohi",
+    "website": "https://www.alohi.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "kepler",
+    "name": "Kepler",
+    "url": "https://mcp.kepler.ai/api/mcp/v1",
+    "vendor": "Kepler",
+    "website": "https://kepler.ai/",
+    "description": "",
+    "categories": ["Financial services", "Productivity"]
+  },
+  {
+    "id": "neimo",
+    "name": "neimo.",
+    "url": "https://mcp.neimo.ai/api/mcp",
+    "vendor": "k-ID",
+    "website": "https://k-id.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "nansen",
+    "name": "Nansen",
+    "url": "https://mcp.nansen.ai/ra/connector-curated/mcp",
+    "vendor": "Nansen",
+    "website": "https://www.nansen.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "lightbringer",
+    "name": "Lightbringer",
+    "url": "https://mcp.lightbringer.com/mcp",
+    "vendor": "Lightbringer",
+    "website": "https://lightbringer.com/",
+    "description": "",
+    "categories": ["Legal"]
+  },
+  {
+    "id": "backstory",
+    "name": "Backstory",
+    "url": "https://mcp.backstory.ai/mcp",
+    "vendor": "Backstory",
+    "website": "https://www.backstory.ai/",
+    "description": "",
+    "categories": ["Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "flipsnack",
+    "name": "Flipsnack",
+    "url": "https://mcp.flipsnack.com/mcp",
+    "vendor": "Flipsnack",
+    "website": "https://www.flipsnack.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Communication",
+      "Creative",
+      "Media & entertainment",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "plotly-cloud",
+    "name": "Plotly Cloud",
+    "url": "https://cloud.plotly.com/_mcp",
+    "vendor": "Plotly",
+    "website": "https://plotly.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "bronto",
+    "name": "Bronto",
+    "url": "https://mcp.eu.bronto.io/mcp",
+    "vendor": "Bronto",
+    "website": "https://bronto.io/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "chaser",
+    "name": "Chaser",
+    "url": "https://api.trychaser.com/mcp",
+    "vendor": "Chaser",
+    "website": "https://www.trychaser.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "stub",
+    "name": "stub",
+    "url": "https://api.stub.africa/mcp",
+    "vendor": "stub",
+    "website": "https://stub.africa/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services"]
+  },
+  {
+    "id": "thunderphone",
+    "name": "ThunderPhone",
+    "url": "https://api.thunderphone.com/v1/mcp",
+    "vendor": "ThunderPhone",
+    "website": "https://thunderphone.com/",
+    "description": "",
+    "categories": ["Communication", "Developer tools", "Sales & marketing"]
+  },
+  {
+    "id": "pointone",
+    "name": "PointOne",
+    "url": "https://mcp.pointone.com/mcp",
+    "vendor": "PointOne Technologies Inc.",
+    "website": "https://pointone.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Legal", "Productivity"]
+  },
+  {
+    "id": "toffu",
+    "name": "Toffu",
+    "url": "https://mcp.toffu.ai/mcp",
+    "vendor": "Toffu AI",
+    "website": "https://toffu.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Sales & marketing"]
+  },
+  {
+    "id": "datagpt-prophecy",
+    "name": "Prophecy DataGPT",
+    "url": "https://app.prophecy.ai/datagpt/mcp",
+    "vendor": "Prophecy",
+    "website": "https://www.prophecy.ai/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "migma",
+    "name": "Migma",
+    "url": "https://migma.ai/mcp",
+    "vendor": "Migma",
+    "website": "https://migma.ai/",
+    "description": "",
+    "categories": ["Creative", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "geekbot",
+    "name": "Geekbot",
+    "url": "https://mcp.geekbot.com/mcp",
+    "vendor": "Geekbot",
+    "website": "https://geekbot.com/",
+    "description": "",
+    "categories": ["Communication", "Productivity"]
+  },
+  {
+    "id": "d-b-digital-audiences",
+    "name": "D&B Digital Audiences",
+    "url": "https://mcp.atportal.dnb.com/v1/mcp",
+    "vendor": "Dun & Bradstreet",
+    "website": "https://www.dnb.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "sisense-mcp",
+    "name": "Sisense MCP",
+    "url": "https://mcp.sisense.com/mcp",
+    "vendor": "Sisense Inc.",
+    "website": "https://sisense.com/",
+    "description": "",
+    "categories": ["Data & analytics"]
+  },
+  {
+    "id": "billingmart",
+    "name": "BillingMart",
+    "url": "https://api.billingmart.com/mcp",
+    "vendor": "BillingMart.com LLC",
+    "website": "https://billingmart.com/",
+    "description": "",
+    "categories": ["Financial services", "Productivity"]
+  },
+  {
+    "id": "gleanmark",
+    "name": "GleanMark",
+    "url": "https://gleanmark.com/mcp",
+    "vendor": "GleanMark",
+    "website": "https://gleanmark.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Legal", "Productivity"]
+  },
+  {
+    "id": "ip-author",
+    "name": "IP Author",
+    "url": "https://mcp.ipauthor.com/mcp",
+    "vendor": "IP Author, Inc.",
+    "website": "https://ipauthor.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Legal", "Productivity"]
+  },
+  {
+    "id": "muumuu-domain",
+    "name": "MuuMuu Domain byGMO Pepabo",
+    "url": "https://mcp.muumuu-domain.com/mcp",
+    "vendor": "GMO Pepabo, Inc.",
+    "website": "https://muumuu-domain.com/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "cora",
+    "name": "Cora",
+    "url": "https://mcp.cora.ai/mcp",
+    "vendor": "Cora AI, Inc",
+    "website": "https://www.cora.ai/",
+    "description": "",
+    "categories": ["Communication", "Data & analytics", "Productivity"]
+  },
+  {
+    "id": "coefficient",
+    "name": "Coefficient SuperAgent",
+    "url": "https://superagent.app.coefficient.io/mcp",
+    "vendor": "Coefficient",
+    "website": "https://coefficient.io/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "community-funding-nz",
+    "name": "Community Funding NZ",
+    "url": "https://funding.alltoohuman.nz/mcp",
+    "vendor": "All Too Human",
+    "website": "https://www.alltoohuman.nz/",
+    "description": "",
+    "categories": ["Data & analytics", "Nonprofit", "Other", "Productivity"]
+  },
+  {
+    "id": "merchkit",
+    "name": "Merchkit",
+    "url": "https://www.merchkit.com/api/mcp",
+    "vendor": "Merchkit",
+    "website": "https://merchkit.com/",
+    "description": "",
+    "categories": [
+      "Commerce & shopping",
+      "Data & analytics",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "pubmatic",
+    "name": "PubMatic",
+    "url": "https://mcp.pubmatic.com/mcp",
+    "vendor": "PubMatic",
+    "website": "https://pubmatic.com/",
+    "description": "",
+    "categories": ["Media & entertainment"]
+  },
+  {
+    "id": "growsurf",
+    "name": "GrowSurf",
+    "url": "https://mcp.growsurf.com/",
+    "vendor": "GrowSurf",
+    "website": "https://growsurf.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "twinkle-hub",
+    "name": "Twinkle Hub",
+    "url": "https://api.twinkleai.tw/mcp",
+    "vendor": "Twinkle AI",
+    "website": "https://hub.twinkleai.tw/",
+    "description": "",
+    "categories": ["Data & analytics", "Other"]
+  },
+  {
+    "id": "lawy",
+    "name": "LawY",
+    "url": "https://mcp.connected-agents.lawy.ai/mcp",
+    "vendor": "LawY",
+    "website": "https://www.lawy.ai/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "steadybit",
+    "name": "Steadybit",
+    "url": "https://platform.steadybit.com/mcp/demo",
+    "vendor": "Steadybit",
+    "website": "https://steadybit.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "smarter-drafter",
+    "name": "Smarter Drafter",
+    "url": "https://mcp.smarterdrafter.com/",
+    "vendor": "Tensis",
+    "website": "https://tensis.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "trustfull",
+    "name": "Trustfull",
+    "url": "https://mcp.trustfull.com/connector",
+    "vendor": "Trustfull",
+    "website": "https://www.trustfull.com/",
+    "description": "",
+    "categories": ["Other"]
+  },
+  {
+    "id": "adaption",
+    "name": "Adaption",
+    "url": "https://api.prod.adaptionlabs.ai/api/v1/mcp",
+    "vendor": "Adaption Labs",
+    "website": "https://adaptionlabs.ai/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools"]
+  },
+  {
+    "id": "pushwoosh-manymoney",
+    "name": "Pushwoosh ManyMoney",
+    "url": "https://manymoney.pushwoosh.com/mcp",
+    "vendor": "Pushwoosh",
+    "website": "https://www.pushwoosh.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "vylo",
+    "name": "Vylo",
+    "url": "https://mcp.vylo.one/mcp",
+    "vendor": "WheelsEye Technology India Private Limited",
+    "website": "https://vylo.one/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "polly",
+    "name": "Polly",
+    "url": "https://mcp.polly.ai/",
+    "vendor": "Polly",
+    "website": "https://www.polly.ai/",
+    "description": "",
+    "categories": [
+      "Communication",
+      "Education",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "bluefish",
+    "name": "Bluefish",
+    "url": "https://platform.bluefishai.com/mcp",
+    "vendor": "Bluefish",
+    "website": "https://bluefishai.com/",
+    "description": "",
+    "categories": ["Sales & marketing"]
+  },
+  {
+    "id": "mantic",
+    "name": "Mantic",
+    "url": "https://api.mantic.com/mcp",
+    "vendor": "Mantic Technologies Ltd",
+    "website": "https://www.mantic.com/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "countersignatory",
+    "name": "Countersignatory",
+    "url": "https://countersignatory.com/mcp",
+    "vendor": "Countersignatory Ltd",
+    "website": "https://countersignatory.com/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "daffy-mcp",
+    "name": "Daffy MCP",
+    "url": "https://public.daffy.org/mcp",
+    "vendor": "Daffy",
+    "website": "https://www.daffy.org/",
+    "description": "",
+    "categories": ["Financial services", "Nonprofit"]
+  },
+  {
+    "id": "mary",
+    "name": "Mary",
+    "url": "https://mcp.us.marytechnology.com/mcp",
+    "vendor": "Mary",
+    "website": "https://marytechnology.com/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "tracy-at-qode",
+    "name": "Tracy AI Interviewer",
+    "url": "https://tracyinterview.ai/mcp",
+    "vendor": "Qode",
+    "website": "https://tracyinterview.ai/",
+    "description": "",
+    "categories": ["Productivity"]
+  },
+  {
+    "id": "weinc",
+    "name": "WeInc",
+    "url": "https://my.we.inc/api/mcp",
+    "vendor": "WeInc",
+    "website": "https://we.inc/",
+    "description": "",
+    "categories": [
+      "Creative",
+      "Developer tools",
+      "Productivity",
+      "Sales & marketing"
+    ]
+  },
+  {
+    "id": "citellm",
+    "name": "CiteLLM",
+    "url": "https://mcp.citellm.com/mcp",
+    "vendor": "Superdocs",
+    "website": "https://citellm.com/",
+    "description": "",
+    "categories": ["Financial services", "Legal", "Productivity"]
+  },
+  {
+    "id": "robutler",
+    "name": "Robutler",
+    "url": "https://robutler.ai/mcp",
+    "vendor": "Robutler",
+    "website": "https://robutler.ai/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity"]
+  },
+  {
+    "id": "ncino-mcp",
+    "name": "nCino MCP",
+    "url": "https://mcp.ncino.com/mcp",
+    "vendor": "nCino",
+    "website": "https://www.ncino.com/",
+    "description": "",
+    "categories": ["Financial services", "Productivity"]
+  },
+  {
+    "id": "ontora",
+    "name": "Ontora",
+    "url": "https://api.eu.ontora.com/mcp/directory",
+    "vendor": "Ontora Inc.",
+    "website": "https://ontora.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
+  },
+  {
+    "id": "millentic",
+    "name": "Millentic",
+    "url": "https://mcp.millentic.com/",
+    "vendor": "Millentic",
+    "website": "https://www.millentic.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Developer tools", "Productivity"]
+  },
+  {
+    "id": "creparser-lease-abstraction",
+    "name": "CREparser Lease Abstraction",
+    "url": "https://mcp.creparser.com/leases/mcp",
+    "vendor": "Superdocs",
+    "website": "https://superdocs.io/",
+    "description": "",
+    "categories": ["Legal", "Productivity"]
+  },
+  {
+    "id": "prism-mcp",
+    "name": "Revalidata Contracts",
+    "url": "https://revalidata.com/api/prism-mcp",
+    "vendor": "Built AI, Inc.",
+    "website": "https://builtai.co/",
+    "description": "",
+    "categories": ["Data & analytics", "Financial services", "Legal"]
+  },
+  {
+    "id": "versine",
+    "name": "Versine",
+    "url": "https://mcp.versine.com/",
+    "vendor": "Versine",
+    "website": "https://versine.com/",
+    "description": "",
+    "categories": ["Financial services", "Productivity"]
+  },
+  {
+    "id": "revnu",
+    "name": "Revnu",
+    "url": "https://mcp.revnu.com/lite",
+    "vendor": "Revnu",
+    "website": "https://revnu.com/",
+    "description": "",
+    "categories": ["Developer tools", "Productivity", "Sales & marketing"]
+  },
+  {
+    "id": "ex-parte",
+    "name": "Ex Parte",
+    "url": "https://mcp.exparte.com/mcp",
+    "vendor": "ExParte Inc",
+    "website": "https://www.exparte.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Legal"]
+  },
+  {
+    "id": "cafeteria",
+    "name": "Cafeteria",
+    "url": "https://mcp.cafeteria.page/mcp",
+    "vendor": "Cafeteria, Inc.",
+    "website": "https://www.teamcafeteria.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Sales & marketing"]
+  },
+  {
+    "id": "creparser-deal-review",
+    "name": "CREparser Deal Review",
+    "url": "https://mcp.creparser.com/deals/mcp",
+    "vendor": "Superdocs",
+    "website": "https://superdocs.io/",
+    "description": "",
+    "categories": ["Financial services", "Legal", "Productivity"]
+  },
+  {
+    "id": "nos",
+    "name": "NOS",
+    "url": "https://mcp-app.nos.nl/mcp",
+    "vendor": "NOS",
+    "website": "https://www.nos.nl/",
+    "description": "",
+    "categories": ["Media & entertainment"]
+  },
+  {
+    "id": "arag-spain-insurance",
+    "name": "ARAG Spain Insurance Products",
+    "url": "https://arag.mcp-platform.infinitewatch.ai/mcp",
+    "vendor": "InfiniteWatch",
+    "website": "https://infinitewatch.ai/",
+    "description": "",
+    "categories": ["Financial services"]
+  },
+  {
+    "id": "popcorn-mcp",
+    "name": "Popcorn",
+    "url": "https://api.popcorn.space/mcp",
+    "vendor": "Popcorn Labs, Inc",
+    "website": "https://popcorn.space/",
+    "description": "",
+    "categories": ["Communication"]
+  },
+  {
+    "id": "checkly-mcp",
+    "name": "Checkly",
+    "url": "https://api.checklyhq.com/mcp",
+    "vendor": "Checkly",
+    "website": "https://www.checklyhq.com/",
+    "description": "",
+    "categories": ["Developer tools"]
+  },
+  {
+    "id": "guardz",
+    "name": "Guardz",
+    "url": "https://mcp.eu.guardz.com/mcp",
+    "vendor": "Guardz",
+    "website": "https://guardz.com/",
+    "description": "",
+    "categories": ["Data & analytics", "Productivity"]
   }
 ]

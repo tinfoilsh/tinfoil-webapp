@@ -396,7 +396,7 @@ function CatalogCard({
         )}
       </div>
       <p className="line-clamp-2 text-xs text-content-secondary">
-        {entry.description}
+        {entry.description || entry.categories.join(' · ')}
       </p>
       {error && (
         <p role="alert" className="text-xs text-red-600">
