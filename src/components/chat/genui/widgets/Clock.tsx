@@ -622,7 +622,7 @@ function CountdownTimer({
                 strokeLinecap="round"
                 strokeDasharray={RING_CIRCUMFERENCE}
                 strokeDashoffset={strokeDashoffset}
-                className="text-tinfoil-twilight transition-[stroke-dashoffset] duration-300 ease-linear dark:text-tinfoil-twilight-light"
+                className="text-highlight transition-[stroke-dashoffset] duration-300 ease-linear"
               />
             </svg>
             <div className="flex flex-col items-center gap-1 text-center">

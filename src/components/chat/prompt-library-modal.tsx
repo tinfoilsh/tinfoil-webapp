@@ -239,7 +239,7 @@ export function PromptLibraryModal({
         className={cn(
           'group relative flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
           isSelected
-            ? 'border-primary bg-primary/20'
+            ? 'border-highlight bg-primary/20'
             : 'border-border-subtle bg-surface-chat-background hover:bg-surface-chat',
         )}
         aria-pressed={isActive}
@@ -263,7 +263,7 @@ export function PromptLibraryModal({
             {isDefault && (
               <>
                 <TfBookmarkFilled
-                  className="h-3.5 w-3.5 text-primary"
+                  className="h-3.5 w-3.5 text-highlight"
                   aria-hidden="true"
                 />
                 <span className="sr-only">Default for new chats</span>
@@ -272,7 +272,7 @@ export function PromptLibraryModal({
             {isPinned && (
               <>
                 <StarIconSolid
-                  className="h-3.5 w-3.5 text-yellow-500"
+                  className="h-3.5 w-3.5 text-highlight"
                   aria-hidden="true"
                 />
                 <span className="sr-only">Favorite</span>
@@ -281,7 +281,7 @@ export function PromptLibraryModal({
             {isActive && (
               <>
                 <TfBoxCheckmark
-                  className="h-3.5 w-3.5 text-primary"
+                  className="h-3.5 w-3.5 text-highlight"
                   aria-hidden="true"
                 />
                 <span className="sr-only">Active</span>
@@ -644,7 +644,7 @@ function PresetDetail({
           className={cn(
             'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
             isFavorite
-              ? 'text-yellow-600 hover:bg-yellow-500/10 dark:text-yellow-400'
+              ? 'text-highlight hover:bg-primary/10'
               : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
             !isFavorite &&
               !canAddFavorite &&

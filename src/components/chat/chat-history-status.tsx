@@ -86,7 +86,7 @@ export function ChatHistoryStatus({
             <Icon
               className={cn(
                 'h-8 w-8',
-                isKeyProblem ? '!text-orange-500' : '!text-content-secondary',
+                isKeyProblem ? '!text-highlight' : '!text-content-secondary',
               )}
               aria-hidden="true"
             />

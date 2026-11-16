@@ -90,7 +90,7 @@ const SCENARIOS: Scenario[] = [
     id: 'passkey-recovery-auth-failed',
     title: 'Passkey recovery: auth fails',
     description:
-      'Same start state, but the simulated passkey authentication fails (user cancels / wrong passkey). Shows the amber auth_failed warning with retry, manual key, and start-fresh escape hatches.',
+      'Same start state, but the simulated passkey authentication fails (user cancels / wrong passkey). Shows the auth_failed warning with retry, manual key, and start-fresh escape hatches.',
     kind: 'setup-modal',
     prfSupported: true,
     passkeyRecoveryNeeded: true,

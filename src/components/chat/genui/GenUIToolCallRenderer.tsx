@@ -111,10 +111,10 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
           return (
             <div
               key={tc.id}
-              className="my-4 flex items-start gap-2.5 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-2.5 text-sm"
+              className="my-4 flex items-start gap-2.5 rounded-lg border border-highlight/30 bg-primary/10 px-3 py-2.5 text-sm"
             >
               <TfStars
-                className="mt-0.5 h-4 w-4 flex-shrink-0 !text-orange-500"
+                className="mt-0.5 h-4 w-4 flex-shrink-0 !text-highlight"
                 aria-hidden
               />
               <div className="flex flex-col">

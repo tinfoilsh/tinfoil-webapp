@@ -96,10 +96,11 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
-    --primary: var(--color-brand-dark);
-    --primary-foreground: var(--color-brand-light);
-    --primary-hover: 193 77.5% 13.9%;
-    --primary-active: 193.55 83.78% 7.25%;
+    --primary: var(--color-accent-light);
+    --primary-foreground: var(--color-brand-dark);
+    --primary-hover: var(--color-accent-light-darker);
+    --primary-active: var(--color-accent-light-darker);
+    --highlight: var(--color-accent-dark);
     --link: var(--color-accent-dark);
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
@@ -160,10 +161,11 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
-    --primary: var(--color-brand-light);
+    --primary: var(--color-accent-light);
     --primary-foreground: var(--color-brand-dark);
-    --primary-hover: 180 15.4% 94.9%;
-    --primary-active: 220 13% 91%;
+    --primary-hover: var(--color-accent-light-darker);
+    --primary-active: var(--color-accent-light-darker);
+    --highlight: var(--color-accent-light);
     --link: 257 32% 70%;
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
@@ -178,7 +180,7 @@
     --ring: var(--primary);
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
+    --chart-3: var(--color-accent-light);
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
   }

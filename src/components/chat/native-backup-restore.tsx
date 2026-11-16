@@ -131,7 +131,7 @@ export function NativeBackupRestore({
 
   return (
     <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4">
-      <p className="font-aeonik-fono text-xs text-amber-600">
+      <p className="font-aeonik-fono text-xs text-highlight">
         Warning: plaintext backup with sensitive data. Use a trusted archive.
       </p>
       <input

@@ -324,7 +324,7 @@ function createMarkdownComponents(): Components {
       return (
         <mark
           {...props}
-          className="inline rounded bg-yellow-200 px-0.5 align-baseline text-content-primary dark:bg-yellow-800"
+          className="inline rounded bg-primary/30 px-0.5 align-baseline text-content-primary"
         >
           {children}
         </mark>

@@ -1048,7 +1048,7 @@ export const ChatInput = memo(function ChatInput({
                             <span className="flex-1">Web search</span>
                             {webSearchEnabled && (
                               <TfBoxCheckmark
-                                className="h-4 w-4 text-primary"
+                                className="h-4 w-4 text-highlight"
                                 aria-hidden="true"
                               />
                             )}
@@ -1072,7 +1072,7 @@ export const ChatInput = memo(function ChatInput({
                             <span className="flex-1">Deep research</span>
                             {researchEnabled && (
                               <TfBoxCheckmark
-                                className="h-4 w-4 text-primary"
+                                className="h-4 w-4 text-highlight"
                                 aria-hidden="true"
                               />
                             )}

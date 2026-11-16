@@ -92,6 +92,7 @@ module.exports = {
         input: 'hsl(var(--input) / <alpha-value>)',
         ring: 'hsl(var(--ring) / <alpha-value>)',
         link: 'hsl(var(--link) / <alpha-value>)',
+        highlight: 'hsl(var(--highlight) / <alpha-value>)',
         brand: {
           dark: 'hsl(var(--color-brand-dark) / <alpha-value>)',
           light: 'hsl(var(--color-brand-light) / <alpha-value>)',

@@ -15,8 +15,7 @@ type BadgeKind = 'experimental' | 'deprecated'
 const BADGE_COLORS: Record<BadgeKind, string> = {
   experimental:
     'bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-300',
-  deprecated:
-    'bg-amber-500/10 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300',
+  deprecated: 'bg-primary/10 text-highlight',
 }
 
 // A badge of a kind this client does not know is not shown.

@@ -836,7 +836,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                 {keyLocked && (
                   <>
                     <span
-                      className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
+                      className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-highlight"
                       title="Cloud sync needs attention"
                       aria-hidden="true"
                     />
@@ -1050,10 +1050,10 @@ export const ChatSidebar = memo(function ChatSidebar({
               them yet. */}
           {backupWarningVisible && (
             <div className="relative z-10 flex-none px-2 pt-2">
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+              <div className="rounded-lg border border-highlight/30 bg-primary/10 p-3">
                 <div className="flex items-start gap-2">
                   <TfWarning
-                    className="mt-0.5 h-4 w-4 flex-shrink-0 !text-amber-500"
+                    className="mt-0.5 h-4 w-4 flex-shrink-0 !text-highlight"
                     aria-hidden="true"
                   />
                   <div className="flex-1">
@@ -1072,7 +1072,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                     <button
                       type="button"
                       onClick={onDismissBackupWarning}
-                      className="-mr-1 -mt-1 flex-shrink-0 rounded p-1 text-content-muted transition-colors hover:bg-amber-500/10 hover:text-content-secondary"
+                      className="-mr-1 -mt-1 flex-shrink-0 rounded p-1 text-content-muted transition-colors hover:bg-primary/10 hover:text-content-secondary"
                       aria-label="Dismiss"
                     >
                       <TfBoxX className="h-3.5 w-3.5" aria-hidden="true" />

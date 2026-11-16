@@ -79,8 +79,8 @@ export function RateLimitBanner({
         className={cn(
           'pointer-events-auto flex items-center gap-2 rounded-b-xl border-x border-b px-4 py-1.5 transition-colors',
           isDarkMode
-            ? 'border-amber-500/30 bg-amber-950/20 text-amber-400'
-            : 'border-amber-300 bg-amber-50 text-amber-600',
+            ? 'border-brand-accent-light/30 bg-brand-accent-light/10 text-brand-accent-light'
+            : 'border-brand-accent-dark/30 bg-brand-accent-light/10 text-brand-accent-dark',
           pillClassName,
         )}
       >

@@ -2126,7 +2126,7 @@ export function ChatInterface({
                 className={cn(
                   'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200 disabled:cursor-wait disabled:opacity-60',
                   isTemporaryMode
-                    ? 'border-tinfoil-twilight/40 bg-tinfoil-twilight/10 text-tinfoil-twilight hover:bg-tinfoil-twilight/20 dark:border-tinfoil-twilight-light/40 dark:bg-tinfoil-twilight-light/10 dark:text-tinfoil-twilight-light dark:hover:bg-tinfoil-twilight-light/20'
+                    ? 'border-highlight/40 bg-primary/10 text-highlight hover:bg-primary/20'
                     : 'border-transparent bg-surface-chat-background text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
                 )}
               >
@@ -2254,7 +2254,7 @@ export function ChatInterface({
       {(isTemporaryMode || currentChat.isTemporary) && !showChatHeader && (
         <div
           inert={isSidebarCoveringChat}
-          className="pointer-events-none fixed top-[var(--app-top,0px)] z-40 flex items-center gap-1.5 rounded-br-lg bg-surface-muted py-7 pl-16 pr-3 text-xs font-medium text-tinfoil-twilight transition-all duration-300 dark:text-tinfoil-twilight-light md:py-2 md:pl-3"
+          className="pointer-events-none fixed top-[var(--app-top,0px)] z-40 flex items-center gap-1.5 rounded-br-lg bg-primary py-7 pl-16 pr-3 text-xs font-medium text-primary-foreground transition-all duration-300 md:py-2 md:pl-3"
           style={{
             left: (() => {
               const isMobile = windowWidth < CONSTANTS.MOBILE_BREAKPOINT
@@ -2665,7 +2665,7 @@ export function ChatInterface({
           className={cn(
             'relative flex h-full flex-col transition-colors',
             isTemporaryMode
-              ? 'bg-tinfoil-twilight/15 p-2 dark:bg-tinfoil-twilight-light/15'
+              ? 'bg-primary/15 p-2'
               : 'bg-surface-chat-background',
           )}
         >

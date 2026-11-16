@@ -1,3 +1,7 @@
+import {
+  TINFOIL_ACCENT_LIGHT,
+  TINFOIL_ACCENT_LIGHT_DARKER,
+} from '@/theme/colors'
 import type { JSX } from 'react'
 import {
   Bar,
@@ -20,12 +24,12 @@ type ChartRow = RenderChartArgs['data'][number]
 const DEFAULT_PIE_COLORS = [
   '#3b82f6',
   '#10b981',
-  '#f59e0b',
+  TINFOIL_ACCENT_LIGHT,
   '#ef4444',
   '#8b5cf6',
   '#ec4899',
   '#06b6d4',
-  '#f97316',
+  TINFOIL_ACCENT_LIGHT_DARKER,
 ]
 
 const DEFAULT_SERIES_COLOR = '#3b82f6'

@@ -11,11 +11,9 @@ import type { RenderRecipeCardArgs } from '../widget-args'
 
 const RECIPE_SCALE_OPTIONS = [1, 2, 3] as const
 const DEFAULT_RECIPE_SCALE = 1
-const RECIPE_ACCENT_TEXT =
-  'text-tinfoil-twilight dark:text-tinfoil-twilight-light'
+const RECIPE_ACCENT_TEXT = 'text-highlight'
 const RECIPE_ACCENT_BG = 'bg-primary text-primary-foreground'
-const RECIPE_ACCENT_TINT =
-  'bg-tinfoil-twilight/10 dark:bg-tinfoil-twilight-light/15'
+const RECIPE_ACCENT_TINT = 'bg-primary/15'
 
 type RecipeScale = (typeof RECIPE_SCALE_OPTIONS)[number]
 
@@ -582,14 +580,14 @@ function buildPrintableRecipeHtml(args: PrintableRecipeArgs): string {
   .container { max-width: 720px; margin: 0 auto; }
   .hero { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; margin-bottom: 24px; }
   h1 { font-size: 28px; font-weight: 600; margin: 0 0 8px; }
-  .cuisine { text-transform: uppercase; letter-spacing: 0.16em; font-size: 11px; color: ${colors['tinfoil-twilight'].DEFAULT}; font-weight: 600; margin: 0 0 12px; }
+  .cuisine { text-transform: uppercase; letter-spacing: 0.16em; font-size: 11px; color: ${colors['tinfoil-accent-dark'].DEFAULT}; font-weight: 600; margin: 0 0 12px; }
   .description { color: #444; margin: 0 0 20px; }
   .meta { display: flex; flex-wrap: wrap; gap: 18px; padding: 14px 0; margin: 0 0 20px; border-top: 1px solid #e5e5e5; border-bottom: 1px solid #e5e5e5; }
   .meta-item { display: flex; flex-direction: column; }
   .meta-label { text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; color: #777; }
   .meta-value { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .scale-note { font-size: 12px; color: ${colors['tinfoil-twilight'].DEFAULT}; margin: 0 0 16px; font-weight: 600; }
-  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.18em; color: ${colors['tinfoil-twilight'].DEFAULT}; margin: 24px 0 8px; }
+  .scale-note { font-size: 12px; color: ${colors['tinfoil-accent-dark'].DEFAULT}; margin: 0 0 16px; font-weight: 600; }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.18em; color: ${colors['tinfoil-accent-dark'].DEFAULT}; margin: 24px 0 8px; }
   ul.ingredients, ol.steps { padding-left: 22px; margin: 0; }
   ul.ingredients li, ol.steps li { margin-bottom: 6px; }
   .ingredient-qty { font-weight: 600; }

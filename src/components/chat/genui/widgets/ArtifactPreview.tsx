@@ -522,7 +522,7 @@ function ArtifactPreviewInlineCard({
       className={cn(
         'my-3 flex w-full items-center rounded-lg border bg-surface-card text-left transition-colors',
         isSelected
-          ? 'border-primary bg-primary/20'
+          ? 'border-highlight bg-primary/20'
           : 'border-border-subtle hover:bg-surface-chat-background',
       )}
     >
@@ -535,7 +535,7 @@ function ArtifactPreviewInlineCard({
         <FileText
           className={cn(
             'h-6 w-6 flex-shrink-0',
-            isSelected ? 'text-primary' : 'text-content-muted',
+            isSelected ? 'text-highlight' : 'text-content-muted',
           )}
           aria-hidden
         />
