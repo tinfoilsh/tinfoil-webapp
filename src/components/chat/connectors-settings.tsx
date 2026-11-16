@@ -5,7 +5,9 @@ import {
   describeConnectorError,
   isConnected,
 } from '@/services/harness/connectors'
+import { ERROR_CODES } from '@/services/harness/protocol'
 import { useHarness } from '@/services/harness/provider'
+import { HarnessError } from '@/services/harness/sse'
 import type {
   Connector,
   ConnectorTool,
@@ -531,6 +533,11 @@ function Discover({
   )
 }
 
+// What the add dialog says of a request the harness found invalid, which
+// can only be the fields the user typed.
+const INVALID_FIELDS =
+  'Check the name and the address. The address must be a public HTTPS URL.'
+
 // Why a custom connector's fields cannot be sent, if they cannot.
 function customFieldsProblem(name: string, url: string): string | null {
   if (!name) return 'Enter a name.'
@@ -583,7 +590,11 @@ function AddCustomConnector({
       await list.add(trimmedName, trimmedUrl)
       close()
     } catch (cause) {
-      setError(describeConnectorError(cause))
+      setError(
+        cause instanceof HarnessError && cause.code === ERROR_CODES.badRequest
+          ? INVALID_FIELDS
+          : describeConnectorError(cause),
+      )
     } finally {
       setAdding(false)
     }

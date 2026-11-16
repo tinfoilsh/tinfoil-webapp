@@ -53,8 +53,7 @@ const CONNECTOR_ERROR_COPY: Record<string, string> = {
     'This server only works with apps it approved in advance, so it cannot be connected here.',
   [ERROR_CODES.connectorLimit]:
     'You have added the most connectors you can. Remove one to add another.',
-  [ERROR_CODES.badRequest]:
-    'Check the name and the address. The address must be a public HTTPS URL.',
+  [ERROR_CODES.badRequest]: 'The chat service could not accept this request.',
   [ERROR_CODES.connectorSignInFailed]:
     'Signing in did not finish. Try signing in again.',
   [ERROR_CODES.connectorSignedOut]:

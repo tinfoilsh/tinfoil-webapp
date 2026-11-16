@@ -169,4 +169,51 @@ describe('the Connectors settings', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(detail.message)
   })
+
+  it('points to the typed fields only when the add dialog’s request is refused as invalid', async () => {
+    connectors = [connector()]
+    const invalid = new HarnessError({
+      code: 'BAD_REQUEST',
+      action: 'stop',
+      message: 'url must be a public HTTPS address',
+    })
+    answer = async () => {
+      throw invalid
+    }
+    render(<ConnectorsSettings isDarkMode={false} />)
+
+    // Turning a connector off names no field.
+    fireEvent.click(
+      await screen.findByRole('checkbox', { name: 'Use Docs in chats' }),
+    )
+    const yours = screen.getByRole('list', { name: 'Your connectors' })
+    expect(await within(yours).findByRole('alert')).not.toHaveTextContent(
+      'HTTPS',
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Add custom connector' }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Add custom connector',
+    })
+    fireEvent.change(within(dialog).getByLabelText('Name'), {
+      target: { value: 'Tracker' },
+    })
+    fireEvent.change(within(dialog).getByLabelText('MCP server URL (HTTPS)'), {
+      target: { value: 'https://tracker.example/mcp' },
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The address must be a public HTTPS URL.',
+    )
+    expect(requests('/v1/connectors/add')).toEqual([
+      [
+        '/v1/connectors/add',
+        { key: KEY, name: 'Tracker', url: 'https://tracker.example/mcp' },
+        expect.any(AbortSignal),
+      ],
+    ])
+  })
 })
