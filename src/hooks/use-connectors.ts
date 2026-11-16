@@ -76,9 +76,10 @@ export class ConnectorList {
   private listing: Promise<void> | null = null
   // The storage mode and key the list was last read under.
   private scope?: string
-  // The connectors whose sign-in this tab opened a popup for, whose
-  // callback page says how it ended, and what stops listening for that.
-  private readonly awaited = new Set<string>()
+  // The latest sign-in to each connector this tab opened a popup for, by
+  // connector, whose callback page says how it ended, and what stops
+  // listening for that. A sign-in started since replaces the one before.
+  private readonly awaited = new Map<string, string>()
   private stopListening?: () => void
 
   constructor(private readonly api: HarnessAPI) {}
@@ -172,9 +173,9 @@ export class ConnectorList {
 
   private signInIfAsked({ connector, authorizationUrl }: ConnectorAnswer) {
     if (!authorizationUrl) return
-    if (openSignIn(authorizationUrl, connector.id, returnAddress()) !== 'popup')
-      return
-    this.awaited.add(connector.id)
+    const opened = openSignIn(authorizationUrl, connector.id, returnAddress())
+    if (opened.opened !== 'popup') return
+    this.awaited.set(connector.id, opened.signIn)
     this.listen()
   }
 
@@ -183,9 +184,10 @@ export class ConnectorList {
   private listen() {
     const { signal } = this.api.lifetime
     if (this.stopListening || signal.aborted) return
-    const stop = listenForSignIns(({ connectorId, status }) =>
-      this.signInEnded(connectorId, status),
-    )
+    const stop = listenForSignIns(({ connectorId, signIn, status }) => {
+      if (this.awaited.get(connectorId) === signIn)
+        this.signInEnded(connectorId, status)
+    })
     const close = () => {
       stop()
       signal.removeEventListener('abort', close)
@@ -204,7 +206,6 @@ export class ConnectorList {
   // list shows the connector as the harness now has it, or the user is told
   // why the sign-in did not finish.
   private signInEnded(connectorId: string, status: SignInStatus) {
-    if (!this.awaited.has(connectorId)) return
     this.stopAwaiting(connectorId)
     if (status === 'completed') {
       void this.refresh()

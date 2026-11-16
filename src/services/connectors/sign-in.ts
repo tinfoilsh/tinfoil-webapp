@@ -36,12 +36,16 @@ const STATUSES: readonly string[] = ['completed', 'refused', 'failed']
 interface SignInEnded {
   type: typeof SIGN_IN_MESSAGE
   connectorId: string
+  // Which of the connector's sign-ins ended, so only the latest one started
+  // counts.
+  signIn: string
   status: SignInStatus
 }
 
 interface PendingSignIn {
   state: string
   connectorId: string
+  signIn: string
   // Where the tab goes once the sign-in finishes in it.
   returnTo: string
   startedAt: number
@@ -65,6 +69,7 @@ function isPending(value: unknown): value is PendingSignIn {
   return (
     typeof entry.state === 'string' &&
     typeof entry.connectorId === 'string' &&
+    typeof entry.signIn === 'string' &&
     typeof entry.returnTo === 'string' &&
     typeof entry.startedAt === 'number'
   )
@@ -119,6 +124,15 @@ const signInRefused = (message: string) =>
     message,
   })
 
+// The popup the latest sign-in this tab started opened, which a new sign-in
+// closes: its copy of this tab's sign-ins was taken before the new one.
+let signInWindow: Window | null = null
+
+// A sign-in this tab opened a popup for, whose callback page says how it
+// ended under the sign-in's id; or one that took this tab to its page.
+export type OpenedSignIn =
+  { opened: 'popup'; signIn: string } | { opened: 'tab' }
+
 // Sends the user to the page that signs them in to a connector. The sign-in
 // is kept first, so a popup's copy of this tab's sign-ins holds it. The
 // popup opens blank, so a blocked one is told apart, and loses its opener
@@ -129,7 +143,7 @@ export function openSignIn(
   authorizationUrl: string,
   connectorId: string,
   returnTo: string,
-): 'popup' | 'tab' {
+): OpenedSignIn {
   let page: URL
   try {
     page = new URL(authorizationUrl)
@@ -139,18 +153,24 @@ export function openSignIn(
   const state = page.searchParams.get('state')
   if (page.protocol !== 'https:' || !state)
     throw signInRefused('The sign-in page has an invalid address.')
+  const signIn = crypto.randomUUID()
   keepSignIns([
     ...pendingSignIns().filter((entry) => entry.state !== state),
-    { state, connectorId, returnTo, startedAt: Date.now() },
+    { state, connectorId, signIn, returnTo, startedAt: Date.now() },
   ])
-  const popup = window.open('', POPUP_NAME, POPUP_FEATURES)
+  if (signInWindow && !signInWindow.closed) signInWindow.close()
+  signInWindow = null
+  // A window of the popup's name left open would be reused, with its copy
+  // of this tab's sign-ins from before this one, so each popup is new.
+  const popup = window.open('', `${POPUP_NAME}-${signIn}`, POPUP_FEATURES)
   if (!popup) {
     window.location.assign(page.href)
-    return 'tab'
+    return { opened: 'tab' }
   }
   popup.opener = null
   popup.location.replace(page.href)
-  return 'popup'
+  signInWindow = popup
+  return { opened: 'popup', signIn }
 }
 
 // Calls `ended` with each sign-in a callback page in another window says
@@ -166,11 +186,13 @@ export function listenForSignIns(
     if (
       message.type === SIGN_IN_MESSAGE &&
       typeof message.connectorId === 'string' &&
+      typeof message.signIn === 'string' &&
       typeof message.status === 'string' &&
       STATUSES.includes(message.status)
     )
       ended({
         connectorId: message.connectorId,
+        signIn: message.signIn,
         status: message.status as SignInStatus,
       })
   }
@@ -183,6 +205,7 @@ export type SignInOutcome =
   | {
       status: SignInStatus
       connectorId: string
+      signIn: string
       returnTo: string | null
       // Why finishing the sign-in failed.
       cause?: unknown
@@ -199,6 +222,7 @@ export async function finishSignIn(
   if (!pending) return { status: 'unknown' }
   const ended = {
     connectorId: pending.connectorId,
+    signIn: pending.signIn,
     returnTo: sanitizeRelativeRedirect(pending.returnTo),
   }
   if (error || !code) return { status: 'refused', ...ended }
@@ -219,10 +243,16 @@ export async function finishSignIn(
 // it shows it.
 export function announceSignIn({
   connectorId,
+  signIn,
   status,
 }: Omit<SignInEnded, 'type'>) {
   const channel = new BroadcastChannel(SIGN_IN_CHANNEL)
-  const message: SignInEnded = { type: SIGN_IN_MESSAGE, connectorId, status }
+  const message: SignInEnded = {
+    type: SIGN_IN_MESSAGE,
+    connectorId,
+    signIn,
+    status,
+  }
   channel.postMessage(message)
   channel.close()
 }

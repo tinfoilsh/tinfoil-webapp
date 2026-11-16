@@ -74,13 +74,13 @@ export default function ConnectorCallbackPage() {
         )
         return
       }
-      const { connectorId, status, returnTo } = outcome
+      const { connectorId, signIn, status, returnTo } = outcome
       if (status === 'failed')
         logError('Failed to finish signing in to a connector', outcome.cause, {
           component: 'ConnectorCallbackPage',
           action: 'finishSignIn',
         })
-      announceSignIn({ connectorId, status })
+      announceSignIn({ connectorId, signIn, status })
       // Only a popup closes.
       window.close()
       if (window.closed) return

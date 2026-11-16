@@ -33,7 +33,9 @@ const session = {
 
 const SERVER = 'https://mcp.notion.com/mcp'
 const STATE = 'state-started-here'
-const AUTHORIZATION_URL = `https://auth.notion.example/authorize?client_id=x&state=${STATE}&code_challenge=c`
+const pageWith = (state: string) =>
+  `https://auth.notion.example/authorize?client_id=x&state=${state}&code_challenge=c`
+const AUTHORIZATION_URL = pageWith(STATE)
 // The channel the callback page says how a sign-in ended on.
 const SIGN_IN_CHANNEL = 'tinfoil-connector-sign-ins'
 
@@ -67,8 +69,16 @@ const listings = () =>
 // tab kept when the popup opened, which the popup's copy holds.
 interface FakePopup {
   opener: unknown
+  closed: boolean
+  close: ReturnType<typeof vi.fn>
   location: { replace: ReturnType<typeof vi.fn> }
 }
+const fakePopup = (): FakePopup => ({
+  opener: window,
+  closed: false,
+  close: vi.fn(),
+  location: { replace: vi.fn() },
+})
 let popup: FakePopup | null
 let keptWhenOpened: string | null
 // The harness has the connector connected once the sign-in completed.
@@ -87,6 +97,11 @@ beforeEach(() => {
         return { connectors: [completed ? CONNECTED : connector()] }
       case '/v1/connectors/add':
         return { connector: connector(), authorizationUrl: AUTHORIZATION_URL }
+      case '/v1/connectors/authorize':
+        return {
+          connector: connector(),
+          authorizationUrl: pageWith('state-started-again'),
+        }
       case '/v1/connectors/complete':
         completed = true
         return { connector: CONNECTED }
@@ -94,7 +109,7 @@ beforeEach(() => {
         throw new Error(`Unexpected harness request: ${path}`)
     }
   })
-  popup = { opener: window, location: { replace: vi.fn() } }
+  popup = fakePopup()
   keptWhenOpened = null
   vi.spyOn(window, 'open').mockImplementation(() => {
     keptWhenOpened = sessionStorage.getItem(CONNECTOR_SIGN_INS)
@@ -265,21 +280,34 @@ describe('the connector sign-in callback', () => {
 
 describe('the tab that started a sign-in', () => {
   // Says on the channel how sign-ins ended, in order, as callback pages do.
-  function signInsEnded(...ended: [connectorId: string, status: string][]) {
+  function signInsEnded(
+    ...ended: [connectorId: string, signIn: string, status: string][]
+  ) {
     const channel = new BroadcastChannel(SIGN_IN_CHANNEL)
-    for (const [connectorId, status] of ended)
-      channel.postMessage({ type: 'connector-sign-in', connectorId, status })
+    for (const [connectorId, signIn, status] of ended)
+      channel.postMessage({
+        type: 'connector-sign-in',
+        connectorId,
+        signIn,
+        status,
+      })
     channel.close()
   }
+  // The id of the sign-in this tab started under a state.
+  const signInOf = (state: string): string =>
+    JSON.parse(sessionStorage.getItem(CONNECTOR_SIGN_INS) ?? '[]').find(
+      (entry: { state: string }) => entry.state === state,
+    ).signIn
 
   it('shows how its own sign-in ended, and ignores others', async () => {
     const result = await connectFromChat()
     const listed = listings().length
+    const started = signInOf(STATE)
 
     signInsEnded(
-      ['connector-2', 'refused'],
-      ['connector-2', 'completed'],
-      ['connector-1', 'failed'],
+      ['connector-2', started, 'refused'],
+      ['connector-2', started, 'completed'],
+      ['connector-1', started, 'failed'],
     )
 
     await waitFor(() =>
@@ -289,5 +317,33 @@ describe('the tab that started a sign-in', () => {
     )
     expect(listings()).toHaveLength(listed)
     expect(result.current.connectors).toEqual([connector()])
+  })
+})
+
+describe('a connector signed in to again', () => {
+  it('counts only the latest sign-in, whatever an earlier one says', async () => {
+    const result = await connectFromChat()
+    const first = popup!
+    popup = fakePopup()
+
+    await act(() => result.current.list.signIn('connector-1'))
+
+    // The earlier popup holds a copy of this tab's sign-ins from before.
+    expect(first.close).toHaveBeenCalledOnce()
+    expect(popup.location.replace).toHaveBeenCalledExactlyOnceWith(
+      pageWith('state-started-again'),
+    )
+    // The earlier popup ends its sign-in anyway, as one not closed in time.
+    const close = closingAsA('popup')
+    setLocation(`/connectors/callback?error=access_denied&state=${STATE}`)
+    const earlier = render(<ConnectorCallbackPage />)
+    await waitFor(() => expect(close).toHaveBeenCalledOnce())
+    earlier.unmount()
+
+    setLocation('/connectors/callback?code=the-code&state=state-started-again')
+    render(<ConnectorCallbackPage />)
+
+    await waitFor(() => expect(result.current.connectors).toEqual([CONNECTED]))
+    expect(toast).not.toHaveBeenCalled()
   })
 })
