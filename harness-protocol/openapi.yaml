@@ -65,7 +65,13 @@ info:
       name; the next version names it. A version 2 chat's reply may also hold
       research, which a harness that does not name it leaves out when it
       writes the chat back, reading the reply with its steps; the next
-      version names it.
+      version names it. A version 2 chat's attachment may also hold
+      original, where the file it was uploaded as is kept, which a harness
+      that does not name it leaves out when it writes the chat back; the
+      next version names it. A version 2 project document row may also hold
+      file, where the uploaded file is kept, which a harness that does not
+      name it leaves out when it writes the row back; the next version
+      names it.
       A harness reads a version before it writes it. A member of a stored row it
       does not name is read past, since other clients of the same rows write
       members of their own; the harness leaves such members out when it
@@ -114,6 +120,8 @@ tags:
     description: The account's settings.
   - name: projects
     description: Projects and their documents.
+  - name: artifacts
+    description: The artifacts the chats' replies drew.
   - name: keys
     description: The account's content key and its passkey bundles, as the control plane keeps them.
   - name: attachments
@@ -208,6 +216,39 @@ paths:
             schema: {$ref: "#/components/schemas/Turn"}
       responses:
         "200": {$ref: "#/components/responses/RunEvents"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/browser/result:
+    post:
+      operationId: browserResult
+      summary: Return a browser action's result
+      tags: [runs]
+      description: |
+        The executor of a local browser turn returns one result for the pending
+        executionId, authenticated by the turn's private executor token. An
+        identical retry is accepted while the run is live; a conflicting or
+        unknown execution is refused. The client journals intent before acting
+        and the result before sending it. Replaying an event must never repeat
+        an action. An uncertain outcome requires observing the page and user
+        intervention, rather than replay. Screenshots reach the model during
+        this run only; events and the returned thread carry the text alone.
+      parameters:
+        - {$ref: "#/components/parameters/HarnessInstance"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BrowserResultInput"}
+      responses:
+        "200":
+          description: The result was accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted: {const: true}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/threads/follow:
@@ -954,8 +995,14 @@ paths:
   /v1/projects/documents/upload:
     post:
       operationId: projectDocumentUpload
-      summary: Add a document to a project
+      summary: Add a document to a project, or replace one
       tags: [projects]
+      description: >-
+        Reads a file's text into a document of the project, and keeps the
+        file itself, which /v1/projects/documents/download returns. With
+        documentId, the upload is a new version of that document: it keeps
+        the document's id and createdAt, and takes the new file's name, type,
+        size and text. The key, projectId and documentId come before the file.
       requestBody:
         required: true
         content:
@@ -966,6 +1013,7 @@ paths:
               properties:
                 file: {type: string, contentMediaType: application/octet-stream}
                 projectId: {type: string}
+                documentId: {type: string, description: "The document the upload replaces. Absent for a new document."}
                 key: {type: string, description: "The account's content key, base64."}
       responses:
         "200":
@@ -973,6 +1021,35 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ProjectDocument"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/projects/documents/download:
+    post:
+      operationId: projectDocumentDownload
+      summary: Download a document's file
+      tags: [projects]
+      description: >-
+        Returns the file a document was read from, as it was uploaded. The
+        client names and types it from the document. A document without
+        hasFile, stored before files were kept, is refused with
+        THREAD_NOT_FOUND.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, projectId, documentId]
+              properties:
+                key: {type: string, description: "The account's content key, base64."}
+                projectId: {$ref: "#/components/schemas/Identifier"}
+                documentId: {$ref: "#/components/schemas/Identifier"}
+      responses:
+        "200":
+          description: The document's file.
+          content:
+            application/octet-stream:
+              schema: {type: string, contentMediaType: application/octet-stream}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/projects/documents/delete:
@@ -993,6 +1070,79 @@ paths:
                 documentId: {$ref: "#/components/schemas/Identifier"}
       responses:
         "200": {$ref: "#/components/responses/Empty"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/artifacts/list:
+    post:
+      operationId: artifactsList
+      summary: List artifacts
+      tags: [artifacts]
+      description: >-
+        Lists a page of the artifacts the replies in the account's stored
+        chats drew, or with projectId in that project's chats: each
+        render_artifact_preview call whose arguments a client draws, in a
+        message the chat shows. The chats come in the order the chat list
+        shows them, and each chat's artifacts newest first. They are read
+        from the chats, so a chat deleted, moved or changed takes its
+        artifacts with it, and a chat the list files again between pages may
+        be listed twice. The list holds no artifact's source, which
+        /v1/artifacts/get returns. Device chats are not listed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key: {type: string, description: "The account's content key, base64."}
+                projectId: {$ref: "#/components/schemas/Identifier"}
+                cursor: {type: string}
+      responses:
+        "200":
+          description: A page of artifacts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [artifacts, nextCursor]
+                properties:
+                  artifacts: {type: array, items: {$ref: "#/components/schemas/Artifact"}}
+                  nextCursor: {type: string, description: "Empty on the last page."}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/artifacts/get:
+    post:
+      operationId: artifactGet
+      summary: Open an artifact
+      tags: [artifacts]
+      description: >-
+        Returns an artifact of a stored chat, named by its reply and call, with
+        the arguments the reply drew it with, which a client draws as it draws
+        the call in the chat.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, threadId, messageId, toolCallId]
+              properties:
+                key: {type: string, description: "The account's content key, base64."}
+                threadId: {$ref: "#/components/schemas/Identifier"}
+                messageId: {$ref: "#/components/schemas/Identifier"}
+                toolCallId: {type: string}
+      responses:
+        "200":
+          description: The artifact and its arguments.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [artifact, arguments]
+                properties:
+                  artifact: {$ref: "#/components/schemas/Artifact"}
+                  arguments: {type: string, description: "The call's arguments as JSON, as the chat's timeline holds them."}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/keys/current:
@@ -1121,7 +1271,15 @@ paths:
       operationId: attachmentUpload
       summary: Convert a file into an attachment
       tags: [attachments]
-      description: Converts a file into the attachment a turn sends. The harness keeps nothing of it.
+      description: >-
+        Converts a file into the attachment a turn sends. For a stored chat,
+        the client sends the content key, and the harness keeps the file as
+        it was uploaded, which the attachment's original names. The turn
+        that attaches it sends the original back, and its chat keeps the file
+        while it names the attachment. A file no turn attaches within an
+        hour of its upload is deleted, and a turn that attaches it later
+        keeps the attachment without it. Without the key, as for a device
+        chat or a signed-out caller, the harness keeps nothing of the file.
       requestBody:
         required: true
         content:
@@ -1131,6 +1289,7 @@ paths:
               required: [file]
               properties:
                 file: {type: string, contentMediaType: application/octet-stream}
+                key: {type: string, description: "The account's content key, base64. Only for a stored chat."}
       responses:
         "200":
           description: The attachment.
@@ -1404,7 +1563,7 @@ components:
       type: apiKey
       in: header
       name: X-Tinfoil-Inference-Key
-      description: The chat access the client minted from the control plane, which the harness checks against the identity before it reads the body. A run started with a subscriber's chat token outlasts it. The harness has the control plane renew the token for as long as the run lasts, so a client mints chat access for the requests it sends and never for a run in progress.
+      description: The chat access the client minted from the control plane, which the harness checks against the identity before it reads the body. A run started with a subscriber's chat token outlasts it, as does a reply read aloud. The harness has the control plane renew the token for as long as the run or the reading lasts, so a client mints chat access for the requests it sends and never for a run or a reading in progress.
   responses:
 
     Error:
@@ -1604,6 +1763,7 @@ components:
             - ATTACHMENT_UNSUPPORTED
             - ATTACHMENTS_UNAVAILABLE
             - BAD_REQUEST
+            - BROWSER_TIMEOUT
             - CHAT_FLAGGED
             - COMPACTION_FAILED
             - CONTEXT_TOO_LARGE
@@ -1683,7 +1843,7 @@ components:
         composer: {$ref: "#/components/schemas/Composer"}
         presets: {type: array, items: {$ref: "#/components/schemas/Preset"}}
         features:
-          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes.
+          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes. documentVersions is true while a project document upload that names a documentId replaces that document. artifacts is true while /v1/artifacts/list and /v1/artifacts/get list and open the artifacts of the account's chats.
           type: object
           additionalProperties: {type: boolean}
 
@@ -1811,8 +1971,76 @@ components:
         toolCallId: {type: string, description: "The widget call a retryToolCall regenerates."}
         attachments: {type: array, items: {$ref: "#/components/schemas/SentAttachment"}}
         widgets: {type: array, items: {type: string}, description: "The widgets this client renders."}
+        browser: {$ref: "#/components/schemas/BrowserAccess"}
         compactLatest: {type: boolean, description: "A compact turn, or a retry that compacts again, summarizes the chat's latest exchange too, as COMPACTION_START describes. It is refused on any other kind. A client sends it only while the session's features.compactLatest is true, and when it shows a compaction marker at the end of a chat."}
         options: {$ref: "#/components/schemas/TurnOptions"}
+
+    BrowserAccess:
+      description: |
+        Available only when features.browserTools is true, on local send turns
+        without research. The client controls selected tabs and supplies a new
+        executor identity and secret for each turn. The token is sent only in
+        sealed bodies, never in prompts, events or persistent chat records.
+        Browser actions run sequentially, at most 40 per turn. Each waits at
+        most five minutes for its executor; a timeout ends the run with
+        BROWSER_TIMEOUT and leaves later actions unexecuted. Clients cancel a run when they
+        relinquish browser control, and stop local dispatch immediately.
+      type: object
+      required: [executorId, token]
+      properties:
+        executorId: {type: string, format: uuid}
+        token: {type: string, pattern: "^[0-9a-f]{64}$"}
+
+    BrowserAction:
+      description: Arguments validated against the model-facing browser tool schema. The executor additionally validates selected tabs, URL schemes, current references, and action permissions before dispatch.
+      type: object
+      required: [action]
+      properties:
+        action: {type: string, enum: [tabs, read, screenshot, click, hover, fill, select, press, scroll, navigate, back, forward, open, switch, close, wait]}
+        tabId: {type: integer}
+        ref: {type: string}
+        text: {type: string}
+        url: {type: string}
+        key: {type: string, enum: [Enter, Tab, Escape, ArrowDown, ArrowUp, ArrowLeft, ArrowRight, Backspace]}
+        direction: {type: string, enum: [up, down]}
+        screenshotId: {type: string, description: "The fresh screenshot whose pixels a coordinate action uses."}
+        x: {type: number, minimum: 0}
+        y: {type: number, minimum: 0}
+
+    BrowserResult:
+      type: object
+      required: [text]
+      properties:
+        text: {type: string, maxLength: 65536, description: "Page data or a structured action error. Limited to 64 KiB UTF-8."}
+        image: {type: string, maxLength: 2097152, description: "Optional base64 JPEG viewport, at most 4 million pixels. Read only by vision models."}
+
+    BrowserResultInput:
+      type: object
+      required: [threadId, runId, executorId, token, executionId, result]
+      properties:
+        threadId: {$ref: "#/components/schemas/Identifier"}
+        runId: {type: string}
+        executorId: {type: string}
+        token: {type: string}
+        executionId: {type: string}
+        result: {$ref: "#/components/schemas/BrowserResult"}
+
+    BrowserToolRequestEvent:
+      description: |
+        A complete, validated browser operation ready for the selected executor.
+        Only this event authorizes dispatch, never partial TOOL_CALL_ARGS.
+        executionId identifies the operation across stream reconnections.
+        Every replay is reconciled against the executor's local journal.
+      type: object
+      required: [type, executionId, toolCallId, executorId, expiresAt, operation]
+      properties:
+        type: {const: BROWSER_TOOL_REQUEST}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        expiresAt: {type: string, format: date-time, description: "The executor refuses dispatch after this deadline, including after a delayed review or stream replay."}
+        executionId: {type: string}
+        toolCallId: {type: string}
+        executorId: {type: string}
+        operation: {$ref: "#/components/schemas/BrowserAction"}
 
     TurnOptions:
       type: object
@@ -1877,6 +2105,7 @@ components:
         description: {type: string}
         pages: {type: array, items: {$ref: "#/components/schemas/DocumentPage"}}
         base64: {type: string}
+        original: {$ref: "#/components/schemas/OriginalFile"}
 
     FollowInput:
       type: object
@@ -1910,6 +2139,7 @@ components:
         - {$ref: "#/components/schemas/ToolCallArgsEvent"}
         - {$ref: "#/components/schemas/ToolCallEndEvent"}
         - {$ref: "#/components/schemas/ToolCallResultEvent"}
+        - {$ref: "#/components/schemas/BrowserToolRequestEvent"}
         - {$ref: "#/components/schemas/ActivitySnapshotEvent"}
         - {$ref: "#/components/schemas/ActivityDeltaEvent"}
         - {$ref: "#/components/schemas/CompactionStartEvent"}
@@ -1930,6 +2160,7 @@ components:
           TOOL_CALL_ARGS: "#/components/schemas/ToolCallArgsEvent"
           TOOL_CALL_END: "#/components/schemas/ToolCallEndEvent"
           TOOL_CALL_RESULT: "#/components/schemas/ToolCallResultEvent"
+          BROWSER_TOOL_REQUEST: "#/components/schemas/BrowserToolRequestEvent"
           ACTIVITY_SNAPSHOT: "#/components/schemas/ActivitySnapshotEvent"
           ACTIVITY_DELTA: "#/components/schemas/ActivityDeltaEvent"
           COMPACTION_START: "#/components/schemas/CompactionStartEvent"
@@ -2528,6 +2759,7 @@ components:
         thumbnail: {type: string}
         textContent: {type: string}
         description: {type: string}
+        hasOriginal: {type: boolean, description: "Whether the file is kept as it was uploaded, which /v1/attachments/get returns with original. Absent for an attachment stored before files were kept."}
 
     Attachment:
       description: An attachment as an upload returns it and a device chat keeps it.
@@ -2545,6 +2777,16 @@ components:
         pages: {type: array, items: {$ref: "#/components/schemas/DocumentPage"}}
         base64: {type: string, description: "The copy of an image models read."}
         originalBase64: {type: string, description: "An imported image's original, only in an import's lines. A client keeps it apart from the chat."}
+        original: {$ref: "#/components/schemas/OriginalFile"}
+
+    OriginalFile:
+      description: Where an upload kept the file as it was uploaded. A turn sends it back as the upload returned it.
+      type: object
+      required: [id, encryptionKey, storageThreadId]
+      properties:
+        id: {type: string}
+        encryptionKey: {type: string}
+        storageThreadId: {type: string}
 
     DocumentPage:
       type: object
@@ -2718,6 +2960,14 @@ components:
                     textContent: {type: string}
                     description: {type: string}
                     attKey: {type: [string, "null"]}
+                    hasOriginal: {type: boolean}
+                    original:
+                      description: The file as it was uploaded, which /v1/attachments/get-public returns with original.
+                      type: object
+                      required: [id, attKey]
+                      properties:
+                        id: {type: string}
+                        attKey: {type: string}
 
     AttachmentRequest:
       description: An attachment of a stored chat, or one a share names by the key its link carries.
@@ -2734,6 +2984,7 @@ components:
         mimeType: {type: string}
         textContent: {type: string}
         pages: {type: array, items: {$ref: "#/components/schemas/DocumentPage"}}
+        original: {type: boolean, description: "Asks for the file as it was uploaded: of the attachment a stored chat names by id, or, for a share, the original that id and attKey name."}
 
     # --- Profile --------------------------------------------------------------
 
@@ -2877,8 +3128,27 @@ components:
         sizeBytes: {type: integer}
         content: {type: string}
         thumbnailBase64: {type: string}
+        hasFile: {type: boolean, description: "Whether the uploaded file is kept, which /v1/projects/documents/download returns. A document stored before files were kept, or restored from a backup, has only its text."}
         createdAt: {$ref: "#/components/schemas/Timestamp"}
         updatedAt: {$ref: "#/components/schemas/Timestamp"}
+
+    Artifact:
+      description: An artifact a reply in a stored chat drew, without its source.
+      type: object
+      required: [threadId, threadTitle, projectId, messageId, toolCallId, title, sourceType, createdAt]
+      properties:
+        threadId: {type: string}
+        threadTitle: {type: string}
+        projectId: {type: [string, "null"], description: "The project the chat is in."}
+        messageId: {type: string, description: "The reply that drew it."}
+        toolCallId: {type: string, description: "The call that drew it, as the reply's timeline names it."}
+        title: {type: string, description: "Empty when the call gave none."}
+        sourceType:
+          description: The kind of source the artifact shows. A client shows one of a kind it does not know as a generic artifact.
+          anyOf:
+            - {type: string, enum: [url, html, markdown]}
+            - {type: string}
+        createdAt: {type: string, description: "When the reply was written, as the message records it."}
 
     # --- Keys -----------------------------------------------------------------
 

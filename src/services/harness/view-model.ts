@@ -172,18 +172,14 @@ function toolBlock(block: WireBlock, streaming: boolean): TimelineBlock | null {
   }
 }
 
-export function attachmentView(
-  a: Pick<
-    WireAttachment,
-    | 'id'
-    | 'kind'
-    | 'fileName'
-    | 'mimeType'
-    | 'size'
-    | 'textContent'
-    | 'thumbnail'
-  >,
-): Attachment {
+// What a view shows of an attachment, which a stored chat's, a device chat's
+// and a share's attachments all hold.
+type ViewedAttachment = Pick<
+  WireAttachment,
+  'id' | 'kind' | 'fileName' | 'mimeType' | 'size' | 'textContent' | 'thumbnail'
+>
+
+export function attachmentView(a: ViewedAttachment): Attachment {
   return {
     id: a.id,
     type: a.kind === 'image' ? 'image' : 'document',
@@ -289,7 +285,9 @@ export function compactable(
 // A message as the view shows it, with the latest summary of each thinking
 // block's reasoning.
 export function messageView(
-  message: ShownMessage,
+  message: Omit<ShownMessage, 'attachments'> & {
+    attachments?: ViewedAttachment[]
+  },
   streaming = false,
   summaries: Readonly<Record<string, string>> = {},
 ): Message {
