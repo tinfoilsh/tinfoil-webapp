@@ -12,7 +12,7 @@ import { CHAT_END, COMPACTION_ROLE, WIDGET_PREFIX } from './protocol'
 import type {
   QueueItem,
   ThreadSummary,
-  AttachmentDescriptor as WireAttachment,
+  MessageAttachment as WireAttachment,
   TimelineBlock as WireBlock,
   Message as WireMessage,
 } from './types'
@@ -176,7 +176,14 @@ function toolBlock(block: WireBlock, streaming: boolean): TimelineBlock | null {
 // and a share's attachments all hold.
 type ViewedAttachment = Pick<
   WireAttachment,
-  'id' | 'kind' | 'fileName' | 'mimeType' | 'size' | 'textContent' | 'thumbnail'
+  | 'id'
+  | 'kind'
+  | 'fileName'
+  | 'mimeType'
+  | 'size'
+  | 'textContent'
+  | 'thumbnail'
+  | 'hasOriginal'
 >
 
 export function attachmentView(a: ViewedAttachment): Attachment {
@@ -188,6 +195,7 @@ export function attachmentView(a: ViewedAttachment): Attachment {
     fileSize: a.size,
     textContent: a.textContent,
     thumbnailBase64: a.thumbnail ?? undefined,
+    ...(a.hasOriginal ? { hasOriginal: true } : {}),
   }
 }
 // A queued turn's attachments that can be shown. One the chat already holds

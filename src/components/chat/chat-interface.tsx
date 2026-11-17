@@ -852,6 +852,7 @@ export function ChatInterface({
     retryToolCall,
     loadImage: thread.loadImage,
     loadDocumentText: thread.documentText,
+    loadOriginalFile: thread.originalFile,
     speak: thread.speak,
   })
   // The harness ends the turns queued behind a reply it stops, so with a
@@ -2843,6 +2844,7 @@ export function ChatInterface({
                       onRetryToolCall={messageActions.retryToolCall}
                       loadImage={messageActions.loadImage}
                       loadDocumentText={messageActions.loadDocumentText}
+                      loadOriginalFile={messageActions.loadOriginalFile}
                       speak={messageActions.speak}
                       questions={questionAnswering}
                       imagesUnsaved={!isSignedIn && !isTemporaryMode}

@@ -504,5 +504,9 @@ export function deviceThreads({
       if (!image) throw notOnDevice('image')
       return imageBlob(image)
     },
+    // A chat on this device keeps no file as it was uploaded.
+    async original() {
+      throw notOnDevice('file')
+    },
   }
 }

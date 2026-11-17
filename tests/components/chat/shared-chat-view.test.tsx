@@ -214,3 +214,88 @@ it("asks the harness to read a shared reply's text aloud, without a key", async 
     expect.any(AbortSignal),
   )
 })
+
+// A share whose question attaches a document, and what the share says of the
+// file the document was uploaded as.
+function sharedReport(file: {
+  hasOriginal?: boolean
+  original?: { id: string; attKey: string }
+}) {
+  return (
+    <SharedChatView
+      model={model}
+      isDarkMode={false}
+      chatData={{
+        title: 'Shared chat',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        messages: [
+          {
+            id: 'message-1',
+            role: 'user',
+            content: 'Summarize this',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            attachments: [
+              {
+                id: 'att_report',
+                kind: 'document',
+                fileName: 'report.pdf',
+                mimeType: 'application/pdf',
+                size: 8,
+                textContent: 'Revenue grew.',
+                attKey: 'share-attachment-key',
+                ...file,
+              },
+            ],
+          },
+        ],
+      }}
+    />
+  )
+}
+
+it('downloads the file a shared document was uploaded as with the id and key the share names for it', async () => {
+  const saved: { name: string; blob: Blob }[] = []
+  vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+    saved.push({ name: '', blob: blob as Blob })
+    return 'blob:saved'
+  })
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    saved[saved.length - 1].name = this.download
+  })
+  vi.mocked(harnessAPI().client.download).mockResolvedValue(
+    new Blob(['%PDF-1.7'], { type: 'application/octet-stream' }),
+  )
+  render(
+    sharedReport({
+      hasOriginal: true,
+      original: { id: 'att_uploaded', attKey: 'share-original-key' },
+    }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: /report\.pdf/ }))
+
+  fireEvent.click(screen.getByRole('button', { name: 'Download original' }))
+
+  await waitFor(() => expect(saved).toHaveLength(1))
+  expect(harnessAPI().client.download).toHaveBeenCalledExactlyOnceWith(
+    '/v1/attachments/get-public',
+    { id: 'att_uploaded', attKey: 'share-original-key', original: true },
+    expect.any(AbortSignal),
+  )
+  expect(saved[0].name).toBe('report.pdf')
+  expect(saved[0].blob.type).toBe('application/pdf')
+  expect(await saved[0].blob.text()).toBe('%PDF-1.7')
+})
+
+it('offers no download of a shared document whose share does not name its uploaded file', () => {
+  render(sharedReport({ hasOriginal: true }))
+
+  fireEvent.click(screen.getByRole('button', { name: /report\.pdf/ }))
+
+  expect(screen.getByRole('dialog')).toHaveTextContent('Revenue grew.')
+  expect(
+    screen.queryByRole('button', { name: 'Download original' }),
+  ).not.toBeInTheDocument()
+})

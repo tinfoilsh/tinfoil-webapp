@@ -62,3 +62,13 @@ export function sharedAttachment(
     { signal, keyless: true },
   )
 }
+
+// The file an attachment of a share was uploaded as, read with the id and
+// key the share gives that file.
+export function sharedOriginal(id: string, attKey: string): Promise<Blob> {
+  return harnessAPI().download(
+    ROUTES.attachmentGetPublic,
+    { id, attKey, original: true },
+    { keyless: true },
+  )
+}

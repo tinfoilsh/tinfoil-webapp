@@ -1,6 +1,7 @@
 import { cn } from '@/components/ui/utils'
 import { logError } from '@/utils/error-handling'
-import { TfBoxX, TfImageSlash } from '@tinfoilsh/tinfoil-icons'
+import { saveDownload } from '@/utils/save-download'
+import { TfBoxX, TfDownload, TfImageSlash } from '@tinfoilsh/tinfoil-icons'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { PiSpinner } from 'react-icons/pi'
@@ -13,6 +14,7 @@ import {
 
 import {
   useDocumentText,
+  useOriginalFile,
   type LoadDocumentText,
 } from '../../document-text-context'
 import {
@@ -40,8 +42,13 @@ export const DocumentList = memo(function DocumentList({
 }: DocumentListProps) {
   const gallery = useImageGallery()
   const loadText = useDocumentText()
+  const loadOriginal = useOriginalFile()
   const imagesUnsaved = useUnsavedImages()
   const [modalOpen, setModalOpen] = useState(false)
+  // The open document's uploaded file, as it downloads.
+  const [originalDownload, setOriginalDownload] = useState<
+    'idle' | 'loading' | 'failed'
+  >('idle')
   const [modalContent, setModalContent] = useState<{
     attachment: Attachment
     content: string
@@ -137,7 +144,29 @@ export const DocumentList = memo(function DocumentList({
   const textOf = (attachment: Attachment) =>
     attachment.textContent ?? loadedTexts[attachment.id]
 
+  // Saves the file a document was uploaded as, under the document's name
+  // and type.
+  const downloadOriginal = async (attachment: Attachment) => {
+    if (!loadOriginal || originalDownload === 'loading') return
+    setOriginalDownload('loading')
+    try {
+      const file = await loadOriginal(attachment)
+      saveDownload(
+        new Blob([file], { type: attachment.mimeType }),
+        attachment.fileName,
+      )
+      setOriginalDownload('idle')
+    } catch (error) {
+      logError('Failed to download an uploaded file', error, {
+        component: 'DocumentList',
+        action: 'downloadOriginal',
+      })
+      setOriginalDownload('failed')
+    }
+  }
+
   const openModal = (attachment: Attachment) => {
+    setOriginalDownload('idle')
     const request = ++textRequest.current
     const known = textOf(attachment)
     if (known !== undefined) {
@@ -379,7 +408,29 @@ export const DocumentList = memo(function DocumentList({
                 )}
               </div>
 
-              <div className="flex items-center justify-end border-t border-border-subtle px-6 py-4">
+              <div className="flex items-center justify-end gap-3 border-t border-border-subtle px-6 py-4">
+                {modalContent.attachment.hasOriginal && loadOriginal && (
+                  <>
+                    {originalDownload === 'failed' && (
+                      <p
+                        role="alert"
+                        className="text-sm text-content-secondary"
+                      >
+                        The original file could not be downloaded.
+                      </p>
+                    )}
+                    <button
+                      onClick={() =>
+                        void downloadOriginal(modalContent.attachment)
+                      }
+                      disabled={originalDownload === 'loading'}
+                      className="flex items-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat/80 disabled:cursor-default disabled:opacity-60"
+                    >
+                      <TfDownload className="h-4 w-4" aria-hidden="true" />
+                      Download original
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={() => setModalOpen(false)}
                   className="rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat/80"

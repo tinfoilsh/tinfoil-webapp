@@ -1,6 +1,6 @@
 import type { BaseModel } from '@/config/models'
 import { ERROR_ACTIONS, ERROR_CODES } from '@/services/harness/protocol'
-import { sharedAttachment } from '@/services/harness/shares'
+import { sharedAttachment, sharedOriginal } from '@/services/harness/shares'
 import { speakText } from '@/services/harness/speech'
 import { HarnessError } from '@/services/harness/sse'
 import type { SharedThread } from '@/services/harness/types'
@@ -20,8 +20,19 @@ export function SharedChatView({
   isDarkMode: boolean
   model: BaseModel
 }) {
+  // An attachment offers the file it was uploaded as when the share names
+  // where that file is.
   const messages = useMemo(
-    () => shownMessages(chatData.messages).map((m) => messageView(m)),
+    () =>
+      shownMessages(chatData.messages).map((m) =>
+        messageView({
+          ...m,
+          attachments: m.attachments?.map((attachment) => ({
+            ...attachment,
+            hasOriginal: !!attachment.original,
+          })),
+        }),
+      ),
     [chatData],
   )
   // A shared attachment's blob, read with the key the share names for it.
@@ -46,6 +57,23 @@ export function SharedChatView({
     async (attachment: Attachment) => (await readShared(attachment)).text(),
     [readShared],
   )
+  // The file a shared attachment was uploaded as, read with the id and key
+  // the share names for it.
+  const loadOriginal = useCallback(
+    async (attachment: Attachment) => {
+      const original = chatData.messages
+        .flatMap((message) => message.attachments ?? [])
+        .find((candidate) => candidate.id === attachment.id)?.original
+      if (!original)
+        throw new HarnessError({
+          code: ERROR_CODES.threadNotFound,
+          action: ERROR_ACTIONS.stop,
+          message: 'This file is not part of the share.',
+        })
+      return sharedOriginal(original.id, original.attKey)
+    },
+    [chatData],
+  )
   // The harness reads a shared message's text, as it reads text a user
   // selected.
   const speak = useCallback(
@@ -58,7 +86,7 @@ export function SharedChatView({
   )
   return (
     <ImageGalleryProvider messages={messages} loadImage={readShared}>
-      <DocumentTextProvider load={loadDocumentText}>
+      <DocumentTextProvider load={loadDocumentText} loadOriginal={loadOriginal}>
         <SpeechProvider speak={speak}>
           <div className="mx-auto w-full min-w-0 max-w-3xl px-4 pb-6 pt-8">
             {messages.map((message, index) => (

@@ -114,6 +114,8 @@ export type Attachment = {
   pages?: DocumentPage[]
   // v1 format: per-attachment encryption key material (base64-encoded)
   encryptionKey?: string
+  // The chat service keeps the file as it was uploaded, to download.
+  hasOriginal?: boolean
 }
 
 export type Message = {

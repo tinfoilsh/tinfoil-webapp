@@ -1067,6 +1067,10 @@ export function useThread(
     upload,
     loadImage: (attachment: UIAttachment, signal?: AbortSignal) =>
       openStore().image(open.get().id, attachment, signal),
+    // The file an attachment of the open chat was uploaded as, which the
+    // harness keeps for the chats it stores.
+    originalFile: (attachment: UIAttachment): Promise<Blob> =>
+      openStore().original(open.get().id, attachment),
     // The audio of a message of the open chat, read aloud by the harness.
     async speak(messageId: string, signal: AbortSignal): Promise<Response> {
       const threadId = open.get().id

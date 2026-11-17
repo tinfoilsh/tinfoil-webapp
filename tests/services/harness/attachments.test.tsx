@@ -50,6 +50,7 @@ const thread: Thread = {
           fileName: 'report.pdf',
           mimeType: 'application/pdf',
           size: 2048,
+          hasOriginal: true,
         },
         {
           id: 'att_chart',
@@ -81,16 +82,19 @@ describe('attachments of a stored chat', () => {
     return hook
   }
 
-  it('shows each attachment by its name, type, size and thumbnail', async () => {
+  it('shows each attachment by its name, type, size and thumbnail, and whether its uploaded file is kept', async () => {
     const { result } = await openStored()
 
-    expect(result.current.chat.messages[0].attachments).toEqual([
+    expect(result.current.chat.messages[0].attachments).toStrictEqual([
       {
         id: 'att_report',
         type: 'document',
         fileName: 'report.pdf',
         mimeType: 'application/pdf',
         fileSize: 2048,
+        textContent: undefined,
+        thumbnailBase64: undefined,
+        hasOriginal: true,
       },
       {
         id: 'att_chart',
@@ -98,9 +102,42 @@ describe('attachments of a stored chat', () => {
         fileName: 'chart.png',
         mimeType: 'image/png',
         fileSize: 512,
+        textContent: undefined,
         thumbnailBase64: 'dGh1bWI=',
       },
     ])
+  })
+
+  it('downloads the file a document was uploaded as under its chat', async () => {
+    const { result } = await openStored()
+    const uploaded = new Blob(['%PDF-1.7'])
+    client.download.mockResolvedValue(uploaded)
+    const [report] = result.current.chat.messages[0].attachments!
+
+    const blob = await result.current.originalFile(report)
+
+    expect(blob).toBe(uploaded)
+    expect(client.download).toHaveBeenCalledExactlyOnceWith(
+      '/v1/attachments/get',
+      { key: KEY, id: 'att_report', threadId: THREAD_ID, original: true },
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('downloads a full-size image under its chat', async () => {
+    const { result } = await openStored()
+    const image = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })
+    client.download.mockResolvedValue(image)
+    const [, chart] = result.current.chat.messages[0].attachments!
+
+    const blob = await result.current.loadImage(chart)
+
+    expect(blob).toBe(image)
+    expect(client.download).toHaveBeenCalledExactlyOnceWith(
+      '/v1/attachments/get',
+      { key: KEY, id: 'att_chart', threadId: THREAD_ID },
+      expect.any(AbortSignal),
+    )
   })
 
   it("reads a document's text from the harness once", async () => {
@@ -183,6 +220,12 @@ describe('attachments of a local chat', () => {
     expect(await result.current.documentText(scan)).toBe(
       'First page\n\nThird page',
     )
+    expect(client.download).not.toHaveBeenCalled()
+    // A chat on this device keeps no file as it was uploaded.
+    expect(scan.hasOriginal).toBeUndefined()
+    await expect(result.current.originalFile(scan)).rejects.toMatchObject({
+      code: 'THREAD_NOT_FOUND',
+    })
     expect(client.download).not.toHaveBeenCalled()
   })
 })

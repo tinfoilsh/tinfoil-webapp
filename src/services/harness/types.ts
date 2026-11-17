@@ -55,10 +55,16 @@ export type SavedAnswers = NonNullable<TimelineBlock['answers']>
 export type WidgetAnswers = Schemas['WidgetAnswers']
 export type AnswerChanges = MessageAnswer['answers']
 
+// An attachment of a message as this client shows it. A device chat's may
+// hold the bytes this device keeps for it, and a stored chat's says whether
+// the harness keeps the file as it was uploaded.
+export type MessageAttachment = AttachmentDescriptor &
+  Pick<Schemas['AttachmentView'], 'hasOriginal'>
+
 // A message as this client shows it, whose attachments may hold the bytes
 // this device keeps for them.
 export type Message = Omit<Schemas['MessageView'], 'attachments'> & {
-  attachments?: AttachmentDescriptor[]
+  attachments?: MessageAttachment[]
 }
 
 export type ThreadSummary = Schemas['ThreadSummary']
