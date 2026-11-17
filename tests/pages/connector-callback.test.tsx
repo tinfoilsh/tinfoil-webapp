@@ -274,7 +274,7 @@ describe('the connector sign-in callback', () => {
     expect(routerReplace).not.toHaveBeenCalled()
   })
 
-  it('sends a signed-out visitor back to where they started a sign-in', async () => {
+  it('sends a sign-in the tab did not start back to where it began before asking who is signed in', async () => {
     // The Tinfoil app started the sign-in, and its page ended in a browser
     // that is not signed in.
     signIn({ userId: null })
@@ -286,6 +286,19 @@ describe('the connector sign-in callback', () => {
       'Go back to where you started it, in Settings or in the Tinfoil app, and try again.',
     )
     expect(window.location.search).toBe('')
+    expect(completions()).toEqual([])
+  })
+
+  it('asks a visitor who signed out since starting a sign-in to sign in again', async () => {
+    await connectFromChat()
+    signIn({ userId: null })
+    setLocation(`/connectors/callback?code=the-code&state=${STATE}`)
+
+    render(<ConnectorCallbackPage />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Sign in to Tinfoil Chat, then connect again.',
+    )
     expect(completions()).toEqual([])
   })
 
