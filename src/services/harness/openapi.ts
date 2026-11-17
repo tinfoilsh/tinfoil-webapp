@@ -2240,7 +2240,7 @@ export interface components {
       /** Format: date-time */
       expiresAt?: string
     }
-    /** @description What a connector's tool may do in a chat. A reply reads it as each call is made. A tool its server offers a reply that the connector did not list is listed asking first, and one allowed while it only read asks first once its server no longer says it does. A client shows a permission it does not know as ask. */
+    /** @description What a connector's tool may do in a chat. A reply reads it as each call is made. When a server offers a reply a tool its connector does not list, the reply lists the tool as ask. A tool allowed while its server said it only reads becomes ask once the server no longer says so. A client shows a permission it does not know as ask. */
     ToolPermission: ('allow' | 'ask' | 'off') | string
     /** @description A server the account connected, without anything it signs in with, which never leaves the enclave. */
     Connector: {
