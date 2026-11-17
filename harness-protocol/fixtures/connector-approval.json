@@ -221,9 +221,9 @@
             "webSearchEnabled": false,
             "pinned": false,
             "contextUsage": {
-              "usedTokens": 96,
+              "usedTokens": 281,
               "limitTokens": 6553,
-              "percentage": 1.4649778727300473
+              "percentage": 4.288112314970243
             },
             "activeRun": null,
             "messageCount": 2

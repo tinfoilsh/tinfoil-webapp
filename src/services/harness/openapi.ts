@@ -69,7 +69,7 @@ export interface paths {
     put?: never
     /**
      * Read the revisions of stored data
-     * @description Revisions of the account's stored chats, profile and projects, which change when another device writes them.
+     * @description Revisions of the account's stored chats, profile, projects and connectors, which change when another device writes them. A connector's also changes when the harness refreshes its sign-in.
      */
     post: operations['changes']
     delete?: never
@@ -876,7 +876,7 @@ export interface paths {
     put?: never
     /**
      * List a connector's tools again
-     * @description Lists the tools the server offers now, keeping the permissions given to those it offered before. A connector whose authorization server no longer accepts its tokens is refused with CONNECTOR_SIGNED_OUT.
+     * @description Lists the tools the server offers now, keeping the permissions given to those it offered before, but that a tool allowed while it only read asks first once its server no longer says it does. A connector whose authorization server no longer accepts its tokens is refused with CONNECTOR_SIGNED_OUT and listed as signedOut.
      */
     post: operations['connectorsRefresh']
     delete?: never
@@ -2240,7 +2240,7 @@ export interface components {
       /** Format: date-time */
       expiresAt?: string
     }
-    /** @description What a connector's tool may do in a chat. A client shows a permission it does not know as ask. */
+    /** @description What a connector's tool may do in a chat. A reply reads it as each call is made, and asks first for a tool the connector does not list yet. A client shows a permission it does not know as ask. */
     ToolPermission: ('allow' | 'ask' | 'off') | string
     /** @description A server the account connected, without anything it signs in with, which never leaves the enclave. */
     Connector: {
@@ -2891,6 +2891,8 @@ export interface operations {
             chats: string
             profile: string
             projects: string
+            /** @description Absent from a harness that keeps no connectors. */
+            connectors?: string
           }
         }
       }
