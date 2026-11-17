@@ -3,6 +3,7 @@ import {
   announceSignIn,
   callbackAnswer,
   finishSignIn,
+  startedSignIn,
   type CallbackAnswer,
 } from '@/services/connectors/sign-in'
 import { describeConnectorError } from '@/services/harness/connectors'
@@ -15,6 +16,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 // Where the user goes when the sign-in names no page of its own.
 const SETTINGS_RETURN = '/#settings/connectors'
 const CLOUD_SYNC_RETURN = '/#settings/cloud-sync'
+const STARTED_ELSEWHERE =
+  'This sign-in was not started in this tab. Go back to where you started it, in Settings or in the Tinfoil app, and try again.'
 
 type Progress =
   | { status: 'finishing' }
@@ -50,6 +53,12 @@ export default function ConnectorCallbackPage() {
     }
     if (!answer) {
       fail('There is no sign-in to finish here.')
+      return
+    }
+    // Checked before the account, which the user may have only where they
+    // started the sign-in.
+    if (!startedSignIn(answer.state)) {
+      fail(STARTED_ELSEWHERE)
       return
     }
     if (!api.userId) {
@@ -90,9 +99,7 @@ export default function ConnectorCallbackPage() {
         return
       }
       if (outcome.status === 'unknown') {
-        fail(
-          'This sign-in was not started in this tab. Start it again from Settings.',
-        )
+        fail(STARTED_ELSEWHERE)
         return
       }
       const { connectorId, signIn, status, returnTo } = outcome

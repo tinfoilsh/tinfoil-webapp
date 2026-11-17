@@ -274,6 +274,21 @@ describe('the connector sign-in callback', () => {
     expect(routerReplace).not.toHaveBeenCalled()
   })
 
+  it('sends a signed-out visitor back to where they started a sign-in', async () => {
+    // The Tinfoil app started the sign-in, and its page ended in a browser
+    // that is not signed in.
+    signIn({ userId: null })
+    setLocation('/connectors/callback?code=the-code&state=started-in-the-app')
+
+    render(<ConnectorCallbackPage />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Go back to where you started it, in Settings or in the Tinfoil app, and try again.',
+    )
+    expect(window.location.search).toBe('')
+    expect(completions()).toEqual([])
+  })
+
   it('refuses a sign-in the authorization server declined without asking the harness', async () => {
     await connectFromChat()
     closingAsA('popup')

@@ -108,6 +108,11 @@ function takeSignIn(state: string): PendingSignIn | undefined {
   return found
 }
 
+// Whether this tab started the sign-in a state returns, and still waits for
+// it. A sign-in started elsewhere, as in the Tinfoil app, is finished there.
+export const startedSignIn = (state: string | undefined): boolean =>
+  !!state && pendingSignIns().some((entry) => entry.state === state)
+
 // What an address's query holds of a sign-in page's answer, if anything.
 export function callbackAnswer(search: string): CallbackAnswer | null {
   const params = new URLSearchParams(search)
