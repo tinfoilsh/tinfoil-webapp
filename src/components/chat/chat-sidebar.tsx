@@ -279,11 +279,11 @@ export const ChatSidebar = memo(function ChatSidebar({
   } = useUpgradeToPro()
   // Without cloud sync every chat stays on this device. With it, "Enable
   // local chats" adds a Local tab whose new chats stay on this device.
-  const { keyLocked, cloud: cloudSyncEnabled, session } = useHarness()
+  const { keyLocked, keyReady, cloud: cloudSyncEnabled, session } = useHarness()
   // The harness lists the artifacts of the chats it stores, which the
   // content key opens.
   const artifactsAvailable =
-    session?.features.artifacts === true && cloudSyncEnabled && !keyLocked
+    session?.features.artifacts === true && cloudSyncEnabled && keyReady
   const [isArtifactsOpen, setIsArtifactsOpen] = useState(false)
   const settingsAttentionId = useId()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
@@ -2363,7 +2363,10 @@ export const ChatSidebar = memo(function ChatSidebar({
         <ArtifactsModal
           isOpen={isArtifactsOpen}
           onClose={() => setIsArtifactsOpen(false)}
-          onOpenChat={handleChatSelect}
+          onOpenChat={(chatId) => {
+            handleChatSelect(chatId)
+            if (isMobile) setIsOpen(false)
+          }}
         />
       )}
     </>

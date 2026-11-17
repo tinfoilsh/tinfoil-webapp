@@ -158,6 +158,12 @@ export function artifactPreviewFromArguments(
     return null
   }
   if (!isRecord(parsed) || !isRecord(parsed.source)) return null
+  if (
+    [parsed.title, parsed.description, parsed.footer].some(
+      (value) => value !== undefined && typeof value !== 'string',
+    )
+  )
+    return null
   const { type } = parsed.source
   if (
     (type !== 'url' && type !== 'html' && type !== 'markdown') ||

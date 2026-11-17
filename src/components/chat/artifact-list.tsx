@@ -73,7 +73,7 @@ export function ArtifactList({
   } | null>(null)
   // Only the artifact asked for last opens.
   const request = useRef<AbortController | null>(null)
-  useEffect(() => () => request.current?.abort(), [])
+  useEffect(() => () => request.current?.abort(), [api, projectId])
 
   const open = async (artifact: Artifact) => {
     const key = artifactKey(artifact)

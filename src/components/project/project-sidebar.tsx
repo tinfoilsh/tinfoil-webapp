@@ -253,7 +253,7 @@ export const ProjectSidebar = memo(function ProjectSidebar({
   onLoadMore,
 }: ProjectSidebarProps) {
   const { isSignedIn } = useAuth()
-  const { cloud: cloudSyncEnabled, keyLocked, session } = useHarness()
+  const { cloud: cloudSyncEnabled, keyLocked, keyReady, session } = useHarness()
   const {
     draggingChatId,
     draggingChatSource,
@@ -1496,7 +1496,7 @@ export const ProjectSidebar = memo(function ProjectSidebar({
           </div>
 
           {/* Artifacts Section */}
-          {session?.features.artifacts && (
+          {session?.features.artifacts && cloudSyncEnabled && keyReady && (
             <div className="relative z-10 mt-2 flex-none">
               <button
                 type="button"
@@ -1546,6 +1546,7 @@ export const ProjectSidebar = memo(function ProjectSidebar({
                   >
                     <div className="px-2 py-3">
                       <ArtifactList
+                        key={project.id}
                         projectId={project.id}
                         onOpenChat={handleChatSelect}
                       />
