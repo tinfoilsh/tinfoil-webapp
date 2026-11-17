@@ -707,6 +707,9 @@ export function ChatInterface({
     webSearch: (session?.features.webSearch ?? false) && chatWebSearchEnabled,
     piiCheck: profile.piiCheckEnabled ?? true,
     genUI: profile.genUIEnabled ?? true,
+    // This client shows connector calls and answers their approvals, which
+    // the harness offers only to clients that ask.
+    ...(connectorsOffered && connectorsAvailable ? { connectors: true } : {}),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }
   const handleQuery = (content: string, fields: Partial<Turn> = {}) => {
