@@ -341,7 +341,9 @@ export function ChatInterface({
             thread.errorDetail?.code === ERROR_CODES.keyMismatch
           ? 'wrong-key'
           : thread.notFound
-            ? 'not-found'
+            ? isAuthLoaded && !isSignedIn
+              ? 'not-kept'
+              : 'not-found'
             : thread.loadFailed &&
                 thread.errorDetail?.code === ERROR_CODES.localChatUnreadable
               ? 'unreadable'

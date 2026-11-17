@@ -709,6 +709,42 @@ it.each([
   },
 )
 
+it('tells a signed-out visitor whose browser restarted that the tab no longer keeps the chat', async () => {
+  chatPage.auth = { isLoaded: true, isSignedIn: false, userId: null }
+  signIn({ userId: null })
+  await localThreadStore('tab').add(TRIP)
+  const route = { initialChatId: TRIP.id, isLocalChatUrl: true }
+  const { unmount } = render(view(route))
+  await screen.findByText('Where should we go?')
+
+  // A restarted browser reopens the tab at its address with an empty
+  // session storage.
+  unmount()
+  sessionStorage.clear()
+  signIn({ userId: null })
+  render(view(route))
+
+  await screen.findByRole('heading', { name: 'Chat no longer available' })
+  const status = within(
+    screen.getByRole('region', { name: 'Chat history unavailable' }),
+  )
+  expect(status.getByRole('alert')).toHaveTextContent(
+    'Sign in to keep your chats.',
+  )
+  expect(status.getByRole('link', { name: 'Sign in' })).toHaveAttribute(
+    'href',
+    '/signin',
+  )
+
+  fireEvent.click(status.getByRole('button', { name: 'Start new chat' }))
+
+  expect(chatPage.router.replace).toHaveBeenCalledExactlyOnceWith(
+    '/',
+    undefined,
+    { shallow: true },
+  )
+})
+
 it('explains an old chat on this device that could not be opened, and keeps it listed', async () => {
   signIn()
   sessionStorage.setItem(UI_SIDEBAR_OPEN, 'true')

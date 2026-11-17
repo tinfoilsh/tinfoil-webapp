@@ -9,7 +9,14 @@ import {
 import Link from 'next/link'
 
 export type ChatHistoryProblem =
-  'sign-in' | 'unlock' | 'wrong-key' | 'not-found' | 'unreadable' | 'failed'
+  | 'sign-in'
+  | 'unlock'
+  | 'wrong-key'
+  | 'not-found'
+  // A signed-out visitor's chat that the browser tab no longer keeps.
+  | 'not-kept'
+  | 'unreadable'
+  | 'failed'
 
 const descriptions = {
   'sign-in': ['Sign in required', 'You need to sign in to access this chat.'],
@@ -24,6 +31,10 @@ const descriptions = {
   'not-found': [
     'Chat not found',
     'This chat may have been deleted or is no longer available.',
+  ],
+  'not-kept': [
+    'Chat no longer available',
+    'Chats started while signed out are stored temporarily in the browser tab, which browsers may clear when they restart. Sign in to keep your chats.',
   ],
   unreadable: [
     "Couldn't open chat",
@@ -45,10 +56,12 @@ const icons = {
   unlock: TfLockLockedAnimated,
   'wrong-key': TfLockLockedAnimated,
   'not-found': TfChat2Animated,
+  'not-kept': TfChat2Animated,
   unreadable: TfTinSad,
   failed: TfTinSad,
 } as const
 
+const SIGN_IN_PATH = '/signin'
 const ACTION_CLASS_NAME =
   'rounded-lg bg-tinfoil-oak px-6 py-2.5 text-brand-dark hover:bg-tinfoil-oak-hover'
 const SECONDARY_ACTION_CLASS_NAME =
@@ -74,7 +87,10 @@ export function ChatHistoryStatus({
   const Icon = icons[problem]
   const isKeyProblem = problem === 'unlock' || problem === 'wrong-key'
   // Opening the chat again cannot help.
-  const isFinal = problem === 'not-found' || problem === 'unreadable'
+  const isFinal =
+    problem === 'not-found' ||
+    problem === 'not-kept' ||
+    problem === 'unreadable'
   return (
     <section
       className="flex min-h-full flex-1 items-center justify-center px-4"
@@ -100,7 +116,7 @@ export function ChatHistoryStatus({
         </p>
         {problem === 'sign-in' ? (
           <Link
-            href={`/signin?redirect_url=${postAuthRedirectTarget(path)}`}
+            href={`${SIGN_IN_PATH}?redirect_url=${postAuthRedirectTarget(path)}`}
             className={ACTION_CLASS_NAME}
           >
             Sign in
@@ -126,6 +142,11 @@ export function ChatHistoryStatus({
               >
                 Start new chat
               </button>
+            )}
+            {problem === 'not-kept' && (
+              <Link href={SIGN_IN_PATH} className={SECONDARY_ACTION_CLASS_NAME}>
+                Sign in
+              </Link>
             )}
           </div>
         )}
