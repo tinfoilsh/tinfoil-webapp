@@ -65,7 +65,9 @@ info:
       name; the next version names it. A version 2 chat's reply may also hold
       research, which a harness that does not name it leaves out when it
       writes the chat back, reading the reply with its steps; the next
-      version names it.
+      version names it. A version 2 chat's tool call may also hold a
+      display's connector, which a harness that does not name it leaves out
+      when it writes the chat back; the next version names it.
       A harness reads a version before it writes it. A member of a stored row it
       does not name is read past, since other clients of the same rows write
       members of their own; the harness leaves such members out when it
@@ -2142,6 +2144,16 @@ components:
             name it, and the run then ends; such a run does not count as the
             hour's research, and the research starts with the next send, which
             answers them, without this option.
+        connectors:
+          type: boolean
+          description: |
+            The turn offers the model the tools of the account's enabled,
+            signed-in connectors. A client sends it only while the session's
+            features.connectors is true, and only if it shows connector calls
+            and answers their approvals with threads/approve: without it, no
+            connector is called, so no call waits on an approval the client
+            cannot show. It applies to a stored chat's send, edit, regenerate,
+            continue or retry, and not to a research or browser turn.
 
             The turn's question is stored with research, so a client may show
             that it asked for deep research. An edit, regenerate or retry of
