@@ -2834,7 +2834,7 @@ components:
         expiresAt: {type: string, format: date-time}
 
     ToolPermission:
-      description: What a connector's tool may do in a chat. A reply reads it as each call is made, and asks first for a tool the connector does not list yet. A client shows a permission it does not know as ask.
+      description: What a connector's tool may do in a chat. A reply reads it as each call is made. A tool its server offers a reply that the connector did not list is listed asking first, and one allowed while it only read asks first once its server no longer says it does. A client shows a permission it does not know as ask.
       anyOf:
         - {type: string, enum: [allow, ask, "off"]}
         - {type: string}
