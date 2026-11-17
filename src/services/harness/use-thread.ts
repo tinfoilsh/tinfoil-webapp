@@ -641,6 +641,19 @@ export function useThread(
   // stored chat attaches as it was uploaded, which the unlocked content key
   // lets it, and the descriptor names where.
   async function upload(file: File): Promise<AttachmentDescriptor> {
+    if (
+      cloud &&
+      !onDevice(open.get()) &&
+      !keyReady &&
+      session?.features.imageOriginals
+    ) {
+      throw new HarnessError({
+        code: ERROR_CODES.keyRequired,
+        action: ERROR_ACTIONS.unlock,
+        message:
+          'Unlock cloud sync before attaching a file so its original can be kept.',
+      })
+    }
     const keepsOriginal =
       !onDevice(open.get()) &&
       keyReady &&

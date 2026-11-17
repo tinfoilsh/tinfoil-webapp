@@ -367,6 +367,21 @@ const runUntil = (ended: Promise<void>) =>
   }
 
 describe('keeping a file as it was uploaded', () => {
+  it('does not silently downgrade a stored upload to extracted text while the key is locked', async () => {
+    signIn({
+      cloud: true,
+      locked: true,
+      session: {
+        ...testSession,
+        features: { ...testSession.features, imageOriginals: true },
+      },
+    })
+    const { result } = renderHook(() => useThread())
+    await expect(
+      result.current.upload(new File(['%PDF-'], 'report.pdf')),
+    ).rejects.toMatchObject({ code: 'KEY_REQUIRED' })
+    expect(client.upload).not.toHaveBeenCalled()
+  })
   it.each<{
     chat: string
     account?: Parameters<typeof signIn>[0]
