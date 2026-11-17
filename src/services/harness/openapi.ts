@@ -2237,8 +2237,7 @@ export interface components {
       id?: string
       /** @description A client shows a status it does not know as declined. */
       status: ('pending' | 'approved' | 'declined' | 'expired') | string
-      /** Format: date-time */
-      expiresAt?: string
+      expiresAt?: components['schemas']['Timestamp']
     }
     /** @description What a connector's tool may do in a chat. A reply reads it as each call is made. When a server offers a reply a tool its connector does not list, the reply lists the tool as ask. A tool allowed while its server said it only reads becomes ask once the server no longer says so. A client shows a permission it does not know as ask. */
     ToolPermission: ('allow' | 'ask' | 'off') | string
