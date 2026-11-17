@@ -949,7 +949,9 @@ export function ChatInterface({
       toast({
         title: 'Failed to move chat to local',
         description: isAttachmentsUnavailable(error)
-          ? 'Some attachments in this chat could not be downloaded. Check your connection and try again.'
+          ? error instanceof HarnessError && error.detail.action === 'stop'
+            ? error.message
+            : 'Some attachments in this chat could not be downloaded. Check your connection and try again.'
           : 'Please try again.',
         variant: 'destructive',
       })

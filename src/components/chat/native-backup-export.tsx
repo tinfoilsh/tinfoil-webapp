@@ -132,7 +132,7 @@ export function NativeBackupExport({ available }: { available: boolean }) {
       <ConfirmDialog
         isOpen={showWarning}
         title="Export readable backup?"
-        description="This ZIP is plaintext and readable by anyone who can access it. It contains sensitive chats, documents, and images. Store it securely."
+        description="This ZIP is plaintext and readable by anyone who can access it. It includes document text and images, but not the original files uploaded to cloud chats or projects. Download any originals you need separately before deleting cloud data."
         confirmLabel="I understand, create backup"
         onConfirm={() => void createBackup()}
         onCancel={() => setShowWarning(false)}
