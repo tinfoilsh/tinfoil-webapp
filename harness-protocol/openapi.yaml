@@ -2145,16 +2145,6 @@ components:
             name it, and the run then ends; such a run does not count as the
             hour's research, and the research starts with the next send, which
             answers them, without this option.
-        connectors:
-          type: boolean
-          description: |
-            The turn offers the model the tools of the account's enabled,
-            signed-in connectors. A client sends it only while the session's
-            features.connectors is true, and only if it shows connector calls
-            and answers their approvals with threads/approve: without it, no
-            connector is called, so no call waits on an approval the client
-            cannot show. It applies to a stored chat's send, edit, regenerate,
-            continue or retry, and not to a research or browser turn.
 
             The turn's question is stored with research, so a client may show
             that it asked for deep research. An edit, regenerate or retry of
@@ -2168,6 +2158,16 @@ components:
             text says what it found; otherwise only its report streams as the
             reply's text. The reply is committed with research, and later turns
             read it as its report alone.
+        connectors:
+          type: boolean
+          description: |
+            The turn offers the model the tools of the account's enabled,
+            signed-in connectors. A client sends it only while the session's
+            features.connectors is true, and only if it shows connector calls
+            and answers their approvals with threads/approve: without it, no
+            connector is called, so no call waits on an approval the client
+            cannot show. It applies to a stored chat's send, edit, regenerate,
+            continue or retry, and not to a research or browser turn.
         cacheSecret:
           type: string
           pattern: "^[0-9a-f]{64}$"
