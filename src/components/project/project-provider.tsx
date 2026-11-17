@@ -227,6 +227,23 @@ export function ProjectProvider({
       await reloadProject(projectId)
       return doc
     },
+    replaceDocument: async (documentId, file) => {
+      requirePremiumAccess()
+      if (!activeProject) throw new Error('Select a project first.')
+      const projectId = activeProject.id
+      const doc = await projects.uploadProjectDocument(
+        api,
+        projectId,
+        file,
+        documentId,
+      )
+      await reloadProject(projectId)
+      return doc
+    },
+    downloadDocument: async (document) => {
+      requirePremiumAccess()
+      return projects.projectDocumentFile(api, document)
+    },
     // The document leaves the list at once, and returns if its removal fails.
     removeDocument: async (documentId) => {
       requirePremiumAccess()

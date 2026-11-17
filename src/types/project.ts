@@ -2,6 +2,7 @@
  * Project types for the Projects feature
  * Projects are containers with custom system instructions, documents, and project-specific chats
  */
+import type { StoredProjectDocument } from '@/services/harness/types'
 
 export interface Project {
   id: string
@@ -25,6 +26,9 @@ export interface ProjectDocument {
   // Small JPEG preview stored alongside image documents so the sidebar can
   // show a real thumbnail; the full image is never persisted.
   thumbnailBase64?: string
+  // Whether the uploaded file is kept, to download as it was uploaded. A
+  // document stored before files were kept has only its text.
+  hasFile?: StoredProjectDocument['hasFile']
 }
 
 export interface CreateProjectData {

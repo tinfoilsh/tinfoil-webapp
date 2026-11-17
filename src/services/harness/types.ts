@@ -128,3 +128,6 @@ export interface Frame {
 
 // A shared chat, whose attachments name the key that reads each blob.
 export type SharedThread = Schemas['SharedThread']
+
+// A project's document as the harness stores it.
+export type StoredProjectDocument = Schemas['ProjectDocument']

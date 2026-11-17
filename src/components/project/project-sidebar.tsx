@@ -35,7 +35,7 @@ import { toast } from '@/hooks/use-toast'
 import { acceptOf } from '@/services/harness/composer'
 import { useHarness } from '@/services/harness/provider'
 import { lastActive } from '@/services/harness/view-model'
-import type { Project } from '@/types/project'
+import type { Project, ProjectDocument } from '@/types/project'
 import { logError } from '@/utils/error-handling'
 import { formatFileSize } from '@/utils/format-file-size'
 import {
@@ -43,12 +43,15 @@ import {
   getNewChatPath,
   isPlainPrimaryClick,
 } from '@/utils/navigation'
+import { saveDownload } from '@/utils/save-download'
 import { useAuth } from '@clerk/react'
 import { NoSymbolIcon } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
   TfDocument,
   TfDocumentPlus,
+  TfDownload,
+  TfRefreshTwoArrows,
   TfSetting,
   TfTrash,
 } from '@tinfoilsh/tinfoil-icons'
@@ -73,6 +76,8 @@ const MOBILE_BREAKPOINT = 1024
 const FAVORITES_PANEL_ID = 'project-sidebar-favorites-panel'
 const SECTION_HEADER_CLASS_NAME =
   'relative z-10 mx-2 flex w-[calc(100%-1rem)] items-center justify-between rounded-lg border bg-surface-sidebar px-4 py-3 text-sm text-content-secondary transition-colors hover:border-border-subtle hover:text-content-primary'
+const DOCUMENT_ACTION_CLASS_NAME =
+  'rounded p-0.5 text-content-muted transition-colors hover:text-content-primary disabled:cursor-not-allowed disabled:opacity-50'
 
 interface ProjectChat {
   id: string
@@ -256,6 +261,8 @@ export const ProjectSidebar = memo(function ProjectSidebar({
   const {
     projectDocuments,
     uploadDocument,
+    replaceDocument,
+    downloadDocument,
     removeDocument,
     updateProject,
     deleteProject,
@@ -300,6 +307,9 @@ export const ProjectSidebar = memo(function ProjectSidebar({
   const skipNextAnimationRef = useRef(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const replacementInputRef = useRef<HTMLInputElement>(null)
+  // The document the next file picked replaces.
+  const replacedDocumentIdRef = useRef<string | null>(null)
   const favoritesSectionRef = useRef<HTMLElement>(null)
   const exitHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isExitButtonDragHover, setIsExitButtonDragHover] = useState(false)
@@ -467,12 +477,10 @@ export const ProjectSidebar = memo(function ProjectSidebar({
     }
   }, [project, onDeleteProjectChats, onNewChat])
 
-  const handleFileUpload = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files
-      if (!files || files.length === 0) return
-
-      const fileArray = Array.from(files)
+  // Uploads files as the project's documents, or as the new version of the
+  // document one replaces.
+  const uploadFiles = useCallback(
+    async (fileArray: File[], replacedDocumentId?: string) => {
       const uploadIds = fileArray.map(() => crypto.randomUUID())
 
       fileArray.forEach((file, i) => {
@@ -486,7 +494,9 @@ export const ProjectSidebar = memo(function ProjectSidebar({
       await Promise.all(
         fileArray.map(async (file, index) => {
           try {
-            await uploadDocument(file, '')
+            if (replacedDocumentId)
+              await replaceDocument(replacedDocumentId, file)
+            else await uploadDocument(file, '')
           } catch (cause) {
             toast({
               title: 'Upload failed',
@@ -501,10 +511,39 @@ export const ProjectSidebar = memo(function ProjectSidebar({
           }
         }),
       )
+    },
+    [uploadDocument, replaceDocument, addUploadingFile, removeUploadingFile],
+  )
+
+  const handleFileUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files
+      if (!files || files.length === 0) return
+
+      await uploadFiles(Array.from(files))
 
       e.target.value = ''
     },
-    [uploadDocument, addUploadingFile, removeUploadingFile],
+    [uploadFiles],
+  )
+
+  const handleReplaceDocument = useCallback((docId: string) => {
+    replacedDocumentIdRef.current = docId
+    replacementInputRef.current?.click()
+  }, [])
+
+  const handleReplacementPicked = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      const replacedDocumentId = replacedDocumentIdRef.current
+      replacedDocumentIdRef.current = null
+      if (!file || !replacedDocumentId) return
+
+      await uploadFiles([file], replacedDocumentId)
+
+      e.target.value = ''
+    },
+    [uploadFiles],
   )
 
   const handleChatSelect = useCallback(
@@ -540,6 +579,23 @@ export const ProjectSidebar = memo(function ProjectSidebar({
       }
     },
     [removeDocument],
+  )
+
+  const handleDownloadDocument = useCallback(
+    async (doc: ProjectDocument) => {
+      try {
+        const file = await downloadDocument(doc)
+        saveDownload(file, file.name)
+      } catch {
+        toast({
+          title: 'Failed to download document',
+          description:
+            'The document could not be downloaded. Please try again.',
+          variant: 'destructive',
+        })
+      }
+    },
+    [downloadDocument],
   )
 
   const handleDeleteChat = useCallback(
@@ -1255,6 +1311,14 @@ export const ProjectSidebar = memo(function ProjectSidebar({
               disabled={contextLoading}
               accept={acceptOf(session?.composer.projectDocuments)}
             />
+            <input
+              ref={replacementInputRef}
+              type="file"
+              className="hidden"
+              onChange={handleReplacementPicked}
+              disabled={contextLoading}
+              accept={acceptOf(session?.composer.projectDocuments)}
+            />
 
             <AnimatePresence initial={false}>
               {documentsExpanded && !isLoading && (
@@ -1376,6 +1440,32 @@ export const ProjectSidebar = memo(function ProjectSidebar({
                                   : formatFileSize(doc.sizeBytes)}
                               </div>
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadDocument(doc)}
+                              disabled={!doc.hasFile && !doc.content}
+                              aria-label={`Download ${doc.filename || 'unavailable document'}`}
+                              className={DOCUMENT_ACTION_CLASS_NAME}
+                            >
+                              <TfDownload
+                                className="h-3 w-3"
+                                aria-hidden="true"
+                              />
+                            </button>
+                            {session?.features.documentVersions && (
+                              <button
+                                type="button"
+                                onClick={() => handleReplaceDocument(doc.id)}
+                                disabled={contextLoading}
+                                aria-label={`Replace ${doc.filename || 'unavailable document'}`}
+                                className={DOCUMENT_ACTION_CLASS_NAME}
+                              >
+                                <TfRefreshTwoArrows
+                                  className="h-3 w-3"
+                                  aria-hidden="true"
+                                />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleRemoveDocument(doc.id)}
