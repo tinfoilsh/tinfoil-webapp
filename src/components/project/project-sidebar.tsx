@@ -1,5 +1,6 @@
 'use client'
 
+import { ArtifactList } from '@/components/chat/artifact-list'
 import { ChatList, type ChatItemData } from '@/components/chat/chat-list'
 import { updatedLabel } from '@/components/chat/chat-list-utils'
 import {
@@ -50,6 +51,7 @@ import {
   TfBoxCheckmark,
   TfDocument,
   TfDocumentPlus,
+  TfDocumentWithCode,
   TfDownload,
   TfRefreshTwoArrows,
   TfSetting,
@@ -275,6 +277,7 @@ export const ProjectSidebar = memo(function ProjectSidebar({
   const [isFavoritesExpanded, setIsFavoritesExpanded] = useState(false)
   const hasLoadedFavoritesExpandedRef = useRef(false)
   const [documentsExpanded, setDocumentsExpanded] = useState(false)
+  const [artifactsExpanded, setArtifactsExpanded] = useState(false)
 
   const [editedName, setEditedName] = useState(project?.name ?? '')
   const [editedDescription, setEditedDescription] = useState(
@@ -1491,6 +1494,67 @@ export const ProjectSidebar = memo(function ProjectSidebar({
               )}
             </AnimatePresence>
           </div>
+
+          {/* Artifacts Section */}
+          {session?.features.artifacts && (
+            <div className="relative z-10 mt-2 flex-none">
+              <button
+                type="button"
+                aria-expanded={artifactsExpanded && !isLoading}
+                onClick={() =>
+                  !isLoading && setArtifactsExpanded(!artifactsExpanded)
+                }
+                disabled={isLoading}
+                className={cn(
+                  SECTION_HEADER_CLASS_NAME,
+                  artifactsExpanded && !isLoading
+                    ? 'border-border-subtle'
+                    : 'border-transparent',
+                  isLoading
+                    ? 'cursor-default opacity-50'
+                    : 'text-content-secondary hover:text-content-primary',
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <TfDocumentWithCode className="h-4 w-4" aria-hidden="true" />
+                  <span className="font-aeonik font-medium">Artifacts</span>
+                </span>
+                {artifactsExpanded && !isLoading ? (
+                  <TfChevronDownAnimated
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <TfChevronRightAnimated
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+
+              <AnimatePresence initial={false}>
+                {artifactsExpanded && !isLoading && project && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeInOut' }}
+                    className={cn(
+                      '-mt-3 overflow-hidden rounded-t-lg pt-3',
+                      expandedPanelClass,
+                    )}
+                  >
+                    <div className="px-2 py-3">
+                      <ArtifactList
+                        projectId={project.id}
+                        onOpenChat={handleChatSelect}
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
 
           {/* Chat History Header */}
           <section className="relative z-10 mt-2 flex min-h-48 flex-1 flex-col">

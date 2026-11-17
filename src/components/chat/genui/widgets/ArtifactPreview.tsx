@@ -120,15 +120,53 @@ function safeArtifactUrl(rawUrl: string): string {
   return 'about:blank'
 }
 
-function getSourceLabel(source: ArtifactSource): string {
-  switch (source.type) {
+// What an artifact with a source of a type is called. One of a type this
+// client does not know is an artifact like any other.
+export function artifactSourceLabel(type: string): string {
+  switch (type) {
     case 'url':
       return 'Hosted preview'
     case 'html':
       return 'HTML artifact'
     case 'markdown':
       return 'Markdown artifact'
+    default:
+      return 'Artifact'
   }
+}
+
+function getSourceLabel(source: ArtifactSource): string {
+  return artifactSourceLabel(source.type)
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/**
+ * The artifact a `render_artifact_preview` call drew, read from the call's
+ * arguments as a chat's timeline holds them, which is what the inline card
+ * opens in the sidebar. Arguments the sidebar cannot draw, as those of a
+ * source type a later chat service adds, give none.
+ */
+export function artifactPreviewFromArguments(
+  args: string,
+): ArtifactPreviewSidebarDetail | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(args)
+  } catch {
+    return null
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.source)) return null
+  const { type } = parsed.source
+  if (
+    (type !== 'url' && type !== 'html' && type !== 'markdown') ||
+    typeof parsed.source[type] !== 'string'
+  )
+    return null
+  const { title, description, source, footer } =
+    parsed as unknown as RenderArtifactPreviewArgs
+  return { title, description, source, footer }
 }
 
 function sourceToCopyString(source: ArtifactSource): string {

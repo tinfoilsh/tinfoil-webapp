@@ -131,3 +131,12 @@ export type SharedThread = Schemas['SharedThread']
 
 // A project's document as the harness stores it.
 export type StoredProjectDocument = Schemas['ProjectDocument']
+
+// An artifact a reply in a stored chat drew, as a list names it, without its
+// source; a page of them; and one opened, with the arguments its reply drew
+// it with.
+export type Artifact = Schemas['Artifact']
+export type ArtifactPage =
+  operations['artifactsList']['responses'][200]['content']['application/json']
+export type OpenedArtifact =
+  operations['artifactGet']['responses'][200]['content']['application/json']
