@@ -59,7 +59,10 @@ export type AnswerChanges = MessageAnswer['answers']
 // hold the bytes this device keeps for it, and a stored chat's says whether
 // the harness keeps the file as it was uploaded.
 export type MessageAttachment = AttachmentDescriptor &
-  Pick<Schemas['AttachmentView'], 'hasOriginal'>
+  Pick<
+    Schemas['AttachmentView'],
+    'hasOriginal' | 'originalFileName' | 'originalMimeType'
+  >
 
 // A message as this client shows it, whose attachments may hold the bytes
 // this device keeps for them.

@@ -85,7 +85,11 @@ export function SharedChatView({
     [messages],
   )
   return (
-    <ImageGalleryProvider messages={messages} loadImage={readShared}>
+    <ImageGalleryProvider
+      messages={messages}
+      loadImage={readShared}
+      loadOriginal={loadOriginal}
+    >
       <DocumentTextProvider load={loadDocumentText} loadOriginal={loadOriginal}>
         <SpeechProvider speak={speak}>
           <div className="mx-auto w-full min-w-0 max-w-3xl px-4 pb-6 pt-8">

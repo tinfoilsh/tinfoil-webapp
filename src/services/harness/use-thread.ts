@@ -639,13 +639,13 @@ export function useThread(
   // image's descriptor carries the copy the harness gives models; the file
   // itself is kept apart, to show and download. The harness keeps the file a
   // stored chat attaches as it was uploaded, which the unlocked content key
-  // lets it, and the descriptor names where. An image uploads scaled down,
-  // so the harness would keep no more of it than the copy models read.
+  // lets it, and the descriptor names where.
   async function upload(file: File): Promise<AttachmentDescriptor> {
     const keepsOriginal =
       !onDevice(open.get()) &&
       keyReady &&
-      !uploadsAsImage(file, session?.composer.attachments)
+      (session?.features.imageOriginals === true ||
+        !uploadsAsImage(file, session?.composer.attachments))
     const { attachment } = await api.upload<{
       attachment: AttachmentDescriptor
     }>(ROUTES.attachmentUpload, file, {}, { keyless: !keepsOriginal })

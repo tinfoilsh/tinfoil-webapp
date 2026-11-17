@@ -416,32 +416,41 @@ describe('keeping a file as it was uploaded', () => {
     },
   )
 
-  it('uploads an image for a stored chat without the content key', async () => {
-    signIn({ cloud: true })
-    client.upload.mockResolvedValue({
-      attachment: {
-        id: 'att_photo',
-        kind: 'image',
-        fileName: 'photo.png',
-        mimeType: 'image/png',
-        size: 4,
-        base64: 'bW9kZWwtY29weQ==',
-      },
-    })
-    const { result } = renderHook(() => useThread())
-    const picked = new File([new Uint8Array(4)], 'photo.png', {
-      type: 'image/png',
-    })
+  it.each([false, true])(
+    'keeps a cloud photo when the harness offers originals: %s',
+    async (enabled) => {
+      signIn({
+        cloud: true,
+        session: {
+          ...testSession,
+          features: { ...testSession.features, imageOriginals: enabled },
+        },
+      })
+      client.upload.mockResolvedValue({
+        attachment: {
+          id: 'att_photo',
+          kind: 'image',
+          fileName: 'photo.png',
+          mimeType: 'image/png',
+          size: 4,
+          base64: 'bW9kZWwtY29weQ==',
+        },
+      })
+      const { result } = renderHook(() => useThread())
+      const picked = new File([new Uint8Array(4)], 'photo.png', {
+        type: 'image/png',
+      })
 
-    await result.current.upload(picked)
+      await result.current.upload(picked)
 
-    expect(client.upload).toHaveBeenCalledExactlyOnceWith(
-      '/v1/attachments/upload',
-      expect.any(File),
-      {},
-      expect.any(AbortSignal),
-    )
-  })
+      expect(client.upload).toHaveBeenCalledExactlyOnceWith(
+        '/v1/attachments/upload',
+        expect.any(File),
+        enabled ? { key: KEY } : {},
+        expect.any(AbortSignal),
+      )
+    },
+  )
 
   it('sends where the harness kept a file back with the turns that attach it', async () => {
     signIn({ cloud: true })

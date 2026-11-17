@@ -148,20 +148,23 @@ export const DocumentList = memo(function DocumentList({
   // and type.
   const downloadOriginal = async (attachment: Attachment) => {
     if (!loadOriginal || originalDownload === 'loading') return
+    const request = textRequest.current
     setOriginalDownload('loading')
     try {
       const file = await loadOriginal(attachment)
       saveDownload(
-        new Blob([file], { type: attachment.mimeType }),
-        attachment.fileName,
+        new Blob([file], {
+          type: attachment.originalMimeType ?? attachment.mimeType,
+        }),
+        attachment.originalFileName ?? attachment.fileName,
       )
-      setOriginalDownload('idle')
+      if (request === textRequest.current) setOriginalDownload('idle')
     } catch (error) {
       logError('Failed to download an uploaded file', error, {
         component: 'DocumentList',
         action: 'downloadOriginal',
       })
-      setOriginalDownload('failed')
+      if (request === textRequest.current) setOriginalDownload('failed')
     }
   }
 

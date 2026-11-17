@@ -568,6 +568,7 @@ export function ChatMessages({
       key={chatId}
       messages={messages}
       loadImage={loadImage}
+      loadOriginal={loadOriginalFile}
     >
       <DocumentTextProvider
         load={loadDocumentText}

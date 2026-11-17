@@ -1672,12 +1672,14 @@ describe('attested harness transport', () => {
 
     await client.upload(
       '/v1/projects/documents/upload',
-      new File(['# Revised'], 'notes.md'),
+      new File(['model preview'], 'preview.jpg'),
       {
         key: 'Y29udGVudC1rZXk=',
         projectId: 'project-one',
         documentId: 'doc-notes',
       },
+      undefined,
+      new File(['source photo'], 'original.png'),
     )
 
     const form = secure.fetch.mock.calls[0][1].body as FormData
@@ -1690,8 +1692,10 @@ describe('attested harness transport', () => {
       ['key', 'Y29udGVudC1rZXk='],
       ['projectId', 'project-one'],
       ['documentId', 'doc-notes'],
-      ['file', 'notes.md'],
+      ['file', 'preview.jpg'],
+      ['original', 'original.png'],
     ])
+    expect(await (form.get('original') as File).text()).toBe('source photo')
   })
   it('verifies the enclave of the chat service against the release of the harness', async () => {
     const secure = transport()

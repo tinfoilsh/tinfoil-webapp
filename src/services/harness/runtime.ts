@@ -351,13 +351,19 @@ export class HarnessAPI {
         : path === ROUTES.projectDocumentUpload
           ? view.session?.composer.projectDocuments
           : undefined
+    const picked = file
     if (groups) file = await prepareUpload(file, groups)
+    const original =
+      key.key && view.session?.features.imageOriginals && file !== picked
+        ? picked
+        : undefined
     requestSignal.throwIfAborted()
     const result = await this.client.upload<T>(
       path,
       file,
       { ...key, ...fields },
       requestSignal,
+      ...(original ? [original] : []),
     )
     requestSignal.throwIfAborted()
     return result

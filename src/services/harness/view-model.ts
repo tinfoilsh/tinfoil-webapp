@@ -184,6 +184,8 @@ type ViewedAttachment = Pick<
   | 'textContent'
   | 'thumbnail'
   | 'hasOriginal'
+  | 'originalFileName'
+  | 'originalMimeType'
 >
 
 export function attachmentView(a: ViewedAttachment): Attachment {
@@ -196,6 +198,8 @@ export function attachmentView(a: ViewedAttachment): Attachment {
     textContent: a.textContent,
     thumbnailBase64: a.thumbnail ?? undefined,
     ...(a.hasOriginal ? { hasOriginal: true } : {}),
+    ...(a.originalFileName ? { originalFileName: a.originalFileName } : {}),
+    ...(a.originalMimeType ? { originalMimeType: a.originalMimeType } : {}),
   }
 }
 // A queued turn's attachments that can be shown. One the chat already holds

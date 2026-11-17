@@ -116,6 +116,8 @@ export type Attachment = {
   encryptionKey?: string
   // The chat service keeps the file as it was uploaded, to download.
   hasOriginal?: boolean
+  originalFileName?: string
+  originalMimeType?: string
 }
 
 export type Message = {
