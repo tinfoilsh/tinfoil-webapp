@@ -59,7 +59,7 @@ export const testSession: Session = {
   rateLimit: { kind: null, maxRequests: 100, remaining: 100 },
   composer: {
     attachments: [
-      { accept: ['.png'], maxBytes: 1000 },
+      { accept: ['.png'], maxBytes: 1000, imageMaxSide: 2048 },
       { accept: ['.pdf', '.txt'], maxBytes: 2000 },
     ],
     projectDocuments: [{ accept: ['.pdf', '.md', '.txt'], maxBytes: 500 }],

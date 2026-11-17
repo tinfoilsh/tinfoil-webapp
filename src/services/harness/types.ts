@@ -35,8 +35,10 @@ export type HarnessErrorBody = Omit<Schemas['ErrorBody'], 'code'> & {
 }
 
 // An attachment, in the one shape an upload returns, a turn sends, a thread
-// stores and a view lists. The harness keeps nothing of an upload, so a turn
-// carries an image's bytes; a view leaves out image bytes and page images.
+// stores and a view lists. The harness keeps nothing of an upload but, for a
+// stored chat, the file as it was uploaded, which `original` names and the
+// turn sends back; so a turn carries an image's bytes. A view leaves out
+// image bytes and page images.
 export type AttachmentDescriptor = Schemas['Attachment']
 export type ToolDisplay = Schemas['ToolDisplay']
 export type Annotation = Schemas['Annotation']

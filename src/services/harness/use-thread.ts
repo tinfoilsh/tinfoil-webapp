@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { chatActions } from './chat-actions'
 import { useChatList } from './chat-list'
 import { chatTurns } from './chat-turns'
+import { uploadsAsImage } from './composer'
 import { deviceThreads, storeCutOff, storeRun } from './device-threads'
 import { localThreadStore, memoryThreadStore } from './local-threads'
 import { OpenAttachments } from './open-attachments'
@@ -636,11 +637,18 @@ export function useThread(
   }, [reset, clearCloud, open, controller])
   // Converts a file into the descriptor the turn that uses it sends. An
   // image's descriptor carries the copy the harness gives models; the file
-  // itself is kept apart, to show and download.
+  // itself is kept apart, to show and download. The harness keeps the file a
+  // stored chat attaches as it was uploaded, which the unlocked content key
+  // lets it, and the descriptor names where. An image uploads scaled down,
+  // so the harness would keep no more of it than the copy models read.
   async function upload(file: File): Promise<AttachmentDescriptor> {
+    const keepsOriginal =
+      !onDevice(open.get()) &&
+      keyReady &&
+      !uploadsAsImage(file, session?.composer.attachments)
     const { attachment } = await api.upload<{
       attachment: AttachmentDescriptor
-    }>(ROUTES.attachmentUpload, file, {}, { keyless: true })
+    }>(ROUTES.attachmentUpload, file, {}, { keyless: !keepsOriginal })
     if (attachment.kind === 'image')
       attachments.originals.set(attachment.id, {
         base64: uint8ArrayToBase64(new Uint8Array(await file.arrayBuffer())),

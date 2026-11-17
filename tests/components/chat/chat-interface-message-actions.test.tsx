@@ -440,4 +440,57 @@ describe('attachments on the chat page', () => {
     })
     expect(client.events.mock.calls[0][1].attachments).toEqual([descriptor])
   })
+
+  it('uploads a document for a stored chat with the content key, and sends where the harness kept the file with its message', async () => {
+    open()
+    await screen.findByText('Hello there')
+    const descriptor = {
+      id: 'att_report',
+      kind: 'document',
+      fileName: 'report.pdf',
+      mimeType: 'application/pdf',
+      size: 8,
+      textContent: 'Revenue grew.',
+      original: {
+        id: 'att_0123456789abcdef',
+        encryptionKey: 'b3JpZ2luYWwtZmlsZS1rZXk=',
+        storageThreadId: 'upload_0123456789abcdef',
+      },
+    }
+    client.upload.mockResolvedValueOnce({ attachment: descriptor })
+    client.events.mockImplementation(async function* () {
+      yield {
+        id: 0,
+        event: { type: 'RUN_FINISHED', threadId: THREAD_ID, runId: 'run-2' },
+      }
+    })
+
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: {
+        files: [
+          new File(['%PDF-1.7'], 'report.pdf', { type: 'application/pdf' }),
+        ],
+      },
+    })
+    await screen.findByRole('button', { name: 'Remove report.pdf' })
+    const composer = screen.getByRole('textbox', { name: /message/i })
+    fireEvent.change(composer, { target: { value: 'Summarize this' } })
+    fireEvent.submit(composer.closest('form')!)
+    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+
+    expect(client.upload).toHaveBeenCalledExactlyOnceWith(
+      '/v1/attachments/upload',
+      expect.any(File),
+      { key: KEY },
+      expect.any(AbortSignal),
+    )
+    expect(client.events.mock.calls[0][1]).toMatchObject({
+      key: KEY,
+      threadId: THREAD_ID,
+      content: 'Summarize this',
+    })
+    expect(client.events.mock.calls[0][1].attachments).toStrictEqual([
+      descriptor,
+    ])
+  })
 })

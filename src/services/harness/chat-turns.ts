@@ -6,7 +6,7 @@ import {
 import { generateReverseId } from '@/utils/reverse-id'
 import { now } from './local-threads'
 import type { OpenAttachments } from './open-attachments'
-import { uploaded } from './open-attachments'
+import { uploaded, withoutOriginals } from './open-attachments'
 import {
   presetIdOf,
   type OpenChat,
@@ -281,6 +281,13 @@ export function chatTurns({
     const current = open.get()
     if (current.loadingId || (current.id && moving.has(current.id))) return
     patch({ failure: null })
+    // A file attached before its chat became one this device keeps names
+    // where the harness kept it, which the chat leaves out.
+    if (threads.local && fields.attachments)
+      fields = {
+        ...fields,
+        attachments: withoutOriginals(fields.attachments),
+      }
     attachments.rememberSent(fields.attachments)
     let key: { key?: string }
     try {

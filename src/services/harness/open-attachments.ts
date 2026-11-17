@@ -14,6 +14,14 @@ export const uploaded = (attachments: Turn['attachments'] = []) =>
     (attachment): attachment is AttachmentDescriptor => 'kind' in attachment,
   )
 
+// A turn's attachments without where an upload kept each file as it was
+// uploaded. The harness keeps those files for the chats it stores, so a chat
+// on this device neither sends nor stores where one is.
+export const withoutOriginals = (
+  attachments: NonNullable<Turn['attachments']>,
+): NonNullable<Turn['attachments']> =>
+  attachments.map(({ original: _original, ...attachment }) => attachment)
+
 // What the open chat's view reads of its attachments: the image bytes a
 // chat on this device holds, uploads the chat does not store yet, the files
 // the user picked for them, and the document texts read so far. Clearing it
