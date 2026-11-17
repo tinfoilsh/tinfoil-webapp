@@ -14,9 +14,10 @@ import {
   refreshConnector,
   updateConnector,
 } from '@/services/harness/connectors'
-import { CONNECTORS_FEATURE } from '@/services/harness/protocol'
+import { CONNECTORS_FEATURE, ERROR_CODES } from '@/services/harness/protocol'
 import { useHarness, useSessionFeature } from '@/services/harness/provider'
 import { getView, type HarnessAPI } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import type {
   Connector,
   ConnectorAnswer,
@@ -241,10 +242,20 @@ export class ConnectorList {
     }
   }
 
-  // Lists a connector's tools again.
+  // Lists a connector's tools again. One the harness finds signed out is
+  // listed again, to show that it is.
   async refreshTools(id: string) {
-    const { connector } = await refreshConnector(this.api, id)
-    this.show(connector)
+    try {
+      const { connector } = await refreshConnector(this.api, id)
+      this.show(connector)
+    } catch (cause) {
+      if (
+        cause instanceof HarnessError &&
+        cause.code === ERROR_CODES.connectorSignedOut
+      )
+        void this.refresh()
+      throw cause
+    }
   }
 
   async remove(id: string) {
@@ -272,14 +283,16 @@ function connectorList(api: HarnessAPI): ConnectorList {
 }
 
 // The account's connectors, while the harness offers them to it: it is
-// signed in, and its session has the feature.
+// signed in, and its session has the feature. They are listed again when
+// they change elsewhere: on another device, or as the harness signs one out.
 export function useConnectors() {
-  const { api, cloud, keyReady } = useHarness()
+  const { api, cloud, keyReady, connectorRevision } = useHarness()
   const offered = useSessionFeature(CONNECTORS_FEATURE) && !!api.userId
   const list = connectorList(api)
   const state = useSyncExternalStore(list.subscribe, list.read, list.read)
   useEffect(() => {
-    if (offered) void list.load(`${cloud}:${keyReady}`)
-  }, [offered, list, cloud, keyReady])
+    if (offered)
+      void list.load(`${cloud}:${keyReady}:${connectorRevision ?? ''}`)
+  }, [offered, list, cloud, keyReady, connectorRevision])
   return { ...state, offered, list }
 }

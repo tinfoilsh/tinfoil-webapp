@@ -1,8 +1,9 @@
 import { ChatInput } from '@/components/chat/chat-input'
+import type { HarnessAPI } from '@/services/harness/runtime'
 import type { Connector } from '@/services/harness/types'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { client, KEY, signIn, testSession } from '../../harness-fixture'
 
 vi.mock('@/components/project', () => ({
@@ -39,8 +40,10 @@ const NOTION: Connector = {
   tools: [],
 }
 
+let api: HarnessAPI
+
 beforeEach(() => {
-  signIn({ cloud: true, session })
+  api = signIn({ cloud: true, session })
   client.post.mockImplementation(async (path: string) => {
     switch (path) {
       case '/v1/session':
@@ -112,5 +115,55 @@ describe('the composer’s connectors', () => {
     expect(
       screen.getByText('Connectors work only in chats saved to the cloud.'),
     ).toBeInTheDocument()
+  })
+
+  it('shows a connector as another device leaves it', async () => {
+    let stored = NOTION
+    let revision = 'first'
+    client.post.mockImplementation(async (path: string) => {
+      switch (path) {
+        case '/v1/session':
+          return structuredClone(session)
+        case '/v1/profile/get':
+          return {}
+        case '/v1/changes':
+          return {
+            chats: 'c',
+            profile: 'p',
+            projects: 'j',
+            connectors: revision,
+          }
+        case '/v1/connectors/list':
+          return { connectors: [structuredClone(stored)] }
+        default:
+          throw new Error(`Unexpected harness request: ${path}`)
+      }
+    })
+    const lists = () =>
+      client.post.mock.calls.filter(([path]) => path === '/v1/connectors/list')
+    // The app checks for changes as its window gains focus.
+    const checkForChanges = () =>
+      act(async () => {
+        window.dispatchEvent(new Event('focus'))
+      })
+    onTestFinished(api.watchChanges())
+    renderComposer(true)
+    const notion = await screen.findByRole('menuitemcheckbox', {
+      name: 'Notion',
+    })
+    await checkForChanges()
+    await waitFor(() => expect(lists()).toHaveLength(2))
+    expect(notion).toHaveAttribute('aria-checked', 'true')
+
+    // Nothing changed, so the connectors are not listed again.
+    await checkForChanges()
+    expect(lists()).toHaveLength(2)
+
+    stored = { ...NOTION, enabled: false }
+    revision = 'second'
+    await checkForChanges()
+
+    await waitFor(() => expect(notion).toHaveAttribute('aria-checked', 'false'))
+    expect(lists()).toHaveLength(3)
   })
 })

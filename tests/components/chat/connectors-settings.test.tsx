@@ -154,6 +154,30 @@ describe('the Connectors settings', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument()
   })
 
+  it('asks for a sign-in once listing its tools finds a connector signed out', async () => {
+    connectors = [connector({ signIn: true })]
+    answer = async (path) => {
+      if (path !== '/v1/connectors/refresh')
+        throw new Error(`Unexpected harness request: ${path}`)
+      // The harness signs the connector out as it refuses to list its tools.
+      connectors = [connector({ signIn: true, status: 'signedOut' })]
+      throw new HarnessError({
+        code: 'CONNECTOR_SIGNED_OUT',
+        action: 'stop',
+        message: 'The connector is signed out',
+      })
+    }
+    render(<ConnectorsSettings isDarkMode={false} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Docs details' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh tools' }))
+
+    expect(
+      await screen.findByRole('button', { name: 'Sign in' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh tools' })).toBeDisabled()
+  })
+
   it.each([
     ['could not be verified', unverified()],
     ['could not confirm the sign-in', unconfirmed()],
