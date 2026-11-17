@@ -97,6 +97,8 @@ function applyPromptEdits(profile: Profile, edits: PromptEdits): Profile {
 type View = {
   chatRevision?: string
   projectRevision?: string
+  // Absent while the harness keeps no connectors.
+  connectorRevision?: string
   session?: Session
   profile: Profile
   error?: string
@@ -122,6 +124,7 @@ interface ChangeTokens {
   chats: string
   profile: string
   projects: string
+  connectors?: string
 }
 // When this browser last read what the harness stores of the account's
 // chats, and whether its latest attempt failed. Kept apart from the view,
@@ -222,11 +225,13 @@ export class HarnessAPI {
         this.changeTokens = tokens
         if (
           tokens.chats !== view.chatRevision ||
-          tokens.projects !== view.projectRevision
+          tokens.projects !== view.projectRevision ||
+          tokens.connectors !== view.connectorRevision
         ) {
           publish({
             chatRevision: tokens.chats,
             projectRevision: tokens.projects,
+            connectorRevision: tokens.connectors,
           })
         }
         this.reportSynced()

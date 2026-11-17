@@ -599,6 +599,25 @@ export function chatTurns({
     threadId: open.get().id,
     queueId,
   })
+  // Answers a call of the open chat's run that waits for the user's
+  // approval. Only the run streaming now takes an answer.
+  async function approve(approvalId: string, approved: boolean) {
+    const state = controller.view.get()
+    const threadId = open.get().id
+    if (!threadId || !state.runId || !isRunning(state))
+      throw new HarnessError({
+        code: ERROR_CODES.runNotFound,
+        action: ERROR_ACTIONS.reload,
+        message: 'This reply is no longer running.',
+      })
+    await controller.approve({
+      ...openStore().runKey(),
+      threadId,
+      runId: state.runId,
+      approvalId,
+      approved,
+    })
+  }
   return {
     send,
     cancel,
@@ -608,6 +627,7 @@ export function chatTurns({
     retry,
     compact,
     retryToolCall,
+    approve,
     sendQueued: async (queueId: string) =>
       controller.sendQueued(queueInput(queueId)),
     removeQueued: async (queueId: string) =>

@@ -46,6 +46,11 @@ describe('the chat service around pages', () => {
     { pathname: '/chat/[[...slug]]', asPath: '/chat/c1', wrapped: true },
     { pathname: '/project/[[...slug]]', asPath: '/project/p1', wrapped: true },
     { pathname: '/share/[[...slug]]', asPath: '/share/s1', wrapped: true },
+    {
+      pathname: '/connectors/callback',
+      asPath: '/connectors/callback',
+      wrapped: true,
+    },
     { pathname: '/404', asPath: '/no-such-page', wrapped: false },
     { pathname: '/signin', asPath: '/signin', wrapped: false },
   ])('wraps $asPath: $wrapped', ({ pathname, asPath, wrapped }) => {

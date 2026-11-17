@@ -382,6 +382,34 @@ it('shows web search on while deep research is, and turns deep research off with
   expect(shown()).toEqual(['false', 'false'])
 })
 
+it('asks the harness for connectors in cloud chats alone, while the session offers them', async () => {
+  const session = {
+    ...testSession,
+    features: { ...testSession.features, connectors: true },
+  }
+  client.post.mockImplementation(async (path: string) => {
+    if (path === '/v1/connectors/list') return { connectors: [] }
+    if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+    if (path === '/v1/projects/list') return { projects: [], nextCursor: null }
+    throw new Error(`Unexpected ${path}`)
+  })
+  signIn({ cloud: true, session })
+  answerTurns()
+  const cloud = render(view())
+
+  await send('Find my notes')
+  await waitFor(() => expect(sentTurns()).toHaveLength(1))
+  expect(sentTurns()[0].options).toMatchObject({ connectors: true })
+  cloud.unmount()
+
+  signIn({ session })
+  answerTurns()
+  render(view())
+  await send('Find my notes')
+  await waitFor(() => expect(sentTurns()).toHaveLength(1))
+  expect(sentTurns()[0].options).not.toHaveProperty('connectors')
+})
+
 it('stops a streaming reply when Escape is pressed in the composer', async () => {
   signIn({ cloud: true })
   answerCloudRequests()

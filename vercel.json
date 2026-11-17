@@ -57,6 +57,14 @@
     {
       "source": "/sso-callback/",
       "destination": "/sso-callback.html"
+    },
+    {
+      "source": "/connectors/callback",
+      "destination": "/connectors/callback.html"
+    },
+    {
+      "source": "/connectors/callback/",
+      "destination": "/connectors/callback.html"
     }
   ],
   "headers": [
@@ -91,6 +99,36 @@
         {
           "key": "Access-Control-Allow-Origin",
           "value": "*"
+        }
+      ]
+    },
+    {
+      "source": "/oauth/client-metadata.json",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    },
+    {
+      "source": "/.well-known/apple-app-site-association",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, stale-while-revalidate=86400"
         }
       ]
     },

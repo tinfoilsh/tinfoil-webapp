@@ -11,7 +11,7 @@ import { useUser } from '@clerk/react'
 import { TfChevronRight } from '@tinfoilsh/tinfoil-icons'
 import { motion } from 'framer-motion'
 import React, { memo, useRef, useState } from 'react'
-import { ChatInput } from './chat-input'
+import { ChatInput, type ComposerConnectors } from './chat-input'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { DataFlowDiagram } from './DataFlowDiagram'
@@ -248,6 +248,7 @@ interface WelcomeScreenProps {
   onWebSearchToggle?: () => void
   researchEnabled?: boolean
   onResearchToggle?: () => void
+  connectors?: ComposerConnectors
   reasoningEffort?: ReasoningEffort
   setReasoningEffort?: (effort: ReasoningEffort) => void
   thinkingEnabled?: boolean
@@ -289,6 +290,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   onWebSearchToggle,
   researchEnabled,
   onResearchToggle,
+  connectors,
   reasoningEffort,
   setReasoningEffort,
   thinkingEnabled,
@@ -472,6 +474,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   onWebSearchToggle={onWebSearchToggle}
                   researchEnabled={researchEnabled}
                   onResearchToggle={onResearchToggle}
+                  connectors={connectors}
                   isTemporaryMode={isTemporaryMode}
                   activePromptPreset={activePromptPreset}
                   onOpenPromptLibrary={onOpenPromptLibrary}

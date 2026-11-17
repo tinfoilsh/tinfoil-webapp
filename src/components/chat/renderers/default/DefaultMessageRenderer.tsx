@@ -1,4 +1,5 @@
 import { GenUIToolCallRenderer } from '@/components/chat/genui/GenUIToolCallRenderer'
+import type { TimelineConnectorCallBlock } from '@/components/chat/types'
 import { cn } from '@/components/ui/utils'
 import {
   ArrowUturnLeftIcon,
@@ -19,6 +20,8 @@ import { CONSTANTS } from '../../constants'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
 import { useListEditing } from '../../hooks/use-list-editing'
 import { isImeComposition, isSubmitShortcut } from '../../keyboard-utils'
+import { ConnectorApprovalCard } from '../components/ConnectorApprovalCard'
+import { ConnectorCallProcess } from '../components/ConnectorCallProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
 import {
@@ -116,6 +119,16 @@ const DefaultMessageComponent = ({
   const timelineSegments = React.useMemo(
     () => segmentTimeline(displayTimeline, message.research),
     [displayTimeline, message.research],
+  )
+  // The calls the reply waits on the user to approve, whose cards follow
+  // its steps.
+  const awaitingApproval = React.useMemo(
+    () =>
+      displayTimeline.filter(
+        (block): block is TimelineConnectorCallBlock =>
+          block.type === 'connector_call' && !!block.approval,
+      ),
+    [displayTimeline],
   )
   // A reply that searched lists its last search's results and what it
   // cites; earlier searches and read pages list theirs in their own rows. A
@@ -502,6 +515,12 @@ const DefaultMessageComponent = ({
                   />
                 </div>
               )
+            case 'connector_call':
+              return (
+                <div key={block.id} className="no-scroll-anchoring w-full px-4">
+                  <ConnectorCallProcess call={block} />
+                </div>
+              )
             case 'tool_call': {
               return (
                 <div key={block.id} className="w-full px-4">
@@ -572,6 +591,14 @@ const DefaultMessageComponent = ({
               return null
           }
         })}
+
+      {!isUser &&
+        !isEditing &&
+        awaitingApproval.map((call) => (
+          <div key={`approval-${call.id}`} className="w-full px-4 py-2">
+            <ConnectorApprovalCard call={call} />
+          </div>
+        ))}
 
       {!isUser &&
         isStreaming &&

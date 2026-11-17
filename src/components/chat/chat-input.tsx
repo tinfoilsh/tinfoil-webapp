@@ -1,7 +1,12 @@
 import { useProject } from '@/components/project'
 import { cn } from '@/components/ui/utils'
 import { getProjectColor } from '@/constants/project-colors'
+import { useConnectors } from '@/hooks/use-connectors'
 import { useToast } from '@/hooks/use-toast'
+import {
+  describeConnectorError,
+  isConnected,
+} from '@/services/harness/connectors'
 import { useHarness } from '@/services/harness/provider'
 import { useReloadHold } from '@/services/reload-when-updated'
 import { dictation } from '@/services/speech/dictation'
@@ -12,6 +17,7 @@ import {
   TfBoxX,
   TfGlobe,
   TfGlobeX,
+  TfLink,
   TfQuote,
   TfStack,
   TfWebSearch,
@@ -35,6 +41,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { PiSpinner } from 'react-icons/pi'
+import { ConnectorIcon } from './components/connector-icon'
 import {
   COMPACTING_LABEL,
   COMPACT_LABEL,
@@ -60,6 +67,15 @@ import type { LoadingState } from './types'
 // Tracks every mounted textarea per shared external ref so an unmounting
 // instance can hand the shared ref over to a surviving instance.
 const sharedTextareaRegistries = new WeakMap<object, Set<HTMLTextAreaElement>>()
+
+// The account's connectors the "+" menu lists, for a signed-in account the
+// session offers them to.
+export interface ComposerConnectors {
+  // The chat runs connectors: the harness stores it. A chat kept on this
+  // device, or a temporary one, does not.
+  available: boolean
+  onManage: () => void
+}
 
 function getSharedTextareaRegistry(ref: object): Set<HTMLTextAreaElement> {
   let registry = sharedTextareaRegistries.get(ref)
@@ -95,6 +111,7 @@ type ChatInputProps = {
   // where the session offers deep research.
   researchEnabled?: boolean
   onResearchToggle?: () => void
+  connectors?: ComposerConnectors
   quote?: string | null
   onClearQuote?: () => void
   isTemporaryMode?: boolean
@@ -140,6 +157,7 @@ export const ChatInput = memo(function ChatInput({
   onWebSearchToggle,
   researchEnabled = false,
   onResearchToggle,
+  connectors,
   quote,
   onClearQuote,
   isTemporaryMode,
@@ -158,6 +176,21 @@ export const ChatInput = memo(function ChatInput({
   const { isProjectMode, activeProject } = useProject()
   const { api, session } = useHarness()
   const transcriptionAvailable = !!session?.features.transcription
+  const {
+    connectors: connected,
+    offered,
+    list: connectorList,
+  } = useConnectors()
+  const connectorMenu = connectors && offered ? connectors : undefined
+  const toggleConnector = (id: string, enabled: boolean) => {
+    void connectorList.update(id, { enabled }).catch((cause) => {
+      toast({
+        title: 'Could not change the connector',
+        description: describeConnectorError(cause),
+        variant: 'destructive',
+      })
+    })
+  }
   const compaction =
     onCompact && session?.features.manualCompaction
       ? { canCompact, compacting, onCompact }
@@ -1077,6 +1110,81 @@ export const ChatInput = memo(function ChatInput({
                               />
                             )}
                           </button>
+                        )}
+                        {connectorMenu && (
+                          <div
+                            role="group"
+                            aria-label="Connectors"
+                            className="my-1.5 border-t border-border-subtle pt-1.5"
+                          >
+                            <div className="px-3 pb-1 text-xs font-medium text-content-muted">
+                              Connectors
+                            </div>
+                            {!connectorMenu.available && (
+                              <p className="px-3 pb-1 text-xs text-content-muted">
+                                Connectors work only in chats saved to the
+                                cloud.
+                              </p>
+                            )}
+                            {connected.map((connector) => (
+                              <button
+                                key={connector.id}
+                                type="button"
+                                role="menuitemcheckbox"
+                                aria-checked={connector.enabled}
+                                aria-disabled={!connectorMenu.available}
+                                onClick={() => {
+                                  if (connectorMenu.available)
+                                    toggleConnector(
+                                      connector.id,
+                                      !connector.enabled,
+                                    )
+                                }}
+                                className={cn(
+                                  'flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary',
+                                  connectorMenu.available
+                                    ? 'hover:bg-surface-chat-background'
+                                    : 'cursor-default opacity-50',
+                                )}
+                              >
+                                <span className="flex h-5 w-5 items-center justify-center">
+                                  <ConnectorIcon
+                                    url={connector.url}
+                                    name={connector.name}
+                                  />
+                                </span>
+                                <span className="min-w-0 flex-1 truncate">
+                                  {connector.name}
+                                </span>
+                                {!isConnected(connector) && (
+                                  <span className="shrink-0 text-xs text-content-muted">
+                                    Sign in needed
+                                  </span>
+                                )}
+                                {connector.enabled && (
+                                  <TfBoxCheckmark
+                                    className="h-4 w-4 text-yellow-700 dark:text-primary"
+                                    aria-hidden="true"
+                                  />
+                                )}
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                connectorMenu.onManage()
+                                closeInputMenu(false)
+                              }}
+                              className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
+                            >
+                              <TfLink
+                                className="h-5 w-5 text-content-secondary"
+                                aria-hidden="true"
+                              />
+                              Manage connectors
+                            </button>
+                          </div>
                         )}
                         {contextUsage && (
                           <div className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary md:hidden">

@@ -1508,6 +1508,12 @@ describe('attested harness transport', () => {
       threadId: 't',
       queueId: 'q',
     })
+    await client.post('/v1/threads/approve', {
+      threadId: 't',
+      runId: 'r',
+      approvalId: 'a',
+      approved: true,
+    })
     await client.post('/v1/threads/cancel', { threadId: 'other', runId: 'o' })
     expect(
       await typesOf(
@@ -1530,6 +1536,7 @@ describe('attested harness transport', () => {
       ['/v1/threads/cancel', 'instance-1'],
       ['/v1/threads/queue/send', 'instance-1'],
       ['/v1/threads/queue/remove', 'instance-1'],
+      ['/v1/threads/approve', 'instance-1'],
       ['/v1/threads/cancel', null],
       ['/v1/threads/follow', 'instance-1'],
       ['/v1/threads/cancel', 'instance-2'],

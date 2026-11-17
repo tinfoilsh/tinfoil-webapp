@@ -1,0 +1,322 @@
+{
+  "description": "A reply that calls a connected app's tool, which waits for the user to approve it, then answers from what the tool returned.",
+  "frames": [
+    {
+      "id": 0,
+      "event": {
+        "type": "RUN_STARTED",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
+        "runId": "00000000000000000000000000000002",
+        "instance": "00000000000000000000000000000003"
+      }
+    },
+    {
+      "id": 1,
+      "event": {
+        "type": "MESSAGES_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:01Z",
+        "messages": [
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "role": "user",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "content": "test message"
+          }
+        ],
+        "hasOlder": false
+      }
+    },
+    {
+      "id": 2,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:02Z",
+        "snapshot": {
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "New Chat",
+            "titleState": "placeholder",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "activityAt": "2026-01-01T00:00:00Z",
+            "projectId": null,
+            "model": "kimi-k3",
+            "webSearchEnabled": false,
+            "pinned": false,
+            "contextUsage": {
+              "usedTokens": 96,
+              "limitTokens": 6553,
+              "percentage": 1.4649778727300473
+            },
+            "activeRun": {
+              "runId": "00000000000000000000000000000002",
+              "expiresAt": "2026-01-01T00:00:00Z",
+              "instance": "00000000000000000000000000000003"
+            },
+            "messageCount": 1
+          },
+          "queue": [],
+          "rateLimit": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "event": {
+        "type": "TOOL_CALL_START",
+        "timestamp": "2026-01-01T00:00:03Z",
+        "toolCallId": "app-call",
+        "toolCallName": "fake__create_page",
+        "parentMessageId": "msg_00000000000000000000000000000005"
+      }
+    },
+    {
+      "id": 4,
+      "event": {
+        "type": "TOOL_CALL_ARGS",
+        "timestamp": "2026-01-01T00:00:04Z",
+        "toolCallId": "app-call",
+        "delta": "{\"title\":\"Plans\"}"
+      }
+    },
+    {
+      "id": 5,
+      "event": {
+        "type": "TOOL_CALL_END",
+        "timestamp": "2026-01-01T00:00:05Z",
+        "toolCallId": "app-call"
+      }
+    },
+    {
+      "id": 6,
+      "event": {
+        "type": "ACTIVITY_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:06Z",
+        "messageId": "act_app-call",
+        "activityType": "TOOL",
+        "content": {
+          "toolCallId": "app-call",
+          "tool": "fake__create_page",
+          "progress": 0,
+          "output": []
+        },
+        "display": {
+          "status": "running",
+          "sources": [],
+          "connector": {
+            "id": "0000000000006_00000000-0000-4000-8000-000000000006",
+            "name": "Fake",
+            "url": "https://mcp.example.test/mcp",
+            "tool": "create_page",
+            "title": "Create a page"
+          }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "event": {
+        "type": "ACTIVITY_DELTA",
+        "timestamp": "2026-01-01T00:00:07Z",
+        "messageId": "act_app-call",
+        "activityType": "TOOL",
+        "patch": [],
+        "display": {
+          "status": "running",
+          "sources": [],
+          "connector": {
+            "id": "0000000000006_00000000-0000-4000-8000-000000000006",
+            "name": "Fake",
+            "url": "https://mcp.example.test/mcp",
+            "tool": "create_page",
+            "title": "Create a page",
+            "approval": {
+              "id": "00000000-0000-4000-8000-000000000007",
+              "status": "pending",
+              "expiresAt": "2026-01-01T00:00:00Z"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "event": {
+        "type": "ACTIVITY_DELTA",
+        "timestamp": "2026-01-01T00:00:08Z",
+        "messageId": "act_app-call",
+        "activityType": "TOOL",
+        "patch": [],
+        "display": {
+          "status": "running",
+          "sources": [],
+          "connector": {
+            "id": "0000000000006_00000000-0000-4000-8000-000000000006",
+            "name": "Fake",
+            "url": "https://mcp.example.test/mcp",
+            "tool": "create_page",
+            "title": "Create a page",
+            "approval": {
+              "status": "approved"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "event": {
+        "type": "TOOL_CALL_RESULT",
+        "timestamp": "2026-01-01T00:00:09Z",
+        "messageId": "msg_00000000000000000000000000000008",
+        "toolCallId": "app-call",
+        "role": "tool",
+        "content": {
+          "output": "created Plans"
+        },
+        "display": {
+          "status": "completed",
+          "sources": [],
+          "connector": {
+            "id": "0000000000006_00000000-0000-4000-8000-000000000006",
+            "name": "Fake",
+            "url": "https://mcp.example.test/mcp",
+            "tool": "create_page",
+            "title": "Create a page",
+            "approval": {
+              "status": "approved"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "event": {
+        "type": "TEXT_MESSAGE_CHUNK",
+        "timestamp": "2026-01-01T00:00:10Z",
+        "messageId": "msg_00000000000000000000000000000005",
+        "role": "assistant",
+        "delta": "done"
+      }
+    },
+    {
+      "id": 11,
+      "event": {
+        "type": "STATE_SNAPSHOT",
+        "timestamp": "2026-01-01T00:00:11Z",
+        "snapshot": {
+          "thread": {
+            "id": "0000000000001_00000000-0000-4000-8000-000000000001",
+            "title": "New Chat",
+            "titleState": "placeholder",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "activityAt": "2026-01-01T00:00:00Z",
+            "projectId": null,
+            "model": "kimi-k3",
+            "webSearchEnabled": false,
+            "pinned": false,
+            "contextUsage": {
+              "usedTokens": 281,
+              "limitTokens": 6553,
+              "percentage": 4.288112314970243
+            },
+            "activeRun": null,
+            "messageCount": 2
+          },
+          "queue": [],
+          "rateLimit": {
+            "kind": null
+          }
+        }
+      }
+    },
+    {
+      "id": 12,
+      "event": {
+        "type": "RUN_FINISHED",
+        "timestamp": "2026-01-01T00:00:12Z",
+        "threadId": "0000000000001_00000000-0000-4000-8000-000000000001",
+        "runId": "00000000000000000000000000000002",
+        "metadata": {
+          "messages": [
+            {
+              "id": "msg_00000000000000000000000000000005",
+              "model": "kimi-k3",
+              "modelDisplayName": "Kimi K3",
+              "usage": {
+                "promptTokens": 0,
+                "completionTokens": 0
+              },
+              "isError": false,
+              "isInterrupted": false
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+          },
+          "rateLimit": {
+            "kind": null
+          },
+          "cancelled": false
+        }
+      }
+    }
+  ],
+  "expected": {
+    "messages": [
+      {
+        "content": "test message",
+        "id": "00000000-0000-4000-8000-000000000004",
+        "role": "user",
+        "timeline": []
+      },
+      {
+        "id": "msg_00000000000000000000000000000005",
+        "role": "assistant",
+        "timeline": [
+          {
+            "arguments": "{\"title\":\"Plans\"}",
+            "complete": true,
+            "display": {
+              "status": "completed",
+              "sources": [],
+              "connector": {
+                "id": "0000000000006_00000000-0000-4000-8000-000000000006",
+                "name": "Fake",
+                "url": "https://mcp.example.test/mcp",
+                "tool": "create_page",
+                "title": "Create a page",
+                "approval": {
+                  "status": "approved"
+                }
+              }
+            },
+            "id": "app-call",
+            "name": "fake__create_page",
+            "progress": [],
+            "result": {
+              "output": "created Plans"
+            },
+            "toolCallId": "app-call",
+            "type": "tool_call"
+          },
+          {
+            "content": "done",
+            "id": "msg_00000000000000000000000000000005_content_1",
+            "type": "content"
+          }
+        ]
+      }
+    ],
+    "title": "New Chat",
+    "titleState": "placeholder",
+    "status": "idle"
+  }
+}
