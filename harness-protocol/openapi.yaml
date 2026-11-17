@@ -578,7 +578,7 @@ paths:
       operationId: transcript
       summary: Read a stored chat to move it to the device
       tags: [threads]
-      description: A stored chat as a device keeps it, for moving it to the device.
+      description: A stored chat as a device keeps it, for moving it to the device. A chat with uploaded originals is refused with ATTACHMENTS_UNAVAILABLE and action stop, since the device transfer cannot preserve those files.
       requestBody:
         required: true
         content:
@@ -1012,6 +1012,7 @@ paths:
               required: [file, projectId]
               properties:
                 file: {type: string, contentMediaType: application/octet-stream}
+                original: {type: string, contentMediaType: application/octet-stream, description: "When imageOriginals is offered and file is a converted image, the picked photo with its original filename, after file. Limited to the image group's maxBytes."}
                 projectId: {type: string}
                 documentId: {type: string, description: "The document the upload replaces. Absent for a new document."}
                 key: {type: string, description: "The account's content key, base64."}
@@ -1276,9 +1277,9 @@ paths:
         the client sends the content key, and the harness keeps the file as
         it was uploaded, which the attachment's original names. The turn
         that attaches it sends the original back, and its chat keeps the file
-        while it names the attachment. A file no turn attaches within an
-        hour of its upload is deleted, and a turn that attaches it later
-        keeps the attachment without it. Without the key, as for a device
+        while it names the attachment. Staged files become eligible for cleanup
+        after one hour; if the original is no longer available, attach the file
+        again. Without the key, as for a device
         chat or a signed-out caller, the harness keeps nothing of the file.
       requestBody:
         required: true
@@ -1289,6 +1290,7 @@ paths:
               required: [file]
               properties:
                 file: {type: string, contentMediaType: application/octet-stream}
+                original: {type: string, contentMediaType: application/octet-stream, description: "When imageOriginals is offered and a signed-in, keyed upload sends a converted image, the picked photo with its original filename, after file. Limited to the image group's maxBytes."}
                 key: {type: string, description: "The account's content key, base64. Only for a stored chat."}
       responses:
         "200":
@@ -1843,7 +1845,7 @@ components:
         composer: {$ref: "#/components/schemas/Composer"}
         presets: {type: array, items: {$ref: "#/components/schemas/Preset"}}
         features:
-          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes. documentVersions is true while a project document upload that names a documentId replaces that document. artifacts is true while /v1/artifacts/list and /v1/artifacts/get list and open the artifacts of the account's chats.
+          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes. imageOriginals is true while an image upload may send a separate original file alongside its model copy. documentVersions is true while a project document upload that names a documentId replaces that document. artifacts is true while /v1/artifacts/list and /v1/artifacts/get list and open the artifacts of the account's chats.
           type: object
           additionalProperties: {type: boolean}
 
@@ -2760,6 +2762,8 @@ components:
         textContent: {type: string}
         description: {type: string}
         hasOriginal: {type: boolean, description: "Whether the file is kept as it was uploaded, which /v1/attachments/get returns with original. Absent for an attachment stored before files were kept."}
+        originalFileName: {type: string, description: "Download name when the original differs from the preview."}
+        originalMimeType: {type: string, description: "Download type when the original differs from the preview."}
 
     Attachment:
       description: An attachment as an upload returns it and a device chat keeps it.
@@ -2787,6 +2791,8 @@ components:
         id: {type: string}
         encryptionKey: {type: string}
         storageThreadId: {type: string}
+        fileName: {type: string}
+        mimeType: {type: string}
 
     DocumentPage:
       type: object
@@ -2961,6 +2967,8 @@ components:
                     description: {type: string}
                     attKey: {type: [string, "null"]}
                     hasOriginal: {type: boolean}
+                    originalFileName: {type: string}
+                    originalMimeType: {type: string}
                     original:
                       description: The file as it was uploaded, which /v1/attachments/get-public returns with original.
                       type: object

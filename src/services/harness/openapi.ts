@@ -403,7 +403,7 @@ export interface paths {
     put?: never
     /**
      * Read a stored chat to move it to the device
-     * @description A stored chat as a device keeps it, for moving it to the device.
+     * @description A stored chat as a device keeps it, for moving it to the device. A chat with uploaded originals is refused with ATTACHMENTS_UNAVAILABLE and action stop, since the device transfer cannot preserve those files.
      */
     post: operations['transcript']
     delete?: never
@@ -904,7 +904,7 @@ export interface paths {
     put?: never
     /**
      * Convert a file into an attachment
-     * @description Converts a file into the attachment a turn sends. For a stored chat, the client sends the content key, and the harness keeps the file as it was uploaded, which the attachment's original names. The turn that attaches it sends the original back, and its chat keeps the file while it names the attachment. A file no turn attaches within an hour of its upload is deleted, and a turn that attaches it later keeps the attachment without it. Without the key, as for a device chat or a signed-out caller, the harness keeps nothing of the file.
+     * @description Converts a file into the attachment a turn sends. For a stored chat, the client sends the content key, and the harness keeps the file as it was uploaded, which the attachment's original names. The turn that attaches it sends the original back, and its chat keeps the file while it names the attachment. Staged files become eligible for cleanup after one hour; if the original is no longer available, attach the file again. Without the key, as for a device chat or a signed-out caller, the harness keeps nothing of the file.
      */
     post: operations['attachmentUpload']
     delete?: never
@@ -1275,7 +1275,7 @@ export interface components {
       profileDefaults: components['schemas']['Profile']
       composer: components['schemas']['Composer']
       presets: components['schemas']['Preset'][]
-      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes. documentVersions is true while a project document upload that names a documentId replaces that document. artifacts is true while /v1/artifacts/list and /v1/artifacts/get list and open the artifacts of the account's chats. */
+      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes. imageOriginals is true while an image upload may send a separate original file alongside its model copy. documentVersions is true while a project document upload that names a documentId replaces that document. artifacts is true while /v1/artifacts/list and /v1/artifacts/get list and open the artifacts of the account's chats. */
       features: {
         [key: string]: boolean
       }
@@ -2126,6 +2126,10 @@ export interface components {
       description?: string
       /** @description Whether the file is kept as it was uploaded, which /v1/attachments/get returns with original. Absent for an attachment stored before files were kept. */
       hasOriginal?: boolean
+      /** @description Download name when the original differs from the preview. */
+      originalFileName?: string
+      /** @description Download type when the original differs from the preview. */
+      originalMimeType?: string
     }
     /** @description An attachment as an upload returns it and a device chat keeps it. */
     Attachment: {
@@ -2149,6 +2153,8 @@ export interface components {
       id: string
       encryptionKey: string
       storageThreadId: string
+      fileName?: string
+      mimeType?: string
     }
     DocumentPage: {
       image: string
@@ -2298,6 +2304,8 @@ export interface components {
           description?: string
           attKey: string | null
           hasOriginal?: boolean
+          originalFileName?: string
+          originalMimeType?: string
           /** @description The file as it was uploaded, which /v1/attachments/get-public returns with original. */
           original?: {
             id: string
@@ -3661,6 +3669,8 @@ export interface operations {
       content: {
         'multipart/form-data': {
           file: string
+          /** @description When imageOriginals is offered and file is a converted image, the picked photo with its original filename, after file. Limited to the image group's maxBytes. */
+          original?: string
           projectId: string
           /** @description The document the upload replaces. Absent for a new document. */
           documentId?: string
@@ -3954,6 +3964,8 @@ export interface operations {
       content: {
         'multipart/form-data': {
           file: string
+          /** @description When imageOriginals is offered and a signed-in, keyed upload sends a converted image, the picked photo with its original filename, after file. Limited to the image group's maxBytes. */
+          original?: string
           /** @description The account's content key, base64. Only for a stored chat. */
           key?: string
         }
