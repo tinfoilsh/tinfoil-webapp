@@ -1674,7 +1674,7 @@ describe('attested harness transport', () => {
 
     expect(create).toHaveBeenCalledExactlyOnceWith(
       'harness.example:8443',
-      'tinfoilsh/confidential-tinfoil-harness',
+      { repo: 'tinfoilsh/confidential-tinfoil-harness' },
       { signal: expect.any(AbortSignal) },
     )
     expect(secure.fetch.mock.calls.map(([url]) => url)).toEqual([
