@@ -69,8 +69,9 @@ export function ImageLightbox({
   open: boolean
   onClose: () => void
   onIndexChange: (index: number) => void
-  onDownload?: () => void
+  onDownload?: () => Promise<void>
 }) {
+  const [downloading, setDownloading] = useState(false)
   const slides: Slide[] = images.map((image) => ({
     src: image.src ?? '',
     alt: image.alt,
@@ -90,7 +91,15 @@ export function ImageLightbox({
                   type="button"
                   className="yarl__button"
                   aria-label="Download original"
-                  onClick={onDownload}
+                  disabled={downloading}
+                  onClick={async () => {
+                    setDownloading(true)
+                    try {
+                      await onDownload()
+                    } finally {
+                      setDownloading(false)
+                    }
+                  }}
                 >
                   <TfDownload className="yarl__icon" />
                 </button>,
@@ -363,7 +372,7 @@ export function ImageGalleryProvider({
           images[index]?.attachment.hasOriginal && loadOriginal
             ? () => {
                 const attachment = images[index].attachment
-                void loadOriginal(attachment)
+                return loadOriginal(attachment)
                   .then((file) => {
                     saveDownload(
                       new Blob([file], {
