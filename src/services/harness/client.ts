@@ -150,7 +150,11 @@ export class HarnessClient {
     url: string,
     private readonly getToken: GetToken,
     private readonly connect: Connect = (signal) =>
-      EnclaveHTTPClient.create(new URL(url).host, harnessRepo, { signal }),
+      EnclaveHTTPClient.create(
+        new URL(url).host,
+        { repo: harnessRepo },
+        { signal },
+      ),
   ) {
     const parsed = new URL(url)
     if (
