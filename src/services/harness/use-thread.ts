@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { chatActions } from './chat-actions'
 import { useChatList } from './chat-list'
 import { chatTurns } from './chat-turns'
+import { uploadsAsImage } from './composer'
 import { deviceThreads, storeCutOff, storeRun } from './device-threads'
 import { localThreadStore, memoryThreadStore } from './local-threads'
 import { OpenAttachments } from './open-attachments'
@@ -636,11 +637,31 @@ export function useThread(
   }, [reset, clearCloud, open, controller])
   // Converts a file into the descriptor the turn that uses it sends. An
   // image's descriptor carries the copy the harness gives models; the file
-  // itself is kept apart, to show and download.
+  // itself is kept apart, to show and download. The harness keeps the file a
+  // stored chat attaches as it was uploaded, which the unlocked content key
+  // lets it, and the descriptor names where.
   async function upload(file: File): Promise<AttachmentDescriptor> {
+    if (
+      cloud &&
+      !onDevice(open.get()) &&
+      !keyReady &&
+      session?.features.imageOriginals
+    ) {
+      throw new HarnessError({
+        code: ERROR_CODES.keyRequired,
+        action: ERROR_ACTIONS.unlock,
+        message:
+          'Unlock cloud sync before attaching a file so its original can be kept.',
+      })
+    }
+    const keepsOriginal =
+      !onDevice(open.get()) &&
+      keyReady &&
+      (session?.features.imageOriginals === true ||
+        !uploadsAsImage(file, session?.composer.attachments))
     const { attachment } = await api.upload<{
       attachment: AttachmentDescriptor
-    }>(ROUTES.attachmentUpload, file, {}, { keyless: true })
+    }>(ROUTES.attachmentUpload, file, {}, { keyless: !keepsOriginal })
     if (attachment.kind === 'image')
       attachments.originals.set(attachment.id, {
         base64: uint8ArrayToBase64(new Uint8Array(await file.arrayBuffer())),
@@ -1059,6 +1080,10 @@ export function useThread(
     upload,
     loadImage: (attachment: UIAttachment, signal?: AbortSignal) =>
       openStore().image(open.get().id, attachment, signal),
+    // The file an attachment of the open chat was uploaded as, which the
+    // harness keeps for the chats it stores.
+    originalFile: (attachment: UIAttachment): Promise<Blob> =>
+      openStore().original(open.get().id, attachment),
     // The audio of a message of the open chat, read aloud by the harness.
     async speak(messageId: string, signal: AbortSignal): Promise<Response> {
       const threadId = open.get().id

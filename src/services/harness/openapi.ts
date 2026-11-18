@@ -98,6 +98,33 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/v1/threads/browser/result': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Return a browser action's result
+     * @description The executor of a local browser turn returns one result for the pending
+     *     executionId, authenticated by the turn's private executor token. An
+     *     identical retry is accepted while the run is live; a conflicting or
+     *     unknown execution is refused. The client journals intent before acting
+     *     and the result before sending it. Replaying an event must never repeat
+     *     an action. An uncertain outcome requires observing the page and user
+     *     intervention, rather than replay. Screenshots reach the model during
+     *     this run only; events and the returned thread carry the text alone.
+     */
+    post: operations['browserResult']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/v1/threads/follow': {
     parameters: {
       query?: never
@@ -376,7 +403,7 @@ export interface paths {
     put?: never
     /**
      * Read a stored chat to move it to the device
-     * @description A stored chat as a device keeps it, for moving it to the device.
+     * @description A stored chat as a device keeps it, for moving it to the device. A chat with uploaded originals is refused with ATTACHMENTS_UNAVAILABLE and action stop, since the device transfer cannot preserve those files.
      */
     post: operations['transcript']
     delete?: never
@@ -684,8 +711,31 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Add a document to a project */
+    /**
+     * Add a document to a project, or replace one
+     * @description Reads a file's text into a document of the project, and keeps the file itself, which /v1/projects/documents/download returns. With documentId, the upload is a new version of that document: it keeps the document's id and createdAt, and takes the new file's name, type, size and text. The key, projectId and documentId come before the file.
+     */
     post: operations['projectDocumentUpload']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/v1/projects/documents/download': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Download a document's file
+     * @description Returns the file a document was read from, as it was uploaded. The client names and types it from the document. A document without hasFile, stored before files were kept, is refused with THREAD_NOT_FOUND.
+     */
+    post: operations['projectDocumentDownload']
     delete?: never
     options?: never
     head?: never
@@ -703,6 +753,46 @@ export interface paths {
     put?: never
     /** Remove a document from a project */
     post: operations['projectDocumentDelete']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/v1/artifacts/list': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * List artifacts
+     * @description Lists a page of the artifacts the replies in the account's stored chats drew, or with projectId in that project's chats: each render_artifact_preview call whose arguments a client draws, in a message the chat shows. The chats come in the order the chat list shows them, and each chat's artifacts newest first. They are read from the chats, so a chat deleted, moved or changed takes its artifacts with it, and a chat the list files again between pages may be listed twice. The list holds no artifact's source, which /v1/artifacts/get returns. Device chats are not listed.
+     */
+    post: operations['artifactsList']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/v1/artifacts/get': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Open an artifact
+     * @description Returns an artifact of a stored chat, named by its reply and call, with the arguments the reply drew it with, which a client draws as it draws the call in the chat.
+     */
+    post: operations['artifactGet']
     delete?: never
     options?: never
     head?: never
@@ -814,7 +904,7 @@ export interface paths {
     put?: never
     /**
      * Convert a file into an attachment
-     * @description Converts a file into the attachment a turn sends. The harness keeps nothing of it.
+     * @description Converts a file into the attachment a turn sends. For a stored chat, the client sends the content key, and the harness keeps the file as it was uploaded, which the attachment's original names. The turn that attaches it sends the original back, and its chat keeps the file while it names the attachment. Staged files become eligible for cleanup after one hour; if the original is no longer available, attach the file again. Without the key, as for a device chat or a signed-out caller, the harness keeps nothing of the file.
      */
     post: operations['attachmentUpload']
     delete?: never
@@ -1117,6 +1207,7 @@ export interface components {
           | 'ATTACHMENT_UNSUPPORTED'
           | 'ATTACHMENTS_UNAVAILABLE'
           | 'BAD_REQUEST'
+          | 'BROWSER_TIMEOUT'
           | 'CHAT_FLAGGED'
           | 'COMPACTION_FAILED'
           | 'CONTEXT_TOO_LARGE'
@@ -1184,7 +1275,7 @@ export interface components {
       profileDefaults: components['schemas']['Profile']
       composer: components['schemas']['Composer']
       presets: components['schemas']['Preset'][]
-      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes. */
+      /** @description Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes. imageOriginals is true while an image upload may send a separate original file alongside its model copy. documentVersions is true while a project document upload that names a documentId replaces that document. artifacts is true while /v1/artifacts/list and /v1/artifacts/get list and open the artifacts of the account's chats. */
       features: {
         [key: string]: boolean
       }
@@ -1300,9 +1391,103 @@ export interface components {
       attachments?: components['schemas']['SentAttachment'][]
       /** @description The widgets this client renders. */
       widgets?: string[]
+      browser?: components['schemas']['BrowserAccess']
       /** @description A compact turn, or a retry that compacts again, summarizes the chat's latest exchange too, as COMPACTION_START describes. It is refused on any other kind. A client sends it only while the session's features.compactLatest is true, and when it shows a compaction marker at the end of a chat. */
       compactLatest?: boolean
       options?: components['schemas']['TurnOptions']
+    }
+    /**
+     * @description Available only when features.browserTools is true, on local send turns
+     *     without research. The client controls selected tabs and supplies a new
+     *     executor identity and secret for each turn. The token is sent only in
+     *     sealed bodies, never in prompts, events or persistent chat records.
+     *     Browser actions run sequentially, at most 40 per turn. Each waits at
+     *     most five minutes for its executor; a timeout ends the run with
+     *     BROWSER_TIMEOUT and leaves later actions unexecuted. Clients cancel a run when they
+     *     relinquish browser control, and stop local dispatch immediately.
+     */
+    BrowserAccess: {
+      /** Format: uuid */
+      executorId: string
+      token: string
+    }
+    /** @description Arguments validated against the model-facing browser tool schema. The executor additionally validates selected tabs, URL schemes, current references, and action permissions before dispatch. */
+    BrowserAction: {
+      /** @enum {string} */
+      action:
+        | 'tabs'
+        | 'read'
+        | 'screenshot'
+        | 'click'
+        | 'hover'
+        | 'fill'
+        | 'select'
+        | 'press'
+        | 'scroll'
+        | 'navigate'
+        | 'back'
+        | 'forward'
+        | 'open'
+        | 'switch'
+        | 'close'
+        | 'wait'
+      tabId?: number
+      ref?: string
+      text?: string
+      url?: string
+      /** @enum {string} */
+      key?:
+        | 'Enter'
+        | 'Tab'
+        | 'Escape'
+        | 'ArrowDown'
+        | 'ArrowUp'
+        | 'ArrowLeft'
+        | 'ArrowRight'
+        | 'Backspace'
+      /** @enum {string} */
+      direction?: 'up' | 'down'
+      /** @description The fresh screenshot whose pixels a coordinate action uses. */
+      screenshotId?: string
+      x?: number
+      y?: number
+    }
+    BrowserResult: {
+      /** @description Page data or a structured action error. Limited to 64 KiB UTF-8. */
+      text: string
+      /** @description Optional base64 JPEG viewport, at most 4 million pixels. Read only by vision models. */
+      image?: string
+    }
+    BrowserResultInput: {
+      threadId: components['schemas']['Identifier']
+      runId: string
+      executorId: string
+      token: string
+      executionId: string
+      result: components['schemas']['BrowserResult']
+    }
+    /**
+     * @description A complete, validated browser operation ready for the selected executor.
+     *     Only this event authorizes dispatch, never partial TOOL_CALL_ARGS.
+     *     executionId identifies the operation across stream reconnections.
+     *     Every replay is reconciled against the executor's local journal.
+     */
+    BrowserToolRequestEvent: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'BROWSER_TOOL_REQUEST'
+      timestamp?: components['schemas']['Timestamp']
+      /**
+       * Format: date-time
+       * @description The executor refuses dispatch after this deadline, including after a delayed review or stream replay.
+       */
+      expiresAt: string
+      executionId: string
+      toolCallId: string
+      executorId: string
+      operation: components['schemas']['BrowserAction']
     }
     TurnOptions: {
       model?: string
@@ -1360,6 +1545,7 @@ export interface components {
       description?: string
       pages?: components['schemas']['DocumentPage'][]
       base64?: string
+      original?: components['schemas']['OriginalFile']
     }
     FollowInput: {
       /** @description The account's content key, base64. Absent for device chats and signed-out callers. */
@@ -1388,6 +1574,7 @@ export interface components {
       | components['schemas']['ToolCallArgsEvent']
       | components['schemas']['ToolCallEndEvent']
       | components['schemas']['ToolCallResultEvent']
+      | components['schemas']['BrowserToolRequestEvent']
       | components['schemas']['ActivitySnapshotEvent']
       | components['schemas']['ActivityDeltaEvent']
       | components['schemas']['CompactionStartEvent']
@@ -1937,6 +2124,12 @@ export interface components {
       thumbnail?: string
       textContent?: string
       description?: string
+      /** @description Whether the file is kept as it was uploaded, which /v1/attachments/get returns with original. Absent for an attachment stored before files were kept. */
+      hasOriginal?: boolean
+      /** @description Download name when the original differs from the preview. */
+      originalFileName?: string
+      /** @description Download type when the original differs from the preview. */
+      originalMimeType?: string
     }
     /** @description An attachment as an upload returns it and a device chat keeps it. */
     Attachment: {
@@ -1953,6 +2146,15 @@ export interface components {
       base64?: string
       /** @description An imported image's original, only in an import's lines. A client keeps it apart from the chat. */
       originalBase64?: string
+      original?: components['schemas']['OriginalFile']
+    }
+    /** @description Where an upload kept the file as it was uploaded. A turn sends it back as the upload returned it. */
+    OriginalFile: {
+      id: string
+      encryptionKey: string
+      storageThreadId: string
+      fileName?: string
+      mimeType?: string
     }
     DocumentPage: {
       image: string
@@ -2101,6 +2303,14 @@ export interface components {
           textContent?: string
           description?: string
           attKey: string | null
+          hasOriginal?: boolean
+          originalFileName?: string
+          originalMimeType?: string
+          /** @description The file as it was uploaded, which /v1/attachments/get-public returns with original. */
+          original?: {
+            id: string
+            attKey: string
+          }
         }[]
       }[]
     }
@@ -2117,6 +2327,8 @@ export interface components {
       mimeType?: string
       textContent?: string
       pages?: components['schemas']['DocumentPage'][]
+      /** @description Asks for the file as it was uploaded: of the attachment a stored chat names by id, or, for a share, the original that id and attKey name. */
+      original?: boolean
     }
     /** @description The account's settings. A field a profile leaves out takes its value from the session's profileDefaults. */
     Profile: {
@@ -2233,8 +2445,27 @@ export interface components {
       sizeBytes: number
       content?: string
       thumbnailBase64?: string
+      /** @description Whether the uploaded file is kept, which /v1/projects/documents/download returns. A document stored before files were kept, or restored from a backup, has only its text. */
+      hasFile?: boolean
       createdAt?: components['schemas']['Timestamp']
       updatedAt?: components['schemas']['Timestamp']
+    }
+    /** @description An artifact a reply in a stored chat drew, without its source. */
+    Artifact: {
+      threadId: string
+      threadTitle: string
+      /** @description The project the chat is in. */
+      projectId: string | null
+      /** @description The reply that drew it. */
+      messageId: string
+      /** @description The call that drew it, as the reply's timeline names it. */
+      toolCallId: string
+      /** @description Empty when the call gave none. */
+      title: string
+      /** @description The kind of source the artifact shows. A client shows one of a kind it does not know as a generic artifact. */
+      sourceType: ('url' | 'html' | 'markdown') | string
+      /** @description When the reply was written, as the message records it. */
+      createdAt: string
     }
     /** @description How the account's key was set up. A client treats an origin it does not know as unknown. */
     KeyOrigin: ('passkey' | 'manual' | 'recovery' | 'start_fresh') | string
@@ -2540,6 +2771,37 @@ export interface operations {
     }
     responses: {
       200: components['responses']['RunEvents']
+      default: components['responses']['Error']
+    }
+  }
+  browserResult: {
+    parameters: {
+      query?: never
+      header?: {
+        /** @description The instance a run's RUN_STARTED named. A deployment of several harnesses routes a request about the run to it by this header, which says nothing about the caller. */
+        'X-Tinfoil-Harness-Instance'?: components['parameters']['HarnessInstance']
+      }
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BrowserResultInput']
+      }
+    }
+    responses: {
+      /** @description The result was accepted. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            /** @constant */
+            accepted: true
+          }
+        }
+      }
       default: components['responses']['Error']
     }
   }
@@ -3407,7 +3669,11 @@ export interface operations {
       content: {
         'multipart/form-data': {
           file: string
+          /** @description When imageOriginals is offered and file is a converted image, the picked photo with its original filename, after file. Limited to the image group's maxBytes. */
+          original?: string
           projectId: string
+          /** @description The document the upload replaces. Absent for a new document. */
+          documentId?: string
           /** @description The account's content key, base64. */
           key?: string
         }
@@ -3421,6 +3687,36 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['ProjectDocument']
+        }
+      }
+      default: components['responses']['Error']
+    }
+  }
+  projectDocumentDownload: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @description The account's content key, base64. */
+          key: string
+          projectId: components['schemas']['Identifier']
+          documentId: components['schemas']['Identifier']
+        }
+      }
+    }
+    responses: {
+      /** @description The document's file. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/octet-stream': string
         }
       }
       default: components['responses']['Error']
@@ -3445,6 +3741,75 @@ export interface operations {
     }
     responses: {
       200: components['responses']['Empty']
+      default: components['responses']['Error']
+    }
+  }
+  artifactsList: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @description The account's content key, base64. */
+          key: string
+          projectId?: components['schemas']['Identifier']
+          cursor?: string
+        }
+      }
+    }
+    responses: {
+      /** @description A page of artifacts. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            artifacts: components['schemas']['Artifact'][]
+            /** @description Empty on the last page. */
+            nextCursor: string
+          }
+        }
+      }
+      default: components['responses']['Error']
+    }
+  }
+  artifactGet: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @description The account's content key, base64. */
+          key: string
+          threadId: components['schemas']['Identifier']
+          messageId: components['schemas']['Identifier']
+          toolCallId: string
+        }
+      }
+    }
+    responses: {
+      /** @description The artifact and its arguments. */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            artifact: components['schemas']['Artifact']
+            /** @description The call's arguments as JSON, as the chat's timeline holds them. */
+            arguments: string
+          }
+        }
+      }
       default: components['responses']['Error']
     }
   }
@@ -3599,6 +3964,10 @@ export interface operations {
       content: {
         'multipart/form-data': {
           file: string
+          /** @description When imageOriginals is offered and a signed-in, keyed upload sends a converted image, the picked photo with its original filename, after file. Limited to the image group's maxBytes. */
+          original?: string
+          /** @description The account's content key, base64. Only for a stored chat. */
+          key?: string
         }
       }
     }

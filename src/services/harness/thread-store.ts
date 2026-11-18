@@ -108,6 +108,8 @@ export interface ThreadStore {
     attachment: UIAttachment,
     signal?: AbortSignal,
   ): Promise<Blob>
+  // The file an attachment was uploaded as, where the store keeps it.
+  original(threadId: string | null, attachment: UIAttachment): Promise<Blob>
 }
 
 // The changes a store makes to the chat list it belongs to, shown before
@@ -132,14 +134,21 @@ export function cloudThreads(
   list: ListEdits,
   attachments: OpenAttachments,
 ): ThreadStore {
+  // An attachment's content as the harness stores it, or with `original` the
+  // file it was uploaded as.
   const download = (
     threadId: string | null,
     attachment: UIAttachment,
     signal?: AbortSignal,
+    original = false,
   ) =>
     api.download(
       ROUTES.attachmentGet,
-      { id: attachment.id, ...(threadId ? { threadId } : {}) },
+      {
+        id: attachment.id,
+        ...(threadId ? { threadId } : {}),
+        ...(original ? { original } : {}),
+      },
       { signal },
     )
   // The chats deleted here, which a change answered after the deletion
@@ -263,5 +272,7 @@ export function cloudThreads(
         ? imageBlob(original)
         : download(threadId, attachment, signal)
     },
+    original: (threadId, attachment) =>
+      download(threadId, attachment, undefined, true),
   }
 }

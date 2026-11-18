@@ -40,6 +40,7 @@ it.each(['/v1/attachments/upload', '/v1/projects/documents/upload'] as const)(
       cloud: true,
       session: {
         ...testSession,
+        features: { ...testSession.features, imageOriginals: true },
         composer: {
           ...testSession.composer,
           attachments: groups,
@@ -70,17 +71,14 @@ it.each(['/v1/attachments/upload', '/v1/projects/documents/upload'] as const)(
       },
     )
     client.upload.mockResolvedValue({ converted: true })
-    await api.upload(
-      route,
-      new File(['large original'.repeat(100)], 'photo.png', {
-        type: 'image/png',
-      }),
-      {},
-      { keyless: route === '/v1/attachments/upload' },
-    )
+    const picked = new File(['large original'.repeat(100)], 'photo.png', {
+      type: 'image/png',
+    })
+    await api.upload(route, picked)
     const uploaded = client.upload.mock.calls[0][1] as File
     expect(await uploaded.text()).toBe('scaled')
     expect(uploaded.type).toBe('image/jpeg')
+    expect(client.upload.mock.calls[0][4]).toBe(picked)
     expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 1536, 768)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:source')
   },

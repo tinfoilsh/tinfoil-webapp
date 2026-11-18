@@ -25,7 +25,7 @@ import {
   it,
   vi,
 } from 'vitest'
-import { client, KEY, signIn } from '../../harness-fixture'
+import { client, KEY, signIn, testSession } from '../../harness-fixture'
 import {
   resetChatStoresAroundEachTest,
   storedThread,
@@ -183,6 +183,14 @@ const listPage = (threads: ThreadSummary[]) => ({
 
 // The harness's answer to each route a test expects, by path.
 let routes: Record<string, (input: Record<string, unknown>) => unknown>
+const answerRoutes = () =>
+  client.post.mockImplementation(
+    async (path: string, input: Record<string, unknown>) => {
+      const route = routes[path]
+      if (!route) throw new Error(`Unexpected request: ${path}`)
+      return route(input)
+    },
+  )
 const requested = (path: string) =>
   client.post.mock.calls
     .filter(([called]) => called === path)
@@ -284,13 +292,7 @@ beforeEach(() => {
     '/v1/threads/list': (input) =>
       listPage(input.projectId ? [projectChat] : [mainChat, projectChat]),
   }
-  client.post.mockImplementation(
-    async (path: string, input: Record<string, unknown>) => {
-      const route = routes[path]
-      if (!route) throw new Error(`Unexpected request: ${path}`)
-      return route(input)
-    },
-  )
+  answerRoutes()
 })
 
 it("shows a project route's project loading until the content key opens it", async () => {
@@ -402,6 +404,220 @@ it('returns a document whose removal fails', async () => {
     variant: 'destructive',
   })
   expect(requested('/v1/projects/get')).toHaveLength(1)
+})
+
+// The files the page saves to the device, by the name and bytes of each.
+function captureSavedFiles() {
+  const saved: { name: string; blob: Blob }[] = []
+  vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+    saved.push({ name: '', blob: blob as Blob })
+    return `blob:saved-${saved.length}`
+  })
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    saved[saved.length - 1].name = this.download
+  })
+  return saved
+}
+
+it("downloads a document's uploaded file under the document's name and type", async () => {
+  const report = {
+    ...projectDocument('doc-report', 'report.pdf'),
+    contentType: 'application/pdf',
+    hasFile: true,
+  }
+  routes['/v1/projects/get'] = () => ({
+    ...structuredClone(project),
+    documents: [report],
+  })
+  client.download.mockResolvedValue(
+    new Blob(['%PDF-1.7'], { type: 'application/octet-stream' }),
+  )
+  const saved = captureSavedFiles()
+  render(projectView())
+  await openDocuments()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Download report.pdf' }))
+
+  await waitFor(() => expect(saved).toHaveLength(1))
+  expect(client.download).toHaveBeenCalledExactlyOnceWith(
+    '/v1/projects/documents/download',
+    { key: KEY, projectId: project.id, documentId: report.id },
+    expect.any(AbortSignal),
+  )
+  expect(saved[0].name).toBe('report.pdf')
+  expect(saved[0].blob.type).toBe('application/pdf')
+  expect(await saved[0].blob.text()).toBe('%PDF-1.7')
+  expect(page.toast).not.toHaveBeenCalled()
+})
+
+it.each([
+  { filename: 'notes.md', savedAs: 'notes.md', type: 'text/markdown' },
+  { filename: 'TODO.TXT', savedAs: 'TODO.TXT', type: 'text/plain' },
+  { filename: 'report.pdf', savedAs: 'report.pdf.md', type: 'text/markdown' },
+])(
+  'saves the text of $filename, whose file is not kept, as $savedAs',
+  async ({ filename, savedAs, type }) => {
+    const textOnly = projectDocument('doc-text', filename)
+    routes['/v1/projects/get'] = () => ({
+      ...structuredClone(project),
+      documents: [textOnly],
+    })
+    const saved = captureSavedFiles()
+    render(projectView())
+    await openDocuments()
+
+    fireEvent.click(
+      screen.getByRole('button', { name: `Download ${filename}` }),
+    )
+
+    await waitFor(() => expect(saved).toHaveLength(1))
+    expect(saved[0].name).toBe(savedAs)
+    expect(saved[0].blob.type).toBe(`${type};charset=utf-8`)
+    expect(await saved[0].blob.text()).toBe(textOnly.content)
+    expect(client.download).not.toHaveBeenCalled()
+  },
+)
+
+it('says so when a document cannot be downloaded', async () => {
+  routes['/v1/projects/get'] = () => ({
+    ...structuredClone(project),
+    documents: [{ ...notes, hasFile: true }],
+  })
+  client.download.mockRejectedValue(
+    new HarnessError({
+      code: 'THREAD_NOT_FOUND',
+      action: 'stop',
+      message: 'The document has no file',
+    }),
+  )
+  const saved = captureSavedFiles()
+  render(projectView())
+  await openDocuments()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Download notes.md' }))
+
+  await waitFor(() =>
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Failed to download document',
+      description: 'The document could not be downloaded. Please try again.',
+      variant: 'destructive',
+    }),
+  )
+  expect(saved).toEqual([])
+})
+
+// Signs in to a harness that replaces a project document an upload names.
+function signInWithDocumentVersions() {
+  signIn({
+    cloud: true,
+    session: {
+      ...testSession,
+      features: { ...testSession.features, documentVersions: true },
+    },
+  })
+  answerRoutes()
+}
+
+// Picks a file in the picker the page opens next, as the user would.
+function pickWhenAsked(file: File) {
+  vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (
+    this: HTMLInputElement,
+  ) {
+    fireEvent.change(this, { target: { files: [file] } })
+  })
+}
+
+it('replaces a document with the file picked for it, as a new version', async () => {
+  signInWithDocumentVersions()
+  routes['/v1/projects/get'] = () => ({
+    ...structuredClone(project),
+    documents: [notes, plan],
+  })
+  const held = holdUploads()
+  render(projectView())
+  await openDocuments()
+  const revised = new File(['# Revised'], 'notes-v2.md', {
+    type: 'text/markdown',
+  })
+  pickWhenAsked(revised)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Replace notes.md' }))
+
+  await waitFor(() => expect(client.upload).toHaveBeenCalledOnce())
+  const [path, file, fields, signal] = client.upload.mock.calls[0]
+  expect(path).toBe('/v1/projects/documents/upload')
+  expect(file).toBe(revised)
+  // The harness reads the ids before the file, so the form names them first.
+  expect(Object.entries(fields)).toEqual([
+    ['key', KEY],
+    ['projectId', project.id],
+    ['documentId', notes.id],
+  ])
+  expect(signal).toBeInstanceOf(AbortSignal)
+  expect(screen.getByText('Uploading...')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Remove notes.md' })).toBeEnabled()
+
+  const replaced = { ...notes, filename: revised.name, content: '# Revised' }
+  routes['/v1/projects/get'] = () => ({
+    ...structuredClone(project),
+    documents: [replaced, plan],
+  })
+  await act(async () => held.get(revised.name)!.resolve(replaced))
+
+  expect(
+    await screen.findByRole('button', { name: 'Replace notes-v2.md' }),
+  ).toBeEnabled()
+  expect(
+    screen.queryByRole('button', { name: 'Replace notes.md' }),
+  ).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Replace plan.md' })).toBeEnabled()
+  expect(screen.queryByText('Uploading...')).not.toBeInTheDocument()
+  expect(requested('/v1/projects/get')).toHaveLength(2)
+  expect(page.toast).not.toHaveBeenCalled()
+})
+
+it("refuses a replacement over the session's limit before uploading it", async () => {
+  signInWithDocumentVersions()
+  routes['/v1/projects/get'] = () => ({
+    ...structuredClone(project),
+    documents: [notes],
+  })
+  render(projectView())
+  await openDocuments()
+  // The session takes project documents up to 500 bytes.
+  pickWhenAsked(new File([new Uint8Array(501)], 'notes.md'))
+
+  fireEvent.click(screen.getByRole('button', { name: 'Replace notes.md' }))
+
+  await waitFor(() =>
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Upload failed',
+      description: 'Text file exceeds the limit of 500 B.',
+      variant: 'destructive',
+    }),
+  )
+  expect(client.upload).not.toHaveBeenCalled()
+  expect(screen.queryByText('Uploading...')).not.toBeInTheDocument()
+  expect(requested('/v1/projects/get')).toHaveLength(1)
+})
+
+it('offers no replacement from a harness that only adds documents', async () => {
+  routes['/v1/projects/get'] = () => ({
+    ...structuredClone(project),
+    documents: [notes],
+  })
+  render(projectView())
+  await openDocuments()
+
+  expect(
+    screen.getByRole('button', { name: 'Download notes.md' }),
+  ).toBeEnabled()
+  expect(
+    screen.queryByRole('button', { name: 'Replace notes.md' }),
+  ).not.toBeInTheDocument()
 })
 
 it('opens the project list in the chat sidebar after leaving a project', async () => {

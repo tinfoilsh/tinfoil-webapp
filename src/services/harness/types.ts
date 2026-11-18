@@ -35,8 +35,10 @@ export type HarnessErrorBody = Omit<Schemas['ErrorBody'], 'code'> & {
 }
 
 // An attachment, in the one shape an upload returns, a turn sends, a thread
-// stores and a view lists. The harness keeps nothing of an upload, so a turn
-// carries an image's bytes; a view leaves out image bytes and page images.
+// stores and a view lists. The harness keeps nothing of an upload but, for a
+// stored chat, the file as it was uploaded, which `original` names and the
+// turn sends back; so a turn carries an image's bytes. A view leaves out
+// image bytes and page images.
 export type AttachmentDescriptor = Schemas['Attachment']
 export type ToolDisplay = Schemas['ToolDisplay']
 export type Annotation = Schemas['Annotation']
@@ -53,10 +55,19 @@ export type SavedAnswers = NonNullable<TimelineBlock['answers']>
 export type WidgetAnswers = Schemas['WidgetAnswers']
 export type AnswerChanges = MessageAnswer['answers']
 
+// An attachment of a message as this client shows it. A device chat's may
+// hold the bytes this device keeps for it, and a stored chat's says whether
+// the harness keeps the file as it was uploaded.
+export type MessageAttachment = AttachmentDescriptor &
+  Pick<
+    Schemas['AttachmentView'],
+    'hasOriginal' | 'originalFileName' | 'originalMimeType'
+  >
+
 // A message as this client shows it, whose attachments may hold the bytes
 // this device keeps for them.
 export type Message = Omit<Schemas['MessageView'], 'attachments'> & {
-  attachments?: AttachmentDescriptor[]
+  attachments?: MessageAttachment[]
 }
 
 export type ThreadSummary = Schemas['ThreadSummary']
@@ -128,3 +139,15 @@ export interface Frame {
 
 // A shared chat, whose attachments name the key that reads each blob.
 export type SharedThread = Schemas['SharedThread']
+
+// A project's document as the harness stores it.
+export type StoredProjectDocument = Schemas['ProjectDocument']
+
+// An artifact a reply in a stored chat drew, as a list names it, without its
+// source; a page of them; and one opened, with the arguments its reply drew
+// it with.
+export type Artifact = Schemas['Artifact']
+export type ArtifactPage =
+  operations['artifactsList']['responses'][200]['content']['application/json']
+export type OpenedArtifact =
+  operations['artifactGet']['responses'][200]['content']['application/json']

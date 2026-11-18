@@ -34,13 +34,24 @@ const limitLabel = (bytes: number, text: boolean) => {
   return `${stated}MB`
 }
 
+// The group that takes a file: the one that names its extension, or else the
+// one that takes text.
+function groupOf(file: File, groups: readonly FileGroup[]) {
+  const extension = extensionOf(file.name)
+  return (
+    (extension && groups.find((group) => group.accept.includes(extension))) ||
+    groups.find((group) => group.accept.includes(TEXT_EXTENSION))
+  )
+}
+
+// Whether a file uploads as an image, which its group scales down.
+export const uploadsAsImage = (file: File, groups: readonly FileGroup[] = []) =>
+  !!groupOf(file, groups)?.imageMaxSide
+
 // Refuses a picked file before it uploads: one larger than its group takes,
 // or one of a type no group names when no group takes text.
 export function checkUpload(file: File, groups: readonly FileGroup[]) {
-  const extension = extensionOf(file.name)
-  const group =
-    (extension && groups.find((group) => group.accept.includes(extension))) ||
-    groups.find((group) => group.accept.includes(TEXT_EXTENSION))
+  const group = groupOf(file, groups)
   if (!group)
     throw new HarnessError(
       {

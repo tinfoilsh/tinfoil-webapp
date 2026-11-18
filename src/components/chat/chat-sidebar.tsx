@@ -20,6 +20,7 @@ import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useAuth, useUser } from '@clerk/react'
 import {
   TfBoxX,
+  TfDocumentWithCode,
   TfFloppyDisk,
   TfFolderPlus,
   TfMagnifyingGlass,
@@ -43,6 +44,7 @@ import {
 import { AnimatePresence, motion } from 'framer-motion'
 import { useRouter } from 'next/router'
 import { PiSpinner } from 'react-icons/pi'
+import { ArtifactsModal } from './artifacts-modal'
 import { ChatList, type ChatItemData } from './chat-list'
 import { updatedLabel } from './chat-list-utils'
 import { CONSTANTS } from './constants'
@@ -277,7 +279,12 @@ export const ChatSidebar = memo(function ChatSidebar({
   } = useUpgradeToPro()
   // Without cloud sync every chat stays on this device. With it, "Enable
   // local chats" adds a Local tab whose new chats stay on this device.
-  const { keyLocked, cloud: cloudSyncEnabled } = useHarness()
+  const { keyLocked, keyReady, cloud: cloudSyncEnabled, session } = useHarness()
+  // The harness lists the artifacts of the chats it stores, which the
+  // content key opens.
+  const artifactsAvailable =
+    session?.features.artifacts === true && cloudSyncEnabled && keyReady
+  const [isArtifactsOpen, setIsArtifactsOpen] = useState(false)
   const settingsAttentionId = useId()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const localOnlyModeEnabled = useLocalChatsSetting()
@@ -820,6 +827,24 @@ export const ChatSidebar = memo(function ChatSidebar({
                 Chats <span className="text-content-muted">{modKey}.</span>
               </span>
             </div>
+
+            {artifactsAvailable && (
+              <div className="group relative">
+                <button
+                  onClick={() => setIsArtifactsOpen(true)}
+                  className={cn(
+                    'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
+                    'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                  )}
+                  aria-label="Artifacts"
+                >
+                  <TfDocumentWithCode className="h-5 w-5" aria-hidden="true" />
+                </button>
+                <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                  Artifacts
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Settings button, pinned to the bottom of the rail */}
@@ -930,6 +955,20 @@ export const ChatSidebar = memo(function ChatSidebar({
               </span>
             </Link>
           </div>
+
+          {/* Artifacts open in a dialog, so the list takes no room here. */}
+          {artifactsAvailable && (
+            <div className="relative z-20 flex flex-none items-center gap-2 px-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsArtifactsOpen(true)}
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent px-2 py-2 text-sm text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary"
+              >
+                <TfDocumentWithCode className="h-4 w-4" aria-hidden="true" />
+                <span className="font-aeonik font-medium">Artifacts</span>
+              </button>
+            </div>
+          )}
 
           {/* Message for non-premium users (signed in or not) */}
           {upsellVariant && (
@@ -2317,6 +2356,17 @@ export const ChatSidebar = memo(function ChatSidebar({
         <div
           className="fixed inset-0 z-30 bg-black/50 md:hidden"
           onClick={() => setIsOpen(false)}
+        />
+      )}
+
+      {artifactsAvailable && (
+        <ArtifactsModal
+          isOpen={isArtifactsOpen}
+          onClose={() => setIsArtifactsOpen(false)}
+          onOpenChat={(chatId) => {
+            handleChatSelect(chatId)
+            if (isMobile) setIsOpen(false)
+          }}
         />
       )}
     </>

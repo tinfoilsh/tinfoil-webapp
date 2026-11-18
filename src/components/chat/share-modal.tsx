@@ -525,7 +525,7 @@ function ShareModalContent({
                         <p className="text-sm text-content-secondary">
                           {isRevoking
                             ? 'Revoking share link...'
-                            : 'Disabling sharing deactivates existing links.'}
+                            : 'If you share this chat, anyone with the link can download originals kept with these messages, including photo or document metadata. Disabling sharing deactivates the link.'}
                         </p>
 
                         {hasShare && !shareUrl && (

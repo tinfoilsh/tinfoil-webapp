@@ -42,6 +42,10 @@ export interface ProjectContextValue {
   updateProject: (id: string, data: UpdateProjectData) => Promise<void>
   deleteProject: (id: string) => Promise<void>
   uploadDocument: (file: File, content: string) => Promise<ProjectDocument>
+  // Replaces a document with a new version of it, read from the file.
+  replaceDocument: (docId: string, file: File) => Promise<ProjectDocument>
+  // The document as a file to save: the file it was uploaded as, or its text.
+  downloadDocument: (document: ProjectDocument) => Promise<File>
   removeDocument: (docId: string) => Promise<void>
   refreshDocuments: () => Promise<void>
   addUploadingFile: (file: UploadingFile) => void

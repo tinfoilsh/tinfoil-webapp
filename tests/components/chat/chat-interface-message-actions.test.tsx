@@ -80,12 +80,12 @@ const thread: Thread = {
     },
   ],
 }
-function open() {
+function open(stored: Thread = thread) {
   signIn({ cloud: true })
   client.post.mockImplementation(async (path: string, input) => {
     if (path === '/v1/threads/get')
       return (input as { id: string }).id === THREAD_ID
-        ? structuredClone(thread)
+        ? structuredClone(stored)
         : { ...structuredClone(thread), id: 'fork-1', title: 'A chat (fork)' }
     if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
     if (path === '/v1/threads/fork')
@@ -439,5 +439,108 @@ describe('attachments on the chat page', () => {
       content: 'What door?',
     })
     expect(client.events.mock.calls[0][1].attachments).toEqual([descriptor])
+  })
+
+  it('uploads a document for a stored chat with the content key, and sends where the harness kept the file with its message', async () => {
+    open()
+    await screen.findByText('Hello there')
+    const descriptor = {
+      id: 'att_report',
+      kind: 'document',
+      fileName: 'report.pdf',
+      mimeType: 'application/pdf',
+      size: 8,
+      textContent: 'Revenue grew.',
+      original: {
+        id: 'att_0123456789abcdef',
+        encryptionKey: 'b3JpZ2luYWwtZmlsZS1rZXk=',
+        storageThreadId: 'upload_0123456789abcdef',
+      },
+    }
+    client.upload.mockResolvedValueOnce({ attachment: descriptor })
+    client.events.mockImplementation(async function* () {
+      yield {
+        id: 0,
+        event: { type: 'RUN_FINISHED', threadId: THREAD_ID, runId: 'run-2' },
+      }
+    })
+
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: {
+        files: [
+          new File(['%PDF-1.7'], 'report.pdf', { type: 'application/pdf' }),
+        ],
+      },
+    })
+    await screen.findByRole('button', { name: 'Remove report.pdf' })
+    const composer = screen.getByRole('textbox', { name: /message/i })
+    fireEvent.change(composer, { target: { value: 'Summarize this' } })
+    fireEvent.submit(composer.closest('form')!)
+    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+
+    expect(client.upload).toHaveBeenCalledExactlyOnceWith(
+      '/v1/attachments/upload',
+      expect.any(File),
+      { key: KEY },
+      expect.any(AbortSignal),
+    )
+    expect(client.events.mock.calls[0][1]).toMatchObject({
+      key: KEY,
+      threadId: THREAD_ID,
+      content: 'Summarize this',
+    })
+    expect(client.events.mock.calls[0][1].attachments).toStrictEqual([
+      descriptor,
+    ])
+  })
+
+  it('downloads the file a stored document was uploaded as from the open document', async () => {
+    open({
+      ...thread,
+      messages: [
+        {
+          ...thread.messages[0],
+          attachments: [
+            {
+              id: 'att_report',
+              kind: 'document',
+              fileName: 'report.pdf',
+              mimeType: 'application/pdf',
+              size: 8,
+              textContent: 'Revenue grew.',
+              hasOriginal: true,
+            },
+          ],
+        },
+        thread.messages[1],
+      ],
+    })
+    const saved: { name: string; blob: Blob }[] = []
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      saved.push({ name: '', blob: blob as Blob })
+      return 'blob:saved'
+    })
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      saved[saved.length - 1].name = this.download
+    })
+    client.download.mockResolvedValue(
+      new Blob(['%PDF-1.7'], { type: 'application/octet-stream' }),
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /report\.pdf/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Download original' }))
+
+    await waitFor(() => expect(saved).toHaveLength(1))
+    expect(client.download).toHaveBeenCalledExactlyOnceWith(
+      '/v1/attachments/get',
+      { key: KEY, id: 'att_report', threadId: THREAD_ID, original: true },
+      expect.any(AbortSignal),
+    )
+    expect(saved[0].name).toBe('report.pdf')
+    expect(saved[0].blob.type).toBe('application/pdf')
+    expect(await saved[0].blob.text()).toBe('%PDF-1.7')
   })
 })

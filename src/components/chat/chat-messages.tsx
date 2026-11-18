@@ -25,6 +25,7 @@ import { CONSTANTS } from './constants'
 import {
   DocumentTextProvider,
   type LoadDocumentText,
+  type LoadOriginalFile,
 } from './document-text-context'
 import {
   QuestionsContext,
@@ -90,9 +91,11 @@ type ChatMessagesProps = {
     toolCallId: string,
   ) => Promise<boolean>
   // Reads a full-size image for the gallery, which shows thumbnails without
-  // it, and the text of a document whose message does not carry it.
+  // it, the text of a document whose message does not carry it, and the
+  // file an attachment was uploaded as.
   loadImage?: (attachment: Attachment, signal: AbortSignal) => Promise<Blob>
   loadDocumentText?: LoadDocumentText
+  loadOriginalFile?: LoadOriginalFile
   speak?: Speak
   // What the chat's questions widgets can do; without it they take no
   // answers.
@@ -321,6 +324,7 @@ export function ChatMessages({
   onRetryToolCall,
   loadImage,
   loadDocumentText,
+  loadOriginalFile,
   speak,
   questions,
   imagesUnsaved = false,
@@ -564,8 +568,12 @@ export function ChatMessages({
       key={chatId}
       messages={messages}
       loadImage={loadImage}
+      loadOriginal={loadOriginalFile}
     >
-      <DocumentTextProvider load={loadDocumentText}>
+      <DocumentTextProvider
+        load={loadDocumentText}
+        loadOriginal={loadOriginalFile}
+      >
         <SpeechProvider speak={readOnly ? undefined : speak}>
           {/* Not a live region: ChatAnnouncer reads each finished response once.
           role="log" implies aria-live="polite", which would read the

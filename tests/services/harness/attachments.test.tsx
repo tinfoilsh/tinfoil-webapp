@@ -1,8 +1,13 @@
 import { localThreadStore } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
-import type { Thread } from '@/services/harness/types'
-import { useThread } from '@/services/harness/use-thread'
-import { renderHook, waitFor } from '@testing-library/react'
+import type {
+  AttachmentDescriptor,
+  Frame,
+  Thread,
+  Turn,
+} from '@/services/harness/types'
+import { useThread, type ThreadRoute } from '@/services/harness/use-thread'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn, testSession } from '../../harness-fixture'
 import { resetChatStoresAroundEachTest, storedThread } from './thread-fixture'
@@ -45,6 +50,7 @@ const thread: Thread = {
           fileName: 'report.pdf',
           mimeType: 'application/pdf',
           size: 2048,
+          hasOriginal: true,
         },
         {
           id: 'att_chart',
@@ -76,16 +82,19 @@ describe('attachments of a stored chat', () => {
     return hook
   }
 
-  it('shows each attachment by its name, type, size and thumbnail', async () => {
+  it('shows each attachment by its name, type, size and thumbnail, and whether its uploaded file is kept', async () => {
     const { result } = await openStored()
 
-    expect(result.current.chat.messages[0].attachments).toEqual([
+    expect(result.current.chat.messages[0].attachments).toStrictEqual([
       {
         id: 'att_report',
         type: 'document',
         fileName: 'report.pdf',
         mimeType: 'application/pdf',
         fileSize: 2048,
+        textContent: undefined,
+        thumbnailBase64: undefined,
+        hasOriginal: true,
       },
       {
         id: 'att_chart',
@@ -93,9 +102,26 @@ describe('attachments of a stored chat', () => {
         fileName: 'chart.png',
         mimeType: 'image/png',
         fileSize: 512,
+        textContent: undefined,
         thumbnailBase64: 'dGh1bWI=',
       },
     ])
+  })
+
+  it('downloads the file a document was uploaded as under its chat', async () => {
+    const { result } = await openStored()
+    const uploaded = new Blob(['%PDF-1.7'])
+    client.download.mockResolvedValue(uploaded)
+    const [report] = result.current.chat.messages[0].attachments!
+
+    const blob = await result.current.originalFile(report)
+
+    expect(blob).toBe(uploaded)
+    expect(client.download).toHaveBeenCalledExactlyOnceWith(
+      '/v1/attachments/get',
+      { key: KEY, id: 'att_report', threadId: THREAD_ID, original: true },
+      expect.any(AbortSignal),
+    )
   })
 
   it('downloads a full-size image under its chat', async () => {
@@ -195,6 +221,12 @@ describe('attachments of a local chat', () => {
       'First page\n\nThird page',
     )
     expect(client.download).not.toHaveBeenCalled()
+    // A chat on this device keeps no file as it was uploaded.
+    expect(scan.hasOriginal).toBeUndefined()
+    await expect(result.current.originalFile(scan)).rejects.toMatchObject({
+      code: 'THREAD_NOT_FOUND',
+    })
+    expect(client.download).not.toHaveBeenCalled()
   })
 })
 
@@ -202,23 +234,24 @@ describe('picking a file to attach', () => {
   // The session takes .png files up to 1000 bytes, and .pdf and .txt files
   // up to 2000. Picked files carry no type, so only the name tells them
   // apart. A file of a type no group names goes as text, which the harness
-  // reads if it is.
+  // reads if it is. The chat is one the harness stores, so every file but
+  // an image uploads with the content key.
   it.each([
-    { name: 'photo.png', size: 1000, refused: null },
+    { name: 'photo.png', size: 1000, refused: null, fields: {} },
     {
       name: 'PHOTO.PNG',
       size: 1001,
       refused: 413,
       message: 'File size exceeds the limit of 1000 B.',
     },
-    { name: 'notes.v2.txt', size: 2000, refused: null },
+    { name: 'notes.v2.txt', size: 2000, refused: null, fields: { key: KEY } },
     {
       name: 'notes.txt',
       size: 2001,
       refused: 413,
       message: 'Text file exceeds the limit of 2.0 KB.',
     },
-    { name: 'Dockerfile', size: 2000, refused: null },
+    { name: 'Dockerfile', size: 2000, refused: null, fields: { key: KEY } },
     {
       name: 'archive.zip',
       size: 2001,
@@ -227,7 +260,7 @@ describe('picking a file to attach', () => {
     },
   ])(
     'uploads $name of $size bytes unless its group refuses it ($refused)',
-    async ({ name, size, refused, message }) => {
+    async ({ name, size, refused, message, fields }) => {
       signIn({ cloud: true })
       const descriptor = {
         id: 'att_1',
@@ -247,7 +280,7 @@ describe('picking a file to attach', () => {
         expect(client.upload).toHaveBeenCalledExactlyOnceWith(
           '/v1/attachments/upload',
           picked,
-          {},
+          fields,
           expect.any(AbortSignal),
         )
       } else {
@@ -279,5 +312,265 @@ describe('picking a file to attach', () => {
       result.current.upload(new File(['FROM scratch'], 'Dockerfile')),
     ).rejects.toMatchObject({ status: 415, code: 'ATTACHMENT_UNSUPPORTED' })
     expect(client.upload).not.toHaveBeenCalled()
+  })
+})
+
+// A document as an upload with the content key returns it: with where the
+// harness kept the file as it was uploaded.
+const report: AttachmentDescriptor = {
+  id: 'att_report',
+  kind: 'document',
+  fileName: 'report.pdf',
+  mimeType: 'application/pdf',
+  size: 8,
+  textContent: 'Revenue grew.',
+  original: {
+    id: 'att_0123456789abcdef',
+    encryptionKey: 'b3JpZ2luYWwtZmlsZS1rZXk=',
+    storageThreadId: 'upload_0123456789abcdef',
+  },
+}
+const { original: _original, ...reportWithoutOriginal } = report
+
+const turn = (call = 0) => client.events.mock.calls[call][1] as Turn
+
+function gate() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+// A run that starts, and ends once `ended` does.
+const runUntil = (ended: Promise<void>) =>
+  async function* (_path: string, input: Turn): AsyncGenerator<Frame> {
+    yield {
+      id: 0,
+      event: {
+        type: 'RUN_STARTED',
+        threadId: input.threadId!,
+        runId: `run-${input.clientRequestId}`,
+        instance: 'instance-1',
+      },
+    }
+    await ended
+    yield {
+      id: 1,
+      event: {
+        type: 'RUN_FINISHED',
+        threadId: input.threadId!,
+        runId: `run-${input.clientRequestId}`,
+        metadata: {},
+      },
+    }
+  }
+
+describe('keeping a file as it was uploaded', () => {
+  it('does not silently downgrade a stored upload to extracted text while the key is locked', async () => {
+    signIn({
+      cloud: true,
+      locked: true,
+      session: {
+        ...testSession,
+        features: { ...testSession.features, imageOriginals: true },
+      },
+    })
+    const { result } = renderHook(() => useThread())
+    await expect(
+      result.current.upload(new File(['%PDF-'], 'report.pdf')),
+    ).rejects.toMatchObject({ code: 'KEY_REQUIRED' })
+    expect(client.upload).not.toHaveBeenCalled()
+  })
+  it.each<{
+    chat: string
+    account?: Parameters<typeof signIn>[0]
+    route?: ThreadRoute
+    temporary?: boolean
+    fields: Record<string, string>
+  }>([
+    { chat: 'a stored chat', fields: { key: KEY } },
+    {
+      chat: 'a chat kept on this device beside stored ones',
+      route: { newChatLocal: true },
+      fields: {},
+    },
+    { chat: 'a temporary chat', temporary: true, fields: {} },
+    {
+      chat: 'a chat of an account without cloud sync',
+      account: { cloud: false },
+      fields: {},
+    },
+    {
+      chat: 'a chat of a signed-out visitor',
+      account: { userId: null },
+      fields: {},
+    },
+    {
+      chat: 'a stored chat whose content key is locked',
+      account: { cloud: true, locked: true },
+      fields: {},
+    },
+  ])(
+    'uploads a document for $chat with $fields',
+    async ({ account = { cloud: true }, route, temporary, fields }) => {
+      signIn(account)
+      client.upload.mockResolvedValue({ attachment: reportWithoutOriginal })
+      const { result } = renderHook(() => useThread(null, null, route))
+      if (temporary) act(() => result.current.setTemporary(true))
+      const picked = new File(['%PDF-1.7'], 'report.pdf')
+
+      await result.current.upload(picked)
+
+      expect(client.upload).toHaveBeenCalledExactlyOnceWith(
+        '/v1/attachments/upload',
+        picked,
+        fields,
+        expect.any(AbortSignal),
+      )
+    },
+  )
+
+  it.each([false, true])(
+    'keeps a cloud photo when the harness offers originals: %s',
+    async (enabled) => {
+      signIn({
+        cloud: true,
+        session: {
+          ...testSession,
+          features: { ...testSession.features, imageOriginals: enabled },
+        },
+      })
+      client.upload.mockResolvedValue({
+        attachment: {
+          id: 'att_photo',
+          kind: 'image',
+          fileName: 'photo.png',
+          mimeType: 'image/png',
+          size: 4,
+          base64: 'bW9kZWwtY29weQ==',
+        },
+      })
+      const { result } = renderHook(() => useThread())
+      const picked = new File([new Uint8Array(4)], 'photo.png', {
+        type: 'image/png',
+      })
+
+      await result.current.upload(picked)
+
+      expect(client.upload).toHaveBeenCalledExactlyOnceWith(
+        '/v1/attachments/upload',
+        expect.any(File),
+        enabled ? { key: KEY } : {},
+        expect.any(AbortSignal),
+      )
+    },
+  )
+
+  it('sends where the harness kept a file back with the turns that attach it', async () => {
+    signIn({ cloud: true })
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      throw new Error(`Unexpected ${path}`)
+    })
+    client.upload.mockResolvedValue({ attachment: report })
+    const replied = gate()
+    client.events.mockImplementation(runUntil(replied.promise))
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.loadingChats).toBe(false))
+    const uploaded = await result.current.upload(
+      new File(['%PDF-1.7'], 'report.pdf'),
+    )
+    expect(uploaded).toEqual(report)
+
+    try {
+      // The turn that attaches the file, while no reply runs.
+      act(() => {
+        void result.current.send({
+          content: 'Summarize this',
+          attachments: [uploaded],
+        })
+      })
+      await waitFor(() => expect(result.current.status).toBe('streaming'))
+      // A turn queued behind the running reply.
+      act(() => {
+        void result.current.send({
+          content: 'And this copy',
+          attachments: [{ ...uploaded, id: 'att_copy' }],
+        })
+      })
+      await waitFor(() => expect(client.events).toHaveBeenCalledTimes(2))
+    } finally {
+      await act(async () => replied.resolve())
+    }
+    await waitFor(() => expect(result.current.status).toBe('idle'))
+    // An edit that sends the upload again.
+    await act(async () => {
+      await result.current.send({
+        kind: 'edit',
+        messageId: turn(0).clientRequestId,
+        content: 'Summarize this briefly',
+        attachments: [uploaded],
+      })
+    })
+
+    expect(client.events).toHaveBeenCalledTimes(3)
+    expect(
+      [0, 1, 2].map((call) => ({
+        kind: turn(call).kind,
+        key: turn(call).key,
+        attachments: turn(call).attachments,
+      })),
+    ).toStrictEqual([
+      { kind: 'send', key: KEY, attachments: [report] },
+      {
+        kind: 'send',
+        key: KEY,
+        attachments: [{ ...report, id: 'att_copy' }],
+      },
+      { kind: 'edit', key: KEY, attachments: [report] },
+    ])
+  })
+
+  it('leaves where the harness kept a file out of a chat this device keeps', async () => {
+    signIn({ cloud: true })
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      throw new Error(`Unexpected ${path}`)
+    })
+    const replied = gate()
+    client.events.mockImplementation(runUntil(replied.promise))
+    const { result } = renderHook(() =>
+      useThread(null, null, { newChatLocal: true }),
+    )
+    await waitFor(() => expect(result.current.loadingChats).toBe(false))
+
+    try {
+      // The file was uploaded for a stored chat before the chat became one
+      // this device keeps.
+      act(() => {
+        void result.current.send({
+          content: 'Summarize this',
+          attachments: [report],
+        })
+      })
+      await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+
+      expect(turn().local).toBe(true)
+      expect(turn().key).toBeUndefined()
+      expect(turn().attachments).toStrictEqual([reportWithoutOriginal])
+      const threadId = turn().threadId!
+      await waitFor(async () =>
+        expect(
+          (await localThreadStore('device').get(threadId))?.messages,
+        ).toHaveLength(1),
+      )
+      expect(
+        (await localThreadStore('device').get(threadId))?.messages[0]
+          .attachments,
+      ).toStrictEqual([reportWithoutOriginal])
+    } finally {
+      await act(async () => replied.resolve())
+    }
   })
 })

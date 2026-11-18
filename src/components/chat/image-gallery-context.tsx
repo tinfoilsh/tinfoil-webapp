@@ -1,7 +1,9 @@
 'use client'
 
+import { toast } from '@/hooks/use-toast'
 import { logError } from '@/utils/error-handling'
-import { TfBoxX, TfImageSlash } from '@tinfoilsh/tinfoil-icons'
+import { saveDownload } from '@/utils/save-download'
+import { TfBoxX, TfDownload, TfImageSlash } from '@tinfoilsh/tinfoil-icons'
 import {
   createContext,
   useCallback,
@@ -60,13 +62,16 @@ export function ImageLightbox({
   open,
   onClose,
   onIndexChange,
+  onDownload,
 }: {
   images: GalleryImage[]
   index: number
   open: boolean
   onClose: () => void
   onIndexChange: (index: number) => void
+  onDownload?: () => Promise<void>
 }) {
+  const [downloading, setDownloading] = useState(false)
   const slides: Slide[] = images.map((image) => ({
     src: image.src ?? '',
     alt: image.alt,
@@ -77,6 +82,32 @@ export function ImageLightbox({
       close={onClose}
       index={index}
       slides={slides}
+      toolbar={
+        onDownload
+          ? {
+              buttons: [
+                <button
+                  key="original"
+                  type="button"
+                  className="yarl__button"
+                  aria-label="Download original"
+                  disabled={downloading}
+                  onClick={async () => {
+                    setDownloading(true)
+                    try {
+                      await onDownload()
+                    } finally {
+                      setDownloading(false)
+                    }
+                  }}
+                >
+                  <TfDownload className="yarl__icon" />
+                </button>,
+                'close',
+              ],
+            }
+          : undefined
+      }
       render={{
         // An image without a source yet shows that it loads, or failed to.
         slide: ({ slide }) => {
@@ -150,8 +181,10 @@ export function ImageGalleryProvider({
   messages,
   children,
   loadImage,
+  loadOriginal,
 }: {
   loadImage?: (attachment: Attachment, signal: AbortSignal) => Promise<Blob>
+  loadOriginal?: (attachment: Attachment) => Promise<Blob>
   messages: Message[]
   children: ReactNode
 }) {
@@ -335,6 +368,38 @@ export function ImageGalleryProvider({
         images={images}
         index={index}
         open={open}
+        onDownload={
+          images[index]?.attachment.hasOriginal && loadOriginal
+            ? () => {
+                const attachment = images[index].attachment
+                return loadOriginal(attachment)
+                  .then((file) => {
+                    saveDownload(
+                      new Blob([file], {
+                        type:
+                          attachment.originalMimeType ?? attachment.mimeType,
+                      }),
+                      attachment.originalFileName ?? attachment.fileName,
+                    )
+                  })
+                  .catch((error) => {
+                    if (
+                      error instanceof DOMException &&
+                      error.name === 'AbortError'
+                    )
+                      return
+                    logError('Failed to download the original image', error, {
+                      component: 'ImageGalleryProvider',
+                      action: 'downloadOriginal',
+                    })
+                    toast({
+                      title: 'Could not download original image',
+                      variant: 'destructive',
+                    })
+                  })
+              }
+            : undefined
+        }
         onClose={() => setOpen(false)}
         onIndexChange={(next) => {
           setIndex(next)

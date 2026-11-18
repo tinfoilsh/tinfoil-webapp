@@ -405,10 +405,12 @@ export class HarnessClient {
     file: File,
     fields: Record<string, string>,
     signal?: AbortSignal,
+    original?: File,
   ): Promise<T> {
     const form = new FormData()
     for (const [name, value] of Object.entries(fields)) form.set(name, value)
     form.set('file', file)
+    if (original) form.set('original', original)
     return (await this.request(path, form, signal)).json() as Promise<T>
   }
   async download(

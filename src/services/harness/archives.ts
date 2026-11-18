@@ -1,5 +1,6 @@
 import type { AttachmentOriginal } from '@/services/storage/indexed-db'
 import { logError } from '@/utils/error-handling'
+import { saveDownload } from '@/utils/save-download'
 import type { ZipReader } from '@zip.js/zip.js'
 import { isThread, localThreadStore, type Originals } from './local-threads'
 import { imageBlob } from './open-attachments'
@@ -37,15 +38,6 @@ export interface ImportStatusResponse {
     { imported: number; skipped: number; failed: number; blocked: number }
   >
 }
-function saveDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
 // A Tinfoil backup, or the chats as conversations, which Tinfoil and other
 // chat apps import.
 type ExportFormat = 'native' | 'conversations'

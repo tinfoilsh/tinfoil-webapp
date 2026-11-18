@@ -12,7 +12,7 @@ import { CHAT_END, COMPACTION_ROLE, WIDGET_PREFIX } from './protocol'
 import type {
   QueueItem,
   ThreadSummary,
-  AttachmentDescriptor as WireAttachment,
+  MessageAttachment as WireAttachment,
   TimelineBlock as WireBlock,
   Message as WireMessage,
 } from './types'
@@ -172,18 +172,23 @@ function toolBlock(block: WireBlock, streaming: boolean): TimelineBlock | null {
   }
 }
 
-export function attachmentView(
-  a: Pick<
-    WireAttachment,
-    | 'id'
-    | 'kind'
-    | 'fileName'
-    | 'mimeType'
-    | 'size'
-    | 'textContent'
-    | 'thumbnail'
-  >,
-): Attachment {
+// What a view shows of an attachment, which a stored chat's, a device chat's
+// and a share's attachments all hold.
+type ViewedAttachment = Pick<
+  WireAttachment,
+  | 'id'
+  | 'kind'
+  | 'fileName'
+  | 'mimeType'
+  | 'size'
+  | 'textContent'
+  | 'thumbnail'
+  | 'hasOriginal'
+  | 'originalFileName'
+  | 'originalMimeType'
+>
+
+export function attachmentView(a: ViewedAttachment): Attachment {
   return {
     id: a.id,
     type: a.kind === 'image' ? 'image' : 'document',
@@ -192,6 +197,9 @@ export function attachmentView(
     fileSize: a.size,
     textContent: a.textContent,
     thumbnailBase64: a.thumbnail ?? undefined,
+    ...(a.hasOriginal ? { hasOriginal: true } : {}),
+    ...(a.originalFileName ? { originalFileName: a.originalFileName } : {}),
+    ...(a.originalMimeType ? { originalMimeType: a.originalMimeType } : {}),
   }
 }
 // A queued turn's attachments that can be shown. One the chat already holds
@@ -289,7 +297,9 @@ export function compactable(
 // A message as the view shows it, with the latest summary of each thinking
 // block's reasoning.
 export function messageView(
-  message: ShownMessage,
+  message: Omit<ShownMessage, 'attachments'> & {
+    attachments?: ViewedAttachment[]
+  },
   streaming = false,
   summaries: Readonly<Record<string, string>> = {},
 ): Message {

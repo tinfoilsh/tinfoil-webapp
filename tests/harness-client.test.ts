@@ -1659,6 +1659,44 @@ describe('attested harness transport', () => {
       runId: 'r',
     })
   })
+  // The harness reads an upload's fields as it reaches them, and refuses a
+  // file that comes before the ids it is filed under.
+  it("sends an upload's fields before its file, in the order given", async () => {
+    const secure = transport()
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      async () => secure,
+    )
+    secure.fetch.mockResolvedValueOnce(new Response('{"id":"doc-notes"}'))
+
+    await client.upload(
+      '/v1/projects/documents/upload',
+      new File(['model preview'], 'preview.jpg'),
+      {
+        key: 'Y29udGVudC1rZXk=',
+        projectId: 'project-one',
+        documentId: 'doc-notes',
+      },
+      undefined,
+      new File(['source photo'], 'original.png'),
+    )
+
+    const form = secure.fetch.mock.calls[0][1].body as FormData
+    expect(
+      [...form.entries()].map(([name, value]) => [
+        name,
+        value instanceof File ? value.name : value,
+      ]),
+    ).toEqual([
+      ['key', 'Y29udGVudC1rZXk='],
+      ['projectId', 'project-one'],
+      ['documentId', 'doc-notes'],
+      ['file', 'preview.jpg'],
+      ['original', 'original.png'],
+    ])
+    expect(await (form.get('original') as File).text()).toBe('source photo')
+  })
   it('verifies the enclave of the chat service against the release of the harness', async () => {
     const secure = transport()
     secure.fetch.mockImplementation(async () => new Response('{"ok":true}'))
