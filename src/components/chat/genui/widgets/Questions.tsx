@@ -112,7 +112,7 @@ function QuestionsCard({
                           ? () => pick(question, option.id)
                           : undefined
                       }
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-yellow-700 dark:accent-primary"
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
                     />
                     <span>{option.label}</span>
                   </label>
@@ -140,7 +140,7 @@ function QuestionsCard({
                 type="button"
                 onClick={answering.submit}
                 disabled={!answering.canSubmit || !unsent}
-                className="rounded-lg bg-tinfoil-oak px-3 py-1.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:cursor-default disabled:opacity-50"
+                className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-default disabled:opacity-50"
               >
                 Submit answers
               </button>

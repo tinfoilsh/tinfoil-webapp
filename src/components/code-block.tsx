@@ -496,9 +496,9 @@ const JsonTreeNode = ({
   const hasChildren = entries.length > 0
 
   const getValueDisplay = () => {
-    if (data === null) return <span className="text-orange-400">null</span>
+    if (data === null) return <span className="text-highlight">null</span>
     if (typeof data === 'boolean')
-      return <span className="text-orange-400">{String(data)}</span>
+      return <span className="text-highlight">{String(data)}</span>
     if (typeof data === 'number')
       return <span className="text-blue-400">{data}</span>
     if (typeof data === 'string')

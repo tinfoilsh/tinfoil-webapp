@@ -27,7 +27,7 @@ const SEARCH_TABS: { id: SearchTab; label: string }[] = [
 const SEARCH_TAB_CLASS_NAME =
   'rounded-lg border px-3 py-1 text-xs font-medium transition-colors'
 const SEARCH_TAB_ACTIVE_CLASS_NAME =
-  'border-tinfoil-oak bg-tinfoil-oak text-brand-dark'
+  'border-brand-accent-dark bg-brand-accent-light text-brand-accent-dark hover:bg-brand-accent-light-darker'
 const SEARCH_TAB_INACTIVE_CLASS_NAME =
   'border-transparent text-content-secondary hover:border-border-subtle hover:text-content-primary'
 

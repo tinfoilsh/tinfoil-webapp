@@ -86,7 +86,7 @@ export function ChatHeader({
     metaItems.push(
       <span key="storage" className="flex min-w-0 items-center gap-1">
         {storageStatus.kind === 'temporary' ? (
-          <span className="flex min-w-0 items-center gap-1 text-orange-500">
+          <span className="flex min-w-0 items-center gap-1 text-highlight">
             <TfGhost2Animated
               className="h-3 w-3 flex-none"
               aria-hidden="true"

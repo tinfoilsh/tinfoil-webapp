@@ -682,7 +682,7 @@ ${generatedKey.replace('key_', '')}
               onClick={handleCopyKey}
               className={`w-full min-w-[5rem] ${
                 isCopied
-                  ? 'border-tinfoil-oak bg-tinfoil-oak text-brand-dark hover:border-tinfoil-oak-hover hover:bg-tinfoil-oak-hover'
+                  ? 'border-primary bg-primary text-primary-foreground hover:border-primary-hover hover:bg-primary-hover'
                   : ''
               }`}
               title="Copy to clipboard"
@@ -973,8 +973,8 @@ ${generatedKey.replace('key_', '')}
         </p>
 
         {recoveryFailed && (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-            <p className="text-balance text-center text-xs text-amber-700 dark:text-amber-400">
+          <div className="rounded-lg border border-highlight/30 bg-primary/10 p-3">
+            <p className="text-balance text-center text-xs text-highlight">
               {passkeyRecoveryFailure === 'stale_backup'
                 ? "This passkey is valid, but its backup key doesn't match your existing cloud data. Enter your backup key manually, or start fresh if you no longer need the old data."
                 : 'Passkey authentication failed. You can try again or enter your encryption key manually.'}

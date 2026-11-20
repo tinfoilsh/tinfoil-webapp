@@ -311,7 +311,7 @@ export function AuthCleanupHandler() {
                 })
             }}
             disabled={cleanupRetrying}
-            className="mt-6 rounded-lg bg-tinfoil-oak px-5 py-2.5 text-sm font-medium text-brand-dark hover:bg-tinfoil-oak-hover"
+            className="mt-6 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary-hover"
           >
             {cleanupRetrying ? 'Retrying cleanup...' : 'Retry cleanup'}
           </button>

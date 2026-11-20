@@ -88,13 +88,12 @@ const ENCRYPTION_NOTE_ID = 'sidebar-encryption-note'
 const STORAGE_TAB_CLASS_NAME =
   'flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors'
 const STORAGE_TAB_ACTIVE_CLASS_NAME =
-  'border-tinfoil-oak bg-tinfoil-oak text-brand-dark hover:bg-tinfoil-oak-hover'
+  'border-brand-accent-dark bg-brand-accent-light text-brand-accent-dark hover:bg-brand-accent-light-darker'
 const STORAGE_TAB_INACTIVE_CLASS_NAME =
   'border-border-subtle bg-surface-chat-background text-content-secondary hover:border-border-strong hover:text-content-primary'
-const STORAGE_TAB_DROP_TARGET_CLASS_NAME =
-  'border-tinfoil-oak ring-2 ring-tinfoil-oak-soft'
+const STORAGE_TAB_DROP_TARGET_CLASS_NAME = 'border-ring ring-2 ring-ring/30'
 const SIDEBAR_CTA_CLASS_NAME =
-  'block w-full rounded-md bg-tinfoil-oak px-4 py-2 text-center text-sm font-medium text-brand-dark transition-all hover:bg-tinfoil-oak-hover'
+  'block w-full rounded-md bg-primary px-4 py-2 text-center text-sm font-medium text-primary-foreground transition-all hover:bg-primary-hover'
 
 // Utility function to detect iOS devices
 function isIOSDevice() {
@@ -838,7 +837,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                 {keyLocked && (
                   <>
                     <span
-                      className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
+                      className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-highlight"
                       title="Cloud sync needs attention"
                       aria-hidden="true"
                     />
@@ -1051,10 +1050,10 @@ export const ChatSidebar = memo(function ChatSidebar({
               them yet. */}
           {backupWarningVisible && (
             <div className="relative z-10 flex-none px-2 pt-2">
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+              <div className="rounded-lg border border-highlight/30 bg-primary/10 p-3">
                 <div className="flex items-start gap-2">
                   <TfWarning
-                    className="mt-0.5 h-4 w-4 flex-shrink-0 !text-amber-500"
+                    className="mt-0.5 h-4 w-4 flex-shrink-0 !text-highlight"
                     aria-hidden="true"
                   />
                   <div className="flex-1">
@@ -1073,7 +1072,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                     <button
                       type="button"
                       onClick={onDismissBackupWarning}
-                      className="-mr-1 -mt-1 flex-shrink-0 rounded p-1 text-content-muted transition-colors hover:bg-amber-500/10 hover:text-content-secondary"
+                      className="-mr-1 -mt-1 flex-shrink-0 rounded p-1 text-content-muted transition-colors hover:bg-primary/10 hover:text-content-secondary"
                       aria-label="Dismiss"
                     >
                       <TfBoxX className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1084,7 +1083,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                   <button
                     type="button"
                     onClick={onCloudSyncSetupClick}
-                    className="mt-2 w-full rounded-md bg-tinfoil-oak px-2.5 py-1.5 font-aeonik text-xs font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover"
+                    className="mt-2 w-full rounded-md bg-primary px-2.5 py-1.5 font-aeonik text-xs font-medium text-primary-foreground transition-colors hover:bg-primary-hover"
                   >
                     {backupWarningNeedsRecovery
                       ? 'Set Up Cloud Sync'
@@ -2185,7 +2184,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                               <button
                                 type="button"
                                 onClick={onUnlockChats}
-                                className="mt-3 rounded-md bg-tinfoil-oak px-2.5 py-1.5 font-aeonik text-xs font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover"
+                                className="mt-3 rounded-md bg-primary px-2.5 py-1.5 font-aeonik text-xs font-medium text-primary-foreground transition-colors hover:bg-primary-hover"
                               >
                                 Unlock
                               </button>

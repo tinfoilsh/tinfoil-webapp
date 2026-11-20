@@ -35,7 +35,6 @@ const ALARM_BEEP_INTERVAL_MS = 850
 const ALARM_BEEP_DURATION_MS = 180
 const ALARM_FREQUENCY_HZ = 880
 const ALARM_GAIN = 0.07
-const TIMER_ACCENT = '#f6b34b'
 
 type ClockArgs = RenderClockArgs
 type TimerAlarmMode = NonNullable<RenderClockArgs['alarmMode']>
@@ -618,12 +617,12 @@ function CountdownTimer({
                 cy={RING_CENTER}
                 r={RING_RADIUS}
                 fill="none"
-                stroke={TIMER_ACCENT}
+                stroke="currentColor"
                 strokeWidth={RING_STROKE}
                 strokeLinecap="round"
                 strokeDasharray={RING_CIRCUMFERENCE}
                 strokeDashoffset={strokeDashoffset}
-                className="transition-[stroke-dashoffset] duration-300 ease-linear"
+                className="text-highlight transition-[stroke-dashoffset] duration-300 ease-linear"
               />
             </svg>
             <div className="flex flex-col items-center gap-1 text-center">
@@ -652,11 +651,7 @@ function CountdownTimer({
             <button
               type="button"
               onClick={handlePauseToggle}
-              className="flex h-20 w-20 items-center justify-center rounded-full text-base font-semibold transition-colors disabled:opacity-50"
-              style={{
-                backgroundColor: TIMER_ACCENT,
-                color: '#1a1100',
-              }}
+              className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-base font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50"
               disabled={remaining.done}
             >
               {primaryActionLabel}

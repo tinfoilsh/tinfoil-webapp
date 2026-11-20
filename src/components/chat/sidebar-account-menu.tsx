@@ -415,7 +415,7 @@ export function SidebarAccountMenu({
           )}
           {syncNeedsAttention && (
             <span
-              className="absolute right-0 top-0 h-2 w-2 rounded-full bg-orange-500 ring-2 ring-surface-sidebar"
+              className="absolute right-0 top-0 h-2 w-2 rounded-full bg-highlight ring-2 ring-surface-sidebar"
               title="Cloud sync needs attention"
               aria-hidden="true"
             />
@@ -499,7 +499,7 @@ export function SidebarAccountMenu({
               <span className="flex-1">Settings</span>
               {syncNeedsAttention && (
                 <span
-                  className="h-2 w-2 rounded-full bg-orange-500"
+                  className="h-2 w-2 rounded-full bg-highlight"
                   title="Cloud sync needs attention"
                   aria-hidden="true"
                 />

@@ -1,8 +1,15 @@
 # Colors
 
-Use Pale Oak (`#E6CCA8`) with Midnight Petrol (`#05252E`) text for primary
-actions and CTAs. Keep Twilight purple (`#6B5B95`) for secondary accents and Deep Teal
-(`#004444`) for branding. Links and focus indicators use the theme-aware `link`
+Use Steel Mist blue (`#A8C7D1`) with Midnight Petrol (`#05252E`) text for primary
+actions and CTAs in both themes. Use the `primary`, `primary-foreground`,
+`primary-hover`, and `primary-active` tokens.
+Selected tabs use Steel Mist blue (`#A8C7D1`) with Deep Teal (`#004444`) text
+and borders in both themes. Keep Twilight purple (`#6B5B95`, light
+`#A89ACB` on dark surfaces) for secondary accents, Steel Mist (`#A8C7D1`) for
+soft highlights, and Deep Teal (`#004444`) for branding. Use the theme-aware
+`highlight` token for accent text, icons, borders, and status indicators:
+Deep Teal in light mode and Steel Mist in dark mode. Notices, temporary chats,
+and widget accents use this blue palette too. Links and focus indicators use the theme-aware `link`
 and `ring` tokens so they remain readable on light surfaces. Match the
 websites' surface roles: Bone (`#F9F8F6`) for `surface-canvas`, white for
 `surface-raised`, and pale cool gray (`#F0F4F4`) for `surface-muted`. Dark mode maps these to

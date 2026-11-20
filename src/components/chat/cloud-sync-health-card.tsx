@@ -44,14 +44,14 @@ export function CloudSyncHealthCard({
   return (
     <div
       className={cn(
-        'rounded-lg border border-orange-500/40 p-4',
+        'rounded-lg border border-highlight/40 p-4',
         isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2">
           <TfExclamationCircle
-            className="mt-0.5 h-4 w-4 shrink-0 text-orange-500"
+            className="mt-0.5 h-4 w-4 shrink-0 text-highlight"
             aria-hidden="true"
           />
           <div className="min-w-0">
@@ -67,7 +67,7 @@ export function CloudSyncHealthCard({
           <button
             type="button"
             onClick={onRecoverClick}
-            className="shrink-0 rounded-md bg-orange-500/90 px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-orange-500"
+            className="shrink-0 rounded-md bg-primary px-2.5 py-1.5 font-aeonik text-xs font-medium text-primary-foreground transition-colors hover:bg-primary-hover"
           >
             Recover Key
           </button>
@@ -116,7 +116,7 @@ export function CloudSyncStatusLine({
     <div className="mt-2 flex min-w-0 items-start gap-1.5 font-aeonik-fono text-xs">
       {paused ? (
         <TfWarning
-          className="mt-px h-3.5 w-3.5 shrink-0 text-amber-500"
+          className="mt-px h-3.5 w-3.5 shrink-0 text-highlight"
           aria-hidden="true"
         />
       ) : lastSyncedAt !== null ? (

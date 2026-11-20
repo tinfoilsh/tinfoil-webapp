@@ -402,7 +402,7 @@ export function ModelSelector({
             <span className="flex-1" />
             {isActive && (
               <TfBoxCheckmark
-                className="h-4 w-4 flex-none text-yellow-700 dark:text-primary"
+                className="h-4 w-4 flex-none text-highlight"
                 aria-hidden="true"
               />
             )}
@@ -458,7 +458,7 @@ export function ModelSelector({
         </div>
         {isSelected && (
           <TfBoxCheckmark
-            className="mt-0.5 h-4 w-4 flex-none text-yellow-700 dark:text-primary"
+            className="mt-0.5 h-4 w-4 flex-none text-highlight"
             aria-hidden="true"
           />
         )}

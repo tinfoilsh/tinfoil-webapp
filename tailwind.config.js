@@ -1,5 +1,4 @@
 const { radius } = require('./src/lib/radius')
-const TINFOIL_OAK_RGB = '230 204 168'
 const TINFOIL_TWILIGHT_RGB = '107 91 149'
 
 /** @type {import('tailwindcss').Config} */
@@ -70,6 +69,8 @@ module.exports = {
         primary: {
           DEFAULT: 'hsl(var(--primary) / <alpha-value>)',
           foreground: 'hsl(var(--primary-foreground) / <alpha-value>)',
+          hover: 'hsl(var(--primary-hover) / <alpha-value>)',
+          active: 'hsl(var(--primary-active) / <alpha-value>)',
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary) / <alpha-value>)',
@@ -91,6 +92,7 @@ module.exports = {
         input: 'hsl(var(--input) / <alpha-value>)',
         ring: 'hsl(var(--ring) / <alpha-value>)',
         link: 'hsl(var(--link) / <alpha-value>)',
+        highlight: 'hsl(var(--highlight) / <alpha-value>)',
         brand: {
           dark: 'hsl(var(--color-brand-dark) / <alpha-value>)',
           light: 'hsl(var(--color-brand-light) / <alpha-value>)',
@@ -111,17 +113,6 @@ module.exports = {
           soft: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.30)`,
           medium: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.60)`,
           bold: `rgb(${TINFOIL_TWILIGHT_RGB} / 0.90)`,
-        },
-        // Mirrors tinfoil-oak from @tinfoil/tailwind-preset.
-        'tinfoil-oak': {
-          DEFAULT: `rgb(${TINFOIL_OAK_RGB})`,
-          hover: '#DDBB8C',
-          darker: '#D2AA75',
-          tint: '#F5ECDD',
-          subtle: `rgb(${TINFOIL_OAK_RGB} / 0.10)`,
-          soft: `rgb(${TINFOIL_OAK_RGB} / 0.30)`,
-          medium: `rgb(${TINFOIL_OAK_RGB} / 0.60)`,
-          bold: `rgb(${TINFOIL_OAK_RGB} / 0.90)`,
         },
         surface: {
           canvas: 'hsl(var(--surface-canvas) / <alpha-value>)',

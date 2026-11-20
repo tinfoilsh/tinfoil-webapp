@@ -155,7 +155,7 @@ export function ContextUsageIndicator({
   )
   const gaugeClassName = cn(
     'flex h-7 items-center gap-1 rounded-lg px-1.5',
-    isNearLimit ? 'text-amber-500' : 'text-content-secondary',
+    isNearLimit ? 'text-highlight' : 'text-content-secondary',
   )
 
   return (

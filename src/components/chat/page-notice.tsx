@@ -32,7 +32,7 @@ export function PageNotice({
         {action && (
           <button
             onClick={action.onClick}
-            className="rounded-lg bg-tinfoil-oak px-6 py-2.5 text-brand-dark transition-colors hover:bg-tinfoil-oak-hover"
+            className="rounded-lg bg-primary px-6 py-2.5 text-primary-foreground transition-colors hover:bg-primary-hover"
           >
             {action.label}
           </button>

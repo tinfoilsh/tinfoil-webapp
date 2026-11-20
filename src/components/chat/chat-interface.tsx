@@ -2132,7 +2132,7 @@ export function ChatInterface({
                 className={cn(
                   'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200 disabled:cursor-wait disabled:opacity-60',
                   isTemporaryMode
-                    ? 'border-orange-500/40 bg-surface-chat-background bg-gradient-to-b from-orange-500/15 to-orange-500/15 text-orange-500 hover:from-orange-500/25 hover:to-orange-500/25'
+                    ? 'border-highlight/40 bg-primary/10 text-highlight hover:bg-primary/20'
                     : 'border-transparent bg-surface-chat-background text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
                 )}
               >
@@ -2260,7 +2260,7 @@ export function ChatInterface({
       {(isTemporaryMode || currentChat.isTemporary) && !showChatHeader && (
         <div
           inert={isSidebarCoveringChat}
-          className="pointer-events-none fixed top-[var(--app-top,0px)] z-40 flex items-center gap-1.5 rounded-br-lg bg-[hsl(18,90%,92%)] py-7 pl-16 pr-3 text-xs font-medium text-orange-600 transition-all duration-300 dark:bg-[hsl(20,40%,15%)] dark:text-orange-500 md:py-2 md:pl-3"
+          className="pointer-events-none fixed top-[var(--app-top,0px)] z-40 flex items-center gap-1.5 rounded-br-lg bg-primary py-7 pl-16 pr-3 text-xs font-medium text-primary-foreground transition-all duration-300 md:py-2 md:pl-3"
           style={{
             left: (() => {
               const isMobile = windowWidth < CONSTANTS.MOBILE_BREAKPOINT
@@ -2671,7 +2671,7 @@ export function ChatInterface({
           className={cn(
             'relative flex h-full flex-col transition-colors',
             isTemporaryMode
-              ? 'bg-orange-500/15 p-2'
+              ? 'bg-primary/15 p-2'
               : 'bg-surface-chat-background',
           )}
         >

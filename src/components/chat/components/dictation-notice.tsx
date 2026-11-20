@@ -22,14 +22,14 @@ export function DictationNotice({
     <div
       role="status"
       className={cn(
-        'flex w-fit flex-wrap items-center gap-x-1.5 gap-y-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs text-content-secondary',
+        'flex w-fit flex-wrap items-center gap-x-1.5 gap-y-1 rounded-lg border border-highlight/30 bg-primary/10 px-2.5 py-1.5 text-xs text-content-secondary',
         className,
       )}
     >
       {failed ? (
         <>
           <TfWarning
-            className="h-3.5 w-3.5 flex-shrink-0 !text-amber-500"
+            className="h-3.5 w-3.5 flex-shrink-0 !text-highlight"
             aria-hidden="true"
           />
           Couldn&apos;t transcribe part of your dictation. The recording is kept

@@ -102,7 +102,7 @@ function usageBarClassName(budget: TokenBudget): string {
     exhausted
       ? '[&>div]:bg-destructive'
       : nearLimit
-        ? '[&>div]:bg-amber-500'
+        ? '[&>div]:bg-highlight'
         : '[&>div]:bg-content-muted',
   )
 }

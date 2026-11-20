@@ -63,7 +63,7 @@ const icons = {
 
 const SIGN_IN_PATH = '/signin'
 const ACTION_CLASS_NAME =
-  'rounded-lg bg-tinfoil-oak px-6 py-2.5 text-brand-dark hover:bg-tinfoil-oak-hover'
+  'rounded-lg bg-primary px-6 py-2.5 text-primary-foreground hover:bg-primary-hover'
 const SECONDARY_ACTION_CLASS_NAME =
   'rounded-lg border border-border-subtle px-6 py-2.5 text-content-primary transition-colors hover:bg-surface-chat'
 
@@ -102,7 +102,7 @@ export function ChatHistoryStatus({
             <Icon
               className={cn(
                 'h-8 w-8',
-                isKeyProblem ? '!text-orange-500' : '!text-content-secondary',
+                isKeyProblem ? '!text-highlight' : '!text-content-secondary',
               )}
               aria-hidden="true"
             />

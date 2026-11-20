@@ -74,7 +74,7 @@
 
     /* Buttons */
     --button-send-background: var(--primary);
-    --button-send-foreground: var(--color-brand-dark);
+    --button-send-foreground: var(--primary-foreground);
 
     /* Neutral scale */
     --gray-950: var(--color-brand-dark);
@@ -96,15 +96,18 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
-    --primary: 34.84 55.36% 78.04%;
+    --primary: var(--color-accent-light);
     --primary-foreground: var(--color-brand-dark);
+    --primary-hover: var(--color-accent-light-darker);
+    --primary-active: var(--color-accent-light-darker);
+    --highlight: var(--color-accent-dark);
     --link: var(--color-accent-dark);
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
     --muted: var(--surface-chat);
     --muted-foreground: var(--content-secondary);
-    --accent: var(--primary);
-    --accent-foreground: var(--primary-foreground);
+    --accent: var(--surface-muted);
+    --accent-foreground: var(--content-primary);
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     --border: var(--border-subtle);
@@ -136,7 +139,7 @@
     --content-inverse: var(--color-brand-dark);
 
     --button-send-background: var(--primary);
-    --button-send-foreground: var(--color-brand-dark);
+    --button-send-foreground: var(--primary-foreground);
 
     --color-accent-light-darker: 195 24.8% 67.3%;
 
@@ -158,13 +161,18 @@
     --card-foreground: var(--content-primary);
     --popover: var(--surface-card);
     --popover-foreground: var(--content-primary);
+    --primary: var(--color-accent-light);
+    --primary-foreground: var(--color-brand-dark);
+    --primary-hover: var(--color-accent-light-darker);
+    --primary-active: var(--color-accent-light-darker);
+    --highlight: var(--color-accent-light);
     --link: 257 32% 70%;
     --secondary: var(--surface-sidebar-button);
     --secondary-foreground: var(--content-primary);
     --muted: var(--surface-chat);
     --muted-foreground: var(--content-secondary);
-    --accent: var(--primary);
-    --accent-foreground: var(--primary-foreground);
+    --accent: var(--surface-muted);
+    --accent-foreground: var(--content-primary);
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     --border: var(--border-subtle);
@@ -172,7 +180,7 @@
     --ring: var(--primary);
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
+    --chart-3: var(--color-accent-light);
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
   }

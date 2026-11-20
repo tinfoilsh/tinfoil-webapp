@@ -2057,7 +2057,7 @@ ${encryptionKey.replace('key_', '')}
                     type="button"
                     onClick={handleSavePersonalization}
                     disabled={profileLocked}
-                    className="rounded-lg bg-tinfoil-oak px-3 py-1 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-primary px-3 py-1 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -2087,7 +2087,7 @@ ${encryptionKey.replace('key_', '')}
                 className={cn(
                   'flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
                   activeTab === item.id
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-brand-accent-light text-brand-accent-dark ring-1 ring-inset ring-brand-accent-dark hover:bg-brand-accent-light-darker'
                     : 'text-content-secondary hover:bg-surface-chat/50',
                 )}
               >
@@ -2099,7 +2099,7 @@ ${encryptionKey.replace('key_', '')}
                 {item.label}
                 {item.id === 'cloud-sync' && keyLocked && (
                   <span
-                    className="h-2 w-2 shrink-0 rounded-full bg-orange-500"
+                    className="h-2 w-2 shrink-0 rounded-full bg-highlight"
                     title="Cloud sync needs attention"
                     aria-hidden="true"
                   />
@@ -2128,7 +2128,7 @@ ${encryptionKey.replace('key_', '')}
                 className={cn(
                   'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                   activeTab === item.id
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-brand-accent-light text-brand-accent-dark ring-1 ring-inset ring-brand-accent-dark hover:bg-brand-accent-light-darker'
                     : 'text-content-secondary hover:bg-surface-chat/50',
                 )}
               >
@@ -2140,7 +2140,7 @@ ${encryptionKey.replace('key_', '')}
                 {item.label}
                 {item.id === 'cloud-sync' && keyLocked && (
                   <span
-                    className="h-2 w-2 shrink-0 rounded-full bg-orange-500"
+                    className="h-2 w-2 shrink-0 rounded-full bg-highlight"
                     title="Cloud sync needs attention"
                     aria-hidden="true"
                   />
@@ -2164,7 +2164,7 @@ ${encryptionKey.replace('key_', '')}
                   <button
                     onClick={handleSavePersonalization}
                     disabled={profileLocked}
-                    className="rounded-lg bg-tinfoil-oak px-4 py-1.5 text-sm font-medium text-brand-dark transition-colors hover:bg-tinfoil-oak-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -2184,7 +2184,7 @@ ${encryptionKey.replace('key_', '')}
           <div className="relative flex-1 overflow-y-auto p-6">
             <TextureGrid />
             {profileLocked && (
-              <p className="relative z-10 mb-6 rounded-lg border border-orange-500/30 bg-orange-500/10 p-4 font-aeonik-fono text-xs text-content-secondary">
+              <p className="relative z-10 mb-6 rounded-lg border border-highlight/30 bg-primary/10 p-4 font-aeonik-fono text-xs text-content-secondary">
                 Unlock your encryption key in Cloud Sync to change these
                 settings.
               </p>
@@ -2239,7 +2239,7 @@ ${encryptionKey.replace('key_', '')}
                             className={cn(
                               'flex flex-col items-center gap-1 rounded-lg border p-3 transition-all',
                               themeMode === theme.id
-                                ? 'border-yellow-700 bg-primary/20 dark:border-primary'
+                                ? 'border-highlight bg-primary/20'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
@@ -2374,7 +2374,7 @@ ${encryptionKey.replace('key_', '')}
                             className={cn(
                               'flex flex-col items-center gap-1 rounded-lg border p-2 transition-all',
                               chatFont === font.id
-                                ? 'border-yellow-700 bg-primary/20 dark:border-primary'
+                                ? 'border-highlight bg-primary/20'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
@@ -2422,7 +2422,7 @@ ${encryptionKey.replace('key_', '')}
                             className={cn(
                               'cursor-pointer rounded-lg border px-2 py-1.5 text-center text-xs text-content-primary transition-all has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring',
                               readAloudSpeed === speed
-                                ? 'border-yellow-700 bg-primary/20 dark:border-primary'
+                                ? 'border-highlight bg-primary/20'
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
@@ -3548,8 +3548,8 @@ ${encryptionKey.replace('key_', '')}
                             </label>
                           </div>
                           {localChatsEnabled && (
-                            <div className="rounded-md border border-orange-500/30 bg-orange-500/10 px-3 py-2">
-                              <p className="text-xs font-medium text-orange-500">
+                            <div className="rounded-md border border-highlight/30 bg-primary/10 px-3 py-2">
+                              <p className="text-xs font-medium text-highlight">
                                 Local chats will be permanently erased when you
                                 sign out. Treat local chats as temporary.
                               </p>
@@ -4379,7 +4379,7 @@ ${encryptionKey.replace('key_', '')}
                               }}
                               disabled={upgradeLoading}
                               className={cn(
-                                'mt-4 w-full rounded-md bg-tinfoil-oak px-4 py-3 text-sm font-medium text-brand-dark transition-all hover:bg-tinfoil-oak-hover',
+                                'mt-4 w-full rounded-md bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-all hover:bg-primary-hover',
                                 upgradeLoading &&
                                   'cursor-not-allowed opacity-70',
                               )}
@@ -4495,7 +4495,7 @@ ${encryptionKey.replace('key_', '')}
                         </p>
                         <Link
                           href="/signin"
-                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-tinfoil-oak px-4 py-2.5 text-sm font-medium text-brand-dark transition-all hover:bg-tinfoil-oak-hover"
+                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary-hover"
                         >
                           <TfSignIn className="h-4 w-4" aria-hidden="true" />
                           Sign in or sign up
@@ -4566,7 +4566,7 @@ ${encryptionKey.replace('key_', '')}
                     ? 'All local data will be cleared. You can recover your cloud chats by signing back in.'
                     : 'All local data will be cleared. You will need your encryption key to recover your cloud chats.'}
               </p>
-              <p className="font-medium text-orange-500">
+              <p className="font-medium text-highlight">
                 Your local chats will be deleted forever.
               </p>
             </div>
