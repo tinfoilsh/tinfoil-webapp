@@ -31,6 +31,12 @@ const nextConfig = {
   outputFileTracingRoot: projectRoot,
   env: {
     NEXT_PUBLIC_APP_VERSION: appVersion,
+    // PREVIEW HACK, remove before merge: expose the LaTeX widget on Vercel
+    // preview builds without a controlplane allowlist change. Locally, set
+    // NEXT_PUBLIC_FORCE_GENUI_WIDGETS=render_latex_document in .env.local.
+    NEXT_PUBLIC_FORCE_GENUI_WIDGETS:
+      process.env.NEXT_PUBLIC_FORCE_GENUI_WIDGETS ??
+      (process.env.VERCEL_ENV === 'preview' ? 'render_latex_document' : ''),
   },
 
   // Disable image optimization for static export

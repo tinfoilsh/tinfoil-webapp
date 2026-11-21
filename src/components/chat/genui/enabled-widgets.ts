@@ -21,9 +21,15 @@ import { getGenUIConfig } from './config'
 import { GENUI_WIDGETS } from './registry'
 import type { GenUIWidget } from './types'
 
+// Build-time additions to the allowlist (see next.config.mjs); empty in
+// production builds.
+const forcedWidgets = (process.env.NEXT_PUBLIC_FORCE_GENUI_WIDGETS ?? '')
+  .split(',')
+  .filter(Boolean)
+
 export function resolveEnabledWidgets(): GenUIWidget[] {
   const config = getGenUIConfig()
-  if (!config) return []
-  const allowed = new Set(config.enabledWidgets)
+  if (!config && forcedWidgets.length === 0) return []
+  const allowed = new Set([...(config?.enabledWidgets ?? []), ...forcedWidgets])
   return GENUI_WIDGETS.filter((w) => allowed.has(w.name))
 }
