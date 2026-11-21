@@ -1,0 +1,34 @@
+% Personal letter.
+\documentclass[11pt]{article}
+\usepackage{tinfoil-base}
+% ---- PERSONALIZATION --------------------------------------------------
+\newcommand{\SenderName}{Maya Okafor}
+\newcommand{\SenderAddress}{14 Linden Street\\Bristol BS1 4QT}
+\newcommand{\SenderEmail}{maya@example.com}
+\newcommand{\RecipientBlock}{Jonas Lindqvist\\Vasagatan 22\\111 20 Stockholm}
+\newcommand{\LetterDate}{21 November 2026}
+\newcommand{\Greeting}{Dear Jonas,}
+\newcommand{\Closing}{With warm regards,}
+% -----------------------------------------------------------------------
+\pagestyle{empty}
+\begin{document}
+\accentbar
+\twocol{{\sffamily\large\bfseries\SenderName}\par{\small\color{muted}\SenderAddress\\\SenderEmail}}{\raggedleft\small\color{muted}\LetterDate\par}
+\vspace{2em}
+\RecipientBlock
+
+\vspace{1.5em}
+\Greeting
+
+I hope this finds you well. I have been meaning to write since we last spoke, and a quiet Sunday finally gave me the excuse.
+
+The move went better than expected. The house is small but full of light, and the garden has already claimed most of my weekends. Work has settled into a rhythm, and I would love to tell you about it properly over dinner when you are next in England.
+
+Please give my love to Elin and the children. Write back when you can; a few lines are more than enough.
+
+\vspace{1em}
+\Closing
+
+\vspace{2.5em}
+{\sffamily\bfseries\SenderName}
+\end{document}

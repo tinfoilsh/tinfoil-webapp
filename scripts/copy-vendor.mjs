@@ -1,6 +1,7 @@
-// Copy the pinned Pyodide and Mermaid distributions into public/vendor/ so the
-// in-origin preview runners load them from this origin (hashed by the WEBCAT
-// manifest) instead of a CDN. Runs before `next build` and `next dev`.
+// Copy the pinned Pyodide, Mermaid, tstex and pdf.js distributions into
+// public/vendor/ so the in-origin preview runners load them from this origin
+// (hashed by the WEBCAT manifest) instead of a CDN. Runs before `next build`
+// and `next dev`.
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -33,9 +34,20 @@ for (const f of fs
   )
 }
 
+// tstex (pdfLaTeX in TypeScript) runs in a worker spawned relative to its
+// index.js, so the whole browser dist is copied; pdf.js draws the result.
+fs.cpSync('node_modules/@lsd-cat/tstex/dist', out('tstex'), {
+  recursive: true,
+  filter: (src) => !src.endsWith('.d.ts'),
+})
+fs.mkdirSync(out('pdfjs'), { recursive: true })
+for (const f of ['pdf.mjs', 'pdf.worker.mjs']) {
+  fs.copyFileSync(`node_modules/pdfjs-dist/build/${f}`, out(`pdfjs/${f}`))
+}
+
 const version = (pkg) =>
   JSON.parse(fs.readFileSync(`node_modules/${pkg}/package.json`, 'utf8'))
     .version
 console.log(
-  `public/vendor: pyodide ${version('pyodide')}, mermaid ${version('mermaid')}`,
+  `public/vendor: pyodide ${version('pyodide')}, mermaid ${version('mermaid')}, tstex ${version('@lsd-cat/tstex')}, pdfjs ${version('pdfjs-dist')}`,
 )

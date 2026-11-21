@@ -68,6 +68,11 @@ const fixtures: Record<
     invalid: { locations: [] },
     required: ['locations'],
   },
+  render_latex_document: {
+    valid: { template: 'letter', fields: { SenderName: 'Ada' }, body: 'Hi' },
+    invalid: { template: 'postcard' },
+    required: ['template'],
+  },
 }
 const expectedNames = Object.keys(fixtures).sort()
 

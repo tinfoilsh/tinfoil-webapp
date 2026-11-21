@@ -1,0 +1,62 @@
+% Slides (beamer, 16:9).
+\documentclass[aspectratio=169,11pt]{beamer}
+\usepackage{tinfoil-base}
+% ---- PERSONALIZATION --------------------------------------------------
+\title{Designing for Trust}
+\subtitle{What confidential computing changes for product teams}
+\author{Sam Rivera}
+\institute{Tinfoil}
+\date{21 November 2026}
+% -----------------------------------------------------------------------
+\begin{document}
+\begin{frame}[plain]\titlepage\end{frame}
+
+\section{The problem}
+\begin{frame}{Users cannot see where their data goes}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \begin{itemize}
+        \item Privacy policies describe intent, not behaviour
+        \item Server-side processing is invisible to the client
+        \item Trust is delegated to the brand, not the system
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.4\textwidth}
+      \begin{block}{Key question}
+        Can the client verify what code handles its request?
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\section{The approach}
+\begin{frame}{Attestation turns a promise into a proof}
+  \begin{enumerate}
+    \item Hardware measures the code running in the enclave
+    \item The client checks the measurement against a published value
+    \item Only then does the client send data
+  \end{enumerate}
+  \vspace{1em}
+  \begin{tabular}{@{}lll@{}}\toprule
+    \lab{Layer} & \lab{Who signs} & \lab{What is proven}\\\midrule
+    Hardware & CPU vendor & Enclave identity\\
+    Build & CI pipeline & Source to binary\\
+    Transport & TLS & Channel to the enclave\\\bottomrule
+  \end{tabular}
+\end{frame}
+
+\begin{frame}{What this means for product teams}
+  \begin{block}{Design implication}
+    Verification must be visible without being noisy: show it once, make it inspectable, never interrupt.
+  \end{block}
+  \begin{itemize}
+    \item Surface the verified state in a persistent, quiet indicator
+    \item Fail closed: no verification, no request
+    \item Keep the detailed evidence one click away
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[plain]
+  \vspace{4em}{\Huge\bfseries Thank you}\par\vspace{0.8em}{\large\color{muted}Questions?}
+\end{frame}
+\end{document}

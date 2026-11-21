@@ -7,10 +7,12 @@
  * and shows the full artifact in a right-side slide-over via
  * `ArtifactPreviewPanel`.
  *
- * Supported source types: `url`, `html`, `markdown`, `svg`, `mermaid`.
+ * Supported model source types: `url`, `html`, `markdown`. The sidebar also
+ * shows `latex` sources produced by the LatexDocument widget.
  */
 import { CONSTANTS } from '@/components/chat/constants'
 import CopyButton from '@/components/copy-button'
+import { PdfPreview } from '@/components/preview/pdf-preview'
 import {
   SandboxUnavailable,
   useSandboxRunner,
@@ -35,6 +37,7 @@ import {
 } from '@tinfoilsh/tinfoil-icons'
 import { FileText } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { PiSpinner } from 'react-icons/pi'
 import ReactMarkdown from 'react-markdown'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
@@ -66,6 +69,15 @@ const sourceSchema = z.discriminatedUnion('type', [
 
 export type ArtifactSource = z.infer<typeof sourceSchema>
 
+/** A LaTeX document compiled in the browser; not a model-facing source. */
+export type LatexSidebarSource = { type: 'latex'; latex: string } & (
+  | { status: 'compiling' }
+  | { status: 'ready'; pdf: Uint8Array }
+  | { status: 'error'; error: string }
+)
+
+export type ArtifactSidebarSource = ArtifactSource | LatexSidebarSource
+
 const schema = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
@@ -83,7 +95,7 @@ const schema = z.object({
 export interface ArtifactPreviewSidebarDetail {
   title?: string
   description?: string
-  source: ArtifactSource
+  source: ArtifactSidebarSource
   footer?: string
 }
 
@@ -158,7 +170,7 @@ function safeArtifactUrl(rawUrl: string): string {
   return 'about:blank'
 }
 
-function getSourceLabel(source: ArtifactSource): string {
+function getSourceLabel(source: ArtifactSidebarSource): string {
   switch (source.type) {
     case 'url':
       return 'Hosted preview'
@@ -166,10 +178,12 @@ function getSourceLabel(source: ArtifactSource): string {
       return 'HTML artifact'
     case 'markdown':
       return 'Markdown artifact'
+    case 'latex':
+      return 'PDF document'
   }
 }
 
-function sourceToCopyString(source: ArtifactSource): string {
+function sourceToCopyString(source: ArtifactSidebarSource): string {
   switch (source.type) {
     case 'url':
       return source.url
@@ -177,13 +191,15 @@ function sourceToCopyString(source: ArtifactSource): string {
       return source.html
     case 'markdown':
       return source.markdown
+    case 'latex':
+      return source.latex
   }
 }
 
 function sourceToDownload(
-  source: ArtifactSource,
+  source: ArtifactSidebarSource,
   title: string | undefined,
-): { content: string; mimeType: string; filename: string } {
+): { content: string | Uint8Array; mimeType: string; filename: string } {
   const base =
     (title ?? 'artifact').trim().replace(/[^\w.-]+/g, '-') || 'artifact'
   switch (source.type) {
@@ -205,16 +221,28 @@ function sourceToDownload(
         mimeType: 'text/markdown;charset=utf-8',
         filename: `${base}.md`,
       }
+    case 'latex':
+      return source.status === 'ready'
+        ? {
+            content: source.pdf,
+            mimeType: 'application/pdf',
+            filename: `${base}.pdf`,
+          }
+        : {
+            content: source.latex,
+            mimeType: 'text/x-tex;charset=utf-8',
+            filename: `${base}.tex`,
+          }
   }
 }
 
 function downloadArtifact(
-  source: ArtifactSource,
+  source: ArtifactSidebarSource,
   title: string | undefined,
 ): void {
   if (typeof window === 'undefined') return
   const { content, mimeType, filename } = sourceToDownload(source, title)
-  const blob = new Blob([content], { type: mimeType })
+  const blob = new Blob([content as BlobPart], { type: mimeType })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -303,7 +331,7 @@ function Preview({
   className,
   shouldAutoFocusIframe = false,
 }: {
-  source: ArtifactSource
+  source: ArtifactSidebarSource
   title?: string
   className?: string
   shouldAutoFocusIframe?: boolean
@@ -343,14 +371,34 @@ function Preview({
           <ReactMarkdown>{source.markdown}</ReactMarkdown>
         </div>
       )
+    case 'latex':
+      switch (source.status) {
+        case 'compiling':
+          return (
+            <div className="flex flex-1 items-center justify-center gap-2 p-6 text-xs text-content-muted">
+              <PiSpinner className="h-4 w-4 animate-spin" aria-hidden />
+              Compiling PDF…
+            </div>
+          )
+        case 'error':
+          return (
+            <pre className="overflow-auto whitespace-pre-wrap p-4 text-xs text-red-600 dark:text-red-400">
+              {source.error}
+            </pre>
+          )
+        case 'ready':
+          return <PdfPreview data={source.pdf} className={className} />
+      }
   }
 }
 
-function getSidebarPreviewClassName(source: ArtifactSource): string {
+function getSidebarPreviewClassName(source: ArtifactSidebarSource): string {
   switch (source.type) {
     case 'url':
     case 'html':
       return 'h-full w-full border-0 bg-white'
+    case 'latex':
+      return 'h-full w-full bg-surface-chat-background p-3'
     case 'markdown':
       return 'prose prose-sm h-full max-w-none overflow-auto px-4 py-3 text-content-primary dark:prose-invert'
   }
@@ -362,12 +410,12 @@ const VIEW_TABS: { mode: ViewMode; label: string; icon: IconType }[] = [
 ]
 
 interface ArtifactView {
-  source: ArtifactSource
+  source: ArtifactSidebarSource
   mode: ViewMode
   isRunApproved: boolean
 }
 
-function initialView(source: ArtifactSource): ArtifactView {
+function initialView(source: ArtifactSidebarSource): ArtifactView {
   return { source, mode: 'preview', isRunApproved: false }
 }
 

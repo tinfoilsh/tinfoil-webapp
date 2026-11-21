@@ -1,0 +1,51 @@
+% Invoice. A logo.png next to this file replaces the wordmark.
+\documentclass[10pt]{article}
+\usepackage{tinfoil-base}
+% ---- PERSONALIZATION --------------------------------------------------
+\newcommand{\CompanyName}{Studio Halden}
+\newcommand{\CompanyAddress}{Rue de la Paix 8\\1003 Lausanne}
+\newcommand{\CompanyContact}{billing@halden.example\\+41 21 000 00 00}
+\newcommand{\ClientBlock}{Brightwater GmbH\\Attn: Finance Department\\Torstraße 101\\10119 Berlin}
+\newcommand{\InvoiceNumber}{2026-0147}
+\newcommand{\InvoiceDate}{21 November 2026}
+\newcommand{\DueDate}{21 December 2026}
+\newcommand{\Terms}{Net 30}
+\newcommand{\Currency}{EUR}
+\newcommand{\Subtotal}{7\,400.00}
+\newcommand{\TaxLabel}{VAT 8.1\,\%}
+\newcommand{\Tax}{599.40}
+\newcommand{\Total}{7\,999.40}
+\newcommand{\PaymentDetails}{Bank: Banque Cantonale Vaudoise\\IBAN: CH93 0076 2011 6238 5295 7\\BIC: BCVLCH2LXXX\\Reference: \InvoiceNumber}
+\newcommand{\Notes}{Thank you for your business. Late payments accrue interest at 5\,\% per annum.}
+% -----------------------------------------------------------------------
+\pagestyle{empty}
+% \invoiceline{description}{qty}{unit price}{amount}
+\newcommand{\invoiceline}[4]{#1 & #2 & #3 & #4\\}
+\begin{document}
+\accentbar
+\twocol{\IfFileExists{logo.png}{\includegraphics[height=1.2cm]{logo.png}}{\sffamily\large\bfseries\CompanyName}\par\vspace{0.4em}{\small\color{muted}\CompanyAddress\\\CompanyContact}}{\raggedleft{\sffamily\Huge\bfseries Invoice}\par{\color{muted}\InvoiceNumber}\par}
+\vspace{0.5em}\hairline\vspace{1.5em}
+
+\twocol{\lab{Bill to}\par\vspace{0.3em}\ClientBlock}{\hfill\begin{tabular}[t]{@{}l@{\hspace{1.5em}}l@{}}
+\lab{Invoice date} & \InvoiceDate\\[0.2em]
+\lab{Due date} & \DueDate\\[0.2em]
+\lab{Terms} & \Terms\\[0.2em]
+\lab{Currency} & \Currency
+\end{tabular}}
+
+\vspace{2em}
+\begin{tabular}{@{}p{0.56\textwidth}rrr@{}}\toprule
+\lab{Description} & \lab{Qty} & \lab{Unit price} & \lab{Amount}\\\midrule
+\invoiceline{Brand identity: discovery workshop and research}{1}{1\,800.00}{1\,800.00}
+\invoiceline{Logo design, three concepts and two revision rounds}{1}{3\,200.00}{3\,200.00}
+\invoiceline{Stationery and social media templates}{12}{150.00}{1\,800.00}
+\invoiceline{Print-ready file preparation}{4}{150.00}{600.00}
+\midrule
+& & Subtotal & \Subtotal\\
+& & \TaxLabel & \Tax\\
+& & {\bfseries Total due} & {\bfseries\Currency\ \Total}\\\bottomrule
+\end{tabular}
+
+\vspace{2.5em}
+\twocol{\lab{Payment details}\par\vspace{0.3em}{\small\PaymentDetails}}{\lab{Notes}\par\vspace{0.3em}{\small\Notes}}
+\end{document}

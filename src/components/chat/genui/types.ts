@@ -42,6 +42,12 @@ export interface GenUIRenderContext {
   isDarkMode?: boolean
   isStreaming?: boolean
   toolCallId?: string
+  /**
+   * Re-request this tool call's arguments from the model, telling it why
+   * the current ones failed (e.g. a compile error). Resolves true when the
+   * block was patched; the widget then re-renders with the new arguments.
+   */
+  retryToolCall?: (reason: string) => Promise<boolean>
 }
 
 /**

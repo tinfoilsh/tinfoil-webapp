@@ -17,6 +17,7 @@ import { widget as ArtifactPreview } from './widgets/ArtifactPreview'
 import { widget as Chart } from './widgets/Chart'
 import { widget as Clock } from './widgets/Clock'
 import { widget as Image } from './widgets/Image'
+import { widget as LatexDocument } from './widgets/LatexDocument'
 import { widget as LinkPreview } from './widgets/LinkPreview'
 import { widget as Map } from './widgets/Map'
 import { widget as MessageCompose } from './widgets/MessageCompose'
@@ -37,6 +38,7 @@ export const GENUI_WIDGETS: GenUIWidget[] = [
   Image,
   LinkPreview,
   ArtifactPreview,
+  LatexDocument,
   Clock,
   RecipeCard,
   MessageCompose,

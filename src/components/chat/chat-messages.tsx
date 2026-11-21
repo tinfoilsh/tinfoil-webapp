@@ -80,6 +80,7 @@ type ChatMessagesProps = {
   onRetryToolCall?: (
     messageIndex: number,
     toolCallId: string,
+    reason?: string,
   ) => Promise<boolean>
   showScrollButton?: boolean
   webSearchEnabled?: boolean
@@ -151,6 +152,7 @@ const ChatMessage = memo(
     onRetryToolCall?: (
       messageIndex: number,
       toolCallId: string,
+      reason?: string,
     ) => Promise<boolean>
   }) {
     const normalized = ensureTimeline(message)

@@ -504,8 +504,8 @@ const DefaultMessageComponent = ({
                     }
                     onRetryToolCall={
                       onRetryToolCall
-                        ? (toolCallId) =>
-                            onRetryToolCall(messageIndex, toolCallId)
+                        ? (toolCallId, reason) =>
+                            onRetryToolCall(messageIndex, toolCallId, reason)
                         : undefined
                     }
                   />

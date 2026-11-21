@@ -19,8 +19,8 @@
     "test:shuffle": "vitest run --sequence.shuffle",
     "test:typecheck": "tsc --project tsconfig.test.json --noEmit --incremental false",
     "test:coverage": "vitest run --coverage",
-    "prebuild": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs && node scripts/copy-vendor.mjs",
-    "predev": "node scripts/copy-vendor.mjs",
+    "prebuild": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs && node scripts/copy-vendor.mjs && node scripts/fetch-texmf.mjs",
+    "predev": "node scripts/copy-vendor.mjs && node scripts/fetch-texmf.mjs",
     "postinstall": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs"
   },
   "dependencies": {
@@ -30,6 +30,7 @@
     "@clerk/ui": "1.33.1",
     "@headlessui/react": "^2.1.1",
     "@heroicons/react": "^2.1.4",
+    "@lsd-cat/tstex": "^0.1.0",
     "@noble/hashes": "^2.2.0",
     "@radix-ui/react-alert-dialog": "^1.1.4",
     "@radix-ui/react-dialog": "^1.1.4",
@@ -57,6 +58,7 @@
     "lucide-react": "^0.473.0",
     "mermaid": "11.16.1",
     "next": "^16.2.6",
+    "pdfjs-dist": "^6.5.438",
     "pyodide": "0.27.8",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

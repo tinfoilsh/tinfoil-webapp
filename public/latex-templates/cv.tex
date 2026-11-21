@@ -1,0 +1,37 @@
+% CV / resume. A logo.png (or photo) next to this file appears top right.
+\documentclass[10pt]{article}
+\usepackage{tinfoil-base}
+% ---- PERSONALIZATION --------------------------------------------------
+\newcommand{\Name}{Elena Marchetti}
+\newcommand{\Headline}{Product Designer}
+\newcommand{\ContactLine}{elena@example.com \ $\bullet$\ +39 333 123 4567 \ $\bullet$\ Milan, Italy \ $\bullet$\ elenamarchetti.example}
+% -----------------------------------------------------------------------
+\geometry{top=2cm,bottom=2cm,left=2.2cm,right=2.2cm}
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+% \cventry{dates}{title}{organisation}{description}
+\newcommand{\cventry}[4]{{\bfseries #2}\hfill{\footnotesize\color{muted}#1}\par{\color{accent}#3}\par{\small #4}\par\vspace{0.8em}}
+\begin{document}
+\accentbar
+\twocol{{\sffamily\Huge\bfseries\Name}\par\vspace{0.2em}{\large\color{muted}\Headline}}{\raggedleft\IfFileExists{logo.png}{\includegraphics[height=2cm]{logo.png}}{}\par}
+\vspace{0.4em}{\small\color{muted}\ContactLine}\par
+\vspace{0.4em}\hairline\vspace{0.6em}
+
+{\small Product designer with eight years of experience shipping consumer and B2B software. I lead design from research to delivery and build design systems that teams adopt.}
+
+\section{Experience}
+\cventry{2022 -- present}{Senior Product Designer}{Lumen Health, Milan}{Lead designer for the patient app (1.2M monthly users). Built the component library used by four product teams; cut onboarding drop-off by 31\%.}
+\cventry{2019 -- 2022}{Product Designer}{Vectis Studio, Berlin}{Designed B2B dashboards for logistics clients. Introduced weekly usability testing to the studio.}
+\cventry{2016 -- 2019}{UI Designer}{Freelance}{Branding and interface work for early-stage startups in Italy and Switzerland.}
+
+\section{Education}
+\cventry{2014 -- 2016}{MA Communication Design}{Politecnico di Milano}{Thesis on legibility of variable fonts in small-screen interfaces.}
+\cventry{2011 -- 2014}{BA Industrial Design}{ISIA Firenze}{}
+
+\section{Skills}
+\begin{tabular}{@{}ll@{}}
+\lab{Design} & Interaction design, design systems, prototyping (Figma), user research\\[0.2em]
+\lab{Technical} & HTML, CSS, basic JavaScript\\[0.2em]
+\lab{Languages} & Italian (native), English (fluent), German (B1)
+\end{tabular}
+\end{document}

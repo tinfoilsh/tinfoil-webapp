@@ -1,0 +1,57 @@
+% Academic paper / essay. Uses the serif option; drop it for sans.
+\documentclass[11pt]{article}
+\usepackage[serif]{tinfoil-base}
+\usepackage{caption}
+\usepackage[numbers,sort&compress]{natbib}
+% ---- PERSONALIZATION --------------------------------------------------
+\newcommand{\PaperTitle}{Verifiable Inference: Measuring the Cost of Remote Attestation in Interactive Workloads}
+\newcommand{\Authors}{Ana Costa\textsuperscript{1}, Wei Zhang\textsuperscript{2}, Tomás Ferreira\textsuperscript{1}}
+\newcommand{\Affiliations}{\textsuperscript{1}University of Lisbon \quad \textsuperscript{2}ETH Zürich}
+\newcommand{\Keywords}{confidential computing, attestation, latency, inference}
+% -----------------------------------------------------------------------
+\geometry{left=3cm,right=3cm}
+\setlength{\parindent}{1.2em}\setlength{\parskip}{0pt}
+\captionsetup{font=small,labelfont={bf,sf}}
+\begin{document}
+\begin{center}
+  {\sffamily\LARGE\bfseries\PaperTitle}\par\vspace{0.6em}{\color{accent}\rule{2.5em}{3pt}}\par\vspace{0.8em}
+  \Authors\par\vspace{0.3em}
+  {\small\color{muted}\Affiliations}\par\vspace{1.5em}
+\end{center}
+\begin{keybox}{Abstract}\small
+Remote attestation lets a client verify the code handling its request before sending data, but every verification adds latency. We measure the attestation overhead of an interactive inference service across three hardware platforms and two caching strategies. With certificate caching, median overhead falls below 4\,ms, within the noise of network jitter. Without caching, cold verification costs between 80 and 190\,ms, dominated by certificate chain fetches rather than cryptographic work.\par\vspace{0.4em}
+{\sffamily\bfseries Keywords:} \Keywords
+\end{keybox}
+
+\section{Introduction}
+Confidential computing moves the trust boundary from the service operator to the hardware vendor \citep{costan2016}. The client obtains a signed measurement of the code running inside an enclave and compares it against a known value. Prior work has focused on the security of the attestation protocol \citep{menetrey2022}; its cost in latency-sensitive systems is less studied.
+
+We ask a narrow question: how much does attestation add to the end-to-end latency of an interactive request, and which parts of that cost can be removed by caching?
+
+\section{Method}
+We instrument a client that performs the full verification pipeline before each request and time each step separately:
+\begin{equation}
+  T_{\mathrm{attest}} = T_{\mathrm{fetch}} + T_{\mathrm{chain}} + T_{\mathrm{log}} + T_{\mathrm{bind}}
+\end{equation}
+
+\section{Results}
+\begin{table}[ht]\centering\small
+\begin{tabular}{@{}lrrr@{}}\toprule
+\lab{Platform} & \lab{Cold (ms)} & \lab{Cached (ms)} & \lab{Chain fetch share}\\\midrule
+AMD SEV-SNP & 184 & 3.6 & 71\,\%\\
+Intel TDX & 142 & 3.1 & 66\,\%\\
+NVIDIA H100 & 97 & 3.9 & 58\,\%\\\bottomrule
+\end{tabular}
+\caption{Median attestation overhead per request, $n = 2000$ requests per cell.}
+\end{table}
+Caching the certificate chain and the log inclusion proof per session removes almost the entire overhead. The remaining cost is one signature verification and one hash comparison.
+
+\section{Conclusion}
+Attestation need not be a performance concern for interactive services. The practical cost is engineering: clients must cache the trust chain safely and refresh it when the measurement changes.
+
+\bibliographystyle{plainnat}
+\begin{thebibliography}{9}\small
+\bibitem[Costan and Devadas(2016)]{costan2016} V. Costan and S. Devadas. Intel SGX explained. \emph{IACR Cryptology ePrint Archive}, 2016.
+\bibitem[Ménétrey et al.(2022)]{menetrey2022} J. Ménétrey, C. Göttel, et al. An exploratory study of attestation mechanisms for trusted execution environments. In \emph{SysTEX}, 2022.
+\end{thebibliography}
+\end{document}

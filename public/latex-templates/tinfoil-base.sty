@@ -1,0 +1,70 @@
+% Shared base for the document templates. Ship this file next to main.tex.
+% Options: serif (Times body instead of sans).
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{tinfoil-base}[2026/11/21 shared base for document templates]
+% pdftex.def would load epstopdf-base, which needs grfext (not in the bundle) whenever
+% the last \usepackage had options. EPS is unsupported anyway, so skip it.
+\def\DoNotLoadEpstopdf{1}
+\RequirePackage{xcolor,graphicx,booktabs,amsmath,amssymb,microtype,tikz}
+\newif\if@tfserif
+\DeclareOption{serif}{\@tfseriftrue}
+\ProcessOptions\relax
+
+% Palette: one accent, neutral greys. Override accent after loading with \definecolor.
+\definecolor{accent}{HTML}{1D4ED8}
+\definecolor{ink}{HTML}{1F2937}
+\definecolor{muted}{HTML}{6B7280}
+\definecolor{line}{HTML}{D1D5DB}
+\definecolor{tint}{HTML}{F3F4F6}
+
+% Fonts: the tstex minimal bundle has complete Computer Modern and Times only.
+\if@tfserif\renewcommand{\rmdefault}{ptm}\else\renewcommand{\familydefault}{\sfdefault}\fi
+\color{ink}
+\linespread{1.08}
+
+% Shared building blocks.
+\newcommand{\lab}[1]{{\sffamily\scriptsize\bfseries\color{muted}\textls[140]{\MakeUppercase{#1}}}}
+\newcommand{\accentbar}{\noindent{\color{accent}\rule{2.5em}{3pt}}\par\vspace{0.6em}}
+\newcommand{\hairline}{\par\noindent{\color{line}\rule{\linewidth}{0.6pt}}\par}
+\newcommand{\twocol}[2]{\noindent\begin{minipage}[t]{0.5\linewidth}#1\end{minipage}\begin{minipage}[t]{0.5\linewidth}#2\end{minipage}\par}
+\newcommand{\docheader}[2]{\accentbar{\sffamily\Huge\bfseries\color{ink}#1}\par\vspace{0.3em}{\large\color{muted}#2}\par\vspace{2em}}
+\newcommand{\sigline}[1]{\par\vspace{2.4em}{\color{line}\rule{0.6\linewidth}{0.6pt}}\par{\footnotesize\color{muted}#1}\par}
+% keybox: titled tinted panel.
+\newsavebox{\tf@keybox}
+\newenvironment{keybox}[1]{\par\medskip\noindent\begin{lrbox}{\tf@keybox}\begin{minipage}{\dimexpr\linewidth-2em}{\sffamily\bfseries\color{accent}#1}\par\smallskip}{\end{minipage}\end{lrbox}\tikz\node[fill=tint,rounded corners=6pt,inner sep=1em]{\usebox{\tf@keybox}};\par\medskip}
+
+\@ifclassloaded{beamer}{%
+  \setbeamertemplate{navigation symbols}{}
+  \setbeamercolor{normal text}{fg=ink,bg=white}
+  \setbeamercolor{structure}{fg=accent}
+  \setbeamercolor{title}{fg=ink}
+  \setbeamercolor{frametitle}{fg=ink}
+  \setbeamercolor{block title}{fg=accent,bg=tint}
+  \setbeamercolor{block body}{fg=ink,bg=tint}
+  \setbeamerfont{title}{size=\Huge,series=\bfseries}
+  \setbeamerfont{subtitle}{size=\large}
+  \setbeamerfont{frametitle}{size=\Large,series=\bfseries}
+  \setbeamertemplate{itemize items}{\raisebox{0.2ex}{\scalebox{0.7}{\textcolor{accent}{$\bullet$}}}}
+  \setbeamertemplate{blocks}[rounded]
+  \setbeamertemplate{frametitle}{\vspace{0.8em}\usebeamerfont{frametitle}\insertframetitle\par\vspace{0.3em}{\color{accent}\rule{2em}{2pt}}}
+  \setbeamertemplate{footline}{\hspace{1em}{\footnotesize\color{muted}\inserttitle}\hfill{\footnotesize\color{muted}\insertframenumber}\hspace{1em}\vspace{0.7em}}
+  \setbeamertemplate{title page}{\vspace{3em}\usebeamerfont{title}\usebeamercolor[fg]{title}\inserttitle\par\vspace{0.5em}{\usebeamerfont{subtitle}\color{muted}\insertsubtitle}\par\vspace{0.8em}{\color{accent}\rule{3em}{2pt}}\par\vspace{2em}{\small\insertauthor\par\vspace{0.2em}\color{muted}\insertinstitute\ $\bullet$\ \insertdate}}
+  \AtBeginSection{\begin{frame}[plain]\vspace{3em}\accentbar{\small\color{muted}\bfseries\thesection}\par\vspace{0.3em}{\Huge\bfseries\insertsection}\end{frame}}
+}{%
+  \RequirePackage[a4paper,top=2.5cm,bottom=2.5cm,left=2.5cm,right=2.5cm,headheight=14pt]{geometry}
+  \RequirePackage{fancyhdr}
+  \RequirePackage{hyperref}
+  \hypersetup{colorlinks,linkcolor=ink,urlcolor=accent,citecolor=accent}
+  \setlength{\parindent}{0pt}
+  \setlength{\parskip}{0.6em}
+  \renewcommand{\labelitemi}{\raisebox{0.2ex}{\scalebox{0.7}{\textcolor{accent}{$\bullet$}}}}
+  \renewcommand{\labelitemii}{\textcolor{muted}{--}}
+  \renewcommand\section{\@startsection{section}{1}{\z@}{-2.2em}{0.7em}{\sffamily\large\bfseries\color{ink}}}
+  \renewcommand\subsection{\@startsection{subsection}{2}{\z@}{-1.1em}{0.3em}{\sffamily\normalsize\bfseries\color{ink}}}
+  \renewcommand{\thesection}{\textcolor{accent}{\arabic{section}}}
+  \renewcommand{\thesubsection}{\textcolor{accent}{\arabic{section}.\arabic{subsection}}}
+  \pagestyle{fancy}\fancyhf{}
+  \renewcommand{\headrulewidth}{0pt}
+  \fancyfoot[R]{\sffamily\footnotesize\color{muted}\thepage}
+  \newcommand{\runninghead}[1]{\fancyhead[L]{\sffamily\footnotesize\color{muted}#1}}
+}

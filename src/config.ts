@@ -82,3 +82,9 @@ export const PASSKEY = {
 // previews (github.com/tinfoilsh/tinfoil-webapp-sandbox).
 export const SANDBOX_ORIGIN =
   process.env.NEXT_PUBLIC_SANDBOX_ORIGIN || 'https://webapp-sandbox.tinfoil.sh'
+
+// Base URL of the tstex TeX Live bundle (fonts, packages, latex.fmt) fetched by
+// the LaTeX worker; scripts/fetch-texmf.mjs mirrors it into public/vendor at
+// build time. Any override must be an origin the CSP's connect-src allows.
+export const LATEX_TEXMF_URL =
+  process.env.NEXT_PUBLIC_LATEX_TEXMF_URL || '/vendor/texmf/'

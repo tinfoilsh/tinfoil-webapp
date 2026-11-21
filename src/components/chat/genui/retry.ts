@@ -104,6 +104,7 @@ function mapStructuredError(error: unknown): ArtifactRetryError {
 export async function regenerateToolCallArguments({
   toolName,
   originalArguments = '',
+  failureReason,
   contextMessages,
   model,
   autoCandidates,
@@ -113,6 +114,8 @@ export async function regenerateToolCallArguments({
 }: {
   toolName: string
   originalArguments?: string
+  /** Why the current arguments failed, shown to the model (e.g. a compile log). */
+  failureReason?: string
   contextMessages: Message[]
   model: BaseModel
   autoCandidates?: BaseModel[]
@@ -145,7 +148,9 @@ export async function regenerateToolCallArguments({
     `Repair only the JSON arguments for the "${toolName}" component. ` +
     'Preserve the artifact intent and all valid data. Follow the supplied schema exactly, ' +
     'including the matching fields for the selected variant. Do not generate or revise prose.'
-  const malformedArtifact = `Malformed arguments to repair:\n${originalArguments}`
+  const malformedArtifact =
+    `Malformed arguments to repair:\n${originalArguments}` +
+    (failureReason ? `\n\nWhy they failed:\n${failureReason}` : '')
   const mandatoryPrompt = `${instruction}\n${JSON.stringify(jsonSchema)}\n${malformedArtifact}`
   const contextWindowTokens = getSmallestContextWindowTokens(
     autoCandidates ?? [model],

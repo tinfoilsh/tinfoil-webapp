@@ -1,0 +1,45 @@
+% Report / memo / proposal.
+\documentclass[11pt]{article}
+\usepackage{tinfoil-base}
+% ---- PERSONALIZATION --------------------------------------------------
+\newcommand{\ReportTitle}{Reducing Checkout Latency}
+\newcommand{\ReportSubtitle}{Proposal for the Q1 platform roadmap}
+\newcommand{\Author}{Platform Engineering}
+\newcommand{\Organisation}{Acme Commerce}
+\newcommand{\ReportDate}{21 November 2026}
+% -----------------------------------------------------------------------
+\runninghead{\ReportTitle}
+\begin{document}
+\docheader{\ReportTitle}{\ReportSubtitle}
+\twocol{\lab{Author}\par\Author}{\lab{Date}\par\ReportDate}
+\vspace{1em}
+
+\begin{keybox}{Summary}
+Checkout p95 latency has risen from 480\,ms to 910\,ms over two quarters. We propose three changes: a read-through cache for the pricing service, batching of inventory checks, and moving tax calculation off the request path. Expected result: p95 below 400\,ms by the end of Q1 at a cost of roughly 6 engineer-weeks.
+\end{keybox}
+
+\section{Background}
+Checkout latency is the strongest predictor of cart abandonment in our data. Each 100\,ms of additional p95 latency corresponds to a 0.6\,\% drop in conversion. Over the last two quarters, latency has grown in step with catalogue size and with the number of synchronous calls made per request.
+
+\section{Options considered}
+\begin{tabular}{@{}lp{6.4cm}rr@{}}\toprule
+\lab{Option} & \lab{Description} & \lab{Effort} & \lab{p95 gain}\\\midrule
+A & Cache pricing responses (TTL 60\,s) & 2 wk & $-220$\,ms\\
+B & Batch inventory checks per cart & 2.5 wk & $-180$\,ms\\
+C & Async tax calculation with fallback & 1.5 wk & $-140$\,ms\\
+D & Rewrite checkout service in Go & 14 wk & $-450$\,ms\\\bottomrule
+\end{tabular}
+
+\subsection{Recommendation}
+Options A, B and C together deliver most of the benefit of D at a fraction of the cost and can ship independently. We recommend starting with A, which also reduces load on the pricing database.
+
+\section{Plan}
+\begin{itemize}
+  \item \textbf{Weeks 1--2:} pricing cache behind a feature flag; shadow traffic to validate hit rate.
+  \item \textbf{Weeks 3--5:} batched inventory API; migrate the cart service.
+  \item \textbf{Weeks 5--6:} async tax path with synchronous fallback for regulated regions.
+\end{itemize}
+
+\section{Risks}
+Stale prices during promotions are the main risk of option A; we mitigate it with explicit cache invalidation on price updates. Option C depends on the tax provider's webhook reliability, which we will measure during week 1.
+\end{document}

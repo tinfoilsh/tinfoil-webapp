@@ -148,7 +148,11 @@ interface UseChatMessagingReturn {
     resultText: string,
     resultData?: unknown,
   ) => void
-  retryToolCall: (messageIndex: number, toolCallId: string) => Promise<boolean>
+  retryToolCall: (
+    messageIndex: number,
+    toolCallId: string,
+    reason?: string,
+  ) => Promise<boolean>
 }
 
 export type ChatDispatchResult =
@@ -1920,7 +1924,11 @@ export function useChatMessaging({
    * the card can explain what happened and keep retry available.
    */
   const retryToolCall = useCallback(
-    async (messageIndex: number, toolCallId: string): Promise<boolean> => {
+    async (
+      messageIndex: number,
+      toolCallId: string,
+      reason?: string,
+    ): Promise<boolean> => {
       if (loadingState !== 'idle' || !currentChat) {
         throw new ArtifactRetryError('unavailable_target')
       }
@@ -1958,6 +1966,7 @@ export function useChatMessaging({
         newArguments = await regenerateToolCallArguments({
           toolName: block.name,
           originalArguments: block.arguments,
+          failureReason: reason,
           contextMessages: currentChat.messages.slice(0, messageIndex + 1),
           model,
           autoCandidates,

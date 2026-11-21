@@ -1,0 +1,50 @@
+% Notes with margin notes, key boxes and a checklist.
+\documentclass[10pt]{article}
+\usepackage{tinfoil-base}
+% ---- PERSONALIZATION --------------------------------------------------
+\newcommand{\NotesTitle}{Distributed Systems, Lecture 7}
+\newcommand{\NotesSubtitle}{Consensus and the FLP result}
+\newcommand{\NotesMeta}{21 November 2026 \ $\bullet$\ Prof.\ Haddad \ $\bullet$\ Week 7}
+% -----------------------------------------------------------------------
+\geometry{left=2cm,right=5.4cm,marginparwidth=3.6cm,marginparsep=0.6cm}
+\pagestyle{empty}
+\setcounter{secnumdepth}{0}
+\newcommand{\sidenote}[1]{\marginpar{\footnotesize\color{muted}\raggedright #1}}
+\newcommand{\todo}[1]{\item[$\square$] #1}
+\newcommand{\done}[1]{\item[$\blacksquare$] #1}
+\begin{document}
+\docheader{\NotesTitle}{\NotesSubtitle}
+\vspace{-1em}{\small\color{muted}\NotesMeta}\par\vspace{0.5em}
+
+\section{Setting}
+A set of $n$ processes communicate by message passing. Messages may be delayed arbitrarily but are eventually delivered. Up to $f$ processes may crash.\sidenote{Asynchronous model: no bound on message delay or relative process speed.}
+
+\begin{keybox}{Definition: consensus}
+Every correct process decides a value such that (1) all decisions are equal, (2) the decided value was proposed by some process, and (3) every correct process eventually decides.
+\end{keybox}
+
+\section{The FLP impossibility}
+In the asynchronous model, no deterministic protocol solves consensus if even one process may crash.\sidenote{Fischer, Lynch and Paterson, 1985.}
+
+\subsection{Proof sketch}
+\begin{itemize}
+  \item Some initial configuration is \emph{bivalent}: both outcomes remain possible.
+  \item From any bivalent configuration, there is a step that leads to another bivalent configuration.
+  \item Hence an infinite non-deciding run exists.
+\end{itemize}
+
+\section{Ways around it}
+\begin{tabular}{@{}ll@{}}\toprule
+\lab{Approach} & \lab{What it gives up}\\\midrule
+Partial synchrony (Paxos, Raft) & Liveness during asynchrony\\
+Randomisation (Ben-Or) & Determinism\\
+Failure detectors & Pure asynchrony\\\bottomrule
+\end{tabular}
+
+\section{To do}
+\begin{itemize}
+  \done{Read FLP, Sections 1 to 3}
+  \todo{Work through the bivalence lemma by hand}
+  \todo{Compare with the Raft paper's safety argument}
+\end{itemize}
+\end{document}

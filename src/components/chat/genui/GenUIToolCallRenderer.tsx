@@ -66,7 +66,7 @@ interface GenUIToolCallRendererProps {
    * the block in place, leaving the rest of the answer intact. Rejects with a
    * typed failure so the card can explain it and keep retry available.
    */
-  onRetryToolCall?: (toolCallId: string) => Promise<boolean>
+  onRetryToolCall?: (toolCallId: string, reason?: string) => Promise<boolean>
 }
 
 function parseInput(
@@ -87,6 +87,7 @@ function GenUIWidgetContent({
   isActive,
   isDarkMode,
   isStreaming,
+  retryToolCall,
 }: {
   toolCallId: string
   toolName: string
@@ -94,12 +95,14 @@ function GenUIWidgetContent({
   isActive: boolean
   isDarkMode?: boolean
   isStreaming: boolean
+  retryToolCall?: (reason: string) => Promise<boolean>
 }) {
   const rendered = renderGenUIInline(toolName, input, {
     isActive,
     isDarkMode,
     isStreaming,
     toolCallId,
+    retryToolCall,
   })
   if (rendered === null) throw new Error('Widget render returned null')
   return rendered
@@ -173,6 +176,11 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
                   isActive={activeArtifactToolCallId === tc.id}
                   isDarkMode={isDarkMode}
                   isStreaming={isStreaming}
+                  retryToolCall={
+                    onRetryToolCall
+                      ? (reason) => onRetryToolCall(tc.id, reason)
+                      : undefined
+                  }
                 />
               </div>
             </GenUIWidgetErrorBoundary>

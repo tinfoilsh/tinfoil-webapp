@@ -44,6 +44,7 @@ export interface MessageRenderProps {
   onRetryToolCall?: (
     messageIndex: number,
     toolCallId: string,
+    reason?: string,
   ) => Promise<boolean>
 }
 

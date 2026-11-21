@@ -1,0 +1,65 @@
+% Contract / agreement.
+\documentclass[11pt]{article}
+\usepackage{tinfoil-base}
+\usepackage{totpages}
+% ---- PERSONALIZATION --------------------------------------------------
+\newcommand{\ContractTitle}{Consulting Services Agreement}
+\newcommand{\EffectiveDate}{21 November 2026}
+\newcommand{\PartyAName}{Orion Data GmbH}
+\newcommand{\PartyADetails}{Friedrichstraße 200, 10117 Berlin, Germany\\HRB 123456 B (Amtsgericht Charlottenburg)}
+\newcommand{\PartyAShort}{the Client}
+\newcommand{\PartyBName}{Lena Vogt}
+\newcommand{\PartyBDetails}{Kastanienallee 9, 10435 Berlin, Germany\\VAT ID DE123456789}
+\newcommand{\PartyBShort}{the Consultant}
+% -----------------------------------------------------------------------
+\runninghead{\ContractTitle}
+\fancyfoot[L]{\sffamily\footnotesize\color{muted}Initials: \rule{1.2cm}{0.4pt}\ \ \rule{1.2cm}{0.4pt}}
+\fancyfoot[R]{\sffamily\footnotesize\color{muted}Page \thepage\ of \ref{TotPages}}
+\renewcommand{\thesection}{\arabic{section}.}
+\renewcommand{\thesubsection}{\arabic{section}.\arabic{subsection}}
+\makeatletter\renewcommand\subsection{\@startsection{subsection}{2}{\z@}{-0.6em}{0.2em}{\normalfont\normalsize}}\makeatother
+\newcommand{\defterm}[1]{\textbf{``#1''}}
+\begin{document}
+\docheader{\ContractTitle}{Effective \EffectiveDate}
+\twocol{\lab{Between}\par\vspace{0.3em}\textbf{\PartyAName}\par{\small\PartyADetails\\(\PartyAShort)}}{\lab{And}\par\vspace{0.3em}\textbf{\PartyBName}\par{\small\PartyBDetails\\(\PartyBShort)}}
+
+\vspace{1.5em}
+{\sffamily\bfseries Recitals}
+
+Whereas \PartyAShort\ wishes to obtain data engineering consulting services, and \PartyBShort\ has the skills and capacity to provide them, the parties agree as follows.
+
+\section{Definitions}
+\subsection{\defterm{Services} means the work described in Schedule 1, as amended in writing by both parties.}
+\subsection{\defterm{Deliverables} means all documents, code and other materials produced by \PartyBShort\ in performing the Services.}
+\subsection{\defterm{Confidential Information} means any non-public information disclosed by one party to the other in connection with this Agreement.}
+
+\section{Services}
+\subsection{The Services shall be performed by \PartyBShort\ with reasonable skill and care and in accordance with the timetable in Schedule 1.}
+\subsection{Timely access to the systems, data and personnel reasonably required to perform the Services shall be provided by \PartyAShort.}
+
+\section{Fees and payment}
+\subsection{The fee is EUR 950 per day, invoiced by \PartyBShort\ monthly in arrears and paid by \PartyAShort.}
+\subsection{Invoices are payable within 30 days of receipt.}
+
+\section{Intellectual property}
+\subsection{Upon full payment, all rights in the Deliverables transfer to \PartyAShort, and \PartyBShort\ retains rights in pre-existing tools and know-how, licensed to \PartyAShort\ as part of the Deliverables.}
+
+\section{Confidentiality}
+\subsection{Each party shall keep the other's Confidential Information confidential and use it only for the purposes of this Agreement, for five years from the Effective Date.}
+
+\section{Term and termination}
+\subsection{This Agreement begins on the Effective Date and continues until the Services are complete, unless terminated earlier.}
+\subsection{Either party may terminate on 30 days' written notice, and Services performed up to the termination date shall be paid for by \PartyAShort.}
+
+\section{Liability}
+\subsection{Neither party is liable for indirect or consequential loss. Each party's total liability is limited to the fees paid or payable in the twelve months preceding the claim, except where liability cannot be limited by law.}
+
+\section{General}
+\subsection{This Agreement is governed by the laws of Germany. The courts of Berlin have exclusive jurisdiction.}
+\subsection{This Agreement is the entire agreement between the parties and may be amended only in writing signed by both parties.}
+
+\vspace{1.5em}
+Signed by the parties on the dates below.
+
+\twocol{\lab{For \PartyAName}\sigline{Signature}\sigline{Name and title}\sigline{Date}}{\lab{For \PartyBName}\sigline{Signature}\sigline{Name and title}\sigline{Date}}
+\end{document}

@@ -1,0 +1,49 @@
+% Formal business letter. A logo.png next to this file replaces the wordmark.
+\documentclass[11pt]{article}
+\usepackage{tinfoil-base}
+% ---- PERSONALIZATION --------------------------------------------------
+\newcommand{\CompanyName}{Northwind Analytics Ltd}
+\newcommand{\CompanyAddress}{48 Clerkenwell Road\\London EC1M 5PS}
+\newcommand{\CompanyContact}{hello@northwind.example\\+44 20 7946 0000}
+\newcommand{\CompanyLegal}{Registered in England and Wales, no. 01234567}
+\newcommand{\SenderName}{Dr.\ Priya Natarajan}
+\newcommand{\SenderTitle}{Head of Partnerships}
+\newcommand{\RecipientBlock}{Mr.\ Daniel Reyes\\Director of Procurement\\Harbourline Logistics\\12 Quay Street\\Liverpool L3 4AF}
+\newcommand{\LetterDate}{21 November 2026}
+\newcommand{\Reference}{NW/2026/0412}
+\newcommand{\Subject}{Proposal for a data-sharing agreement}
+\newcommand{\Greeting}{Dear Mr.\ Reyes,}
+\newcommand{\Closing}{Yours sincerely,}
+% -----------------------------------------------------------------------
+\fancyfoot[L]{\sffamily\footnotesize\color{muted}\CompanyLegal}
+\begin{document}
+\accentbar
+\twocol{\IfFileExists{logo.png}{\includegraphics[height=1.2cm]{logo.png}}{\sffamily\large\bfseries\CompanyName}}{\raggedleft\small\color{muted}\CompanyAddress\\\CompanyContact\par}
+\vspace{0.5em}\hairline\vspace{1.5em}
+
+\twocol{\RecipientBlock}{\hfill\begin{tabular}[t]{@{}l@{\hspace{1em}}l@{}}
+\lab{Date} & \LetterDate\\
+\lab{Ref} & \Reference\\
+\lab{From} & \SenderName
+\end{tabular}}
+
+\vspace{1.5em}
+{\sffamily\bfseries\Subject}
+
+\Greeting
+
+Thank you for meeting with us on 14 November. Following that conversation, I am writing to set out how Northwind Analytics proposes to support Harbourline Logistics with route optimisation across your north-west operations.
+
+We propose a twelve-month engagement in three phases: a data audit and integration phase of six weeks, a pilot on the Liverpool to Manchester corridor of three months, and a scaled rollout across the remaining depots. Each phase has a defined exit criterion, and you may terminate at the end of any phase without penalty.
+
+I would welcome the opportunity to discuss this proposal in detail and will contact your office in the week of 1 December to arrange a convenient time.
+
+\Closing
+
+\vspace{2.5em}
+{\sffamily\bfseries\SenderName}\\
+{\small\color{muted}\SenderTitle, \CompanyName}
+
+\vspace{1em}
+{\small\color{muted}Enclosure: Appendix A, Commercial terms}
+\end{document}
