@@ -10,6 +10,7 @@ export const LATEX_TEMPLATES = {
   letter: {
     file: 'letter.tex',
     description: 'personal letter',
+    body: 'the letter paragraphs only; greeting, closing and signature come from the fields',
     fields: [
       'SenderName',
       'SenderAddress',
@@ -24,6 +25,7 @@ export const LATEX_TEMPLATES = {
     file: 'formal-letter.tex',
     description:
       'business letter with letterhead, reference line and legal footer',
+    body: 'the letter paragraphs only; greeting, closing and signature come from the fields',
     fields: [
       'CompanyName',
       'CompanyAddress',
@@ -43,11 +45,13 @@ export const LATEX_TEMPLATES = {
     file: 'cv.tex',
     description:
       'CV / resume (body uses \\cventry{dates}{title}{organisation}{description})',
+    body: 'a one-paragraph summary, then \\section{Experience} with \\cventry{dates}{title}{organisation}{description} entries, \\section{Education}, \\section{Skills} as a tabular with \\lab labels',
     fields: ['Name', 'Headline', 'ContactLine'],
   },
   report: {
     file: 'report.tex',
     description: 'report, memo or proposal',
+    body: 'a keybox{Summary} panel, then numbered \\section and \\subsection text with itemize lists and booktabs tables',
     fields: [
       'ReportTitle',
       'ReportSubtitle',
@@ -59,17 +63,20 @@ export const LATEX_TEMPLATES = {
   slides: {
     file: 'slides.tex',
     description: 'beamer slides, 16:9',
+    body: '\\section and \\begin{frame}{Title}...\\end{frame} slides, at most six bullets per frame; the title and closing frames are in the template',
     fields: ['title', 'subtitle', 'author', 'institute', 'date'],
   },
   paper: {
     file: 'paper.tex',
     description: 'academic paper or essay',
+    body: 'a keybox{Abstract} with a Keywords line, \\section text with equations, tables and \\citep, then a thebibliography',
     fields: ['PaperTitle', 'Authors', 'Affiliations', 'Keywords'],
   },
   invoice: {
     file: 'invoice.tex',
     description:
       'invoice (body uses \\invoiceline{description}{qty}{unit price}{amount} rows)',
+    body: '\\invoiceline{description}{qty}{unit price}{amount} rows only; subtotal, tax and total are fields',
     fields: [
       'CompanyName',
       'CompanyAddress',
@@ -92,6 +99,7 @@ export const LATEX_TEMPLATES = {
     file: 'contract.tex',
     description:
       'contract or agreement with numbered clauses and signature blocks',
+    body: 'a Recitals heading and paragraph, then \\section{Clause title} with \\subsection{clause text} items; parties and signature blocks are in the template',
     fields: [
       'ContractTitle',
       'EffectiveDate',
@@ -107,6 +115,7 @@ export const LATEX_TEMPLATES = {
     file: 'notes.tex',
     description:
       'notes with margin notes (\\sidenote), key boxes and a checklist',
+    body: '\\section headings with text, \\sidenote{} margin notes, keybox{Title} panels, tables and a \\todo{}/\\done{} checklist',
     fields: ['NotesTitle', 'NotesSubtitle', 'NotesMeta'],
   },
 } as const
@@ -161,10 +170,14 @@ function closingBrace(source: string, open: number): number {
   return -1
 }
 
+const BODY_START = '% ---- BODY ----\n'
+const BODY_END = '% ---- END BODY ----'
+
 /**
- * Replace personalization macro values and, when given, the document body.
- * Fields are matched as `\newcommand{\Key}{...}` or a line starting with
- * `\Key{...}` (beamer's `\title{...}`); unknown keys are ignored.
+ * Replace personalization macro values and, when given, the editable body
+ * region (falling back to the whole document environment when a template
+ * has no markers). Fields are matched as `\newcommand{\Key}{...}` or a line
+ * starting with `\Key{...}` (beamer's `\title{...}`); unknown keys are ignored.
  */
 export function fillTemplate(
   source: string,
@@ -185,9 +198,13 @@ export function fillTemplate(
     }
   }
   if (body !== undefined) {
+    const bodyStart = out.indexOf(BODY_START)
+    const bodyEnd = out.indexOf(BODY_END, bodyStart)
     const start = out.indexOf('\\begin{document}')
     const end = out.lastIndexOf('\\end{document}')
-    if (start >= 0 && end > start) {
+    if (bodyStart >= 0 && bodyEnd > bodyStart) {
+      out = `${out.slice(0, bodyStart + BODY_START.length)}${body.trim()}\n${out.slice(bodyEnd)}`
+    } else if (start >= 0 && end > start) {
       out = `${out.slice(0, start)}\\begin{document}\n${body.trim()}\n${out.slice(end)}`
     }
   }

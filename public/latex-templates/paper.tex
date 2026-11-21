@@ -18,6 +18,7 @@
   \Authors\par\vspace{0.3em}
   {\small\color{muted}\Affiliations}\par\vspace{1.5em}
 \end{center}
+% ---- BODY ----
 \begin{keybox}{Abstract}\small
 Remote attestation lets a client verify the code handling its request before sending data, but every verification adds latency. We measure the attestation overhead of an interactive inference service across three hardware platforms and two caching strategies. With certificate caching, median overhead falls below 4\,ms, within the noise of network jitter. Without caching, cold verification costs between 80 and 190\,ms, dominated by certificate chain fetches rather than cryptographic work.\par\vspace{0.4em}
 {\sffamily\bfseries Keywords:} \Keywords
@@ -54,4 +55,5 @@ Attestation need not be a performance concern for interactive services. The prac
 \bibitem[Costan and Devadas(2016)]{costan2016} V. Costan and S. Devadas. Intel SGX explained. \emph{IACR Cryptology ePrint Archive}, 2016.
 \bibitem[Ménétrey et al.(2022)]{menetrey2022} J. Ménétrey, C. Göttel, et al. An exploratory study of attestation mechanisms for trusted execution environments. In \emph{SysTEX}, 2022.
 \end{thebibliography}
+% ---- END BODY ----
 \end{document}

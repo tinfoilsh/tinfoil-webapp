@@ -29,6 +29,11 @@
 \newcommand{\twocol}[2]{\noindent\begin{minipage}[t]{0.5\linewidth}#1\end{minipage}\begin{minipage}[t]{0.5\linewidth}#2\end{minipage}\par}
 \newcommand{\docheader}[2]{\accentbar{\sffamily\Huge\bfseries\color{ink}#1}\par\vspace{0.3em}{\large\color{muted}#2}\par\vspace{2em}}
 \newcommand{\sigline}[1]{\par\vspace{2.4em}{\color{line}\rule{0.6\linewidth}{0.6pt}}\par{\footnotesize\color{muted}#1}\par}
+% Tables wider than the line are scaled down to fit instead of overflowing.
+\newsavebox{\tf@tabbox}
+\NewCommandCopy{\tf@tabular}{\tabular}
+\NewCommandCopy{\tf@endtabular}{\endtabular}
+\renewenvironment{tabular}{\begin{lrbox}{\tf@tabbox}\tf@tabular}{\tf@endtabular\end{lrbox}\ifdim\wd\tf@tabbox>\linewidth\resizebox{\linewidth}{!}{\usebox{\tf@tabbox}}\else\usebox{\tf@tabbox}\fi}
 % keybox: titled tinted panel.
 \newsavebox{\tf@keybox}
 \newenvironment{keybox}[1]{\par\medskip\noindent\begin{lrbox}{\tf@keybox}\begin{minipage}{\dimexpr\linewidth-2em}{\sffamily\bfseries\color{accent}#1}\par\smallskip}{\end{minipage}\end{lrbox}\tikz\node[fill=tint,rounded corners=6pt,inner sep=1em]{\usebox{\tf@keybox}};\par\medskip}
@@ -41,14 +46,16 @@
   \setbeamercolor{frametitle}{fg=ink}
   \setbeamercolor{block title}{fg=accent,bg=tint}
   \setbeamercolor{block body}{fg=ink,bg=tint}
-  \setbeamerfont{title}{size=\Huge,series=\bfseries}
-  \setbeamerfont{subtitle}{size=\large}
+  \setbeamerfont{title}{size=\Large,series=\bfseries}
+  \setbeamerfont{subtitle}{size=\small}
   \setbeamerfont{frametitle}{size=\Large,series=\bfseries}
   \setbeamertemplate{itemize items}{\raisebox{0.2ex}{\scalebox{0.7}{\textcolor{accent}{$\bullet$}}}}
   \setbeamertemplate{blocks}[rounded]
   \setbeamertemplate{frametitle}{\vspace{0.8em}\usebeamerfont{frametitle}\insertframetitle\par\vspace{0.3em}{\color{accent}\rule{2em}{2pt}}}
-  \setbeamertemplate{footline}{\hspace{1em}{\footnotesize\color{muted}\inserttitle}\hfill{\footnotesize\color{muted}\insertframenumber}\hspace{1em}\vspace{0.7em}}
-  \setbeamertemplate{title page}{\vspace{3em}\usebeamerfont{title}\usebeamercolor[fg]{title}\inserttitle\par\vspace{0.5em}{\usebeamerfont{subtitle}\color{muted}\insertsubtitle}\par\vspace{0.8em}{\color{accent}\rule{3em}{2pt}}\par\vspace{2em}{\small\insertauthor\par\vspace{0.2em}\color{muted}\insertinstitute\ $\bullet$\ \insertdate}}
+  \setbeamertemplate{footline}{\hfill{\footnotesize\color{muted}\insertframenumber}\hspace{1em}\vspace{0.7em}}
+  % Title and subtitle at the top, author at the bottom of a fixed-height
+  % box, so long titles push nothing off the slide.
+  \setbeamertemplate{title page}{\vspace*{0.5em}\begin{minipage}[t][0.8\textheight][s]{\textwidth}\usebeamerfont{title}\usebeamercolor[fg]{title}\inserttitle\par\vspace{0.6em}{\usebeamerfont{subtitle}\color{muted}\insertsubtitle}\par\vspace{0.8em}{\color{accent}\rule{3em}{2pt}}\par\vfill{\small\insertauthor\par\vspace{0.2em}\color{muted}\insertinstitute\ $\bullet$\ \insertdate}\end{minipage}}
   \AtBeginSection{\begin{frame}[plain]\vspace{3em}\accentbar{\small\color{muted}\bfseries\thesection}\par\vspace{0.3em}{\Huge\bfseries\insertsection}\end{frame}}
 }{%
   \RequirePackage[a4paper,top=2.5cm,bottom=2.5cm,left=2.5cm,right=2.5cm,headheight=14pt]{geometry}

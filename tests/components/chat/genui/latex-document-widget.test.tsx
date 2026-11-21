@@ -22,7 +22,7 @@ afterEach(() => {
   localStorage.clear()
 })
 
-const pdf = new TextEncoder().encode('%PDF /Type /Page /Type /Page ')
+const pdf = new TextEncoder().encode('%PDF')
 const renderWidget = (retryToolCall?: (reason: string) => Promise<boolean>) =>
   render(
     widget.render!(
@@ -38,7 +38,11 @@ const renderWidget = (retryToolCall?: (reason: string) => Promise<boolean>) =>
 
 describe('render_latex_document', () => {
   it('compiles the filled template with the base style and shows the page count', async () => {
-    compileLatex.mockResolvedValue({ ok: true, pdf, log: '' })
+    compileLatex.mockResolvedValue({
+      ok: true,
+      pdf,
+      log: 'Output written on main.pdf (2 pages, 10 bytes).',
+    })
     const { getByText } = renderWidget()
     await waitFor(() =>
       expect(getByText('PDF ready, 2 pages')).toBeInTheDocument(),

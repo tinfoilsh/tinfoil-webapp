@@ -23,6 +23,9 @@ describe('LaTeX templates', () => {
       const { file, fields } = LATEX_TEMPLATES[name]
       expect(personalizationMacros(read(file)), file).toEqual([...fields])
       expect(read(file)).toContain('tinfoil-base')
+      expect(read(file)).toMatch(
+        /% ---- BODY ----\n[\s\S]+% ---- END BODY ----/,
+      )
     }
     expect(read(LATEX_BASE_STYLE)).toContain('ProvidesPackage{tinfoil-base}')
   })
@@ -38,8 +41,10 @@ describe('LaTeX templates', () => {
     expect(filled).toContain('\\newcommand{\\Greeting}{Hi,}')
     expect(filled).not.toContain('Maya Okafor')
     expect(filled).not.toContain('Unknown')
-    expect(filled).toMatch(/\\begin\{document\}\nHello\.\n\\end\{document\}/)
+    expect(filled).toMatch(/% ---- BODY ----\nHello\.\n% ---- END BODY ----/)
     expect(filled).not.toContain('I hope this finds you well')
+    expect(filled).toContain('\\Greeting\n')
+    expect(filled).toContain('\\Closing\n')
   })
 
   it('fills beamer title macros and keeps the body when none is given', () => {

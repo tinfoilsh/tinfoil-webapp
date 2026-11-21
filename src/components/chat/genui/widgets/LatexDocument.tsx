@@ -36,7 +36,7 @@ const LOGO_MAX_BYTES = 1_000_000
 
 const templateList = LATEX_TEMPLATE_NAMES.map(
   (name) =>
-    `${name}: ${LATEX_TEMPLATES[name].description}; fields ${LATEX_TEMPLATES[name].fields.join(', ')}`,
+    `${name}: ${LATEX_TEMPLATES[name].description}; fields ${LATEX_TEMPLATES[name].fields.join(', ')}; body: ${LATEX_TEMPLATES[name].body}`,
 ).join('. ')
 
 const schema = z.object({
@@ -57,7 +57,7 @@ const schema = z.object({
     .string()
     .optional()
     .describe(
-      'LaTeX replacing the sample content between \\begin{document} and \\end{document}. Omit to keep the template sample. Available: booktabs tables, amsmath, \\lab{label}, \\twocol{left}{right}, keybox environment, \\hairline, \\accentbar. Not available: enumitem, titlesec, tcolorbox, multicol, tabularx, colortbl, \\textbullet (use $\\bullet$), fonts other than Computer Modern and Times.',
+      'LaTeX for the editable region of the template; the template list says what belongs there, everything else (header, title, signature) is generated from the fields. Omit to keep the sample. Available: booktabs tables, amsmath, \\lab{label}, \\twocol{left}{right}, keybox environment, \\hairline, \\accentbar. Not available: enumitem, titlesec, tcolorbox, multicol, tabularx, colortbl, \\textbullet (use $\\bullet$), fonts other than Computer Modern and Times.',
     ),
   latex: z
     .string()
@@ -82,10 +82,9 @@ function readLogo(): Uint8Array | null {
   return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
 }
 
-/** Count `/Type /Page` objects; pdfTeX writes one per page, uncompressed. */
-function countPages(pdf: Uint8Array): number {
-  const text = new TextDecoder('latin1').decode(pdf)
-  return text.match(/\/Type\s*\/Page[^s]/g)?.length ?? 0
+/** pdfTeX ends its log with "Output written on main.pdf (N pages, ...)". */
+function countPages(log: string): number {
+  return Number(log.match(/Output written on .*\((\d+) pages?/)?.[1] ?? 0)
 }
 
 function useLatexSource(args: Args): string | null {
@@ -152,7 +151,7 @@ function useCompile(source: string | null): CompileState {
         setState({
           status: 'ready',
           pdf: result.pdf,
-          pages: countPages(result.pdf),
+          pages: countPages(result.log),
         })
       } else {
         setState({ status: 'error', error: summarizeLatexLog(result.log) })

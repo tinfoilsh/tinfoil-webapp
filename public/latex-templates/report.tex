@@ -14,6 +14,7 @@
 \twocol{\lab{Author}\par\Author}{\lab{Date}\par\ReportDate}
 \vspace{1em}
 
+% ---- BODY ----
 \begin{keybox}{Summary}
 Checkout p95 latency has risen from 480\,ms to 910\,ms over two quarters. We propose three changes: a read-through cache for the pricing service, batching of inventory checks, and moving tax calculation off the request path. Expected result: p95 below 400\,ms by the end of Q1 at a cost of roughly 6 engineer-weeks.
 \end{keybox}
@@ -42,4 +43,5 @@ Options A, B and C together deliver most of the benefit of D at a fraction of th
 
 \section{Risks}
 Stale prices during promotions are the main risk of option A; we mitigate it with explicit cache invalidation on price updates. Option C depends on the tax provider's webhook reliability, which we will measure during week 1.
+% ---- END BODY ----
 \end{document}
