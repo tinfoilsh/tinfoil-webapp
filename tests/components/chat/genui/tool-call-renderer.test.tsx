@@ -293,6 +293,35 @@ describe('GenUIToolCallRenderer', () => {
     },
   )
 
+  // What each widget must show when only its required fields arrive.
+  const requiredText: Partial<Record<keyof WidgetArgs, string>> = {
+    render_stat_cards: 'Users',
+    render_timeline: 'Launch',
+    render_link_preview: 'Example',
+    render_recipe_card: 'Soup',
+    render_message_compose: 'Hi',
+    render_questions: 'Ready?',
+  }
+
+  it.each(Object.entries(requiredText))(
+    'shows the required content of %s without its optional fields',
+    (name, text) => {
+      render(
+        <GenUIToolCallRenderer
+          isStreaming={false}
+          toolCalls={[
+            {
+              id: 'one',
+              name,
+              arguments: JSON.stringify(requiredOnly[name as keyof WidgetArgs]),
+            },
+          ]}
+        />,
+      )
+      expect(screen.getByText(text)).toBeInTheDocument()
+    },
+  )
+
   it('keeps widget retry repeatable and exposes full regeneration separately', async () => {
     let rejectRetry!: (error: ArtifactRetryError) => void
     const retryWidget = vi
