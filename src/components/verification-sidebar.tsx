@@ -1,4 +1,7 @@
-import { verificationDocument as readVerificationDocument } from '@/services/harness/attestation'
+import {
+  verificationDocument as readVerificationDocument,
+  type VerificationDocument,
+} from '@/services/harness/attestation'
 import { logError } from '@/utils/error-handling'
 import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -24,7 +27,8 @@ export function VerifierSidebar({
 }: VerifierSidebarProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [isReady, setIsReady] = useState(false)
-  const [verificationDocument, setVerificationDocument] = useState<any>(null)
+  const [verificationDocument, setVerificationDocument] =
+    useState<VerificationDocument | null>(null)
 
   // Keep the latest callback in a ref so `fetchVerificationDocument` can stay
   // referentially stable. The parent passes it as an inline function, so
@@ -42,8 +46,9 @@ export function VerifierSidebar({
     }
   }, [])
 
-  // A failed verification, as from a dropped connection, is retried with
-  // backoff before it is reported.
+  // A verification that could not finish, as over a dropped connection, is
+  // retried with backoff before it is reported. One that rejected the
+  // enclave is a verdict: the center shows the step that failed at once.
   const fetchVerificationDocument = useCallback(async () => {
     if (isFetchingRef.current) return
     isFetchingRef.current = true
@@ -53,7 +58,7 @@ export function VerifierSidebar({
           const doc = await readVerificationDocument()
           if (!isMountedRef.current) return
           setVerificationDocument(doc)
-          onVerificationCompleteRef.current(true)
+          onVerificationCompleteRef.current(doc.securityVerified)
           return
         } catch (cause) {
           if (!isMountedRef.current) return

@@ -8,6 +8,7 @@ import { REJOIN_DELAYS_MS } from '@/services/harness/run-controller'
 import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import type { RateLimit, Session } from '@/services/harness/types'
 import { act } from '@testing-library/react'
+import type { VerificationReport, VerificationReportJSON } from 'tinfoil'
 import { onTestFinished, vi, type Mock } from 'vitest'
 
 // The enclave seals every answer the harness gives, refusals included.
@@ -78,20 +79,45 @@ export const testSession: Session = {
   },
 }
 
+// A verification report as the SDK gives it, for its JSON form and the keys
+// its verified facts endorse. The SDK's reports come only from verifying a
+// document, so a test stands in for one.
+export function fakeReport(
+  json: VerificationReportJSON,
+  keys: { tlsPublicKeyFP?: string; hpkePublicKey?: string } = {},
+): VerificationReport {
+  return {
+    steps: [],
+    metadata: {} as VerificationReport['metadata'],
+    verifiedFacts: json.verified_facts ? keys : undefined,
+    toJSON: () => json,
+  } as unknown as VerificationReport
+}
+
 // What verifying the fake harness's enclave proves, as the SDK reports it:
 // an AMD enclave whose launch measurement is the one its release fixes.
 const LAUNCH = 'ab'.repeat(48)
-export const VERIFICATION = {
-  tlsPublicKeyFP: '11'.repeat(32),
-  hpkePublicKey: '22'.repeat(32),
-  toJSON: () => ({
-    codeDigest: '33'.repeat(32),
-    codeTag: 'v1.0.0',
-    configRepo: 'tinfoilsh/confidential-tinfoil-harness',
-    codeMeasurement: { platform: 'sev-snp', launch: LAUNCH },
-    enclaveMeasurement: { platform: 'sev-snp', launch: LAUNCH },
-  }),
-}
+export const VERIFICATION = fakeReport(
+  {
+    schema_version: 1,
+    steps: [
+      { layer: 'envelope', status: 'passed' },
+      { layer: 'provenance', status: 'passed' },
+      { layer: 'quote', status: 'passed' },
+      { layer: 'policy', status: 'passed' },
+    ],
+    verified_facts: {
+      config_repo: 'tinfoilsh/confidential-tinfoil-harness',
+      code_digest: '33'.repeat(32),
+      code_tag: 'v1.0.0',
+      code_measurement: { platform: 'sev-snp', launch: LAUNCH },
+      enclave_measurement: { platform: 'sev-snp', launch: LAUNCH },
+      crypto_material: [],
+    },
+    metadata: { verified_at: '2026-04-01T09:00:00Z', host: 'harness.example' },
+  },
+  { tlsPublicKeyFP: '11'.repeat(32), hpkePublicKey: '22'.repeat(32) },
+)
 
 // The harness's answer to /v1/keys/migrate-all: the sync service's newly
 // started migration job.
