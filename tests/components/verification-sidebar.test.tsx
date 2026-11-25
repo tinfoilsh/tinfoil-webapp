@@ -1,8 +1,10 @@
 import { CONSTANTS } from '@/components/chat/constants'
 import { VerifierSidebar } from '@/components/verification-sidebar'
+import { logError } from '@/utils/error-handling'
 import { act, render } from '@testing-library/react'
+import { AttestationError, VerificationError } from 'tinfoil'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { client, signIn, VERIFICATION } from '../harness-fixture'
+import { client, fakeReport, signIn, VERIFICATION } from '../harness-fixture'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -21,6 +23,7 @@ beforeEach(() => {
     null,
   )
   vi.useFakeTimers()
+  vi.mocked(logError).mockReset()
   signIn()
 })
 
@@ -76,4 +79,50 @@ it('reports a failure once every retry has failed', async () => {
     CONSTANTS.VERIFICATION_MAX_RETRIES + 1,
   )
   expect(onVerificationComplete.mock.calls).toEqual([[false]])
+})
+
+it('reports an enclave the verifier rejected at once, without retrying', async () => {
+  const report = fakeReport({
+    schema_version: 1,
+    steps: [
+      { layer: 'envelope', status: 'passed' },
+      { layer: 'provenance', status: 'failed', message: 'release not found' },
+      { layer: 'quote', status: 'not_run' },
+      { layer: 'policy', status: 'not_run' },
+    ],
+    partial_facts: {},
+    metadata: { verified_at: '2026-04-01T09:00:00Z' },
+  })
+  client.verify.mockRejectedValue(
+    new AttestationError('release not found', {
+      cause: new VerificationError('release not found', {
+        layer: 'provenance',
+        report,
+      }),
+    }),
+  )
+  const onVerificationComplete = vi.fn()
+  renderOpen(onVerificationComplete)
+  await act(async () => {})
+  expect(onVerificationComplete.mock.calls).toEqual([[false]])
+  expect(vi.mocked(logError).mock.calls).toEqual([
+    [
+      'Chat service failed verification',
+      undefined,
+      {
+        component: 'VerifierSidebar',
+        metadata: {
+          steps: {
+            fetchDigest: { status: 'success' },
+            verifyCode: { status: 'failed', error: 'release not found' },
+            verifyEnclave: { status: 'pending' },
+            compareMeasurements: { status: 'pending' },
+          },
+        },
+      },
+    ],
+  ])
+
+  await waitForRetry(0)
+  expect(client.verify).toHaveBeenCalledTimes(1)
 })

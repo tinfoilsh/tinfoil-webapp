@@ -1,4 +1,9 @@
-import { EnclaveHTTPClient } from 'tinfoil'
+import {
+  EnclaveHTTPClient,
+  type OnVerificationAttempt,
+  type VerificationAttempt,
+  type VerificationReport,
+} from 'tinfoil'
 import { AnonymousCredentialCache } from './anonymous-credential'
 import { ChatCredentialCache } from './chat-credential'
 import {
@@ -27,7 +32,10 @@ import type {
   Turn,
 } from './types'
 
-const harnessRepo = 'tinfoilsh/confidential-tinfoil-harness'
+const harnessTrust = {
+  kind: 'repoPin',
+  repo: 'tinfoilsh/confidential-tinfoil-harness',
+} as const
 // An attestation that has not finished by then is abandoned: the request
 // fails, and the next one verifies the enclave again.
 const ATTESTATION_TIMEOUT_MS = 20_000
@@ -39,10 +47,15 @@ export const REQUEST_TIMEOUT_MS = 30_000
 const SLOW_UPLOAD_BYTES_PER_MS = 32
 type GetToken = (options?: { skipCache?: boolean }) => Promise<string | null>
 type Transport = Pick<EnclaveHTTPClient, 'fetch' | 'ensureVerified'>
-// Verifies the chat service's enclave and connects to it. The signal ends a
-// verification that was abandoned.
-type Connect = (signal: AbortSignal) => Promise<Transport>
-export type Verification = Awaited<ReturnType<Transport['ensureVerified']>>
+// Verifies the chat service's enclave and connects to it, telling
+// onVerificationAttempt the outcome of every attempt to verify it, this one
+// and the ones the connection makes later. The signal ends a verification
+// that was abandoned.
+type Connect = (
+  signal: AbortSignal,
+  onVerificationAttempt: OnVerificationAttempt,
+) => Promise<Transport>
+export type Verification = VerificationReport
 
 // A follow as this client makes it: the body the protocol names, and the
 // last event of the run it applied, which it sends as Last-Event-ID.
@@ -134,6 +147,13 @@ export class HarnessClient {
   // The instance holding each chat's latest run, by chat, which requests
   // about the chat's runs are routed to.
   private readonly instances = new Map<string, string>()
+  // Who is told the outcome of each attempt to verify the chat service's
+  // enclave. The SDK tells the connection's callback, the only way to hear
+  // of a first attempt that failed: that connection is never made.
+  private readonly watchers = new Set<(attempt: VerificationAttempt) => void>()
+  private readonly attempted: OnVerificationAttempt = (_host, attempt) => {
+    for (const watcher of this.watchers) watcher(attempt)
+  }
   // The free key each signed-out chat's latest turn was sent with, by chat.
   // The harness keeps a signed-out caller's runs under the key, so requests
   // about the chat's runs present it even once another key replaced it, as
@@ -149,8 +169,11 @@ export class HarnessClient {
   constructor(
     url: string,
     private readonly getToken: GetToken,
-    private readonly connect: Connect = (signal) =>
-      EnclaveHTTPClient.create(new URL(url).host, harnessRepo, { signal }),
+    private readonly connect: Connect = (signal, onVerificationAttempt) =>
+      EnclaveHTTPClient.create(new URL(url).host, harnessTrust, {
+        signal,
+        onVerificationAttempt,
+      }),
   ) {
     const parsed = new URL(url)
     if (
@@ -179,7 +202,7 @@ export class HarnessClient {
     const secure = withDeadline(
       ATTESTATION_TIMEOUT_MS,
       undefined,
-      this.connect,
+      (signal) => this.connect(signal, this.attempted),
       unverified,
     )
     this.secure = secure
@@ -204,6 +227,16 @@ export class HarnessClient {
 
   async verify(): Promise<Verification> {
     return (await this.attested()).verification
+  }
+
+  // Tells the watcher the outcome of every later attempt to verify the chat
+  // service's enclave, as when a request verifies it again and it fails.
+  // Returns a function that stops telling it.
+  watchVerification(watcher: (attempt: VerificationAttempt) => void) {
+    this.watchers.add(watcher)
+    return () => {
+      this.watchers.delete(watcher)
+    }
   }
 
   // Mints the account's chat access again, as when its subscription changed

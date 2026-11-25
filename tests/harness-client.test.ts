@@ -1674,12 +1674,58 @@ describe('attested harness transport', () => {
 
     expect(create).toHaveBeenCalledExactlyOnceWith(
       'harness.example:8443',
-      'tinfoilsh/confidential-tinfoil-harness',
-      { signal: expect.any(AbortSignal) },
+      { kind: 'repoPin', repo: 'tinfoilsh/confidential-tinfoil-harness' },
+      {
+        signal: expect.any(AbortSignal),
+        onVerificationAttempt: expect.any(Function),
+      },
     )
     expect(secure.fetch.mock.calls.map(([url]) => url)).toEqual([
       'https://harness.example:8443/v1/session',
       'https://harness.example:8443/v1/session',
+    ])
+  })
+  it('tells its watchers of every attempt to verify the enclave, the failed first one included', async () => {
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => new Response('{"ok":true}'))
+    const report = { steps: [] }
+    const rejected = new Error('Attestation failed')
+    const connect = vi
+      .fn<
+        (
+          signal: AbortSignal,
+          onVerificationAttempt: (host: string, attempt: unknown) => void,
+        ) => Promise<ReturnType<typeof transport>>
+      >()
+      .mockImplementationOnce(async (_signal, onVerificationAttempt) => {
+        onVerificationAttempt('harness.example', { error: rejected })
+        throw rejected
+      })
+      .mockImplementationOnce(async (_signal, onVerificationAttempt) => {
+        onVerificationAttempt('harness.example', { report })
+        return secure
+      })
+    const client = new HarnessClient(
+      'https://harness.example',
+      async () => 'clerk',
+      connect as never,
+    )
+    const watcher = vi.fn()
+    const stop = client.watchVerification(watcher)
+
+    await expect(client.post('/v1/session', {})).rejects.toBe(rejected)
+    await client.post('/v1/session', {})
+    // The connection tells the client of the attempts it makes later, as
+    // when it verifies the enclave again; a watcher that stopped is not told.
+    const later = connect.mock.calls[1][1]
+    later('harness.example', { error: rejected })
+    stop()
+    later('harness.example', { report })
+
+    expect(watcher.mock.calls).toEqual([
+      [{ error: rejected }],
+      [{ report }],
+      [{ error: rejected }],
     ])
   })
   it('abandons an attestation that stalls and verifies the enclave again', async () => {
