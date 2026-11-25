@@ -1,5 +1,6 @@
 import { CONSTANTS } from '@/components/chat/constants'
 import { VerifierSidebar } from '@/components/verification-sidebar'
+import { logError } from '@/utils/error-handling'
 import { act, render } from '@testing-library/react'
 import { AttestationError, VerificationError } from 'tinfoil'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -22,6 +23,7 @@ beforeEach(() => {
     null,
   )
   vi.useFakeTimers()
+  vi.mocked(logError).mockReset()
   signIn()
 })
 
@@ -103,6 +105,23 @@ it('reports an enclave the verifier rejected at once, without retrying', async (
   renderOpen(onVerificationComplete)
   await act(async () => {})
   expect(onVerificationComplete.mock.calls).toEqual([[false]])
+  expect(vi.mocked(logError).mock.calls).toEqual([
+    [
+      'Chat service failed verification',
+      undefined,
+      {
+        component: 'VerifierSidebar',
+        metadata: {
+          steps: {
+            fetchDigest: { status: 'success' },
+            verifyCode: { status: 'failed', error: 'release not found' },
+            verifyEnclave: { status: 'pending' },
+            compareMeasurements: { status: 'pending' },
+          },
+        },
+      },
+    ],
+  ])
 
   await waitForRetry(0)
   expect(client.verify).toHaveBeenCalledTimes(1)

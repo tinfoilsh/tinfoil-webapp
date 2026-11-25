@@ -58,6 +58,11 @@ export function VerifierSidebar({
           const doc = await readVerificationDocument()
           if (!isMountedRef.current) return
           setVerificationDocument(doc)
+          if (!doc.securityVerified)
+            logError('Chat service failed verification', undefined, {
+              component: 'VerifierSidebar',
+              metadata: { steps: doc.steps },
+            })
           onVerificationCompleteRef.current(doc.securityVerified)
           return
         } catch (cause) {
