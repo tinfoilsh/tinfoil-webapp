@@ -65,6 +65,16 @@ export function verifyChatService(): Promise<Verification> {
   return harnessAPI().client.verify()
 }
 
+// Tells the listener whether each later attempt to verify the chat service's
+// enclave passed, as when a request verifies it again after the verification
+// expired, and a failure discards the one before it. Returns a function that
+// stops telling it.
+export function watchChatService(listener: (verified: boolean) => void) {
+  return harnessAPI().client.watchVerification(({ report }) =>
+    listener(report !== undefined),
+  )
+}
+
 // The report of a verification that rejected the enclave's document, which
 // shows the step that failed and what the steps before it established.
 // Undefined for any other failure, such as a connection that dropped.

@@ -136,6 +136,9 @@ export const MIGRATION_STARTED = {
 export interface FakeClient {
   enclave: string
   verify: Mock
+  // Takes a watcher of later verifications, which a test tells of one
+  // through `verificationWatchers`.
+  watchVerification: Mock
   events: Mock
   post: Mock
   upload: Mock
@@ -188,6 +191,10 @@ function unexpected(path: string): never {
 // until the test scripts it.
 export let client: FakeClient
 
+type VerificationWatcher = Parameters<HarnessClient['watchVerification']>[0]
+// The watchers of later verifications that the page holds.
+export const verificationWatchers = new Set<VerificationWatcher>()
+
 // Signs an account in to a fake harness, as HarnessProvider does. The
 // account's content key is unlocked unless `locked`; a signed-out visitor
 // has none.
@@ -212,9 +219,14 @@ export function signIn({
     `${PROMPT_CACHE_SECRET_PREFIX}:${encodeURIComponent(userId ?? 'anonymous')}`,
     CACHE_SECRET,
   )
+  verificationWatchers.clear()
   client = {
     enclave: 'harness.example',
     verify: vi.fn(async () => VERIFICATION),
+    watchVerification: vi.fn((watcher: VerificationWatcher) => {
+      verificationWatchers.add(watcher)
+      return () => verificationWatchers.delete(watcher)
+    }),
     events: vi.fn(async function* (path: string): AsyncGenerator<never> {
       unexpected(path)
     }),

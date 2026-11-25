@@ -168,7 +168,10 @@ const OnboardingView = dynamic(
   { ssr: false },
 )
 
-import { verifyChatService } from '@/services/harness/attestation'
+import {
+  verifyChatService,
+  watchChatService,
+} from '@/services/harness/attestation'
 import { ERROR_CODES } from '@/services/harness/protocol'
 import { reportProfileError, useHarness } from '@/services/harness/provider'
 import { HarnessError } from '@/services/harness/sse'
@@ -1431,6 +1434,9 @@ export function ChatInterface({
     void verifyChatService()
       .then(() => setVerificationStatus('verified'))
       .catch(() => setVerificationStatus('failed'))
+    return watchChatService((verified) =>
+      setVerificationStatus(verified ? 'verified' : 'failed'),
+    )
   }, [api])
   const {
     passkeyActive,

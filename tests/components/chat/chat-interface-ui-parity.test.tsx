@@ -11,8 +11,15 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
+import { AttestationError } from 'tinfoil'
 import { beforeAll, beforeEach, expect, it, vi } from 'vitest'
-import { client, signIn, testSession } from '../../harness-fixture'
+import {
+  client,
+  signIn,
+  testSession,
+  VERIFICATION,
+  verificationWatchers,
+} from '../../harness-fixture'
 import {
   resetChatStoresAroundEachTest,
   storedThread,
@@ -221,6 +228,28 @@ it('honors the Settings shortcut tab', async () => {
   expect(
     await screen.findByRole('checkbox', { name: 'Redact sidebar chat titles' }),
   ).toBeInTheDocument()
+})
+
+it('shows a verification that a request made again failing, and passing again', async () => {
+  render(view())
+  const status = await screen.findByRole('button', {
+    name: 'Open verification panel',
+  })
+  await waitFor(() => expect(status).not.toHaveTextContent('Verifying'))
+  expect(status).not.toHaveTextContent('Error')
+  expect(verificationWatchers.size).toBe(1)
+
+  act(() => {
+    for (const watcher of verificationWatchers)
+      watcher({ error: new AttestationError('launch mismatch') })
+  })
+  expect(status).toHaveTextContent('Error')
+
+  act(() => {
+    for (const watcher of verificationWatchers)
+      watcher({ report: VERIFICATION })
+  })
+  expect(status).not.toHaveTextContent('Error')
 })
 
 it('closes the verifier when opening Settings', async () => {
