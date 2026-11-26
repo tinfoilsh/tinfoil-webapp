@@ -13,7 +13,8 @@ function isWorkBlock(block: TimelineBlock): block is WorkBlock {
   return (
     block.type === 'thinking' ||
     block.type === 'web_search' ||
-    block.type === 'url_fetches'
+    block.type === 'url_fetches' ||
+    block.type === 'connector_call'
   )
 }
 
@@ -82,14 +83,16 @@ export function isRunningStep(block: TimelineBlock): boolean {
       return block.state.status === 'searching'
     case 'url_fetches':
       return isAnyURLFetching(block.fetches)
+    case 'connector_call':
+      return block.status === 'running'
     default:
       return false
   }
 }
 
 /**
- * Groups consecutive trace blocks (thinking, web search, URL fetches) into
- * a single "work" segment so the renderer can collapse them behind one row. Runs of a single block are left as plain blocks; answer
+ * Groups consecutive trace blocks (thinking, web search, URL fetches and
+ * connector calls) into a single "work" segment so the renderer can collapse them behind one row. Runs of a single block are left as plain blocks; answer
  * text and GenUI widgets end a run. A research's steps always show as a run,
  * even a single one, as its first is while the research starts.
  */

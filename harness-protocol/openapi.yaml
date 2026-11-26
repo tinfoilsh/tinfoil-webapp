@@ -65,7 +65,9 @@ info:
       name; the next version names it. A version 2 chat's reply may also hold
       research, which a harness that does not name it leaves out when it
       writes the chat back, reading the reply with its steps; the next
-      version names it.
+      version names it. A version 2 chat's tool call may also hold a
+      display's connector, which a harness that does not name it leaves out
+      when it writes the chat back; the next version names it.
       A harness reads a version before it writes it. A member of a stored row it
       does not name is read past, since other clients of the same rows write
       members of their own; the harness leaves such members out when it
@@ -114,6 +116,8 @@ tags:
     description: The account's settings.
   - name: projects
     description: Projects and their documents.
+  - name: connectors
+    description: The remote MCP servers an account connects, whose tools its chats call.
   - name: keys
     description: The account's content key and its passkey bundles, as the control plane keeps them.
   - name: attachments
@@ -176,7 +180,7 @@ paths:
       operationId: changes
       summary: Read the revisions of stored data
       tags: [session]
-      description: Revisions of the account's stored chats, profile and projects, which change when another device writes them.
+      description: Revisions of the account's stored chats, profile, projects and connectors, which change when another device writes them. A connector's also changes when the harness refreshes its sign-in.
       requestBody:
         content:
           application/json:
@@ -193,6 +197,7 @@ paths:
                   chats: {type: string}
                   profile: {type: string}
                   projects: {type: string}
+                  connectors: {type: string, description: "Absent from a harness that keeps no connectors."}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/threads/turn:
@@ -208,6 +213,70 @@ paths:
             schema: {$ref: "#/components/schemas/Turn"}
       responses:
         "200": {$ref: "#/components/responses/RunEvents"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/browser/result:
+    post:
+      operationId: browserResult
+      summary: Return a browser action's result
+      tags: [runs]
+      description: |
+        The executor of a local browser turn returns one result for the pending
+        executionId, authenticated by the turn's private executor token. An
+        identical retry is accepted while the run is live; a conflicting or
+        unknown execution is refused. The client journals intent before acting
+        and the result before sending it. Replaying an event must never repeat
+        an action. An uncertain outcome requires observing the page and user
+        intervention, rather than replay. Screenshots reach the model during
+        this run only; events and the returned thread carry the text alone.
+      parameters:
+        - {$ref: "#/components/parameters/HarnessInstance"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BrowserResultInput"}
+      responses:
+        "200":
+          description: The result was accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted: {const: true}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/threads/approve:
+    post:
+      operationId: approve
+      summary: Answer a call that waits for approval
+      tags: [runs]
+      description: |
+        A call to a connector's tool that the user asked to approve waits for
+        their answer: its display's connector.approval is pending, with the id
+        the answer names and the time it expires. Approving runs the call;
+        declining it, or not answering in time, tells the model the user did
+        not let it run. The same answer sent again is accepted; a different
+        one, or an answer to a call not waiting, is refused with
+        REVISION_CONFLICT.
+      parameters: [{$ref: "#/components/parameters/HarnessInstance"}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ApprovalInput"}
+      responses:
+        "200":
+          description: The answer was accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted: {const: true}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/threads/follow:
@@ -995,6 +1064,152 @@ paths:
         "200": {$ref: "#/components/responses/Empty"}
         default: {$ref: "#/components/responses/Error"}
 
+  /v1/connectors/list:
+    post:
+      operationId: connectorsList
+      summary: List the account's connectors
+      tags: [connectors]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Keyed"}
+      responses:
+        "200":
+          description: The account's connectors, the oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [connectors]
+                properties:
+                  connectors: {type: array, items: {$ref: "#/components/schemas/Connector"}}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connectors/add:
+    post:
+      operationId: connectorsAdd
+      summary: Connect a server
+      tags: [connectors]
+      description: |
+        Connects the MCP server at url. A server that needs no sign-in is
+        connected with its tools. One that does is added signed out, with the
+        page the client sends the user to: the harness registers itself with
+        the server's authorization server, by its client metadata document
+        where the server reads one and dynamically otherwise, and keeps the
+        sign-in pending until the user comes back to the client's callback
+        with the code and state the client sends to connectors/complete.
+        A server that signs in only clients registered in advance is refused
+        with CONNECTOR_UNSUPPORTED, and one that does not answer as an MCP
+        server with CONNECTOR_UNREACHABLE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, url]
+              properties:
+                key: {type: string, description: "The account's content key, base64."}
+                name: {type: string, description: "1 to 64 characters."}
+                url: {type: string, description: "A public HTTPS address on the standard port."}
+      responses:
+        "200": {$ref: "#/components/responses/ConnectorAnswer"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connectors/authorize:
+    post:
+      operationId: connectorsAuthorize
+      summary: Sign in to a connector again
+      tags: [connectors]
+      description: Starts a new sign-in to the connector, whose tokens stay until the sign-in replaces them. A server that no longer asks for one is connected without it, and no page is returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/KeyedId"}
+      responses:
+        "200": {$ref: "#/components/responses/ConnectorAnswer"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connectors/complete:
+    post:
+      operationId: connectorsComplete
+      summary: Finish signing in to a connector
+      tags: [connectors]
+      description: Sends what the user came back from the sign-in page with, the code, the state and the issuer when the authorization server names one. The harness checks the state against the sign-in pending, trades the code for tokens, which never leave the enclave, and lists the server's tools. A mismatched, expired or refused sign-in is refused with CONNECTOR_SIGN_IN_FAILED.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, code, state]
+              properties:
+                key: {type: string, description: "The account's content key, base64."}
+                id: {$ref: "#/components/schemas/Identifier"}
+                code: {type: string}
+                state: {type: string}
+                iss: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/ConnectorAnswer"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connectors/update:
+    post:
+      operationId: connectorsUpdate
+      summary: Change a connector's name, whether chats use it, and what its tools may do
+      tags: [connectors]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                key: {type: string, description: "The account's content key, base64."}
+                id: {$ref: "#/components/schemas/Identifier"}
+                name: {type: string}
+                enabled: {type: boolean}
+                tools:
+                  description: A permission for each tool named. A tool the connector no longer offers is refused with REVISION_CONFLICT.
+                  type: object
+                  additionalProperties: {$ref: "#/components/schemas/ToolPermission"}
+      responses:
+        "200": {$ref: "#/components/responses/ConnectorAnswer"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connectors/refresh:
+    post:
+      operationId: connectorsRefresh
+      summary: List a connector's tools again
+      tags: [connectors]
+      description: Lists the tools the server offers now, keeping the permissions given to those it offered before, but that a tool allowed while it only read asks first once its server no longer says it does. A connector whose authorization server no longer accepts its tokens is refused with CONNECTOR_SIGNED_OUT and listed as signedOut.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/KeyedId"}
+      responses:
+        "200": {$ref: "#/components/responses/ConnectorAnswer"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connectors/delete:
+    post:
+      operationId: connectorsDelete
+      summary: Remove a connector
+      tags: [connectors]
+      description: Removes the connector and asks its authorization server to revoke its tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/KeyedId"}
+      responses:
+        "200": {$ref: "#/components/responses/Empty"}
+        default: {$ref: "#/components/responses/Error"}
+
   /v1/keys/current:
     post:
       operationId: keysCurrent
@@ -1404,7 +1619,7 @@ components:
       type: apiKey
       in: header
       name: X-Tinfoil-Inference-Key
-      description: The chat access the client minted from the control plane, which the harness checks against the identity before it reads the body. A run started with a subscriber's chat token outlasts it. The harness has the control plane renew the token for as long as the run lasts, so a client mints chat access for the requests it sends and never for a run in progress.
+      description: The chat access the client minted from the control plane, which the harness checks against the identity before it reads the body. A run started with a subscriber's chat token outlasts it, as does a reply read aloud. The harness has the control plane renew the token for as long as the run or the reading lasts, so a client mints chat access for the requests it sends and never for a run or a reading in progress.
   responses:
 
     Error:
@@ -1484,6 +1699,17 @@ components:
       content:
         application/json:
           schema: {$ref: "#/components/schemas/Project"}
+
+    ConnectorAnswer:
+      description: The connector, and the page that signs the user in to it when it needs that.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [connector]
+            properties:
+              connector: {$ref: "#/components/schemas/Connector"}
+              authorizationUrl: {type: string, description: "The authorization server's page the client sends the user to. Present only while a sign-in the route started is pending."}
   schemas:
 
     # --- Common ---------------------------------------------------------------
@@ -1604,8 +1830,15 @@ components:
             - ATTACHMENT_UNSUPPORTED
             - ATTACHMENTS_UNAVAILABLE
             - BAD_REQUEST
+            - BROWSER_TIMEOUT
             - CHAT_FLAGGED
             - COMPACTION_FAILED
+            - CONNECTOR_LIMIT
+            - CONNECTOR_NOT_FOUND
+            - CONNECTOR_SIGN_IN_FAILED
+            - CONNECTOR_SIGNED_OUT
+            - CONNECTOR_UNREACHABLE
+            - CONNECTOR_UNSUPPORTED
             - CONTEXT_TOO_LARGE
             - CREDENTIAL_REQUIRED
             - IMPORT_INVALID
@@ -1683,7 +1916,7 @@ components:
         composer: {$ref: "#/components/schemas/Composer"}
         presets: {type: array, items: {$ref: "#/components/schemas/Preset"}}
         features:
-          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes.
+          description: Optional behaviors this harness offers. A client acts on a feature only when it is true here. compaction is true while a chat whose prompt would outgrow its model's window is compacted rather than refused. manualCompaction is true while a turn of kind compact compacts a chat on request. compactLatest is true while such a turn summarizes the chat's latest exchange too when it sends compactLatest. research is true while this caller may send a turn with options.research, which only a subscriber may. partialThread is true while a client may send a device chat from its latest compaction marker on, as ThreadInput describes. connectors is true while this caller may connect servers, whose tools a stored chat's replies call.
           type: object
           additionalProperties: {type: boolean}
 
@@ -1811,8 +2044,76 @@ components:
         toolCallId: {type: string, description: "The widget call a retryToolCall regenerates."}
         attachments: {type: array, items: {$ref: "#/components/schemas/SentAttachment"}}
         widgets: {type: array, items: {type: string}, description: "The widgets this client renders."}
+        browser: {$ref: "#/components/schemas/BrowserAccess"}
         compactLatest: {type: boolean, description: "A compact turn, or a retry that compacts again, summarizes the chat's latest exchange too, as COMPACTION_START describes. It is refused on any other kind. A client sends it only while the session's features.compactLatest is true, and when it shows a compaction marker at the end of a chat."}
         options: {$ref: "#/components/schemas/TurnOptions"}
+
+    BrowserAccess:
+      description: |
+        Available only when features.browserTools is true, on local send turns
+        without research. The client controls selected tabs and supplies a new
+        executor identity and secret for each turn. The token is sent only in
+        sealed bodies, never in prompts, events or persistent chat records.
+        Browser actions run sequentially, at most 40 per turn. Each waits at
+        most five minutes for its executor; a timeout ends the run with
+        BROWSER_TIMEOUT and leaves later actions unexecuted. Clients cancel a run when they
+        relinquish browser control, and stop local dispatch immediately.
+      type: object
+      required: [executorId, token]
+      properties:
+        executorId: {type: string, format: uuid}
+        token: {type: string, pattern: "^[0-9a-f]{64}$"}
+
+    BrowserAction:
+      description: Arguments validated against the model-facing browser tool schema. The executor additionally validates selected tabs, URL schemes, current references, and action permissions before dispatch.
+      type: object
+      required: [action]
+      properties:
+        action: {type: string, enum: [tabs, read, screenshot, click, hover, fill, select, press, scroll, navigate, back, forward, open, switch, close, wait]}
+        tabId: {type: integer}
+        ref: {type: string}
+        text: {type: string}
+        url: {type: string}
+        key: {type: string, enum: [Enter, Tab, Escape, ArrowDown, ArrowUp, ArrowLeft, ArrowRight, Backspace]}
+        direction: {type: string, enum: [up, down]}
+        screenshotId: {type: string, description: "The fresh screenshot whose pixels a coordinate action uses."}
+        x: {type: number, minimum: 0}
+        y: {type: number, minimum: 0}
+
+    BrowserResult:
+      type: object
+      required: [text]
+      properties:
+        text: {type: string, maxLength: 65536, description: "Page data or a structured action error. Limited to 64 KiB UTF-8."}
+        image: {type: string, maxLength: 2097152, description: "Optional base64 JPEG viewport, at most 4 million pixels. Read only by vision models."}
+
+    BrowserResultInput:
+      type: object
+      required: [threadId, runId, executorId, token, executionId, result]
+      properties:
+        threadId: {$ref: "#/components/schemas/Identifier"}
+        runId: {type: string}
+        executorId: {type: string}
+        token: {type: string}
+        executionId: {type: string}
+        result: {$ref: "#/components/schemas/BrowserResult"}
+
+    BrowserToolRequestEvent:
+      description: |
+        A complete, validated browser operation ready for the selected executor.
+        Only this event authorizes dispatch, never partial TOOL_CALL_ARGS.
+        executionId identifies the operation across stream reconnections.
+        Every replay is reconciled against the executor's local journal.
+      type: object
+      required: [type, executionId, toolCallId, executorId, expiresAt, operation]
+      properties:
+        type: {const: BROWSER_TOOL_REQUEST}
+        timestamp: {$ref: "#/components/schemas/Timestamp"}
+        expiresAt: {type: string, format: date-time, description: "The executor refuses dispatch after this deadline, including after a delayed review or stream replay."}
+        executionId: {type: string}
+        toolCallId: {type: string}
+        executorId: {type: string}
+        operation: {$ref: "#/components/schemas/BrowserAction"}
 
     TurnOptions:
       type: object
@@ -1857,6 +2158,16 @@ components:
             text says what it found; otherwise only its report streams as the
             reply's text. The reply is committed with research, and later turns
             read it as its report alone.
+        connectors:
+          type: boolean
+          description: |
+            The turn offers the model the tools of the account's enabled,
+            signed-in connectors. A client sends it only while the session's
+            features.connectors is true, and only if it shows connector calls
+            and answers their approvals with threads/approve: without it, no
+            connector is called, so no call waits on an approval the client
+            cannot show. It applies to a stored chat's send, edit, regenerate,
+            continue or retry, and not to a research or browser turn.
         cacheSecret:
           type: string
           pattern: "^[0-9a-f]{64}$"
@@ -1910,6 +2221,7 @@ components:
         - {$ref: "#/components/schemas/ToolCallArgsEvent"}
         - {$ref: "#/components/schemas/ToolCallEndEvent"}
         - {$ref: "#/components/schemas/ToolCallResultEvent"}
+        - {$ref: "#/components/schemas/BrowserToolRequestEvent"}
         - {$ref: "#/components/schemas/ActivitySnapshotEvent"}
         - {$ref: "#/components/schemas/ActivityDeltaEvent"}
         - {$ref: "#/components/schemas/CompactionStartEvent"}
@@ -1930,6 +2242,7 @@ components:
           TOOL_CALL_ARGS: "#/components/schemas/ToolCallArgsEvent"
           TOOL_CALL_END: "#/components/schemas/ToolCallEndEvent"
           TOOL_CALL_RESULT: "#/components/schemas/ToolCallResultEvent"
+          BROWSER_TOOL_REQUEST: "#/components/schemas/BrowserToolRequestEvent"
           ACTIVITY_SNAPSHOT: "#/components/schemas/ActivitySnapshotEvent"
           ACTIVITY_DELTA: "#/components/schemas/ActivityDeltaEvent"
           COMPACTION_START: "#/components/schemas/CompactionStartEvent"
@@ -2473,7 +2786,7 @@ components:
         invalidArguments: {type: boolean, description: "The widget's current declaration refuses the call's arguments, so the client offers to regenerate them."}
 
     ToolDisplay:
-      description: What a web search or page fetch shows, kept current while it runs.
+      description: What a web search, page fetch or call to a connector's tool shows, kept current while it runs. An ACTIVITY_DELTA's display replaces the call's.
       type: object
       required: [status, sources]
       properties:
@@ -2493,6 +2806,77 @@ components:
               url: {type: string}
               title: {type: string}
               snippet: {type: string}
+        connector: {$ref: "#/components/schemas/ConnectorCall"}
+
+    ConnectorCall:
+      description: The connector a call reached, the tool's name on its server, and the user's approval when the call needs one.
+      type: object
+      required: [id, name, url, tool]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        url: {type: string}
+        tool: {type: string}
+        title: {type: string}
+        approval: {$ref: "#/components/schemas/ToolApproval"}
+
+    ToolApproval:
+      description: The user's answer to a call that needs it. A pending approval names the id threads/approve answers it under and when it expires; the call waits until then.
+      type: object
+      required: [status]
+      properties:
+        id: {type: string}
+        status:
+          description: A client shows a status it does not know as declined.
+          anyOf:
+            - {type: string, enum: [pending, approved, declined, expired]}
+            - {type: string}
+        expiresAt: {$ref: "#/components/schemas/Timestamp"}
+
+    ToolPermission:
+      description: What a connector's tool may do in a chat. A reply reads it as each call is made. When a server offers a reply a tool its connector does not list, the reply lists the tool as ask. A tool allowed while its server said it only reads becomes ask once the server no longer says so. A client shows a permission it does not know as ask.
+      anyOf:
+        - {type: string, enum: [allow, ask, "off"]}
+        - {type: string}
+
+    Connector:
+      description: A server the account connected, without anything it signs in with, which never leaves the enclave.
+      type: object
+      required: [id, name, url, enabled, status, signIn, createdAt, updatedAt, tools]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        url: {type: string}
+        enabled: {type: boolean, description: "Whether chats call its tools."}
+        status:
+          description: Whether its tools can be called, or the user must sign in first. A client shows a status it does not know as signedOut.
+          anyOf:
+            - {type: string, enum: [connected, signedOut]}
+            - {type: string}
+        signIn: {type: boolean, description: "Whether the server asks the user to sign in."}
+        createdAt: {type: string}
+        updatedAt: {type: string}
+        tools:
+          type: array
+          items:
+            type: object
+            required: [name, permission]
+            properties:
+              name: {type: string}
+              title: {type: string}
+              description: {type: string}
+              readOnly: {type: boolean, description: "The server says the tool changes nothing."}
+              permission: {$ref: "#/components/schemas/ToolPermission"}
+
+    ApprovalInput:
+      type: object
+      required: [threadId, runId, approvalId, approved]
+      properties:
+        key: {type: string, description: "The account's content key, base64."}
+        threadId: {$ref: "#/components/schemas/Identifier"}
+        runId: {type: string}
+        approvalId: {type: string}
+        approved: {type: boolean}
 
     Annotation:
       description: A reply's citation of a page.

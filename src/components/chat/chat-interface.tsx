@@ -2,6 +2,7 @@ import { findSelectableModel, getSelectedModelLabel } from '@/config/models'
 import { PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { UI_EXPAND_PROJECT_DOCUMENTS } from '@/constants/storage-keys'
+import { useConnectors } from '@/hooks/use-connectors'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
@@ -71,7 +72,7 @@ import {
   ChatHistoryStatus,
   type ChatHistoryProblem,
 } from './chat-history-status'
-import { ChatInput } from './chat-input'
+import { ChatInput, type ComposerConnectors } from './chat-input'
 import { ChatMessages } from './chat-messages'
 import {
   getChatContentBottomScrollTop,
@@ -108,6 +109,7 @@ import { PageNotice } from './page-notice'
 import { openProjectChat } from './project-navigation'
 import { QuoteSelectionPopover } from './quote-selection-popover'
 import { initializeRenderers } from './renderers/client'
+import type { ConnectorApproving } from './renderers/components/ConnectorApprovalCard'
 import type { ProcessedDocument } from './renderers/types'
 import type { SettingsTab } from './settings-modal'
 import {
@@ -524,6 +526,10 @@ export function ChatInterface({
     (session?.features.research ?? false) &&
     (profile.webSearchAvailable ?? true)
   const researchEnabled = researchAvailable && thread.research
+  const { offered: connectorsOffered, list: connectorList } = useConnectors()
+  // Connectors run in the chats the harness stores: not in one kept on this
+  // device, or a temporary one.
+  const connectorsAvailable = thread.cloud && !thread.local && !isTemporaryMode
   // A researched question searches the web whatever its chat's setting, so
   // web search shows on while deep research is.
   const effectiveWebSearchEnabled =
@@ -706,6 +712,9 @@ export function ChatInterface({
     webSearch: (session?.features.webSearch ?? false) && chatWebSearchEnabled,
     piiCheck: profile.piiCheckEnabled ?? true,
     genUI: profile.genUIEnabled ?? true,
+    // This client shows connector calls and answers their approvals, which
+    // the harness offers only to clients that ask.
+    ...(connectorsOffered && connectorsAvailable ? { connectors: true } : {}),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }
   const handleQuery = (content: string, fields: Partial<Turn> = {}) => {
@@ -777,6 +786,26 @@ export function ChatInterface({
       submit: () => void handleQuery(''),
     }
   })
+  // The calls of the reply running now that wait for the user's approval
+  // take answers while it runs.
+  const approvalActions = useRef(thread.approve)
+  useEffect(() => {
+    approvalActions.current = thread.approve
+  })
+  const connectorApprovals = useMemo<ConnectorApproving | undefined>(
+    () =>
+      isStreaming && !currentChatIsFlagged
+        ? {
+            approve: (approvalId, approved) =>
+              approvalActions.current(approvalId, approved),
+            allowTool: (connectorId, tool) =>
+              connectorList.update(connectorId, {
+                tools: { [tool]: 'allow' },
+              }),
+          }
+        : undefined,
+    [isStreaming, currentChatIsFlagged, connectorList],
+  )
   const canAnswer = canChangeMessages && !isStreaming && !currentChatIsFlagged
   const canSubmitAnswers = canChat && !isStreaming && !generationBlocked
   const questionAnswering = useMemo<QuestionAnswering>(
@@ -1857,6 +1886,7 @@ export function ChatInterface({
     clearPromptPreset: () => handleSetActivePreset(null),
     toggleWebSearch: handleWebSearchToggle,
     toggleResearch: handleResearchToggle,
+    manageConnectors: () => handleOpenSettingsModal('connectors'),
     selectModel: handleModelSelect,
     clickLabel: handleLabelClick,
     setReasoningEffort,
@@ -1864,6 +1894,16 @@ export function ChatInterface({
     setAutoIntelligence,
     compact: compactChat,
   })
+  const composerConnectors = useMemo<ComposerConnectors | undefined>(
+    () =>
+      connectorsOffered
+        ? {
+            available: connectorsAvailable,
+            onManage: composerActions.manageConnectors,
+          }
+        : undefined,
+    [connectorsOffered, connectorsAvailable, composerActions],
+  )
   const composerHeader = useMemo(
     () =>
       // With a preset active, the preset tab attached to the input card
@@ -2853,6 +2893,7 @@ export function ChatInterface({
                       loadDocumentText={messageActions.loadDocumentText}
                       speak={messageActions.speak}
                       questions={questionAnswering}
+                      approvals={connectorApprovals}
                       imagesUnsaved={!isSignedIn && !isTemporaryMode}
                       earlierMessageCount={Math.max(
                         0,
@@ -2871,6 +2912,7 @@ export function ChatInterface({
                       onResearchToggle={
                         researchAvailable ? handleResearchToggle : undefined
                       }
+                      connectors={composerConnectors}
                       reasoningEffort={reasoningEffort}
                       setReasoningEffort={setReasoningEffort}
                       thinkingEnabled={thinkingEnabled}
@@ -3020,6 +3062,7 @@ export function ChatInterface({
                             ? composerActions.toggleResearch
                             : undefined
                         }
+                        connectors={composerConnectors}
                       />
                     </form>
                   )}

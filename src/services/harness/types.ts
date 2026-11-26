@@ -7,6 +7,10 @@ type ProfileUpdate =
   operations['profileUpdate']['requestBody']['content']['application/json']
 type MessageAnswer =
   operations['messageAnswer']['requestBody']['content']['application/json']
+type ConnectorUpdate =
+  operations['connectorsUpdate']['requestBody']['content']['application/json']
+type ConnectorComplete =
+  operations['connectorsComplete']['requestBody']['content']['application/json']
 
 export type Json =
   null | boolean | number | string | Json[] | { [key: string]: Json }
@@ -128,3 +132,21 @@ export interface Frame {
 
 // A shared chat, whose attachments name the key that reads each blob.
 export type SharedThread = Schemas['SharedThread']
+
+// A server the account connected, the tools it offers, and what each may do
+// in a chat.
+export type Connector = Schemas['Connector']
+export type ConnectorTool = Connector['tools'][number]
+export type ToolPermission = Schemas['ToolPermission']
+// A connector as a route that changes it answers, with the page that signs
+// the user in to it while a sign-in the route started is pending.
+export type ConnectorAnswer =
+  components['responses']['ConnectorAnswer']['content']['application/json']
+// The changes an update makes to a connector, and what the user came back
+// from its sign-in page with.
+export type ConnectorChanges = Omit<ConnectorUpdate, 'key' | 'id'>
+export type ConnectorSignIn = Omit<ConnectorComplete, 'key'>
+// The connector a tool call reached, and the user's approval of the call
+// when it needs one.
+export type ConnectorCall = Schemas['ConnectorCall']
+export type ApprovalInput = Schemas['ApprovalInput']

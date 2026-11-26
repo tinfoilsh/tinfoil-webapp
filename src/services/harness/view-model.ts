@@ -2,6 +2,7 @@ import type {
   Attachment,
   Chat,
   Compaction,
+  ConnectorCallStatus,
   Message,
   TimelineBlock,
   TitleState,
@@ -10,6 +11,7 @@ import type {
 import { DEFAULT_CHAT_TITLE, PLACEHOLDER_CHAT_TITLE } from '@/constants/chat'
 import { CHAT_END, COMPACTION_ROLE, WIDGET_PREFIX } from './protocol'
 import type {
+  ConnectorCall,
   QueueItem,
   ThreadSummary,
   AttachmentDescriptor as WireAttachment,
@@ -172,6 +174,59 @@ function toolBlock(block: WireBlock, streaming: boolean): TimelineBlock | null {
   }
 }
 
+// What a tool's result says it returned, when it is text.
+function outputOf(result: unknown): string | undefined {
+  return isRecord(result) && typeof result.output === 'string'
+    ? result.output
+    : undefined
+}
+
+// A call to a connector's tool shows what the harness reports of it, as a
+// search does. A call the user declined, or did not answer in time, says so;
+// an answer of a status this client does not know shows as declined. Only a
+// call of the reply still running waits for the user's approval.
+function connectorCallBlock(
+  block: WireBlock,
+  connector: ConnectorCall,
+  reported: ToolStatus,
+  streaming: boolean,
+): TimelineBlock {
+  const { approval } = connector
+  const answered =
+    approval && approval.status !== 'pending' && approval.status !== 'approved'
+  const status: ConnectorCallStatus = answered
+    ? approval.status === 'expired'
+      ? 'expired'
+      : 'declined'
+    : streaming
+      ? reported
+      : reported === 'completed'
+        ? 'completed'
+        : 'failed'
+  const output = outputOf(block.result)
+  return {
+    type: 'connector_call',
+    id: block.id,
+    toolCallId: block.toolCallId ?? block.id,
+    connector: { id: connector.id, name: connector.name, url: connector.url },
+    tool: connector.tool,
+    ...(connector.title ? { title: connector.title } : {}),
+    status,
+    arguments: block.arguments ?? '',
+    ...(output !== undefined ? { output } : {}),
+    ...(status === 'running' && approval?.status === 'pending' && approval.id
+      ? {
+          approval: {
+            id: approval.id,
+            ...(approval.expiresAt ? { expiresAt: approval.expiresAt } : {}),
+          },
+        }
+      : {}),
+    startedAt: block.startedAt,
+    endedAt: block.endedAt,
+  }
+}
+
 export function attachmentView(
   a: Pick<
     WireAttachment,
@@ -309,6 +364,13 @@ export function messageView(
       return { ...block, type: 'content', content: block.content ?? '' }
     // A block of a type this client does not know has no view.
     if (block.type !== 'tool_call') return []
+    if (block.display?.connector)
+      return connectorCallBlock(
+        block,
+        block.display.connector,
+        toolStatus(block.display.status),
+        streaming,
+      )
     // A tool that is neither a search nor a widget, as the code an older
     // chat ran, has no view.
     if (!isShownTool(block.name)) return []

@@ -22,6 +22,7 @@ export const ROUTES = {
   turn: '/v1/threads/turn',
   follow: '/v1/threads/follow',
   cancel: '/v1/threads/cancel',
+  approve: '/v1/threads/approve',
   queueSend: '/v1/threads/queue/send',
   queueRemove: '/v1/threads/queue/remove',
   list: '/v1/threads/list',
@@ -52,6 +53,13 @@ export const ROUTES = {
   projectsDeleteAll: '/v1/projects/delete-all',
   projectDocumentUpload: '/v1/projects/documents/upload',
   projectDocumentDelete: '/v1/projects/documents/delete',
+  connectorsList: '/v1/connectors/list',
+  connectorsAdd: '/v1/connectors/add',
+  connectorsAuthorize: '/v1/connectors/authorize',
+  connectorsComplete: '/v1/connectors/complete',
+  connectorsUpdate: '/v1/connectors/update',
+  connectorsRefresh: '/v1/connectors/refresh',
+  connectorsDelete: '/v1/connectors/delete',
   favicon: '/v1/metadata/favicon',
   remoteImage: '/v1/metadata/image',
   linkMetadata: '/v1/metadata/link',
@@ -79,6 +87,9 @@ export const CHAT_END = ''
 // The session feature under which the harness takes a chat kept on this
 // device from its latest compaction marker on.
 export const PARTIAL_THREAD_FEATURE = 'partialThread'
+// The session feature under which a signed-in account may connect servers,
+// whose tools its stored chats' replies call.
+export const CONNECTORS_FEATURE = 'connectors'
 
 // A run's stream: a turn starts one, and following one replays it.
 export type RunRoute = typeof ROUTES.turn | typeof ROUTES.follow
@@ -122,6 +133,19 @@ export const ERROR_CODES = {
   threadExists: 'THREAD_EXISTS',
   // The chat changed while a run that edits it in place ran.
   revisionConflict: 'REVISION_CONFLICT',
+  // The account holds the most connectors it may.
+  connectorLimit: 'CONNECTOR_LIMIT',
+  connectorNotFound: 'CONNECTOR_NOT_FOUND',
+  // A sign-in to a connector that did not match the one pending, expired, or
+  // that its authorization server refused.
+  connectorSignInFailed: 'CONNECTOR_SIGN_IN_FAILED',
+  // A connector's authorization server no longer accepts what the harness
+  // signs in with.
+  connectorSignedOut: 'CONNECTOR_SIGNED_OUT',
+  // The address did not answer as an MCP server.
+  connectorUnreachable: 'CONNECTOR_UNREACHABLE',
+  // The server signs in only clients registered with it in advance.
+  connectorUnsupported: 'CONNECTOR_UNSUPPORTED',
   // A tool, such as a widget, is not offered to the client.
   toolUnavailable: 'TOOL_UNAVAILABLE',
   threadTooLarge: 'THREAD_TOO_LARGE',

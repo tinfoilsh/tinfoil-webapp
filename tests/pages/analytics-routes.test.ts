@@ -10,6 +10,7 @@ describe('analyticsExcluded', () => {
     '/chat/local/abc?x=1',
     '/share/abc#f',
     '/project/p1/chat/c1',
+    '/connectors/callback?code=c&state=s',
   ])('excludes %s', (path) => expect(analyticsExcluded(path)).toBe(true))
   it.each([
     '/project',

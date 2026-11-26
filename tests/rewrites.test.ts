@@ -30,6 +30,8 @@ describe('section rewrites', () => {
     ['/share', shell('share')],
     ['/share/abc', shell('share')],
     ['/newchat', '/newchat.html'],
+    ['/connectors/callback', '/connectors/callback.html'],
+    ['/connectors/callback/', '/connectors/callback.html'],
   ])('sends %s to %s', (path, expected) => {
     expect(destination(path)).toBe(expected)
   })
@@ -46,6 +48,7 @@ describe('section rewrites', () => {
     '/deployment.json',
     '/favicon.ico',
     '/preview/mermaid.html',
+    '/oauth/client-metadata.json',
   ])('leaves %s to the filesystem', (path) => {
     expect(destination(path)).toBeUndefined()
   })

@@ -87,12 +87,36 @@ export type TimelineToolCallBlock = TimelineTiming & {
   answers?: SavedAnswers
 }
 
+// How a call to a connector's tool went: whether it ran, or the user
+// declined it or did not answer in time.
+export type ConnectorCallStatus =
+  'running' | 'completed' | 'failed' | 'declined' | 'expired'
+
+// A call to a tool of a server the user connected.
+export type TimelineConnectorCallBlock = TimelineTiming & {
+  type: 'connector_call'
+  id: string
+  toolCallId: string
+  connector: { id: string; name: string; url: string }
+  // The tool's name on its server, and its title when the server gives one.
+  tool: string
+  title?: string
+  status: ConnectorCallStatus
+  // The call's arguments as the model wrote them, a JSON string.
+  arguments: string
+  // What the tool returned, once it ran.
+  output?: string
+  // The approval the call waits for while its reply runs.
+  approval?: { id: string; expiresAt?: string }
+}
+
 export type TimelineBlock =
   | TimelineThinkingBlock
   | TimelineWebSearchBlock
   | TimelineURLFetchBlock
   | TimelineContentBlock
   | TimelineToolCallBlock
+  | TimelineConnectorCallBlock
 
 export type DocumentPage = {
   page: number
